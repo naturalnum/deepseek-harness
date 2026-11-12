@@ -156,11 +156,12 @@ export function createNativeOffice(ctx: Context, binding: AccountBinding, curren
     assertCurrent()
     const remote = value.typertRemote, markers = remoteMethods(value)
     if (remote.service !== value || remote.serviceKey !== 'officeToPdf' || remote.namespace !== 'officeToPdf'
-      || markers.length !== 2) unavailable()
-    const entries = markers.map((marker) => {
-      const method = marker.exportName ?? marker.method
-      if ((marker.mode ?? 'rpc') !== 'rpc' || !['render', 'generation'].includes(method)
-        || Reflect.get(value, marker.method) !== Reflect.get(OfficeToPdf.prototype, marker.method)) unavailable()
+      || markers.length > maximum) unavailable()
+    const entries = ([['render', 'render'], ['getGeneration', 'generation']] as const).map(([member, method]) => {
+      const matches = markers.filter(marker => marker.method === member), marker = matches[0]
+      if (matches.length !== 1 || marker === undefined || (marker.exportName ?? member) !== method
+        || markers.filter(row => (row.exportName ?? row.method) === method).length !== 1 || (marker.mode ?? 'rpc') !== 'rpc'
+        || Reflect.get(value, member) !== Reflect.get(OfficeToPdf.prototype, member)) unavailable()
       return { endpoint: `officeToPdf/${method}`, handlerId: 'native:officeToPdf',
         guard: method === 'render' ? 'account-session' as const : 'authenticated-account' as const }
     })

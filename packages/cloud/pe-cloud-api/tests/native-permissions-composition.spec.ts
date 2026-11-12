@@ -19,6 +19,7 @@ import { createNativePermissions, type NativePermissions } from '../src/native-p
 import type { NativeSessionGuards } from '../src/native.ts'
 import { ExposurePolicy } from '../src/exposure.ts'
 import { CloudApiError } from '../src/errors.ts'
+import { nativeMethodInventoryTests } from './native-method-inventory-fixture.ts'
 
 async function fixture(id: string, initiallyReady = true) {
   const lifetime = new AbortController()
@@ -88,6 +89,12 @@ async function fixture(id: string, initiallyReady = true) {
     setBusy: (value: boolean) => { busy = value }, revoke: () => { current = false }, publish: () => { current = true },
     loseEnforcement: () => { enforcing = false } }
 }
+
+nativeMethodInventoryTests('permissionPresets', [['catalog', 'catalog']], async () => {
+  const f = await fixture('inventory-compatibility')
+  return { native: f.service, upstreamPrototype: PermissionPresets.prototype, policy: f.policy, maximum: 128,
+    async invokeOriginal() { await expect(f.catalog()).resolves.toMatchObject({ defaultPreset: 'workspace-write' }) } }
+})
 
 const permissionEvents = (events: readonly SessionEvent[]) => events.filter(event =>
   event.type === 'permission/preset' || event.type === 'sandbox/mode' || event.type === 'approval/policy')

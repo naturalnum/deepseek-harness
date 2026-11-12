@@ -20,6 +20,7 @@ import { createNativeGoals, type NativeGoals } from '../src/native-goals.ts'
 import type { NativeSessionGuards } from '../src/native.ts'
 import { ExposurePolicy } from '../src/exposure.ts'
 import { CloudApiError } from '../src/errors.ts'
+import { nativeMethodInventoryTests } from './native-method-inventory-fixture.ts'
 
 async function fixture(id: string, selected = true) {
   const lifetime = new AbortController()
@@ -83,6 +84,15 @@ async function fixture(id: string, selected = true) {
     args: { agentId: agent.id, line, submittedAttachments: [] }, peer })
   return { ctx, service, agent, peer, events, binding, lifetime, policy, goal, execute, revoke: () => { current = false } }
 }
+
+nativeMethodInventoryTests('goals', [
+  ['get', 'get'], ['edit', 'edit'], ['pause', 'pause'], ['resume', 'resume'],
+  ['complete', 'complete'], ['clear', 'clear'], ['remoteExportCreate', 'create'],
+], async () => {
+  const f = await fixture('inventory-compatibility')
+  return { native: f.service, upstreamPrototype: Goals.prototype, policy: f.policy, maximum: 128,
+    async invokeOriginal() { await expect(f.goal('get')).resolves.toBeUndefined() } }
+})
 
 it('uses the original /goal command, projected state and UI Remote mutations on the same native domain', async () => {
   const f = await fixture('lifecycle')

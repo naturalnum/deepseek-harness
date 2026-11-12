@@ -8,7 +8,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Choose exactly which native RPCs, logical streams, Fetch routes, and settings fields a cloud recipe may expose. Unknown operations remain closed, and a changed native inventory revokes its prior audit. Shared guards run before native Session delegation and actual model dispatch. Account mounting refuses incomplete runtime, project, and configuration-save integration.
+Choose exactly which native RPCs, logical streams, Fetch routes, and settings fields a cloud recipe may expose. Unknown operations remain closed, and missing or changed reviewed native methods revoke their prior audit. Shared guards run before native Session delegation and actual model dispatch. Account mounting refuses incomplete runtime, project, and configuration-save integration.
 
 Trusted account plugins can call `sessionProject(actualSession)` to reuse Runtime's original Session, Workspace, membership and Preset checks. It returns the registered native Workspace, creates no Session or execution scope, and rejects when the original policy callback or account admission is unavailable.
 
@@ -49,6 +49,8 @@ The [executed Loader fixture](tests/fixtures/root.cordis.yml) shows the root con
 | `allowedSettings` | required | Exact namespace and effective changed field paths. |
 
 An inventory audit compares configured declarations with native mounted handlers. Extra native registrations remain closed. Root matching declares deployment policy; each account must also check its current runtime binding, actual enabled handlers, and resources.
+
+The command, goal, scheduling, feedback, permission, plugin-inventory and Office adapters allow additional Remote markers within their existing inventory limits. Each reviewed internal method and exported name must remain unique, with its original invocation mode and implementation. Additional methods do not enter the deployment manifest and cannot reuse a reviewed export name. The original goal create and Office generation aliases are retained.
 
 `SESSION_CONTROLLER_ENDPOINTS` owns the reviewed Session endpoint names, handlers, resource guards, transport modes and installation requirements. Native Controller inventory and the Access bootstrap producer share these declarations. Declaring a method does not install or expose it: inventory still verifies the original guarded implementation, actual native Remote metadata, optional first-screen/model-selection providers and the selected deployment manifest.
 

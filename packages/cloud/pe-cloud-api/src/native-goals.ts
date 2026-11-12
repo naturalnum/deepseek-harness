@@ -128,10 +128,12 @@ export function createNativeGoals(
     firstScreenNativeOwner(ctx, 'goals', value, maximum)
     const remote = value.typertRemote, markers = remoteMethods(value)
     if (remote.service !== value || remote.serviceKey !== 'goals' || remote.namespace !== 'goals'
-      || markers.length !== METHODS.length || markers.length > maximum) unavailable()
+      || markers.length > maximum) unavailable()
     for (const method of METHODS) {
-      const marker = markers.find(row => row.method === method), exportName = method === 'remoteExportCreate' ? 'create' : method
-      if (marker === undefined || (marker.exportName ?? method) !== exportName || (marker.mode ?? 'rpc') !== 'rpc'
+      const matches = markers.filter(row => row.method === method), marker = matches[0]
+      const exportName = method === 'remoteExportCreate' ? 'create' : method
+      if (matches.length !== 1 || marker === undefined || (marker.exportName ?? method) !== exportName
+        || markers.filter(row => (row.exportName ?? row.method) === exportName).length !== 1 || (marker.mode ?? 'rpc') !== 'rpc'
         || Reflect.get(value, method) !== Reflect.get(AccountGoals.prototype, method)) unavailable()
     }
     return { recipeVersion: binding.recipeVersion,

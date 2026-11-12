@@ -123,8 +123,11 @@ export function createNativePermissions(
     firstScreenNativeOwner(ctx, 'permissionPresets', value, maximum)
     const remote = value.typertRemote, markers = remoteMethods(value)
     if (remote.service !== value || remote.serviceKey !== 'permissionPresets' || remote.namespace !== 'permissionPresets'
-      || markers.length !== 1 || markers[0]?.method !== 'catalog' || (markers[0].exportName ?? 'catalog') !== 'catalog'
-      || (markers[0].mode ?? 'rpc') !== 'rpc' || value.catalog !== AccountPermissions.prototype.catalog) unavailable()
+      || markers.length > maximum) unavailable()
+    const matches = markers.filter(marker => marker.method === 'catalog'), marker = matches[0]
+    if (matches.length !== 1 || marker === undefined || (marker.exportName ?? 'catalog') !== 'catalog'
+      || markers.filter(row => (row.exportName ?? row.method) === 'catalog').length !== 1
+      || (marker.mode ?? 'rpc') !== 'rpc' || value.catalog !== AccountPermissions.prototype.catalog) unavailable()
     for (const method of ['set', 'resolve', 'registerAuto', 'assertCanSwitch'] as const) {
       if (Reflect.get(value, method) !== Reflect.get(AccountPermissions.prototype, method)) unavailable()
     }

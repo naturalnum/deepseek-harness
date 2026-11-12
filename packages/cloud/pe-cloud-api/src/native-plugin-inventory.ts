@@ -88,8 +88,11 @@ export function createNativePluginInventory(ctx: Context, binding: AccountBindin
     firstScreenNativeOwner(ctx, 'pluginInventory', value, maximum)
     const remote = value.typertRemote, markers = remoteMethods(value)
     if (remote.service !== value || remote.serviceKey !== 'pluginInventory' || remote.namespace !== 'pluginInventory'
-      || markers.length !== 1 || markers[0]?.method !== 'list' || (markers[0].exportName ?? 'list') !== 'list'
-      || (markers[0].mode ?? 'rpc') !== 'rpc' || value.list !== AccountPluginInventory.prototype.list) unavailable()
+      || markers.length > maximum) unavailable()
+    const matches = markers.filter(marker => marker.method === 'list'), marker = matches[0]
+    if (matches.length !== 1 || marker === undefined || (marker.exportName ?? 'list') !== 'list'
+      || markers.filter(row => (row.exportName ?? row.method) === 'list').length !== 1
+      || (marker.mode ?? 'rpc') !== 'rpc' || value.list !== AccountPluginInventory.prototype.list) unavailable()
     return { recipeVersion: binding.recipeVersion,
       rpcEndpoints: policy.manifest.rpcEndpoints.some(row => row.endpoint === 'pluginInventory/list')
         ? [{ endpoint: 'pluginInventory/list', handlerId: 'native:pluginInventory', guard: 'authenticated-account' }] : [],

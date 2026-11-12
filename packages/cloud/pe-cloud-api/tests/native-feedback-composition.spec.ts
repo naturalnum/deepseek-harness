@@ -25,6 +25,7 @@ import { createNativeFeedbackIdentity, createNativeMessageFeedback, createNative
 import type { NativeSessionGuards } from '../src/native.ts'
 import { ExposurePolicy } from '../src/exposure.ts'
 import { CloudApiError } from '../src/errors.ts'
+import { nativeMethodInventoryTests } from './native-method-inventory-fixture.ts'
 
 afterEach(() => { vi.restoreAllMocks() })
 
@@ -160,6 +161,22 @@ async function fixture(id: string, selected = true) {
   return { ctx, binding, lifetime, policy, sessionId, session, message, events, peer, home, sessionService, messageService,
     invoke, list, put, command, cold, readDurable, gatePersistence, revoke: () => { current = false } }
 }
+
+nativeMethodInventoryTests('sessionFeedback', [['record', 'record']], async () => {
+  const f = await fixture('session-inventory-compatibility')
+  return { native: f.sessionService, upstreamPrototype: CommandFeedback.SessionFeedbackService.prototype,
+    policy: f.policy, maximum: 128, async invokeOriginal() {
+      await expect(f.invoke('sessionFeedback', 'record', {
+        sessionId: f.sessionId, text: 'original feedback', category: 'product-interaction',
+      })).resolves.toEqual({ ok: true, value: { recorded: true } })
+    } }
+})
+
+nativeMethodInventoryTests('messageFeedback', [['list', 'list'], ['put', 'put'], ['delete', 'delete']], async () => {
+  const f = await fixture('message-inventory-compatibility')
+  return { native: f.messageService, upstreamPrototype: MessageFeedback.prototype, policy: f.policy, maximum: 128,
+    async invokeOriginal() { await expect(f.list()).resolves.toEqual({ ok: true, value: { items: [] } }) } }
+})
 
 it('reuses the original guarded Session feedback service and records the native log-only remark', async () => {
   const f = await fixture('session')

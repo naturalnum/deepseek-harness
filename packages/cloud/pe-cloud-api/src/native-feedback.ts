@@ -109,10 +109,11 @@ function feedbackAdmission(
       firstScreenNativeOwner(ctx, namespace, value, maximum)
       const remote = value.typertRemote, markers = remoteMethods(value)
       if (remote.service !== value || remote.serviceKey !== namespace || remote.namespace !== namespace
-        || markers.length !== methods.length || markers.length > maximum) unavailable()
+        || markers.length > maximum) unavailable()
       for (const method of methods) {
-        const marker = markers.find(row => row.method === method)
-        if (marker === undefined || (marker.exportName ?? method) !== method || (marker.mode ?? 'rpc') !== 'rpc'
+        const matches = markers.filter(row => row.method === method), marker = matches[0]
+        if (matches.length !== 1 || marker === undefined || (marker.exportName ?? method) !== method
+          || markers.filter(row => (row.exportName ?? row.method) === method).length !== 1 || (marker.mode ?? 'rpc') !== 'rpc'
           || Reflect.get(value, method) !== Reflect.get(implementation, method)) unavailable()
       }
       return { recipeVersion: binding.recipeVersion,

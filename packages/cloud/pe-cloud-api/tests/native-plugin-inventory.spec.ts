@@ -14,6 +14,7 @@ import { expect, it, onTestFinished, vi } from 'vitest'
 import PluginInventoryGateway, { pluginEntryId } from '@deepseek-ai/dsh-host-plugin-inventory'
 import { createNativePluginInventory, type NativePluginInventory } from '../src/native-plugin-inventory.ts'
 import { ExposurePolicy } from '../src/exposure.ts'
+import { nativeMethodInventoryTests } from './native-method-inventory-fixture.ts'
 
 async function fixture() {
   const home = mkdtempSync(join(tmpdir(), 'account-plugin-inventory-')), config = join(home, 'cordis.yml')
@@ -46,6 +47,12 @@ async function fixture() {
   const invoke = () => graph.typertGateway.invoke({ namespace: 'pluginInventory', method: 'list', args: {}, peer })
   return { graph, native, policy, invoke, revoke: () => { ready = false }, end: () => { controller.abort() } }
 }
+
+nativeMethodInventoryTests('pluginInventory', [['list', 'list']], async () => {
+  const f = await fixture()
+  return { native: f.native, upstreamPrototype: PluginInventoryGateway.prototype, policy: f.policy, maximum: 256,
+    async invokeOriginal() { expect(await f.invoke()).toMatchObject({ entries: expect.any(Array) }) } }
+})
 
 it('reads the real account Loader entries with no native manager writes', async () => {
   const f = await fixture(), result = await f.native.value.list()

@@ -6,8 +6,13 @@ import OfficeToPdf, { Config, OfficeSourceKey, type OfficeToPdfRequest } from '@
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { AccountBinding, AccountId, OwnerEpoch } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
+import Gateway from '@deepseek-ai/dsh-api-gateway'
+import RemoteAccess from '@deepseek-ai/dsh-api-remote-access'
+import type { PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 import { onTestFinished, expect, it, vi } from 'vitest'
 import { createNativeOffice, type NativeOffice } from '../src/native-office.ts'
+import { ExposurePolicy } from '../src/exposure.ts'
+import { nativeMethodInventoryTests } from './native-method-inventory-fixture.ts'
 
 type Render = (request: { inputPath: string; outputPath: string }, signal?: AbortSignal) => Promise<{ backend: 'wasm'; missingFonts: string[] }>
 type ConverterFixture = {
@@ -57,6 +62,22 @@ async function fixture(render: Render, dispose: () => Promise<void> = async () =
   onTestFinished(close)
   return { ctx, native, close, abortBinding: () => { lifetime.abort() }, officeOwner }
 }
+
+nativeMethodInventoryTests('officeToPdf', [['render', 'render'], ['getGeneration', 'generation']], async () => {
+  const f = await fixture(async () => ({ backend: 'wasm', missingFonts: [] }))
+  await f.ctx.plugin(RemoteAccess)
+  await f.ctx.plugin(Gateway)
+  const inventory = f.native.inspect()
+  const policy = new ExposurePolicy({ ...inventory, allowedSettings: [] })
+  policy.audit(inventory)
+  const peer: PeerScope = { id: brandString<PeerScope['id']>('office-inventory-peer'), ctx: f.ctx,
+    principal: { kind: 'owner' }, interactions: 'answer', signal: new AbortController().signal, dispose: async () => {} }
+  return { native: f.native, upstreamPrototype: OfficeToPdf.prototype, policy, maximum: 512,
+    async invokeOriginal() {
+      await expect(f.ctx.typertGateway.invoke({ namespace: 'officeToPdf', method: 'generation', args: {}, peer }))
+        .resolves.toBe(f.native.value.generation)
+    } }
+})
 
 it('keeps the native reader and scratch until conversion settles after observer cancellation', async () => {
   const started = Promise.withResolvers<string>(), gate = Promise.withResolvers<undefined>()

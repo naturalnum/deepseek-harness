@@ -8,7 +8,7 @@ kind: "package-reference"
 
 ## 概述
 
-明确选择云端配方允许开放的原生 RPC、逻辑流、Fetch 路由和设置字段。未知操作保持关闭，原生清单变化会撤销先前审核。共享守卫在原生 Session 委派及实际模型调用前执行。runtime、项目和配置保存集成不完整时，账户挂载明确失败。
+明确选择云端配方允许开放的原生 RPC、逻辑流、Fetch 路由和设置字段。未知操作保持关闭，已审核的原生方法缺失或变化时会撤销先前审核。共享守卫在原生 Session 委派及实际模型调用前执行。runtime、项目和配置保存集成不完整时，账户挂载明确失败。
 
 可信账户插件可调用 `sessionProject(actualSession)`，复用 Runtime 原有的 Session、Workspace、成员关系和 Preset 检查。它返回已注册的原生 Workspace，不创建 Session 或执行作用域；缺少原有策略回调或账户准入时拒绝调用。
 
@@ -49,6 +49,8 @@ kind: "package-reference"
 | `allowedSettings` | 必填 | 精确 namespace 和实际变化的字段路径。 |
 
 清单审核将配置声明与原生已挂载处理者比较。额外注册的原生入口保持关闭。根匹配只声明部署策略；每个账户还须核对当前 runtime 绑定、实际启用处理者和资源。
+
+命令、目标、调度、反馈、权限、插件清单和 Office 适配器允许在现有清单限额内增加 Remote 标记。每个已审核的内部方法及导出名仍须唯一，并保留原调用方式和实现。新增方法不会进入部署清单，也不能占用已审核的导出名；目标 create 与 Office generation 的原有别名保留。
 
 `SESSION_CONTROLLER_ENDPOINTS` 持有已审核的 Session 端点名、handler、资源守卫、传输模式及安装前提。原生 Controller 清单与 Access bootstrap producer 共用这些声明。声明方法不等于安装或开放方法：清单仍核验原有受守卫实现、实际原生 Remote 元数据、可选的首屏／模型选择 provider，以及部署所选 manifest。
 

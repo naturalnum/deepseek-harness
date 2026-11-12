@@ -13,12 +13,14 @@ import type { PeerId, PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 import type { AccountBinding, AccountId, OwnerEpoch } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deepseek-ai/dsh-agent-loop-testkit'
 import Goals from '@deepseek-ai/dsh-goal'
+import CommandRuntime from '@deepseek-ai/dsh-commands'
 import * as GoalCommand from '@deepseek-ai/dsh-command-goal'
 import { createNativeCommands } from '../src/native-commands.ts'
 import type { NativeCommands } from '../src/native-commands.ts'
 import type { NativeSessionGuards } from '../src/native.ts'
 import { ExposurePolicy } from '../src/exposure.ts'
 import { CloudApiError } from '../src/errors.ts'
+import { nativeMethodInventoryTests } from './native-method-inventory-fixture.ts'
 
 async function fixture(id: string) {
   const lifetime = new AbortController()
@@ -81,6 +83,12 @@ async function fixture(id: string) {
   return { ctx, service, agent, events, binding, lifetime, policy, list, execute, assertActiveScope, preparePromptFiles,
     closeBusiness() { businessCurrent = false }, replaceRegistry() { commandScope.set('commands', {}) } }
 }
+
+nativeMethodInventoryTests('commands', [['list', 'list'], ['execute', 'execute']], async () => {
+  const f = await fixture('inventory-compatibility')
+  return { native: f.service, upstreamPrototype: CommandRuntime.prototype, policy: f.policy, maximum: 128,
+    async invokeOriginal() { expect(await f.list()).toEqual([expect.objectContaining({ name: 'goal' })]) } }
+})
 
 it('runs the original goal command with native lifecycle and projection, and removes it on Loader disposal', async () => {
   const f = await fixture('goal')

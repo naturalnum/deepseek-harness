@@ -19,6 +19,7 @@ import { createNativeSchedule, type NativeSchedule } from '../src/native-schedul
 import type { NativeSessionGuards } from '../src/native.ts'
 import { ExposurePolicy } from '../src/exposure.ts'
 import { CloudApiError } from '../src/errors.ts'
+import { nativeMethodInventoryTests } from './native-method-inventory-fixture.ts'
 
 async function fixture(pool = new MemoryMediaPool(), initiallyActive = true) {
   const ctx = new Context(), lifetime = new AbortController(), id = SessionId('own-session')
@@ -71,11 +72,19 @@ async function fixture(pool = new MemoryMediaPool(), initiallyActive = true) {
   const peer: PeerScope = { id: brandString<PeerId>('schedule-peer'), ctx, principal: { kind: 'owner' },
     interactions: 'answer', signal: new AbortController().signal, dispose: async () => {} }
   const invoke = (method: string, args: Readonly<Record<string, unknown>>) => ctx.typertGateway.invoke({ namespace: 'schedule', method, args, peer })
-  return { ctx, service, id, invoke, session, followup, resolveAgent,
+  return { ctx, service, id, invoke, session, followup, resolveAgent, policy,
     setFlush: (work: () => Promise<void>) => { flush = work },
     setPutHook: (work: () => Promise<void> | undefined) => { putHook = work },
     revoke: () => { active = false }, ready: () => { active = true } }
 }
+
+nativeMethodInventoryTests('schedule', [
+  ['list', 'list'], ['catalog', 'catalog'], ['history', 'history'], ['delete', 'delete'], ['update', 'update'],
+], async () => {
+  const f = await fixture()
+  return { native: f.service, upstreamPrototype: ScheduleService.prototype, policy: f.policy, maximum: 128,
+    async invokeOriginal() { await expect(f.invoke('catalog', {})).resolves.toEqual([]) } }
+})
 
 it('keeps the real native Schedule domain and rejects foreign Sessions across create/read/delete', async () => {
   const f = await fixture(), foreign = SessionId('foreign-session')
