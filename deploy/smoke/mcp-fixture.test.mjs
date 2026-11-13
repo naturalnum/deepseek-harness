@@ -16,6 +16,18 @@ async function connect(t, url) {
   return client
 }
 
+async function assertStoppedListener(url) {
+  // A fresh socket observes the listener, rather than fetch's cached connection after SDK shutdown.
+  const failure = await new Promise(resolve => {
+    let failure
+    const probe = request(url, { agent: false }, response => response.resume())
+    probe.once('error', error => { failure = error })
+    probe.once('close', () => resolve(failure))
+    probe.end()
+  })
+  assert.equal(failure?.code, 'ECONNREFUSED')
+}
+
 test('the SDK lists and invokes the owned tool, then actual stop and same-URL restart work', async t => {
   const fixture = await createMcpSmokeFixture()
   t.after(() => fixture.close())
@@ -29,7 +41,7 @@ test('the SDK lists and invokes the owned tool, then actual stop and same-URL re
   await client.close()
   await Promise.all([fixture.stop(), fixture.stop()])
   assert.equal(fixture.state, 'stopped')
-  await assert.rejects(fetch(originalUrl), error => error.cause?.code === 'ECONNREFUSED')
+  await assertStoppedListener(originalUrl)
   await fixture.restart()
   assert.equal(fixture.url, originalUrl)
   const restored = await connect(t, originalUrl)
@@ -97,7 +109,7 @@ test('an explicitly owned LAN IPv4 uses the same bound and advertised host throu
   await client.close()
   await fixture.stop()
   assert.equal(fixture.state, 'stopped')
-  await assert.rejects(fetch(originalUrl), error => error.cause?.code === 'ECONNREFUSED')
+  await assertStoppedListener(originalUrl)
   await fixture.restart()
   assert.equal(fixture.url, originalUrl)
   const restored = await connect(t, originalUrl)
