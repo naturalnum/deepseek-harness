@@ -45,6 +45,7 @@ import { createAccountPolicy } from './account-policy.ts'
 import { selectOfficeProfile } from './office-profile.ts'
 import { createFileReadTiming, type FileReadTiming } from './file-read-timing.ts'
 import { AccountRuntimeError } from './errors.ts'
+import { installServiceLogOutput } from './service-log-output.ts'
 import { RuntimeConfigSchema, RuntimeRootConfigSchema } from './schema.ts'
 import type { AccountBinding, AccountId, AccountOwner, AccountOwnerResolver, AccountRecoveryRuntime,
   AccountRuntimeService, AccountUse, InstanceId, RuntimeControlObservation, DrainCapacityReservation,
@@ -102,6 +103,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
   private readonly recipe: RootRecipeAudit
   private readonly fileReadTiming: FileReadTiming | undefined
   private readonly capacity: RuntimeCapacity
+  private readonly revokeServiceLogOutput: () => void = () => {}
   private closed = false
   private control: RootControl | undefined
 
@@ -191,6 +193,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     ctx.effect(() => async () => {
       try { await this.close() } finally { await rootClose() }
     }, 'pe-cloud-runtime: close actual root control')
+    this.revokeServiceLogOutput = installServiceLogOutput(ctx, () => this.close())
   }
 
   /**
@@ -701,7 +704,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     this.closed = true
     this.recipe.close()
     const control = this.control
-    if (control === undefined) { this.capacity.close(); return Promise.resolve() }
+    if (control === undefined) { this.capacity.close(); this.revokeServiceLogOutput(); return Promise.resolve() }
     if (control.closing !== undefined) return control.closing
     control.phase = 'closing'
     void control.ownerResolver?.close()
@@ -713,7 +716,8 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
       this.ctx.logger.error('Runtime root shutdown observation expired; actual work and owner responsibility remain retained')
     }, control.config.shutdownTimeoutMs)
     timer.unref()
-    void actual.then(() => { clearTimeout(timer) }, () => { clearTimeout(timer) })
+    void actual.then(() => { clearTimeout(timer); this.revokeServiceLogOutput() },
+      () => { clearTimeout(timer); this.revokeServiceLogOutput() })
     return actual
   }
 

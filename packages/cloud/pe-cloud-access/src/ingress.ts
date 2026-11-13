@@ -996,7 +996,6 @@ export class CloudIngress {
         ...(operation.stage === 'ingress.current' ? { rootRecipe: this.recipeObservation() } : {}),
       }
       console.warn('Cloud ingress request failed: %j', fields)
-      this.ctx.logger.warn('Cloud ingress request failed: %j', fields)
     } catch (_error) {
       try { console.error('Cloud ingress failure diagnostics unavailable.') }
       catch (_fallbackError) { /* Observability must not change the original response or cleanup. */ }
