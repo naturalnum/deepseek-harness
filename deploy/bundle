@@ -1,2 +1,3 @@
 #!/bin/sh
+export DSH_CLIENT_TITLE="${DSH_CLIENT_TITLE:-PowerEvolve}"
 exec node "$(dirname "$0")/bundle.mjs" "$@"

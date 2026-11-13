@@ -5,7 +5,6 @@ apps/cli/src/process-shutdown.ts	通用修复	收尾失败、超时或二次信�
 apps/cli/src/profile-boot.ts	扩展点	新增 AppShutdown 服务（shutdown.register），供 pe-cloud-runtime 登记必须完成的关闭动作；兼透传退出宽限、failLoud 走统一 dispose（通用修复）	需要上游提供“应用关闭参与者”登记点
 apps/web/product-isolation.ts	通用修复	构建输入校验补上 Worker 文件插桩，并兼容 Rolldown 没有 getWatchFiles	构建脚本自身的缺陷；向上游提交
 apps/web/src/main.ts	云端定制	入口按全局 __DSH_CLOUD_WEB__ 分支到 CloudWebEntry（有开关：没有该全局时走原逻辑；多数行只是缩进）	可另建自有入口应用（自带 main.ts，复用上游构建配置），或请上游提供入口替换点；代价是多维护一套入口
-apps/web/vite.config.ts	云端定制	默认网页标题改为 PowerEvolve（品牌）	上游已有构建变量 DSH_CLIENT_TITLE，构建时设置后还原本文件
 packages/client/connection/src/http-bridge.ts	通用修复	请求体改为有上限的流式读取，响应结束和清理失败有明确结果；兼有可选 beforeResponse 钩子（扩展点，供 pe-cloud-access）	Host 侧连接层内部逻辑；向上游提交
 packages/client/connection/src/index.ts	登记	导出新增的守卫类型和清理错误类	随 rpc-host.ts、http-bridge.ts 一起处理
 packages/client/connection/src/rpc-host.ts	扩展点	新增 handleNodeRequest 和可选 beforeDispatch 守卫（供 pe-cloud-access 做账号准入；未传时行为不变）	需要上游提供“分发前守卫”
@@ -14,8 +13,6 @@ packages/client/file-upload/src/client/index.ts	扩展点	声明 fileUploadHooks
 packages/client/file-upload/src/client/runtime.ts	通用修复	Worker 启动失败时释放资源；兼从 Context 读取 fileUploadHooks、上传成功后发事件（扩展点）	修复部分只能改上游；钩子部分见上一行
 packages/client/file-upload/src/http-route.ts	通用修复	请求体在拒绝前先结算，避免连接悬挂；兼新增 workspaceOnly、directory 查询参数（扩展点，供文件侧栏上传）	向上游提交；参数部分可改成云端自有路由，但要重复上传实现
 packages/client/file-upload/src/index.ts	通用修复	上传收据加容量上限和“未确认”状态、超限报明确错误；兼把 storeFileStream 等改成可覆盖（扩展点，pe-cloud-api 覆盖它）。注意改了默认：待确认收据上限 128	向上游提交；可覆盖方法需要上游接受
-packages/client/locale/src/locales/en.ts	云端定制	brand.localBuild 文案改为 PowerEvolve（品牌）	侧栏名称已由 pe-cloud-client 填 sidebar.brand.name 插槽，窗口标题用 DSH_CLIENT_TITLE；还原
-packages/client/locale/src/locales/zh.ts	云端定制	同 en.ts	同 en.ts
 packages/client/modules/src/client/entries.ts	扩展点	入口重算时计入 plugins 清单，并跳过不需要激活的行（支持只登记不激活）	随 modules/src/index.ts
 packages/client/modules/src/client/manifest.ts	扩展点	清单行新增可选 activate 字段	随 modules/src/index.ts
 packages/client/modules/src/index.ts	扩展点	registerClientPackages 新增 { activate } 选项和 declaredSources（云端要求 Connection 只登记不激活，由云端页面自己装连接）	需要上游提供“只登记不激活的客户端包”
