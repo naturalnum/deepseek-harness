@@ -8,7 +8,7 @@ pnpm --dir apps/web exec playwright install chromium
 
 默认入口是 `http://127.0.0.1:32802`，也可用 `--url` 指定本机候选入口。不要连接试用服务器。
 
-使用现有私密 JSON，显式选择本次获准的测试账号；2026-11-14 周末恢复只使用普通账号 B：
+使用现有私密 JSON，显式选择本次获准的测试账号；2026-11-14 周末候选验证只使用普通账号 B：
 
 ```sh
 node deploy/smoke/check.mjs --credentials '<私密JSON>' --account ordinaryUserB
@@ -48,9 +48,9 @@ node deploy/smoke/check.mjs
 
 请求观察只记录同源且与入口挂载路径一致的 `session/create`、`session/prompt`、`session/uploadFileBinary` 三条 POST 的固定中文类别、数字编号、HTTP状态与耗时，不读取或输出查询参数、头、正文、原始错误、账号和附件内容。HTTP 200 只表示浏览器收到响应，不能证明业务成功或附件已经落盘；最终仍核对模型实际读出的随机内容。页面出现模型回复也不等同于上游首字节时间。服务端接收、附件写入和模型代理耗时需要由环境负责人用既有日志对齐，缺失阶段报告未观测。
 
-## 更新前对话的继续使用
+## 可选的更新前对话继续使用
 
-更新、回滚或再次更新后，用同一对话行标识及原模型回复中的随机标记运行：
+普通周末批次不携带旧会话参数。仅在同步分支装到真实环境验证、且该阶段明确要求旧会话续用时，用同一对话行标识及原模型回复中的随机标记运行：
 
 ```sh
 node deploy/smoke/check.mjs --credentials '<私密JSON>' --account ordinaryUserB \
@@ -76,7 +76,7 @@ MCP 和科研模式检查尚未实现。显式指定 `--mcp` 或 `--research` �
 `--mcp-offline` 在原九项（带旧对话参数时为十项）之后追加第 13 项；`--mcp-recover` 必须与它同轮提供，继续追加第 14 项。原检查顺序、通过标准和五分钟总时限不变；新增检查只使用原检查之后的剩余时间，并保留最终退出的时间。默认不启动 MCP 服务，不加载 MCP SDK。旧 `--mcp` 参数仍是未实现的第 10 项占位，不代替这两个参数。
 
 ```sh
-node deploy/smoke/check.mjs --credentials '<私密JSON>' --account ordinaryUserC \
+node deploy/smoke/check.mjs --credentials '<私密JSON>' --account ordinaryUserB \
   --mcp-offline --mcp-recover
 ```
 
@@ -88,12 +88,11 @@ node deploy/smoke/check.mjs --credentials '<私密JSON>' --account ordinaryUserC
 
 最小服务默认仅监听 `127.0.0.1`，端口由系统分配，恢复使用同一地址和端口。只有显式执行 MCP 检查时才读取公开环境变量 `PE_CLOUD_SMOKE_MCP_HOST`；它允许默认回环或本机当前网卡上一个精确的私网 IPv4，绑定和广告使用同一个 IP。拒绝通配地址、DNS 名称、IPv6、公网或未分配给本机的地址，不提供独立的广告 URL。SDK 的 Host 校验只允许这个精确 IP。测试服务只提供本轮随机标记及 `ping` 计数，不接收密钥或业务数据。
 
-正常更新工具精确透传 `--mcp-offline` 和 `--mcp-recover` 两个无值开关，其他参数范围和原停止流程保持。这样一次正常更新即可运行原十项及新增第 13、14 项，无须另跑完整冒烟：
+正常更新工具精确透传 `--mcp-offline` 和 `--mcp-recover` 两个无值开关，其他参数范围和原停止流程保持。本周末普通批次不带旧会话参数，一次正常更新运行原九项及同轮第 13、14 项，共 11 项，无须另跑完整冒烟：
 
 ```sh
 PE_CLOUD_SMOKE_MCP_HOST='<本机当前自有LAN IPv4>' node deploy/local/update.mjs update '<产品更新包>' \
-  --line 接口线 --credentials '<私密JSON>' --account ordinaryUserC \
-  --continue-session '<最新成功对话>' --continue-marker '<对应标记>' \
+  --line 主线 --credentials '<私密JSON>' --account ordinaryUserB \
   --mcp-offline --mcp-recover
 ```
 
