@@ -3,7 +3,7 @@
 import { createRequire } from 'node:module'
 import { randomBytes } from 'node:crypto'
 import { readOptions } from './options.mjs'
-import { createStepTrace, observeSmokeRequests, SmokeUploadFailure, smokeComposer, waitForSmokeSend } from './diagnostics.mjs'
+import { createStepTrace, observeSmokeRequests, openSmokeFileMenu, SmokeUploadFailure, waitForSmokeSend } from './diagnostics.mjs'
 import { createBudget, PreviousReplyNotFound, readDownload, StepTimeout, stopPendingTurn, waitForPreviousReply, withStepDeadline } from './steps.mjs'
 
 const help = `用法：node deploy/smoke/check.mjs [--url 网页入口] [--credentials 私密JSON] [--account 账号字段]
@@ -348,9 +348,8 @@ async function run(options) {
         { tokens: [searchFile, searchToken], bash: 1, tools: ['glob', 'grep'] })
     }, [2])
     await check(7, '上传并读取文本文件', async () => {
-      const composer = smokeComposer(page)
       stage('打开添加文件菜单')
-      await composer.getByRole('button', { name: /^(Add files or run commands|添加文件或运行命令)$/ }).click({ timeout: remaining() })
+      const composer = await openSmokeFileMenu(page, remaining())
       stage('向当前对话文件控件选择文件')
       await composer.locator('input[type="file"]').setInputFiles({ name: uploadFile, mimeType: 'text/plain', buffer: Buffer.from(uploadToken) }, { timeout: remaining() })
       stage('关闭添加菜单')

@@ -78,6 +78,14 @@ export function smokeComposer(page) {
     .filter({ has: page.locator('[data-composer-input][contenteditable="true"]') })
 }
 
+/** Open the current composer's file menu using shipped Chinese/English labels and the earlier Chinese variant. */
+export async function openSmokeFileMenu(page, timeoutMs) {
+  const composer = smokeComposer(page)
+  await composer.getByRole('button', { name: /^(Add files or run commands|添加文件或调用指令|添加文件或运行命令)$/ })
+    .click({ timeout: timeoutMs })
+  return composer
+}
+
 /** A draft attachment visibly failed; its untrusted server/browser message is never printed. */
 export class SmokeUploadFailure extends Error {
   constructor() { super('附件卡报告上传失败，消息尚未发送'); this.name = 'SmokeUploadFailure' }

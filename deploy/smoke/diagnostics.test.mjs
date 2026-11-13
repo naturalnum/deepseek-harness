@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { EventEmitter } from 'node:events'
 import { test } from 'node:test'
-import { createStepTrace, observeSmokeRequests, SmokeUploadFailure, smokeComposer, waitForSmokeSend } from './diagnostics.mjs'
+import { createStepTrace, observeSmokeRequests, openSmokeFileMenu, SmokeUploadFailure, smokeComposer, waitForSmokeSend } from './diagnostics.mjs'
 import { StepTimeout, withStepDeadline } from './steps.mjs'
 
 const { chromium } = createRequire(new URL('../../apps/web/package.json', import.meta.url))('playwright')
@@ -94,6 +94,51 @@ test('file selection targets the visible conversation even with other hidden fil
   await smokeComposer(page).locator('input[type="file"]').setInputFiles({ name: 'fixture.txt', mimeType: 'text/plain', buffer: Buffer.from('value') })
   assert.deepEqual(await page.locator('input[type="file"]').evaluateAll(elements => elements.map(e => e.files.length)), [0, 0, 1])
 })
+
+function menuFixture(label, attributes = '') {
+  return `<button aria-label="${label}" onclick="document.body.dataset.outside='clicked'">outside composer</button>
+    <input type="file" id="settings" hidden>
+    <div data-conversation-content data-content-phase="active"><div data-composer-card>
+      <div data-composer-input contenteditable="true"></div>
+      <button type="button" aria-label="${label}" aria-haspopup="listbox" aria-expanded="false" ${attributes}
+        onclick="this.setAttribute('aria-expanded','true')">+</button>
+      <input type="file" id="current" multiple hidden onchange="document.body.dataset.selected='current'">
+    </div></div>`
+}
+
+for (const label of ['添加文件或调用指令', 'Add files or run commands', '添加文件或运行命令']) {
+  test(`file menu opens through the fixed product label ${label} in the current composer`, { timeout: 30000 }, async t => {
+    const browser = await chromium.launch({ headless: true })
+    t.after(() => browser.close())
+    const page = await browser.newPage()
+    await page.setContent(menuFixture(label))
+    if (label === '添加文件或调用指令') {
+      const previous = smokeComposer(page).getByRole('button', { name: /^(Add files or run commands|添加文件或运行命令)$/ })
+      assert.equal(await previous.count(), 0, 'the previous matcher omits the Chinese label in the retained product')
+      await assert.rejects(previous.click({ timeout: 50 }), { name: 'TimeoutError' })
+    }
+    const composer = await openSmokeFileMenu(page, 5000)
+    assert.equal(await composer.getByRole('button').getAttribute('aria-expanded'), 'true')
+    assert.equal(await page.locator('body').getAttribute('data-outside'), null)
+    await composer.locator('input[type="file"]').setInputFiles({ name: 'fixture.txt', mimeType: 'text/plain', buffer: Buffer.from('value') })
+    assert.equal(await page.locator('body').getAttribute('data-selected'), 'current')
+    assert.deepEqual(await page.locator('input[type="file"]').evaluateAll(elements => elements.map(e => e.files.length)), [0, 1])
+  })
+}
+
+for (const state of ['disabled', 'covered', 'unrelated label']) {
+  test(`file menu preserves the existing wait when its button is ${state}`, { timeout: 30000 }, async t => {
+    const browser = await chromium.launch({ headless: true })
+    t.after(() => browser.close())
+    const page = await browser.newPage()
+    await page.setContent(menuFixture(state === 'unrelated label' ? 'unrelated menu' : '添加文件或调用指令', state === 'disabled' ? 'disabled' : '')
+      + (state === 'covered' ? '<div role="dialog" style="position:fixed;inset:0;z-index:999"></div>' : ''))
+    await assert.rejects(openSmokeFileMenu(page, 80), { name: 'TimeoutError' })
+    assert.equal(await smokeComposer(page).getByRole('button').getAttribute('aria-expanded'), 'false')
+    assert.equal(await page.locator('body').getAttribute('data-outside'), null)
+    assert.equal(await page.locator('body').getAttribute('data-selected'), null)
+  })
+}
 
 // Mirrors FileCard's semantic elements: uploading/ready body, retry button, or unconfirmed status.
 function fileCard(state, retryLabel = 'Retry uploading fixture.txt', name = 'fixture.txt') {
