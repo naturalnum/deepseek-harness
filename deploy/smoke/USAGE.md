@@ -8,10 +8,10 @@ pnpm --dir apps/web exec playwright install chromium
 
 默认入口是 `http://127.0.0.1:32802`，也可用 `--url` 指定本机候选入口。不要连接试用服务器。
 
-使用现有私密 JSON，选择普通账号 C：
+使用现有私密 JSON，显式选择本次获准的测试账号；2026-11-14 周末恢复只使用普通账号 B：
 
 ```sh
-node deploy/smoke/check.mjs --credentials '<私密JSON>' --account ordinaryUserC
+node deploy/smoke/check.mjs --credentials '<私密JSON>' --account ordinaryUserB
 ```
 
 文件必须是权限为 0600 的普通文件。支持顶层 `email`、`password`，或账号字段下的同名字段；`--account` 默认是 `ordinaryUserC`。文件若有 `publicOrigin`，其来源必须与本次入口一致。
@@ -38,12 +38,22 @@ node deploy/smoke/check.mjs
 
 结果逐项打印到终端。每项从五分钟总预算中按操作数分配独立时限，并为重新登录和最终退出保留时间。单项超时记本项失败，结束本项操作后继续其余检查；无法确认对话轮次已停止时，依赖该对话的项明确记为未验证，有本轮对话时仍尝试重新登录检查。必选项全部通过且总用时不超过五分钟，退出码为 0；存在失败、未验证或超时，退出码为 1。结束时通过网页正常退出测试账号，再关闭浏览器；退出未确认时同样返回非 0，总用时包含清理。
 
+## 第3、7项阶段诊断
+
+这两项打印 `阶段诊断` JSON，包含检查号、UTC时间、从本项开始的毫秒数、当前阶段、上一阶段或当前等待耗时。操作失败或超时先固定当前阶段，再关闭页面，迟到的请求事件不会记到下一项。失败项也打印实际用时；总预算、分项权重和结果断言保持不变。
+
+新建对话依次记录点击、页面就绪、选择或沿用工作区、输入、发送按钮可用、点击发送、页面模型回复与轮次结束。上传从当前可见对话的文件输入选文件，记录附件卡出现、上传请求发出/响应头/响应结束、发送按钮可用、消息轮次和结果核对；附件卡显示错误时立即报告固定文案，不打印产品错误正文、不自动重试。
+
+添加菜单按固定标签匹配英文“Add files or run commands”、产品中文“添加文件或调用指令”及兼容文案“添加文件或运行命令”。定位仍限当前可见对话；禁用或被遮挡时沿用本项原时限，不强制点击。
+
+请求观察只记录同源且与入口挂载路径一致的 `session/create`、`session/prompt`、`session/uploadFileBinary` 三条 POST 的固定中文类别、数字编号、HTTP状态与耗时，不读取或输出查询参数、头、正文、原始错误、账号和附件内容。HTTP 200 只表示浏览器收到响应，不能证明业务成功或附件已经落盘；最终仍核对模型实际读出的随机内容。页面出现模型回复也不等同于上游首字节时间。服务端接收、附件写入和模型代理耗时需要由环境负责人用既有日志对齐，缺失阶段报告未观测。
+
 ## 更新前对话的继续使用
 
 更新、回滚或再次更新后，用同一对话行标识及原模型回复中的随机标记运行：
 
 ```sh
-node deploy/smoke/check.mjs --credentials '<私密JSON>' --account ordinaryUserC \
+node deploy/smoke/check.mjs --credentials '<私密JSON>' --account ordinaryUserB \
   --continue-session '<完整session:...行key>' --continue-marker '<原回复中的随机串>'
 ```
 
@@ -54,7 +64,7 @@ node deploy/smoke/check.mjs --credentials '<私密JSON>' --account ordinaryUserC
 错误口令负例会在内存中生成随机错误口令；预期登录失败，退出码非 0：
 
 ```sh
-node deploy/smoke/check.mjs --credentials '<私密JSON>' --account ordinaryUserC --wrong-password
+node deploy/smoke/check.mjs --credentials '<私密JSON>' --account ordinaryUserB --wrong-password
 ```
 
 MCP 和科研模式检查尚未实现。显式指定 `--mcp` 或 `--research` 时报告未做，并以非 0 退出。
