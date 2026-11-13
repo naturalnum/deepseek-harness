@@ -2,9 +2,102 @@ import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { createServer } from 'node:http'
 import { test } from 'node:test'
-import { createBudget, readDownload, StepTimeout, stopPendingTurn, waitForPreviousReply, withStepDeadline } from './steps.mjs'
+import { createBudget, findPreviousSessionRow, readDownload, StepTimeout, stopPendingTurn, waitForPreviousReply, withStepDeadline } from './steps.mjs'
 
 const { chromium } = createRequire(new URL('../../apps/web/package.json', import.meta.url))('playwright')
+
+test('retained Session navigation expands existing nested workspaces without invoking create or menu actions', async t => {
+  const browser = await chromium.launch({ headless: true })
+  t.after(() => browser.close())
+  const page = await browser.newPage()
+  await page.setContent(`<div data-row-key="workspace:parent" role="treeitem" aria-expanded="false">
+    <span>folder</span><span>Existing parent</span>
+    <span><button onclick="event.stopPropagation();document.body.dataset.mutated='1'">New session</button></span>
+  </div>
+  <script>
+    document.body.dataset.expanded='';
+    const parent=document.querySelector('[data-row-key="workspace:parent"]');
+    parent.addEventListener('click',()=>{
+      parent.setAttribute('aria-expanded','true');document.body.dataset.expanded+='parent;';
+      const child=document.createElement('div');child.dataset.rowKey='workspace:child';
+      child.setAttribute('role','treeitem');child.setAttribute('aria-expanded','false');
+      child.innerHTML='<span>folder</span><span>Existing child</span><span><button>Actions</button></span>';
+      child.querySelector('button').onclick=e=>{e.stopPropagation();document.body.dataset.mutated='1'};
+      child.addEventListener('click',()=>{
+        child.setAttribute('aria-expanded','true');document.body.dataset.expanded+='child;';
+        const session=document.createElement('div');session.dataset.rowKey='session:retained';
+        session.textContent='existing session';session.onclick=()=>{document.body.dataset.opened='retained'};
+        child.after(session);
+      });parent.after(child);
+    });
+  </script>`)
+  const row = await findPreviousSessionRow(page, 'session:retained', 1000)
+  assert.notEqual(row, undefined)
+  assert.equal(await row.getAttribute('data-row-key'), 'session:retained')
+  assert.equal(await page.locator('body').getAttribute('data-expanded'), 'parent;child;')
+  assert.equal(await page.locator('body').getAttribute('data-mutated'), null)
+  await row.click()
+  assert.equal(await page.locator('body').getAttribute('data-opened'), 'retained')
+})
+
+for (const [language, hidden] of [['en', 6], ['zh', 1]]) {
+  test(`retained Session navigation uses normal ${language} overflow after workspace expansion and keeps exact keys`, async t => {
+    const browser = await chromium.launch({ headless: true })
+    t.after(() => browser.close())
+    const page = await browser.newPage()
+    await page.setContent(`<div data-row-key="session:retained-extra">same displayed session title</div>
+      <div data-row-key="workspace:existing" role="treeitem" aria-expanded="false"><span>folder</span><span>Existing workspace</span></div>
+      <script>
+        const group=document.querySelector('[data-row-key="workspace:existing"]');
+        group.addEventListener('click',()=>{
+          group.setAttribute('aria-expanded','true');
+          const button=document.createElement('button');button.dataset.rowKey='overflow:existing';
+          let left=${hidden}, clicks=0;
+          const label=()=>button.textContent=${JSON.stringify(language)}==='en'?'Show '+left+' more sessions':'展开其余 '+left+' 个会话';
+          label();button.onclick=()=>{
+            clicks++;document.body.dataset.moreClicks=String(clicks);
+            const count=Math.min(5,left);left-=count;
+            for(let index=0;index<count;index++){
+              const row=document.createElement('div');row.dataset.rowKey=left===0&&index===count-1?'session:retained':'session:other-'+clicks+'-'+index;
+              row.textContent='same displayed session title';button.before(row);
+            }
+            if(left===0)button.remove();else label();
+          };group.after(button);
+        });
+      </script>`)
+    const row = await findPreviousSessionRow(page, 'session:retained', 1000)
+    assert.notEqual(row, undefined)
+    assert.equal(await row.getAttribute('data-row-key'), 'session:retained')
+    assert.equal(await page.locator('body').getAttribute('data-more-clicks'), String(Math.ceil(hidden / 5)))
+    assert.equal(await page.locator('[data-row-key="session:retained-extra"]').count(), 1)
+  })
+}
+
+test('exhausted workspace navigation does not replace a missing exact Session with a title or key prefix match', async t => {
+  const browser = await chromium.launch({ headless: true })
+  t.after(() => browser.close())
+  const page = await browser.newPage()
+  await page.setContent(`<div data-row-key="workspace:existing" role="treeitem" aria-expanded="false"
+    onclick="this.setAttribute('aria-expanded','true')"><span>folder</span><span>Existing workspace</span></div>
+    <div data-row-key="session:retained-extra" onclick="document.body.dataset.wrongSession='1'">retained-reply-marker</div>`)
+  assert.equal(await findPreviousSessionRow(page, 'session:retained', 1000), undefined)
+  assert.equal(await page.locator('body').getAttribute('data-wrong-session'), null)
+  assert.equal(await page.locator('[data-row-key="workspace:existing"]').getAttribute('aria-expanded'), 'true')
+})
+
+test('a workspace that does not confirm expansion exhausts the original navigation deadline without retrying or using more', async t => {
+  const browser = await chromium.launch({ headless: true })
+  t.after(() => browser.close())
+  const page = await browser.newPage()
+  await page.setContent(`<div data-row-key="workspace:stalled" role="treeitem" aria-expanded="false"
+    onclick="document.body.dataset.clicks=String(Number(document.body.dataset.clicks||0)+1)"><span>folder</span><span>Existing workspace</span></div>
+    <div data-row-key="session:other">other</div>
+    <button onclick="document.body.dataset.more='1'">Show 1 more sessions</button>`)
+  await assert.rejects(findPreviousSessionRow(page, 'session:retained', 1000),
+    error => error.name === 'TimeoutError' || error instanceof StepTimeout)
+  assert.equal(await page.locator('body').getAttribute('data-clicks'), '1')
+  assert.equal(await page.locator('body').getAttribute('data-more'), null)
+})
 
 test('previous reply waits for history after its conversation container and composer arrive', async t => {
   const browser = await chromium.launch({ headless: true })
@@ -152,6 +245,25 @@ test('budget keeps time for relogin and final logout after an earlier step uses 
   assert.ok(relogin.deadline < budget.deadline)
   now = relogin.deadline
   assert.ok(budget.deadline - now > 0, 'the final logout budget remains even after relogin times out')
+})
+
+test('optional checks share only unused time and leave the original final logout reserve', () => {
+  let now = 0
+  const budget = createBudget(300000, [1, 2, 3, 4, 5, 6, 7, 8, 9], () => now)
+  for (const number of [1, 2, 3, 4, 5, 6, 7, 8, 9]) {
+    const step = budget.step(number)
+    now += step.workMs / 2
+  }
+  const outage = budget.optional()
+  assert.ok(outage.workMs > 0)
+  assert.ok(now + outage.workMs <= outage.deadline)
+  assert.ok(outage.deadline < budget.deadline)
+  now += outage.workMs / 2
+  const recovery = budget.optional()
+  assert.ok(recovery.workMs < outage.workMs)
+  assert.equal(recovery.deadline, outage.deadline)
+  now = recovery.deadline
+  assert.ok(budget.remaining() > 0)
 })
 
 test('local UI cancellation requires a newly settled turn and cannot mistake button disappearance for completion', async t => {

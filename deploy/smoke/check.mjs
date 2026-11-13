@@ -3,7 +3,8 @@
 import { createRequire } from 'node:module'
 import { randomBytes } from 'node:crypto'
 import { readOptions } from './options.mjs'
-import { createBudget, PreviousReplyNotFound, readDownload, StepTimeout, stopPendingTurn, waitForPreviousReply, withStepDeadline } from './steps.mjs'
+import { createBudget, findPreviousSessionRow, PreviousReplyNotFound, readDownload, StepTimeout, stopPendingTurn, waitForPreviousReply, withStepDeadline } from './steps.mjs'
+import { createBrowserMcpChecks, McpSmokeFailure } from './mcp-checks.mjs'
 
 const help = `用法：node deploy/smoke/check.mjs [--url 网页入口] [--credentials 私密JSON] [--account 账号字段]
 也可通过 PE_CLOUD_SMOKE_EMAIL 和 PE_CLOUD_SMOKE_PASSWORD 提供测试账号。
@@ -11,6 +12,8 @@ const help = `用法：node deploy/smoke/check.mjs [--url 网页入口] [--crede
 --wrong-password 使用随机错误口令验证失败报告；预期退出码非 0。
 --continue-session 与 --continue-marker 成对提供，检查更新前的对话历史及继续执行命令。
 --mcp、--research 尚未实现，显式请求时报告未做并以非 0 退出。
+--mcp-offline 追加第 13 项 MCP 停服后退出重登和命令检查。
+--mcp-recover 与 --mcp-offline 同用，追加第 14 项原连接测试一次后的工具恢复检查。
 检查会创建一个对话及三个随机命名的小文件，保留它们供复核。
 所有必选项通过且总用时不超过五分钟时退出 0；失败或未验证时退出 1。`
 
@@ -35,6 +38,7 @@ async function run(options) {
   let closeLogin
   let closePage
   let restorePage
+  let mcpChecks
   try {
     const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
     page = await context.newPage()
@@ -46,7 +50,8 @@ async function run(options) {
     const uploadToken = `${prefix}-UPLOAD`
     const previewToken = `${prefix}-PREVIEW`
     const outcomes = new Map()
-    const requiredChecks = options.continueSession === undefined ? 9 : 10
+    const requiredChecks = (options.continueSession === undefined ? 9 : 10)
+      + Number(options.mcpOffline) + Number(options.mcpRecover)
     let sessionKey
     let currentSessionKey
     let pendingTurn
@@ -97,7 +102,7 @@ async function run(options) {
     }
 
     async function check(number, label, action, dependencies = []) {
-      const allowance = budget.step(number)
+      const allowance = number === 13 || number === 14 ? budget.optional() : budget.step(number)
       if (dependencies.some(id => outcomes.get(id) !== 'pass') || Date.now() >= deadline
         || [4, 5, 6, 7, 8].includes(number) && (!sessionKey || !conversationReady)) {
         outcomes.set(number, 'skip')
@@ -121,7 +126,7 @@ async function run(options) {
         // Playwright error messages can contain form values. Only our fixed diagnostics are printed.
         const message = error instanceof StepTimeout || error?.name === 'TimeoutError'
           ? number === 12 ? `本项检查超时（${previousSessionPhase}）` : '本项检查超时'
-          : error instanceof SmokeFailure || error instanceof SmokeUnavailable || error instanceof PreviousReplyNotFound
+          : error instanceof SmokeFailure || error instanceof SmokeUnavailable || error instanceof PreviousReplyNotFound || error instanceof McpSmokeFailure
             ? error.message : '网页操作未完成'
         console.log(`${error instanceof SmokeUnavailable ? '未验证' : '失败'} ${number}. ${label}：${message}`)
         console.log(`页面诊断：${JSON.stringify({ bootstrapStatus })}`)
@@ -236,18 +241,8 @@ async function run(options) {
     closeLogin = signOut
 
     async function openPreviousSession(key) {
-      const row = page.locator(`[data-row-key="${key}"]`)
-      await page.locator('[data-row-key^="session:"]').first().waitFor({ state: 'attached' })
-      while (await row.count() === 0) {
-        const more = page.getByRole('button', { name: /^(Show \d+ more sessions|展开其余 \d+ 个会话)$/ })
-        requireThat(await more.count() !== 0, '侧栏没有找到指定的更新前对话')
-        const previous = await page.locator('[data-row-key^="session:"]').count()
-        await more.first().click()
-        await page.waitForFunction(({ previous, key }) => {
-          const rows = [...document.querySelectorAll('[data-row-key^="session:"]')]
-          return rows.length > previous || rows.some(element => element.getAttribute('data-row-key') === key)
-        }, { previous, key }, { timeout: remaining() })
-      }
+      const row = await findPreviousSessionRow(page, key, remaining())
+      requireThat(row !== undefined, '侧栏没有找到指定的更新前对话')
       await row.click()
       const session = key.slice('session:'.length)
       const content = page.locator(`[data-conversation-content][data-conversation-session="${session}"][data-content-phase="active"]`)
@@ -347,6 +342,28 @@ async function run(options) {
       const token = `${prefix}-RELOGIN`
       await send(`Use Bash to execute printf '%s\\n' '${token}'. Report actual stdout.`, { tokens: [token], bash: 1 })
     }, [2])
+    if (options.mcpOffline) {
+      await check(13, 'MCP 停服后退出重登仍可对话和执行命令', async signal => {
+        mcpChecks = await createBrowserMcpChecks({ getPage: () => page, signOut, signIn: login, send, remaining, host: options.mcpHost,
+          newConversation: async () => {
+            await page.getByRole('button', { name: /^(New session|新建会话|新建对话)$/i }).last().click()
+            currentSessionKey = undefined
+            await page.locator('[data-conversation-content][data-content-phase="hero"]').waitFor({ state: 'visible' })
+          },
+          command: () => send(`Use Bash to execute printf '%s\\n' '${prefix}-MCP-OFFLINE'. Report actual stdout.`,
+            { tokens: [`${prefix}-MCP-OFFLINE`], bash: 1 }),
+        })
+        await mcpChecks.offline(signal)
+        return 'MCP 实际调用一次，服务正常停下，退出重登后新对话命令成功'
+      }, numbers)
+    }
+    if (options.mcpRecover) {
+      await check(14, '原 MCP 连接测试一次后新对话可调用工具', async signal => {
+        requireThat(mcpChecks !== undefined, '缺少本轮 MCP 掉线检查前态')
+        await mcpChecks.recover(signal)
+        return '原连接工具数先为 0，正常重启服务并测试一次后实际调用成功'
+      }, [13])
+    }
     console.log('未做 10. MCP 检查；未做 11. 科研模式检查：留待对应迭代扩展')
     const passed = [...outcomes.values()].filter(value => value === 'pass').length
     const failed = [...outcomes.values()].filter(value => value === 'fail').length
@@ -355,6 +372,21 @@ async function run(options) {
     console.log(`合计：通过 ${passed}/${requiredChecks}，失败 ${failed}，未验证 ${skipped}，用时 ${elapsed}秒`)
     exitCode = passed === requiredChecks && Date.now() <= deadline && !options.mcp && !options.research ? 0 : 1
   } finally {
+    if (mcpChecks !== undefined) {
+      try {
+        // Keep the other half of the remaining total budget for normal logout.
+        phaseDeadline = Date.now() + Math.max(1, (deadline - Date.now()) / 2)
+        const result = await withStepDeadline(async () => {
+          if (authenticated && (page === undefined || page.isClosed())) await restorePage()
+          return mcpChecks.cleanupConnection(authenticated)
+        }, { timeoutMs: remaining(), cancel: closePage })
+        console.log(result === 'removed' ? '清理：本轮 MCP 连接已移除'
+          : result === 'absent' ? '清理：列表已确认不存在本轮 MCP 连接' : '清理：本轮未尝试保存 MCP 连接，无需移除')
+      } catch (_connectionCleanupError) {
+        exitCode = 1
+        console.error('本轮 MCP 连接移除未确认；保留身份待复核，本轮以失败退出: %j', mcpChecks.connection)
+      }
+    }
     if (authenticated || loginMayBeActive) {
       if (Date.now() < deadline && browser.isConnected() && closeLogin !== undefined) {
         try {
@@ -375,6 +407,11 @@ async function run(options) {
         exitCode = 1
         console.error('退出未确认；本轮以失败退出')
       }
+    }
+    try { await mcpChecks?.close() }
+    catch (_fixtureCloseError) {
+      exitCode = 1
+      console.error('MCP 服务关闭未确认；本轮以失败退出')
     }
     try { await browser.close() }
     catch (_browserCloseError) {

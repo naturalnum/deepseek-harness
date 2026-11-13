@@ -6,7 +6,37 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { buildProductProgram, requireConfirmedRollbackStop, requireProductOnlyRollback, startSavedApplication, stopForRollback } from './update.mjs'
+import { buildProductProgram, requireConfirmedRollbackStop, requireProductOnlyRollback, smokeArguments, startSavedApplication, stopForRollback } from './update.mjs'
+import { readOptions } from '../smoke/options.mjs'
+
+test('update forwards exactly the two optional MCP flags alongside the four original value pairs', () => {
+  const original = ['--credentials', '/private/test-account.json', '--account', 'ordinaryUserC',
+    '--continue-session', 'session:prior', '--continue-marker', 'prior-CHAT']
+  assert.deepEqual(smokeArguments(original), original)
+  const args = ['--mcp-offline', ...original.slice(0, 4), '--mcp-recover', ...original.slice(4)]
+  assert.deepEqual(smokeArguments(args, true), args)
+  assert.deepEqual(smokeArguments(['--mcp-offline'], true), ['--mcp-offline'])
+  assert.throws(() => smokeArguments(args), /更新仅接受/)
+})
+
+test('optional MCP forwarding retains every old parameter rejection and accepts no flag values', () => {
+  for (const args of [
+    ['--unknown'], ['--mcp'], ['--research'], ['--wrong-password'], ['--url', 'http://example.test'],
+    ['--mcp-offline=true'], ['--mcp-offline', 'true'], ['--mcp-recover', 'false'],
+    ...['--credentials', '--account', '--continue-session', '--continue-marker'].flatMap(name =>
+      [[name], [name, ''], [name, '--mcp-offline'], [name, '--mcp-recover']]),
+  ]) assert.throws(() => smokeArguments(args, true), /更新仅接受/)
+})
+
+test('forwarded MCP flags use the original paired option validation before any update', async () => {
+  await assert.rejects(readOptions(smokeArguments(['--mcp-recover'], true), {}), /必须与同轮/)
+  const options = await readOptions(smokeArguments(['--mcp-offline', '--account', 'ordinaryUserC', '--mcp-recover'], true),
+    { PE_CLOUD_SMOKE_EMAIL: 'fixture@example.test', PE_CLOUD_SMOKE_PASSWORD: 'fixture-only' })
+  assert.equal(options.mcpOffline, true)
+  assert.equal(options.mcpRecover, true)
+  assert.equal(options.mcp, false)
+  assert.equal(options.mcpHost, '127.0.0.1')
+})
 
 test('the real product program prepares from asynchronous stdin and leaves the installed product untouched', t => {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'pe-update-program-')))

@@ -9,6 +9,35 @@ const EMAIL = 'smoke@example.test'
 const PASSWORD = 'test-only-secret-value'
 const ORIGIN = 'http://127.0.0.1:32802'
 
+test('keeps MCP outage checks disabled unless explicitly requested', async () => {
+  const result = await readOptions([], { PE_CLOUD_SMOKE_EMAIL: EMAIL, PE_CLOUD_SMOKE_PASSWORD: PASSWORD })
+  assert.equal(result.mcpOffline, false)
+  assert.equal(result.mcpRecover, false)
+})
+
+test('accepts the paired MCP outage and recovery checks without changing legacy MCP mode', async () => {
+  const result = await readOptions(['--mcp-offline', '--mcp-recover'], {
+    PE_CLOUD_SMOKE_EMAIL: EMAIL, PE_CLOUD_SMOKE_PASSWORD: PASSWORD,
+  })
+  assert.equal(result.mcpOffline, true)
+  assert.equal(result.mcpRecover, true)
+  assert.equal(result.mcp, false)
+})
+
+test('refuses recovery without its same-run outage before reading credentials', async () => {
+  await assert.rejects(readOptions(['--mcp-recover'], {}), /必须与同轮 --mcp-offline/)
+})
+
+test('MCP host is explicit only for optional outage checks and invalid hosts fail before credential reads', async () => {
+  const credentials = { PE_CLOUD_SMOKE_EMAIL: EMAIL, PE_CLOUD_SMOKE_PASSWORD: PASSWORD }
+  const original = await readOptions([], { ...credentials, PE_CLOUD_SMOKE_MCP_HOST: '0.0.0.0' })
+  assert.equal(Object.hasOwn(original, 'mcpHost'), false)
+  const selected = await readOptions(['--mcp-offline'], { ...credentials, PE_CLOUD_SMOKE_MCP_HOST: '127.0.0.1' })
+  assert.equal(selected.mcpHost, '127.0.0.1')
+  await assert.rejects(readOptions(['--mcp-offline', '--credentials', '/missing/private.json'],
+    { PE_CLOUD_SMOKE_MCP_HOST: '0.0.0.0' }), /MCP 测试服务地址必须/)
+})
+
 async function withCredentials(data, run, mode = 0o600) {
   const directory = await mkdtemp(join(tmpdir(), 'pe-cloud-smoke-options-'))
   try {
@@ -24,7 +53,7 @@ async function withCredentials(data, run, mode = 0o600) {
 test('reads the existing candidate credential structure and default account', async () => {
   await withCredentials({ publicOrigin: `${ORIGIN}/`, ordinaryUserC: { email: EMAIL, password: PASSWORD } }, async path => {
     assert.deepEqual(await readOptions(['--credentials', path], {}), {
-      url: ORIGIN, email: EMAIL, password: PASSWORD, mcp: false,
+      url: ORIGIN, email: EMAIL, password: PASSWORD, mcp: false, mcpOffline: false, mcpRecover: false,
       research: false, wrongPassword: false, help: false,
       continueSession: undefined, continueMarker: undefined,
     })
