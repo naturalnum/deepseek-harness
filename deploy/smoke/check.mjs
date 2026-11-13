@@ -3,6 +3,7 @@
 import { createRequire } from 'node:module'
 import { randomBytes } from 'node:crypto'
 import { readOptions } from './options.mjs'
+import { createStepTrace, observeSmokeRequests, SmokeUploadFailure, smokeComposer, waitForSmokeSend } from './diagnostics.mjs'
 import { createBudget, PreviousReplyNotFound, readDownload, StepTimeout, stopPendingTurn, waitForPreviousReply, withStepDeadline } from './steps.mjs'
 
 const help = `用法：node deploy/smoke/check.mjs [--url 网页入口] [--credentials 私密JSON] [--account 账号字段]
@@ -35,6 +36,7 @@ async function run(options) {
   let closeLogin
   let closePage
   let restorePage
+  let stopDiagnostics
   try {
     const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
     page = await context.newPage()
@@ -52,6 +54,9 @@ async function run(options) {
     let pendingTurn
     let conversationReady = true
     let activeNumber
+    let trace
+    const stage = name => trace?.stage(name)
+    stopDiagnostics = observeSmokeRequests(context, options.url, () => trace)
     let previousSessionPhase = '打开对话'
     const observers = new Set()
     let bootstrapStatus = null
@@ -107,13 +112,18 @@ async function run(options) {
       activeNumber = number
       phaseDeadline = Date.now() + allowance.workMs
       const stepStarted = Date.now()
+      trace = [3, 7].includes(number) ? createStepTrace(number, allowance.workMs) : undefined
       try {
         const detail = await withStepDeadline(async signal => {
           if (page.isClosed()) await restorePage()
           page.setDefaultTimeout(remaining())
           page.setDefaultNavigationTimeout(remaining())
           return action(signal)
-        }, { timeoutMs: remaining(), cancel: closePage })
+        }, { timeoutMs: remaining(), cancel: async () => {
+          trace?.finish('操作失败或超时，取消页面')
+          await closePage()
+        } })
+        trace?.finish('通过')
         outcomes.set(number, 'pass')
         console.log(`通过 ${number}. ${label}（${((Date.now() - stepStarted) / 1000).toFixed(1)}秒）${detail ? `：${detail}` : ''}`)
       } catch (error) {
@@ -121,10 +131,12 @@ async function run(options) {
         // Playwright error messages can contain form values. Only our fixed diagnostics are printed.
         const message = error instanceof StepTimeout || error?.name === 'TimeoutError'
           ? number === 12 ? `本项检查超时（${previousSessionPhase}）` : '本项检查超时'
-          : error instanceof SmokeFailure || error instanceof SmokeUnavailable || error instanceof PreviousReplyNotFound
+          : error instanceof SmokeFailure || error instanceof SmokeUnavailable || error instanceof PreviousReplyNotFound || error instanceof SmokeUploadFailure
             ? error.message : '网页操作未完成'
-        console.log(`${error instanceof SmokeUnavailable ? '未验证' : '失败'} ${number}. ${label}：${message}`)
+        console.log(`${error instanceof SmokeUnavailable ? '未验证' : '失败'} ${number}. ${label}：${message}（${((Date.now() - stepStarted) / 1000).toFixed(1)}秒）`)
         console.log(`页面诊断：${JSON.stringify({ bootstrapStatus })}`)
+        trace?.finish('失败')
+        trace = undefined
         phaseDeadline = allowance.deadline
         try { await withStepDeadline(recoverStep, { timeoutMs: remaining(), cancel: closePage }) }
         catch (_recoveryError) {
@@ -132,6 +144,7 @@ async function run(options) {
           console.log('收尾：当前对话未确认可继续，独立检查仍会运行')
         }
       }
+      trace = undefined
     }
 
     async function login() {
@@ -169,19 +182,42 @@ async function run(options) {
 
     async function send(prompt, { tokens = [], bash = 0, tools = [] } = {}) {
       if (pendingTurn && !conversationReady) throw new SmokeUnavailable('上一轮对话收尾未确认，本项未发送')
+      stage('读取发送前轮次')
       const before = await page.locator('[data-turn-process]').evaluateAll(elements => elements.map(e => e.dataset.turnProcess))
+      const beforeReplies = trace ? await page.locator('[data-chat-flow-kind="assistant-step"][data-chat-group-part="response"]')
+        .evaluateAll(elements => elements.map(e => e.getAttribute('data-chat-flow-key'))) : []
+      stage('填写消息')
       await page.locator('[data-composer-input][contenteditable="true"]').fill(`${prompt}\nIf any tool call fails, do not retry it and do not use another tool as a substitute. Report the original failure and end this turn immediately.`)
+      stage(activeNumber === 7 ? '等待附件完成和发送按钮可用' : '等待发送按钮可用')
+      const sendButton = page.getByRole('button', { name: /^(Send message|发送消息)$/ })
+      if (trace) await waitForSmokeSend(page, activeNumber === 7 ? uploadFile : undefined, remaining())
+      stage('点击发送消息')
       pendingTurn = { before, sessionKey: currentSessionKey }
-      await page.getByRole('button', { name: /^(Send message|发送消息)$/ }).click()
+      await sendButton.click({ timeout: remaining() })
+      stage('等待新对话侧栏记录')
       currentSessionKey = await page.locator('[data-row-key^="session:"][aria-selected="true"]').getAttribute('data-row-key')
       pendingTurn.sessionKey = currentSessionKey
       if (activeNumber === 3) sessionKey = currentSessionKey
+      if (trace) {
+        stage('等待页面模型回复或轮次结束')
+        const first = await page.waitForFunction(({ before, beforeReplies }) => {
+          const reply = [...document.querySelectorAll('[data-chat-flow-kind="assistant-step"][data-chat-group-part="response"]')]
+            .some(e => !beforeReplies.includes(e.getAttribute('data-chat-flow-key')) && e.textContent.trim() !== '')
+          const ended = [...document.querySelectorAll('[data-turn-process]')]
+            .some(e => !before.includes(e.getAttribute('data-turn-process')))
+          return reply || ended ? { reply, ended } : false
+        }, { before, beforeReplies }, { timeout: remaining() })
+        const { reply } = await first.jsonValue()
+        await first.dispose()
+        stage(reply ? '页面已出现模型回复，等待轮次结束' : '页面轮次已结束，读取结果')
+      }
       const handle = await page.waitForFunction(old => {
         const turns = [...document.querySelectorAll('[data-turn-process]')]
         return turns.find(e => !old.includes(e.getAttribute('data-turn-process')))?.getAttribute('data-turn-process') ?? false
       }, before, { timeout: remaining() })
       const turn = await handle.jsonValue()
       await handle.dispose()
+      stage('页面轮次结束，核对工具与回复')
       pendingTurn = undefined
       conversationReady = true
       const processButton = page.locator(`[data-turn-process="${turn}"]`)
@@ -278,14 +314,18 @@ async function run(options) {
       }, [2])
     }
     await check(3, '新建对话并获得模型回复', async () => {
+      stage('点击新建对话')
       await page.getByRole('button', { name: /^(New session|新建会话|新建对话)$/i }).last().click()
       currentSessionKey = undefined
+      stage('等待新建对话页面')
       await page.locator('[data-conversation-content][data-content-phase="hero"]').waitFor({ state: 'visible' })
       const chooseWorkspace = page.getByRole('button', { name: /^(Choose workspace|选择工作区)$/ })
       if (await chooseWorkspace.isVisible()) {
+        stage('选择默认工作区')
         await chooseWorkspace.click()
         await page.getByRole('menuitem', { name: /^(Default workspace|默认工作区)$/ }).click()
-      }
+      } else stage('沿用页面已选工作区')
+      stage('等待输入框可编辑')
       await page.locator('[data-composer-input][contenteditable="true"]').waitFor({ state: 'visible' })
       const token = `${prefix}-CHAT`
       await send(`Reply with exactly ${token}. Do not use tools.`, { tokens: [token] })
@@ -308,9 +348,15 @@ async function run(options) {
         { tokens: [searchFile, searchToken], bash: 1, tools: ['glob', 'grep'] })
     }, [2])
     await check(7, '上传并读取文本文件', async () => {
-      await page.getByRole('button', { name: /^(Add files or run commands|添加文件或运行命令)$/ }).click()
-      await page.locator('input[type="file"]').setInputFiles({ name: uploadFile, mimeType: 'text/plain', buffer: Buffer.from(uploadToken) })
+      const composer = smokeComposer(page)
+      stage('打开添加文件菜单')
+      await composer.getByRole('button', { name: /^(Add files or run commands|添加文件或运行命令)$/ }).click({ timeout: remaining() })
+      stage('向当前对话文件控件选择文件')
+      await composer.locator('input[type="file"]').setInputFiles({ name: uploadFile, mimeType: 'text/plain', buffer: Buffer.from(uploadToken) }, { timeout: remaining() })
+      stage('关闭添加菜单')
       await page.keyboard.press('Escape')
+      stage('等待当前对话附件卡出现')
+      await composer.locator(`[title="${uploadFile}"]`).waitFor({ state: 'visible', timeout: remaining() })
       // The random content is in the attachment only, never in the model prompt.
       await send(`Read the attached file ${uploadFile} and reply with its full exact content.`, { tokens: [uploadToken] })
     }, [2])
@@ -376,6 +422,7 @@ async function run(options) {
         console.error('退出未确认；本轮以失败退出')
       }
     }
+    stopDiagnostics?.()
     try { await browser.close() }
     catch (_browserCloseError) {
       exitCode = 1
