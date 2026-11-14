@@ -29,7 +29,7 @@ import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { Remote, RemoteError, TypertRemoteService, type TypertLookup, type RemoteStream } from '@deepseek-ai/dsh-typert-protocol'
+import { Remote, RemoteError, remoteErrorOf, TypertRemoteService, type TypertLookup, type RemoteStream } from '@deepseek-ai/dsh-typert-protocol'
 import { WorkspaceChangeFeed } from './changes.ts'
 import type {
   WorkspaceByteRange,
@@ -351,7 +351,10 @@ export class WorkspaceFiles extends TypertRemoteService {
       let enumeration: Awaited<ReturnType<Context['fs']['openDirectory']>> | undefined
       let pending: Promise<IteratorResult<WorkspaceDirectoryControl>> | undefined
       const aborted = Promise.withResolvers<never>()
-      const onAbort = (): void => { aborted.reject(new RemoteError('gateway/bad-request', 'Directory enumeration was cancelled.', {})) }
+      const onAbort = (): void => {
+        aborted.reject(remoteErrorOf(control.reason) === undefined
+          ? new RemoteError('gateway/cancelled', 'Directory enumeration was cancelled.', {}, { cause: control.reason }) : control.reason)
+      }
       void aborted.promise.catch(() => {})
       control.addEventListener('abort', onAbort, { once: true })
       if (control.aborted) onAbort()
