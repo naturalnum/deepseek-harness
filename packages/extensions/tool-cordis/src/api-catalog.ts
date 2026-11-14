@@ -662,7 +662,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       {
         signature: '@Remote(\'action\') action(request: CloudMcpConnectionRequest, signal: AbortSignal): Promise<CloudMcpConnectionReply>',
         description: 'Dispatch bounded account-local operations under the actual authenticated Peer.',
-        parameters: [{ name: 'request', description: 'Complete closed request; headers are transient credential input and never returned.' }, { name: 'signal', description: 'Original request observer.' }],
+        parameters: [{ name: 'request', description: 'Complete closed request; headers are transient credential input and never returned.' }, { name: 'signal', description: 'Original request observer. A saved enabled definition with omitted headers and no registered tools is reapplied only if it still matches the successful probe.' }],
         returns: 'Actual list, generation revision and optional probe observation after complete application settlement.',
       },
       {

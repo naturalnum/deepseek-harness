@@ -53,6 +53,7 @@ export async function apply(owner: Context): Promise<void> {
   const peer: PeerScope = { id: brandString<PeerId>('snapshot-mcp-peer'), ctx, principal: { kind: 'owner' },
     interactions: 'answer', signal: lifetime.signal, dispose: () => Promise.resolve() }
   const api = new CloudAccountApi(ctx, { binding, saves: barrier, selected: manifest, rootExposure: new ExposurePolicy(manifest),
+    maxNativeInventoryEntries: 16,
     assertMountCurrent: current, assertBusinessCurrent: current,
     withPeerUse(actual, consume) {
       assert.equal(actual, peer); current()
