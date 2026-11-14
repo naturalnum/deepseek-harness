@@ -15,7 +15,7 @@ import { IssuedExecutionPort, assertInstalledExecutionBinding, requireIssuedExec
 import { SessionAllocationOwner, type AllocationOwnerConfig, type NativeAllocationRequest,
   type PreparedSandbox } from './allocation-owner.ts'
 import { AllocationStoreError, PostgresAllocationStore } from './allocation-store.ts'
-import type { AllocationStoreLimits } from './allocation-types.ts'
+import type { AllocationPage, AllocationStoreLimits, SandboxAllocation } from './allocation-types.ts'
 import { allocationDatabase } from './allocation-database.ts'
 import { SdkLifecycleFailure, type VerifiedExecutionMount } from './lifecycle-types.ts'
 import { BootstrapFailure } from './bootstrap/bootstrap.ts'
@@ -78,6 +78,8 @@ export interface ManagedExecutionDeployment {
 }
 
 interface EpochObserver { settle(value: ParticipantReceipt): void }
+
+interface StartupSweepCounts { total: number; deleted: number; missing: number; expired: number }
 
 interface SessionRetirement {
   readonly request: ManagedSessionRequest
@@ -185,6 +187,7 @@ class ManagedAccountPort extends IssuedExecutionPort {
 
 /** Root owns all actual work; account scope revocation closes starts without reporting cleanup complete. */
 export class ManagedCoordinator extends SandboxCoordinator {
+  private readonly startupWait = new AbortController()
   private readonly bindings = new WeakMap<AccountBinding, AccountWork>()
   private readonly ports = new WeakMap<AccountExecutionPort, AccountWork>()
   private readonly accounts = new Map<AccountId, AccountWork>()
@@ -211,9 +214,10 @@ export class ManagedCoordinator extends SandboxCoordinator {
    * @param config Complete finite limits resolved by Root's configuration parser.
    * @param deployment Actual fixed backend, authenticated client registry and retained export authority.
    */
-  constructor(ctx: Context, runtime: Pick<AccountRuntimeService, 'registerDrainParticipant' | 'controlDatabase'>,
-    private readonly config: ManagedCoordinatorConfig,
-    private readonly deployment: ManagedExecutionDeployment) {
+  constructor(ctx: Context, private readonly runtime: Pick<AccountRuntimeService,
+    'registerDrainParticipant' | 'controlDatabase' | 'singleInstanceActive'>,
+  private readonly config: ManagedCoordinatorConfig,
+  private readonly deployment: ManagedExecutionDeployment) {
     for (const value of [config.maxBoundAccounts, config.maxActiveCommands, config.maxActiveCommandsPerAccount,
       config.maxResidentCommands, config.maxResidentCommandsPerAccount, config.maxResidentBytes,
       config.maxResidentBytesPerAccount, config.maxStopObservers, config.stopWaitBudgetMs, config.recoveryPageSize]) {
@@ -241,20 +245,92 @@ export class ManagedCoordinator extends SandboxCoordinator {
   }
 
   /**
-   * Initialize metadata and reject retained nonterminal allocations before opening Root admission.
-   * @returns Actual migration and bounded orphan check; existing nonterminal metadata never authorizes create replay.
+   * Initialize metadata before Root admission; only an active single-instance lock permits old sandbox cleanup.
+   * @returns Actual migration and reconciliation; existing metadata never authorizes create replay.
    */
   start(): Promise<void> {
     return this.state.starting ??= (async () => {
       this.deployment.assertCurrent()
       await this.store.migrate()
       const retained = await this.store.listNonterminal(null, null, this.config.recoveryPageSize)
-      if (retained.allocations.length !== 0 || retained.nextCursor !== null) this.unavailable()
+      if (this.runtime.singleInstanceActive === true) {
+        await this.sweepStartup(retained)
+        this.assertStartupSweepCurrent()
+      }
+      else if (retained.allocations.length !== 0 || retained.nextCursor !== null) this.unavailable()
       this.state.recoveryClear = true
       if (!this.state.open) this.unavailable()
       this.deployment.assertCurrent()
       this.state.ready = true
     })()
+  }
+
+  private async sweepStartup(first: AllocationPage): Promise<void> {
+    const counts: StartupSweepCounts = { total: 0, deleted: 0, missing: 0, expired: 0 }
+    const observation = { nextAt: Date.now() + 60000 }
+    let page = first
+    for (;;) {
+      for (const allocation of page.allocations) {
+        this.assertStartupSweepCurrent()
+        counts.total++
+        let outcome: 'deleted' | 'missing' | 'unknown' = 'unknown'
+        if (allocation.sandboxId !== null) outcome = await this.deployment.backend.deleteOriginal(allocation.sandboxId)
+        if (outcome === 'unknown') {
+          await this.waitForStartupExpiry(this.deployment.backend.deletionExpiresAt(allocation.createDeadlineAt), counts, observation)
+        }
+        this.assertStartupSweepCurrent()
+        if (allocation.sandboxId === null && allocation.state === 'creating') {
+          await this.store.failNotCreated(allocation, 'startup-expired')
+        } else await this.releaseStartupAllocation(allocation)
+        if (outcome === 'unknown') counts.expired++
+        else counts[outcome]++
+      }
+      if (page.nextCursor === null) break
+      this.assertStartupSweepCurrent()
+      page = await this.store.listNonterminal(null, page.nextCursor, this.config.recoveryPageSize)
+    }
+    this.observeStartupSweep('complete', counts)
+  }
+
+  private async releaseStartupAllocation(allocation: SandboxAllocation): Promise<void> {
+    const stopped = allocation.state === 'stopping' ? allocation
+      : await this.store.transition(allocation, { to: 'stopping' })
+    this.assertStartupSweepCurrent()
+    await this.store.releaseStopped(stopped)
+  }
+
+  private async waitForStartupExpiry(deadlineAtMs: number, counts: StartupSweepCounts, observation: { nextAt: number }): Promise<void> {
+    for (;;) {
+      this.assertStartupSweepCurrent()
+      const remaining = deadlineAtMs - Date.now()
+      if (remaining <= 0) return
+      if (Date.now() >= observation.nextAt) {
+        this.observeStartupSweep('waiting', counts, remaining)
+        observation.nextAt = Date.now() + 60000
+      }
+      await this.waitForStartupTick(Math.min(remaining, Math.max(1, observation.nextAt - Date.now())))
+    }
+  }
+
+  private waitForStartupTick(ms: number): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const signal = this.startupWait.signal
+      if (signal.aborted) { reject(signal.reason); return }
+      const abort = (): void => { clearTimeout(timer); reject(signal.reason) }
+      const timer = setTimeout(() => { signal.removeEventListener('abort', abort); resolve() }, ms)
+      signal.addEventListener('abort', abort, { once: true })
+    })
+  }
+
+  private assertStartupSweepCurrent(): void {
+    if (!this.state.open || this.runtime.singleInstanceActive !== true) this.unavailable()
+    this.deployment.assertCurrent()
+  }
+
+  private observeStartupSweep(phase: 'waiting' | 'complete', counts: StartupSweepCounts, remainingMs?: number): void {
+    try { console.warn('Cloud startup sandbox cleanup: %j', { event: 'startup-sandbox-cleanup', phase, ...counts,
+      ...(remainingMs === undefined ? {} : { remainingMs }) }) }
+    catch (_unavailableObservation) { /* Logging cannot establish or change old sandbox cleanup. */ }
   }
 
   override assertReady(): void {
@@ -595,6 +671,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
   closeRoot(): Promise<void> {
     if (this.state.closing !== undefined) return this.state.closing
     this.state.open = false; this.state.ready = false
+    this.startupWait.abort()
     const closing = Promise.withResolvers<undefined>()
     this.state.closing = closing.promise
     const accounts = [...this.accounts.values()]
