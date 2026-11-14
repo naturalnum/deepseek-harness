@@ -28,7 +28,27 @@
 
 首次交付由环境维护者提供一份权限为 0600 的私有固定输入，在正常更新命令中追加 `--native-input '<私有JSON>'`。输入只包含已审单线资产的本地来源、准确字节数和摘要、现有资产父目录身份、原 profile/FD 身份、原路径和资产上限，以及匹配兼容产品包目录；`native-update.mjs` 拒绝额外字段。profile沿现有JSON patch数组格式，仅定位唯一insert项中id为files-root的config.helperPath，替换该字符串token，使用原token逆向逐字节还原。其它插件的helperPath保持原字节，重复files-root、重复JSON键、表达式或歧义格式拒绝，不重写整个配置。
 
-首次成功后，普通 `update` 和 `rollback` 自动读取该操作的私有匹配记录，实际检查安装的产品字节、原生文件和只读 profile 绑定，仅允许记录中的普通包或兼容包。回滚安装匹配的兼容读取方，保留同一 FD/profile，不恢复旧的、不兼容的备份。原生状态下的 `start` 拒绝自动重启，由原操作负责人核对持久阶段；缺失启动回执或当前进程不能作为首次启动未提交的依据。
+首次成功后，不带新描述符的普通 `update` 和 `rollback` 自动读取该操作的私有匹配记录，实际检查安装的产品字节、原生文件和只读 profile 绑定，仅允许记录中的普通包或兼容包。回滚安装匹配的兼容读取方，保留同一 FD/profile，不恢复旧的、不兼容的备份。原生状态下的 `start` 拒绝自动重启，由原操作负责人核对持久阶段；缺失启动回执或当前进程不能作为首次启动未提交的依据。
+
+### 同一 FD/profile 的后继读者对
+
+已有原生操作完成验证和正常释放后，可在正常 `update <新普通包>` 中追加 `--native-successor '<私有JSON>'`。它与首次 `--native-input` 互斥，只用于更新，不用于 start、rollback 或已结束操作的接续。私有输入须为当前用户独占的 0600 普通文件，固定内容如下；前驱值应来自原操作已确认的交付记录，兼容路径指向另一份真实正常产品包，不接受手填 manifest、FD 或 profile。
+
+```json
+{
+  "format": "pe-cloud-local-native-successor/v1",
+  "predecessor": {
+    "operation": "<已完成操作>",
+    "descriptorSha256": "<原描述符摘要>",
+    "targetTupleSha256": "<实际已安装组合摘要>"
+  },
+  "compatibleBundle": "/absolute/path/to/new-compatible-bundle"
+}
+```
+
+控制器在新责任开始前、锁内任何准备前，以及新 Root reserve 前新鲜核原释放凭据、原完整 verified Root 记录、宿主阻挡投影、私有描述符、实际安装 tuple 和原 namespace/keeper。两份新包均经原归档校验器取得完整 manifest；外部依赖及科研锁须与已装前驱相同，正常数据格式检查保留。新普通、兼容及原安装必须形成三种不同 tuple；三组完整继承前驱同一只读 FD 和封存 profile，不发布、重新加载或重编原生资产，不解除或重绑 profile。
+
+新描述符绑定完整前驱、释放身份、原 namespace/keeper、同一 FD/profile 与两份新 manifest 派生的 tuple；新操作在独立 Root 目录取得新责任，旧记录和旧私有输入保持原样。旧入口阻挡确认后才沿原 checkPair、停止、备份、安装、受限启动、就绪和冒烟检查，起前与验后都检查准确新 tuple。未知保存、关闭或效果保留锁和实际阶段，不重试、重复启动或自动回退。完成后仍用原释放护栏；后续无新描述符的互切和 rollback 只认新 pair，旧 pair 不自动成为可回退组。
 
 发布新模块后，控制器先使用现行 Node、UID 2000、零能力、no-new-privileges 和原 seccomp 条件加载模块，确认本单线导出，再正常停止原应用。加载子进程由Node显式禁止继承管理员FD，按固定argv直接启动，不依赖shell解释多位FD关闭语法。此步骤不调用账号或文件操作；当前应用不因加载失败而停止。新模块、候选 profile 和责任记录独立保留，现有文件不覆盖、不删除。
 

@@ -248,17 +248,160 @@ export async function continueNativePublish({ operation, line, latest }) {
   })
 }
 
+function requireSuccessorInput(input) {
+  exactFields(input, ['format', 'predecessor', 'compatibleBundle'])
+  exactFields(input.predecessor, ['operation', 'descriptorSha256', 'targetTupleSha256'])
+  if (input.format !== 'pe-cloud-local-native-successor/v1'
+    || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(input.predecessor.operation)
+    || ![input.predecessor.descriptorSha256, input.predecessor.targetTupleSha256]
+      .every(value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value))
+    || typeof input.compatibleBundle !== 'string' || !input.compatibleBundle.startsWith('/')) {
+    throw new NativeDeliveryUnconfirmed('successor-input')
+  }
+}
+
+function currentNativeContext(snapshot) {
+  return { ...snapshot, holder: { pid: snapshot.namespaceKeeperPid,
+    startTicks: snapshot.namespaceKeeperStartTicks, namespaceId: snapshot.namespaceId } }
+}
+
 /**
- * Install the one reviewed FD/profile group, or continue with an already-approved matching JS bundle.
- * @param {object} request Current default command, private first-delivery input and saved latest state.
- * @returns {Promise<object>} Verified authoritative record; unknown actions retain the operation lock.
+ * Confirm a saved pair against a fresh Root record and the actual sealed installation, without preparing a stage.
+ * @param {object} request Exact host projection/private input, current namespace facts and original Root authority.
+ * @returns {Promise<object>} Complete verified predecessor and its installed group; mismatch performs no mutation.
  */
-export async function nativeUpdate({ mode, bundle, args, inputFile, latest }) {
+export async function confirmNativePredecessor({ latest, input, current, authority }) {
+  requireAssetPlan(input.plan)
+  const groups = input.groups
+  if (!isDeepStrictEqual(input.approved?.asset, input.plan.asset)
+    || !isDeepStrictEqual(input.approved?.assetParent, input.plan.assetParent)) {
+    throw new NativeDeliveryUnconfirmed('native-approved-asset')
+  }
+  if (input.format !== 'pe-cloud-local-native-input/v1' || input.operation !== latest.operation
+    || input.state?.operation !== input.operation || !isDeepStrictEqual(input.approved?.journal, input.state.nativeJournal)
+    || input.approved.journal.path !== '/opt/dsh-features/pe-cloud-delivery/' + input.operation + '/native-record'
+    || !Array.isArray(groups) || groups.length !== 3
+    || !isDeepStrictEqual(groups.map(group => group.role), ['original', 'normal', 'compatible'])) {
+    throw new NativeDeliveryUnconfirmed('native-private-state-mismatch')
+  }
+  const context = { namespaceId: current.namespaceId, nodePath: current.nodePath,
+    seccompPath: current.seccompPath, holder: current.holder }
+  if (!isDeepStrictEqual(context, input.context) || !current.canStopSafely
+    || current.productReadOnly !== true || current.productBlockReadOnly !== true) {
+    throw new NativeDeliveryUnconfirmed('native-generation-changed')
+  }
+  const record = await authority.read()
+  if (!isDeepStrictEqual(latest, stateModule.legacyBarrier(record))
+    || input.descriptorSha256 !== record.descriptorSha256) throw new NativeDeliveryUnconfirmed('previous-authority-mismatch')
+  let descriptorSha256
+  if (input.pairBinding === undefined) {
+    descriptorSha256 = digest(JSON.stringify({ groups: groups.map(tupleSha256), assetSource: input.plan.asset.sourceSha256,
+      namespaceId: context.namespaceId, holder: context.holder }))
+  } else {
+    descriptorSha256 = stateModule.nativeSuccessorDescriptor(input.pairBinding)
+    if (!isDeepStrictEqual(input.pairBinding.groups, groups.map(tupleSha256))
+      || !isDeepStrictEqual(input.pairBinding.context, context)
+      || input.pairBinding.assetSource !== input.plan.asset.sourceSha256
+      || groups.some(group => !isDeepStrictEqual(group.asset, input.pairBinding.asset)
+        || !isDeepStrictEqual(group.profile, input.pairBinding.profile))) {
+      throw new NativeDeliveryUnconfirmed('saved-successor-pair')
+    }
+  }
+  if (descriptorSha256 !== record.descriptorSha256
+    || !isDeepStrictEqual([tupleSha256(groups[1]), tupleSha256(groups[2])].sort(),
+      [record.targetTupleSha256, record.compatibleTupleSha256].sort())) {
+    throw new NativeDeliveryUnconfirmed('saved-native-descriptor')
+  }
+  const observed = await authority.observeTuple(groups)
+  stateModule.requireNativeContinuation(record, observed, record.targetTupleSha256)
+  const installed = groups.find(group => tupleSha256(group) === record.targetTupleSha256)
+  const expectedAsset = { path: '/opt/dsh-feature-assets/fd-skill-store-v1-' + input.approved.asset.sha256 + '.node',
+    sha256: input.approved.asset.sha256, bytes: input.approved.asset.bytes, mode: 0o444,
+    maxAssetBytes: input.approved.asset.maxAssetBytes, maxPathBytes: input.approved.asset.maxPathBytes }
+  const selection = value => ({ source: value.source, sha256: value.sha256, identity: value.identity })
+  if (!isDeepStrictEqual(groups[1].asset, groups[2].asset)
+    || !isDeepStrictEqual(groups[1].profile, groups[2].profile)
+    || !isDeepStrictEqual(installed.asset, expectedAsset)
+    || !isDeepStrictEqual(selection(installed.profile), selection(input.approved.profile.candidate))) {
+    throw new NativeDeliveryUnconfirmed('native-installed-fd-profile')
+  }
+  return { record, installed }
+}
+
+/**
+ * Derive three observable groups exclusively from two verified product archives and the confirmed predecessor.
+ * @param {object} request Confirmed predecessor/private inputs, explicit successor identity and real normal bundle path.
+ * @returns {Promise<object>} New immutable pair binding and manifests; no Root or host record is changed.
+ */
+export async function deriveNativeSuccessorPair({ previousInput, previous, successor, normalBundle, controller }) {
+  requireSuccessorInput(successor)
+  if (!isDeepStrictEqual(successor.predecessor, { operation: previous.record.operation,
+    descriptorSha256: previous.record.descriptorSha256, targetTupleSha256: previous.record.targetTupleSha256 })) {
+    throw new NativeDeliveryUnconfirmed('successor-predecessor-mismatch')
+  }
+  const normal = await verifyBundle(resolve(normalBundle))
+  const compatible = await verifyBundle(resolve(successor.compatibleBundle))
+  for (const manifest of [normal, compatible]) {
+    if (!/^[a-f0-9]{40}$/.test(manifest.sourceCommit) || manifest.nodeVersion !== '24.19.0'
+      || ![manifest.pnpmLockHash, manifest.externalDependencyHash, manifest.researchLockHash, manifest.dependencyHash]
+        .every(value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value))
+      || manifest.externalDependencyHash !== previous.installed.manifest.externalDependencyHash
+      || manifest.researchLockHash !== previous.installed.manifest.researchLockHash) {
+      throw new NativeDeliveryUnconfirmed('native-reader-dependencies')
+    }
+  }
+  const groups = [
+    { ...structuredClone(previous.installed), role: 'original' },
+    { ...structuredClone(previous.installed), role: 'normal', manifest: normal },
+    { ...structuredClone(previous.installed), role: 'compatible', manifest: compatible },
+  ]
+  const products = groups.map(group => JSON.stringify(group.manifest.files.map(row =>
+    ({ path: row.path, mode: row.mode, size: row.size, sha256: row.sha256 }))
+    .sort((a, b) => a.path.localeCompare(b.path))))
+  if (new Set(products).size !== 3) throw new NativeDeliveryUnconfirmed('ambiguous-successor-readers')
+  const pairBinding = { format: 'pe-cloud-native-successor-pair/v1', predecessor: structuredClone(previous.record),
+    release: { format: 'pe-cloud-native-release/v1', operation: previous.record.operation },
+    controller: { commit: controller.commit, tree: controller.tree, programSha256: controller.programSha256 },
+    context: structuredClone(previousInput.context), assetSource: previousInput.plan.asset.sourceSha256,
+    asset: structuredClone(previous.installed.asset), profile: structuredClone(previous.installed.profile),
+    groups: groups.map(tupleSha256) }
+  return { groups, pairBinding, descriptorSha256: stateModule.nativeSuccessorDescriptor(pairBinding),
+    normalManifest: normal, compatibleManifest: compatible }
+}
+
+/**
+ * Install the fixed FD/profile, switch an approved pair, or explicitly derive a same-FD/profile successor pair.
+ * @param {object} request Normal command with mutually exclusive first-delivery/successor input; absent uses the saved pair.
+ * @returns {Promise<object>} Verified new responsibility; any unknown action retains the operation lock without recovery.
+ */
+export async function nativeUpdate({ mode, bundle, args, inputFile, successorFile, latest }) {
   if (!['update', 'rollback'].includes(mode)) throw new NativeDeliveryUnconfirmed('native-start-requires-owner')
-  const initial = inputFile !== undefined
+  const initial = inputFile !== undefined, successorRequested = successorFile !== undefined
+  if (successorRequested && (initial || mode !== 'update' || !bundle || latest?.format !== PROJECTION)) {
+    throw new NativeDeliveryUnconfirmed('successor-entry')
+  }
   if (initial && latest?.format === PROJECTION) throw new NativeDeliveryUnconfirmed('native-group-already-owned')
   if (!initial && latest?.format !== PROJECTION) throw new NativeDeliveryUnconfirmed('native-state-missing')
-  let plan, previousInput
+  let plan, previousInput, savedPrevious, previous, successor, successorSaved, derived, previousAuthority, controller
+  const readPrevious = async () => {
+    requireNativeReleaseComplete(STATE, undefined, latest.operation)
+    if (!isDeepStrictEqual(privateInput(join(STATE, 'latest.json')), latest)
+      || !isDeepStrictEqual(privateInput(join(STATE, latest.operation + '.native.json'), true), savedPrevious)
+      || successorRequested && !isDeepStrictEqual(privateInput(resolve(successorFile), true), successorSaved)) {
+      throw new NativeDeliveryUnconfirmed('latest-or-input-changed-before-operation')
+    }
+    if (successorRequested && !isDeepStrictEqual(controllerSource(), controller)) {
+      throw new NativeDeliveryUnconfirmed('successor-controller-changed')
+    }
+    const current = currentNativeContext(await inspectCandidate())
+    const authority = await createNativeAuthority(current, previousInput.approved)
+    const fresh = await confirmNativePredecessor({ latest, input: previousInput, current, authority })
+    if (previous !== undefined && !isDeepStrictEqual(fresh.record, previous.record)) {
+      throw new NativeDeliveryUnconfirmed('previous-authority-changed')
+    }
+    previousAuthority = authority
+    return fresh
+  }
   if (initial) {
     stateModule.requireOrdinaryUpdateState(latest)
     if (!latest?.manifest || latest.phase !== 'verified' || mode !== 'update') {
@@ -270,24 +413,32 @@ export async function nativeUpdate({ mode, bundle, args, inputFile, latest }) {
     if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(latest.operation)) {
       throw new NativeDeliveryUnconfirmed('native-state-operation')
     }
-    requireNativeReleaseComplete(STATE, undefined, latest.operation)
-    previousInput = privateInput(join(STATE, latest.operation + '.native.json'))
-    if (previousInput.format !== 'pe-cloud-local-native-input/v1' || previousInput.operation !== latest.operation
-      || previousInput.descriptorSha256 !== latest.nativeAuthority?.descriptorSha256) {
-      throw new NativeDeliveryUnconfirmed('native-private-state-mismatch')
+    savedPrevious = privateInput(join(STATE, latest.operation + '.native.json'), true)
+    previousInput = savedPrevious.value
+    if (successorRequested) {
+      successorSaved = privateInput(resolve(successorFile), true)
+      successor = successorSaved.value
+      requireSuccessorInput(successor)
+      controller = controllerSource()
     }
-    plan = previousInput.plan
+    // No new operation, private save or Root stage before this read-only confirmation.
+    previous = await readPrevious()
+    plan = structuredClone(previousInput.plan)
+    if (successorRequested) {
+      derived = await deriveNativeSuccessorPair({ previousInput, previous, successor, normalBundle: bundle, controller })
+      plan.compatibleBundle = successor.compatibleBundle
+    }
   }
   const selectedBundle = mode === 'rollback' ? resolve(plan.compatibleBundle) : resolve(bundle)
-  const manifest = await verifyBundle(selectedBundle)
-  const normalManifest = initial ? manifest : previousInput.groups.find(group => group.role === 'normal').manifest
-  const compatibleManifest = initial ? await verifyBundle(resolve(plan.compatibleBundle))
-    : previousInput.groups.find(group => group.role === 'compatible').manifest
+  const manifest = derived?.normalManifest ?? await verifyBundle(selectedBundle)
+  const normalManifest = derived?.normalManifest ?? (initial ? manifest : previousInput.groups[1].manifest)
+  const compatibleManifest = derived?.compatibleManifest ?? (initial ? await verifyBundle(resolve(plan.compatibleBundle))
+    : previousInput.groups[2].manifest)
   if (normalManifest.externalDependencyHash !== compatibleManifest.externalDependencyHash
     || normalManifest.researchLockHash !== compatibleManifest.researchLockHash) {
     throw new NativeDeliveryUnconfirmed('native-reader-dependencies')
   }
-  if (!initial && ![normalManifest, compatibleManifest].some(value => isDeepStrictEqual(value, manifest))) {
+  if (!initial && !successorRequested && ![normalManifest, compatibleManifest].some(value => isDeepStrictEqual(value, manifest))) {
     throw new NativeDeliveryUnconfirmed('unapproved-js-group')
   }
   let assetBytes
@@ -302,21 +453,22 @@ export async function nativeUpdate({ mode, bundle, args, inputFile, latest }) {
     if (!isDeepStrictEqual(privateInput(join(STATE, 'latest.json')), latest)) {
       throw new NativeDeliveryUnconfirmed('latest-changed-before-operation')
     }
+    if (!initial) await readPrevious()
     const privateState = { format: 'pe-cloud-local-native-input/v1', operation, plan }
     const save = state => saveNativeInput(STATE, operation, { ...privateState, state })
     const smokeArgs = args.length ? args : previousInput?.state.smokeArgs ?? args
     const state = await prepareNativeProductUpdate(selectedBundle, manifest, smokeArgs, operation, save)
     const current = { ...state.snapshot, holder: { pid: state.holder.pid,
       startTicks: state.holder.startTicks, namespaceId: state.holder.namespaceId } }
-    if (!initial && (current.namespaceId !== previousInput.context.namespaceId
-      || !isDeepStrictEqual(current.holder, previousInput.context.holder))) {
+    if (!initial && !isDeepStrictEqual({ namespaceId: current.namespaceId, nodePath: current.nodePath,
+      seccompPath: current.seccompPath, holder: current.holder }, previousInput.context)) {
       throw new NativeDeliveryUnconfirmed('native-generation-changed')
     }
     if (!initial) requireProductOnlyRollback(state)
     const approved = initial ? { journal: state.nativeJournal, assetParent: plan.assetParent,
       asset: plan.asset, profile: plan.profile } : { ...previousInput.approved, journal: state.nativeJournal }
     const authority = await createNativeAuthority(current, approved)
-    let groups, descriptorSha256, previousAuthority
+    let groups, descriptorSha256, pairBinding
     if (initial) {
       await authority.readProtectedInputs()
       const candidate = await authority.previewProfile({ operation })
@@ -333,23 +485,21 @@ export async function nativeUpdate({ mode, bundle, args, inputFile, latest }) {
       descriptorSha256 = digest(JSON.stringify({ groups: groups.map(tupleSha256), assetSource: plan.asset.sourceSha256,
         namespaceId: current.namespaceId, holder: current.holder }))
     } else {
-      groups = structuredClone(previousInput.groups)
-      descriptorSha256 = previousInput.descriptorSha256
-      previousAuthority = await createNativeAuthority(current, previousInput.approved)
-      const previous = await previousAuthority.read()
-      if (previous.operation !== latest.operation || !isDeepStrictEqual(previous.directoryIdentity,
-        latest.nativeAuthority.directoryIdentity)) throw new NativeDeliveryUnconfirmed('previous-authority-mismatch')
+      groups = structuredClone(derived?.groups ?? previousInput.groups)
+      descriptorSha256 = derived?.descriptorSha256 ?? previousInput.descriptorSha256
+      pairBinding = derived?.pairBinding ?? previousInput.pairBinding
     }
-    const normal = groups.find(group => group.role === 'normal'), compatible = groups.find(group => group.role === 'compatible')
+    const normal = groups[1], compatible = groups[2]
     const target = isDeepStrictEqual(manifest, normal.manifest) ? normal : compatible
-    const originalTupleSha256 = initial ? tupleSha256(groups.find(group => group.role === 'original'))
-      : (await previousAuthority.read()).targetTupleSha256
-    const pins = { kind: initial ? 'fd-profile' : 'matching-js', operation, descriptorSha256,
-      originalTupleSha256, targetTupleSha256: tupleSha256(target),
+    const originalTupleSha256 = initial ? tupleSha256(groups[0]) : previous.record.targetTupleSha256
+    const pins = { kind: initial ? 'fd-profile' : successorRequested ? 'successor-js' : 'matching-js',
+      operation, descriptorSha256, originalTupleSha256, targetTupleSha256: tupleSha256(target),
       compatibleTupleSha256: tupleSha256(target === normal ? compatible : normal) }
     state.nativeOriginalTupleSha256 = pins.originalTupleSha256
     Object.assign(privateState, { context: { namespaceId: current.namespaceId, nodePath: current.nodePath,
       seccompPath: current.seccompPath, holder: current.holder }, approved, groups, descriptorSha256 })
+    if (pairBinding !== undefined) privateState.pairBinding = pairBinding
+    if (successorRequested) privateState.controller = controller
     const persist = () => save(state)
     const effects = nativeUpdateEffects(state, {
       observeTuple: () => authority.observeTuple(groups),
@@ -376,6 +526,8 @@ export async function nativeUpdate({ mode, bundle, args, inputFile, latest }) {
     }
     await persist()
     return runNativeDelivery({ directory: STATE, pins, authority, previousAuthority, effects,
+      successor: successorRequested ? pairBinding : undefined,
+      confirmPredecessor: async () => (await readPrevious()).record,
       holdOperation: action => action() })
   })
 }

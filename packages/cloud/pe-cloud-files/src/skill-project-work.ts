@@ -52,8 +52,10 @@ export interface SkillProjectWork {
   readonly maxReadBytes: number
   readonly maxPathBytes: number
   readonly maxReplyBytes: number
-  /** Exact old-record authorities from the original Root lease; absence preserves every ordinary scope/mount refusal. */
+  /** Exact old-record authorities from the original Root lease; supplied proofs retain their original checks. */
   readonly revalidation?: readonly SkillRecordRevalidation[]
+  /** Current single-instance exclusion permits first-use revalidation without proof; absent/false still requires proof. */
+  readonly singleInstanceActive?: () => boolean
   assertCurrent(): void
   project(client: FdWorkerClient, workspace: Workspace, control: AbortSignal): Promise<FdRootIdentity>
   resolveSource(source: LegacySource): SkillVersion | undefined
@@ -243,7 +245,7 @@ export function createSkillProjectWork(input: SkillProjectWork): SkillProjectPor
     const root = child(input.privateRoot, 'skill-working-copies', prepared.directory)
     const names = await client.list(root, '.', input.limits.maxProjects, input.maxReplyBytes, control)
     const rows = new Map<string, RecordRead>(); let total = 0
-    let revalidate: { readonly name: string; readonly row: RecordRead; readonly authority: SkillRecordRevalidation } | undefined
+    let revalidate: { readonly name: string; readonly row: RecordRead; readonly authority: SkillRecordRevalidation | undefined } | undefined
     for (const entry of names) {
       if (!/^project-[a-f0-9]{64}\.json$/.test(entry.name) || entry.type !== 'file') unknown()
       const before = await client.lstat(root, entry.name, control)
@@ -255,7 +257,7 @@ export function createSkillProjectWork(input: SkillProjectWork): SkillProjectPor
       try { value = parseRecord(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)), input) } catch (cause) {
         unknown(cause) }
       if (entry.name !== file(value.workspaceId) || value.state !== 'complete') unknown()
-      // A cold record stays charged and unopened until its own Workspace is selected for Root-verified revalidation.
+      // A cold record stays charged and unopened until its own Workspace is selected for revalidation.
       const changedScope = value.sourceContext.bootId !== context.bootId || value.sourceContext.mountNamespace !== context.mountNamespace
       const selectedRecord = selected.workspaceId === value.workspaceId
       const digest = createHash('sha256').update(bytes).digest('hex')
@@ -263,9 +265,13 @@ export function createSkillProjectWork(input: SkillProjectWork): SkillProjectPor
       const forced = selectedRecord && !parents.has(value.workspaceId) && authority?.workspaceId === value.workspaceId
         && authority.pending && authority.recordSha256 === digest && authority.recordRevision === before.version
       if (selectedRecord && (changedScope || !sameRoot(value.project, selected.root) || forced)) {
-        if (authority === undefined || authority.workspaceId !== value.workspaceId
-          || authority.recordSha256 !== digest || revalidate !== undefined) denied('FS_STALE_VERSION')
-        authority.assertRecord(before.version)
+        if (revalidate !== undefined) denied('FS_STALE_VERSION')
+        if (authority === undefined) {
+          // Within verified storage, device/inode identify the directory; mount and boot/namespace IDs describe its observed environment.
+          // The live single-instance lock excludes the old writer. Already-issued parents cannot use this restart path.
+          if (parents.has(value.workspaceId) || input.singleInstanceActive?.() !== true) denied('FS_STALE_VERSION')
+        } else if (authority.workspaceId !== value.workspaceId || authority.recordSha256 !== digest) denied('FS_STALE_VERSION')
+        authority?.assertRecord(before.version)
         revalidate = { name: entry.name, row: { value, revision: before.version, bytes: bytes.byteLength }, authority }
       }
       total += bytes.byteLength
@@ -282,12 +288,15 @@ export function createSkillProjectWork(input: SkillProjectWork): SkillProjectPor
         exhausted('metadata', 'The skill project association storage cannot reserve a record update.')
       }
       current(); selected.assertRegistered(); if (selected.workspaceId !== value.workspaceId) denied('FS_STALE_VERSION')
-      authority.assertRecord(previous.revision)
+      if (authority === undefined && input.singleInstanceActive?.() !== true) denied('FS_STALE_VERSION')
+      authority?.assertRecord(previous.revision)
       control.throwIfAborted()
       const committed = await write(client, root, value, previous.revision, control, () => {
-        current(); selected.assertRegistered(); authority.assertRecord(previous.revision)
+        current(); selected.assertRegistered()
+        if (authority === undefined && input.singleInstanceActive?.() !== true) denied('FS_STALE_VERSION')
+        authority?.assertRecord(previous.revision)
       })
-      authority.confirmRecord(previous.revision, committed.version)
+      authority?.confirmRecord(previous.revision, committed.version)
       rows.set(revalidate.name, { value, revision: committed.version, bytes }); total += bytes - previous.bytes
     }
     return { root, rows, total, context }
