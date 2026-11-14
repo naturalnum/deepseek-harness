@@ -1,7 +1,8 @@
 import { spawnSync } from 'node:child_process'
+import dns from 'node:dns'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { afterEach, beforeAll, afterAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, afterAll, describe, expect, it, vi } from 'vitest'
 import { getGlobalDispatcher } from 'undici'
 import {
   clearedProxyEnv,
@@ -21,7 +22,7 @@ let originUrl: string
 /**
  * The target for every assertion about a tunnelled hop. It is deliberately not loopback: no policy
  * routes this machine through a proxy, so a loopback target could only ever prove a direct hop. The
- * host never resolves — the client connects to the proxy, which answers the absolute-form request.
+ * proxy answers the absolute-form request without resolving the target host.
  */
 const proxyTarget = 'http://origin.test/probe'
 
@@ -56,8 +57,33 @@ afterAll(async () => {
 })
 
 afterEach(() => {
+  vi.restoreAllMocks()
   proxied = []
 })
+
+/** Fail only the two direct-route fixture names asynchronously; preserve every other DNS lookup. */
+function failFixtureDns() {
+  const originalLookup = dns.lookup
+  type Callback = Parameters<typeof dns.lookup>[1]
+  return vi.spyOn(dns, 'lookup').mockImplementation((
+    hostname,
+    optionsOrCallback: dns.LookupOptions | number | Callback,
+    callback?: Callback,
+  ) => {
+    const reply = typeof optionsOrCallback === 'function' ? optionsOrCallback : callback
+    if ((hostname !== 'origin.test' && hostname !== 'refused-scheme.invalid') || reply === undefined) {
+      // Forward lookup's callback-only and options overloads without changing their arguments.
+      Reflect.apply(originalLookup, dns, callback === undefined
+        ? [hostname, optionsOrCallback]
+        : [hostname, optionsOrCallback, callback])
+      return
+    }
+    const error = Object.assign(new Error(`getaddrinfo ENOTFOUND ${hostname}`), {
+      code: 'ENOTFOUND', syscall: 'getaddrinfo', hostname,
+    })
+    queueMicrotask(() => { reply(error, '', 0) })
+  })
+}
 
 /** A second proxy URL, never dialed: it only has to differ from {@link proxyUrl} in an assertion. */
 const nestedUrl = 'http://127.0.0.1:9'
@@ -107,9 +133,13 @@ describe('installProxyFromEnvironment', () => {
   })
 
   it('connects directly when the bypass list covers the target', async () => {
+    const lookup = failFixtureDns()
     const { dispose } = await install(env({ HTTP_PROXY: proxyUrl, NO_PROXY: 'origin.test' }))
     try {
-      await expect(fetch(proxyTarget, { signal: AbortSignal.timeout(1500) })).rejects.toThrow()
+      const direct = fetch(proxyTarget, { signal: AbortSignal.timeout(1500) })
+      await expect(direct).rejects.toThrow()
+      await expect(direct).rejects.toMatchObject({ cause: { code: 'ENOTFOUND', hostname: 'origin.test' } })
+      expect(lookup.mock.calls.map(([hostname]) => hostname)).toContain('origin.test')
       expect(proxied).toEqual([])
     } finally {
       await dispose()
@@ -190,12 +220,13 @@ describe('installProxyFromEnvironment', () => {
     // What `HTTPS_PROXY=socks5://…` plus `HTTP_PROXY=http://p` resolves to: http proxied, https
     // direct. undici's own EnvHttpProxyAgent cannot express this — with no HTTPS proxy present it
     // reuses the HTTP one, tunnelling the scheme the diagnostic told the user stayed direct.
+    const lookup = failFixtureDns()
     const { dispose } = await install(env({ HTTP_PROXY: proxyUrl, HTTPS_PROXY: 'socks5://127.0.0.1:1080' }))
     try {
-      // The direct path here fails on a DNS miss whose latency is the machine's resolver to decide;
-      // the deadline bounds it. Either rejection proves the same thing — no CONNECT reached the
-      // proxy — and a proxied hop would have answered in milliseconds instead.
-      await expect(fetch('https://refused-scheme.invalid/', { signal: AbortSignal.timeout(1500) })).rejects.toThrow()
+      const direct = fetch('https://refused-scheme.invalid/', { signal: AbortSignal.timeout(1500) })
+      await expect(direct).rejects.toThrow()
+      await expect(direct).rejects.toMatchObject({ cause: { code: 'ENOTFOUND', hostname: 'refused-scheme.invalid' } })
+      expect(lookup.mock.calls.map(([hostname]) => hostname)).toContain('refused-scheme.invalid')
       expect(proxied).toEqual([])
       // The same policy still tunnels http, so the empty expectation above is not vacuous.
       await expect((await fetch(proxyTarget)).text()).resolves.toBe('VIA-PROXY')

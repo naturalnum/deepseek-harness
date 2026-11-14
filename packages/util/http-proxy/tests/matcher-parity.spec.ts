@@ -1,6 +1,7 @@
+import dns from 'node:dns'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { installProxyFromEnvironment } from '../src/index.ts'
 import { proxyForUrl, resolveProxyPolicy } from '../src/policy.ts'
 
@@ -47,6 +48,31 @@ afterAll(async () => {
   await new Promise<void>((resolve) => { proxy.close(() => { resolve() }) })
 })
 
+afterEach(() => { vi.restoreAllMocks() })
+
+/** Control the invalid target's DNS failure; all other lookups keep their real arguments and behavior. */
+function failFixtureDns() {
+  const originalLookup = dns.lookup
+  type Callback = Parameters<typeof dns.lookup>[1]
+  return vi.spyOn(dns, 'lookup').mockImplementation((
+    hostname,
+    optionsOrCallback: dns.LookupOptions | number | Callback,
+    callback?: Callback,
+  ) => {
+    const reply = typeof optionsOrCallback === 'function' ? optionsOrCallback : callback
+    if (hostname !== 'probe.invalid' || reply === undefined) {
+      Reflect.apply(originalLookup, dns, callback === undefined
+        ? [hostname, optionsOrCallback]
+        : [hostname, optionsOrCallback, callback])
+      return
+    }
+    const error = Object.assign(new Error(`getaddrinfo ENOTFOUND ${hostname}`), {
+      code: 'ENOTFOUND', syscall: 'getaddrinfo', hostname,
+    })
+    queueMicrotask(() => { reply(error, '', 0) })
+  })
+}
+
 /** The launch environment of a user who exported one proxy for both schemes plus one bypass list. */
 function proxyEnv(noProxy: string): { get(name: string): { value: string } | undefined } {
   const values: Record<string, string> = { HTTP_PROXY: proxyUrl, HTTPS_PROXY: proxyUrl, NO_PROXY: noProxy }
@@ -56,15 +82,19 @@ function proxyEnv(noProxy: string): { get(name: string): { value: string } | und
 describe('bypass matcher parity', () => {
   it.each(CASES)('agrees on $noProxy for $path', async ({ noProxy, path, bypassed }) => {
     seen = []
+    const lookup = failFixtureDns()
     const url = new URL(`http://probe.invalid${path}`)
     const env = proxyEnv(noProxy)
     const { policy } = resolveProxyPolicy(env)
     const dispose = await installProxyFromEnvironment(env, () => undefined)
     try {
-      // A bypassed target has no route here, so the fetch fails; a proxied one reaches the recorder
-      // in milliseconds. The deadline bounds the failing path, whose DNS miss is otherwise as slow
-      // as the machine's resolver decides — and only that path, so it cannot mask a proxied hop.
-      await fetch(url, { signal: AbortSignal.timeout(1500) }).then(response => response.text()).catch(() => undefined)
+      const request = fetch(url, { signal: AbortSignal.timeout(1500) })
+      if (bypassed) {
+        await expect(request).rejects.toMatchObject({ cause: { code: 'ENOTFOUND', hostname: 'probe.invalid' } })
+        expect(lookup.mock.calls.map(([hostname]) => hostname)).toContain('probe.invalid')
+      } else {
+        await expect(request.then(response => response.text())).resolves.toBe('VIA-PROXY')
+      }
       const agentProxied = seen.length > 0
       expect({ ours: proxyForUrl(policy, url) !== undefined, agent: agentProxied })
         .toEqual({ ours: !bypassed, agent: !bypassed })
