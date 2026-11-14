@@ -76,6 +76,12 @@ Session 目录模式逐字保留旧槽记录。旧 bound Session 必须先完成
 
 可选 `skillProjection` 沿用原已核验的 private/projects 硬域和修改 lane，并要求 helper 独立声明 `skillProjectionVersion: 1`。`prepareSkillProject` 固定 `.pe/skills`，不创建沙盒；返回结果属于 allocation/export 存续期。`materializeSkillVersion` 只发布 `SKILL.md` 和 `resource.bin`，工作目录为可写 `0700`、文件为 `0600`，再用原生 FsVersion CAS 确认 private `skill-working-copies/` 中的受保护关联。完整发布、sync、描述符关闭和关联确认后，才返回项目相对 `.pe/skills/<server-version>/` 路径。记录正文遵守 `maxRecordBytes`；CAS 请求沿用原 worker 统一的 `maxReadBytes` 传输容量。已确认副本保留用户编辑及替换后的文件 inode；不可变原件哈希继续核验。
 
+`maxProjects` 限制持久受保护关联数，而不是历史上只运行命令的工作区数。记录满时，额外工作区可使用经原生验证为空且没有关联的 `.pe/skills` 执行命令；每次操作都重新确认目录仍为空。此工作区在取得关联前不能物化技能。已有空无记录目录在名额可用时补建关联；非空目录以 `not-published`、`FS_PERMISSION_DENIED` 和 `files/prerequisite-missing` 明确拒绝，不认领或删除条目。容量拒绝附带 `cloud/capacity`，不再误称文件过大。
+
+目录检查只计算现有元数据，不为未发生的写入预留空间。每次实际关联写入都保留原生分配块、原子临时记录和目录增长预留。缺少可选只读检查方法的旧 helper 继续采用保守验证。没有已发副本的父能力在最后一个父或操作引用释放后退出进程内映射。父与操作引用分别受 `maxParentBorrows` 和 `maxOperationBorrows` 限制；保留副本的父能力受 `maxProjects` 限制。释放父能力不删除持久关联。不确定写入仍由原账号写入责任持有。
+
+旧读取方会拒绝无记录技能目录；请遵守[升级与回退要求](../../../docs/upgrade-guide/v0.2.1-rc.2/skill-project-capacity/guide.zh.md)。
+
 闭合的[限额及预算模型](src/skill-projection.ts) 分别计入有界项目、保留副本、父目录／操作借用、扫描和旧新记录缓冲。private 元数据计入实际已分配块、按块取整的原子写记录临时文件和有界目录增长；副本和暂存仍受原项目硬配额约束。`borrowAllSkillWorkingCopies` 从受保护记录推导项目完整关联集合；超过操作上限或缺少任一原签发来源资格时整组拒绝，并在 Root 签发执行事实前核验每个实际目录。显式副本方法对选定集合保留相同检查。驻留结果在观察者／lifetime 取消后，仍持续到原操作真实远端／本地／物理结算。释放 materialize 只结束该次 I/O 预留，files 的有界副本句柄继续持有；不会删除数据或停止脚本。发布部分完成或 unknown 时仍由原修改操作持有，不自动回滚、重放或 GC。
 
 已完成的项目父目录 lease 只保留有界惰性 grant，其驻留字节与准备缓冲独立计费。只有 worker 实际结算已确认后才收缩驻留额度；未确认 I/O 继续保留完整预留。原队列持续持有该 lease，直到 release；后续每次物化或副本核验仍须重新预留完整操作预算。`maxParentBorrows` 须覆盖同时驻留的执行分配和临时技能加载；`maxOperationBorrows` 仍限制完整副本操作结果。显式数量上限继续生效，部署校验将惰性 grant 与完整运行、排队和操作缓冲共同计入原 lane 及全局限额。

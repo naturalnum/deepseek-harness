@@ -11,6 +11,7 @@ import type { ResidentResult } from './work-queue.ts'
 import type { FdProjectMetadataDirectory, FdRootIdentity } from './worker-protocol.ts'
 import type { FdWorkerClient } from './worker-client.ts'
 import { FdMutationFailure, FdWorkerFailure } from './worker-client.ts'
+import { FilesFailure, SkillProjectCapacityFailure } from './error.ts'
 import type { SkillRecordRevalidation } from './skill-revalidation.ts'
 import type { SkillVersion, SkillVersionId, SkillVersionLimits } from './skill-versions.ts'
 import { skillSourceContext } from './skill-projection.ts'
@@ -82,6 +83,15 @@ type RecordRead = { readonly value: RecordValue; readonly revision: string; read
 
 function denied(code: 'FS_PERMISSION_DENIED' | 'FS_TOO_LARGE' | 'FS_STALE_VERSION' = 'FS_PERMISSION_DENIED'): never {
   throw new FdMutationFailure('not-published', code)
+}
+/** A definite refusal which names the exhausted skill-project bound; nothing was published and a later attempt may succeed. */
+function exhausted(resource: SkillProjectCapacityFailure['resource'], message: string): never {
+  throw new FdMutationFailure('not-published', 'FS_TOO_LARGE', undefined, { cause: new SkillProjectCapacityFailure(resource, message) })
+}
+/** A definite refusal of project skill directories which no protected association accounts for; nothing was published. */
+function unassociated(): never {
+  throw new FdMutationFailure('not-published', 'FS_PERMISSION_DENIED', undefined, { cause: new FilesFailure('files/prerequisite-missing',
+    'The Workspace skill directory holds entries without a protected association; an administrator must restore the association or remove the entries.') })
 }
 function unknown(cause?: unknown): never { throw new FdMutationFailure('unknown', 'FS_IO_ERROR', undefined, { cause }) }
 function object(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null
@@ -188,6 +198,12 @@ export function createSkillProjectWork(input: SkillProjectWork): SkillProjectPor
   const operations = new WeakSet<SkillOperationCopies | SkillBundleOperationCopies>()
   let parentBorrows = 0, operationBorrows = 0
   const current = (): void => { input.assertCurrent(); if (input.binding.lifetime.aborted) denied() }
+  const releaseReference = (value: SkillProjectGrant): void => {
+    parentRefs.set(value, (parentRefs.get(value) ?? 1) - 1)
+    if (parentRefs.get(value) === 0 && ![...copies.values()].some(copy => copy.workspaceId === value.workspaceId)) {
+      parents.delete(value.workspaceId); parentRefs.delete(value)
+    }
+  }
   const parent = (value: SkillProjectGrant): { readonly value: SkillProjectGrant; readonly current: () => void } => {
     current(); const row = parents.get(value.workspaceId)
     if (row?.value !== value || (parentRefs.get(value) ?? 0) < 1) denied()
@@ -210,14 +226,20 @@ export function createSkillProjectWork(input: SkillProjectWork): SkillProjectPor
       }
     }, signal, retention)
   }
+  const metadataStore = (client: FdWorkerClient, purpose: 'store' | 'store-read' | 'store-verify', control: AbortSignal) =>
+    client.skillDirectory(input.privateRoot, input.uid, input.gid, purpose, input.limits, control).catch((cause: unknown) => {
+      if (cause instanceof FdMutationFailure && cause.outcome === 'not-published' && cause.code === 'FS_TOO_LARGE') {
+        exhausted('metadata', 'The skill project association storage cannot reserve or verify its bounded metadata.')
+      }
+      throw cause
+    })
   const store = async (client: FdWorkerClient, control: AbortSignal,
     selected: { readonly workspaceId: Workspace['id']; readonly root: FdRootIdentity; readonly assertRegistered: () => void },
     allowCreate = false) => {
     const context = await client.skillSourceContext(control)
     const before = await client.lstat(input.privateRoot, 'skill-working-copies', control)
     if (before === undefined && !allowCreate || before !== undefined && before.type !== 'directory') unknown()
-    const prepared = await client.skillDirectory(input.privateRoot, input.uid, input.gid,
-      before === undefined ? 'store' : 'store-verify', input.limits, control)
+    const prepared = await metadataStore(client, before === undefined ? 'store' : 'store-read', control)
     const root = child(input.privateRoot, 'skill-working-copies', prepared.directory)
     const names = await client.list(root, '.', input.limits.maxProjects, input.maxReplyBytes, control)
     const rows = new Map<string, RecordRead>(); let total = 0
@@ -249,26 +271,35 @@ export function createSkillProjectWork(input: SkillProjectWork): SkillProjectPor
       total += bytes.byteLength
       rows.set(entry.name, { value, revision: before.version, bytes: bytes.byteLength })
     }
-    if (total + input.limits.maxRecordBytes > input.limits.maxMetadataBytes || rows.size
-      + 2 > input.limits.maxMetadataInodes) denied('FS_TOO_LARGE')
+    if (total > input.limits.maxMetadataBytes || rows.size + 1 > input.limits.maxMetadataInodes) {
+      exhausted('metadata', 'The skill project association storage of this account is full.')
+    }
     if (revalidate !== undefined) {
       const authority = revalidate.authority
       const previous = revalidate.row, value = await revalidateRecord(client, previous.value, selected.root, context, control)
       const bytes = Buffer.byteLength(JSON.stringify(value))
-      if (total - previous.bytes + bytes + input.limits.maxRecordBytes > input.limits.maxMetadataBytes) denied('FS_TOO_LARGE')
+      if (total - previous.bytes + bytes + input.limits.maxRecordBytes > input.limits.maxMetadataBytes) {
+        exhausted('metadata', 'The skill project association storage cannot reserve a record update.')
+      }
       current(); selected.assertRegistered(); if (selected.workspaceId !== value.workspaceId) denied('FS_STALE_VERSION')
       authority.assertRecord(previous.revision)
       control.throwIfAborted()
-      const committed = await write(client, root, value, previous.revision, control)
+      const committed = await write(client, root, value, previous.revision, control, () => {
+        current(); selected.assertRegistered(); authority.assertRecord(previous.revision)
+      })
       authority.confirmRecord(previous.revision, committed.version)
       rows.set(revalidate.name, { value, revision: committed.version, bytes }); total += bytes - previous.bytes
     }
     return { root, rows, total, context }
   }
   const write = async (client: FdWorkerClient, root: FdRootIdentity, value: RecordValue, revision: string | undefined,
-    control: AbortSignal) => {
+    control: AbortSignal, beforeWrite?: () => void) => {
     const text = JSON.stringify(value)
     if (Buffer.byteLength(text) > input.limits.maxRecordBytes) denied('FS_TOO_LARGE')
+    // Preserve the original physical-block and atomic-temporary reserve before every actual record write.
+    const verified = await metadataStore(client, 'store-verify', control)
+    if (!sameRoot(root, child(input.privateRoot, 'skill-working-copies', verified.directory))) denied('FS_STALE_VERSION')
+    beforeWrite?.()
     return await client.writeText(root, file(value.workspaceId), text, revision === undefined ? { kind: 'createIfAbsent' }
       : { kind: 'replaceIfVersion', version: FsVersion(revision) }, input.maxReadBytes, control)
   }
@@ -281,11 +312,26 @@ export function createSkillProjectWork(input: SkillProjectWork): SkillProjectPor
       input.maxReplyBytes, control)
     const wanted = new Set(value.copies.map(c => c.source.id))
     if (listed.length !== wanted.size || listed.some(e => e.type !== 'directory' || !wanted.has(e.name as SkillVersion['id']))) unknown()
-    return Object.freeze({ binding: input.binding, workspaceId: value.workspaceId as Workspace['id'],
-      project: Object.freeze({ ...value.project, rootMountId: value.project.rootMountId, quota: Object.freeze({
-        device: input.quota.rootDevice, mountId: input.quota.rootMountId,
-        maximumBytes: input.quota.maximumBytes, maximumInodes: input.quota.maximumInodes }) }), metadataDirectory: value.metadata,
-      skillsDirectory: value.skills })
+    return parentGrant(value.workspaceId, value.project, value.project.rootMountId, value.metadata, value.skills)
+  }
+  const parentGrant = (workspaceId: string, project: FdRootIdentity, rootMountId: string, metadata: FdProjectMetadataDirectory,
+    skills: FdProjectMetadataDirectory): SkillProjectGrant => Object.freeze({ binding: input.binding,
+    workspaceId: workspaceId as Workspace['id'],
+    project: Object.freeze({ ...project, rootMountId, quota: Object.freeze({
+      device: input.quota.rootDevice, mountId: input.quota.rootMountId,
+      maximumBytes: input.quota.maximumBytes, maximumInodes: input.quota.maximumInodes }) }), metadataDirectory: metadata,
+    skillsDirectory: skills })
+  /**
+   * Verify an issued parent which has no association: the same native directory checks as an associated parent, and no entries.
+   * A Workspace without copies has nothing for an association to protect, so it does not need one of the bounded records.
+   */
+  const verifyUnassociated = async (client: FdWorkerClient, project: SkillProjectGrant, control: AbortSignal): Promise<void> => {
+    const metadataRoot = child(project.project, '.pe', project.metadataDirectory)
+    const actual = await client.skillDirectory(metadataRoot, input.uid, input.gid, 'parent-verify', input.limits, control)
+    if (!sameDirectory(actual.directory, project.skillsDirectory)) denied('FS_STALE_VERSION')
+    const listed = await client.list(child(metadataRoot, 'skills', project.skillsDirectory), '.', input.limits.maxCopiesPerProject,
+      input.maxReplyBytes, control)
+    if (listed.length !== 0) unassociated()
   }
   const issueParent = (value: SkillProjectGrant, assertRegistered: () => void): SkillProjectGrant => {
     const previous = parents.get(value.workspaceId)
@@ -295,7 +341,8 @@ export function createSkillProjectWork(input: SkillProjectWork): SkillProjectPor
         || !sameDirectory(previous.value.skillsDirectory, value.skillsDirectory)) denied('FS_STALE_VERSION')
       return previous.value
     }
-    if (parents.size >= input.limits.maxProjects) denied('FS_TOO_LARGE')
+    // Live parents and operation parents use their respective borrow bounds; retained copy parents use maxProjects.
+    // Released parents without copies are removed at their final release.
     parents.set(value.workspaceId, { value, current: assertRegistered }); return value
   }
   const resolve = (value: Source): Version | undefined => 'format' in value ? input.resolveBundle?.(value) : input.resolveSource(value)
@@ -373,7 +420,12 @@ export function createSkillProjectWork(input: SkillProjectWork): SkillProjectPor
       parent(project)
       const scanned = await store(client, control, { workspaceId: project.workspaceId, root: project.project,
           assertRegistered: parent(project).current }), existing = scanned.rows.get(file(project.workspaceId))
-      if (existing === undefined) unknown()
+      if (existing === undefined) {
+        // No association means no confirmed copy. The verified empty parent yields the empty set; any entry is refused.
+        await verifyUnassociated(client, project, control)
+        if (supplied !== undefined && supplied.length !== 0) denied('FS_STALE_VERSION')
+        return []
+      }
       const actual = await validateParent(client, existing.value, control)
       if (!sameRoot(actual.project, project.project) || !sameDirectory(actual.metadataDirectory, project.metadataDirectory)
         || !sameDirectory(actual.skillsDirectory, project.skillsDirectory)) denied('FS_STALE_VERSION')
@@ -397,10 +449,11 @@ export function createSkillProjectWork(input: SkillProjectWork): SkillProjectPor
       if (operationBorrows >= input.limits.maxOperationBorrows) denied('FS_TOO_LARGE')
       const fixed = Object.freeze(held.value.map(row => issueCopy(project, row.version, row.directory)))
       const value = Object.freeze({ project, copies: fixed })
+      parentRefs.set(project, (parentRefs.get(project) ?? 0) + 1)
       operationBorrows++; operations.add(value)
       let released = false
       return { value, release: () => { if (released) return; released = true; operationBorrows--; operations.delete(value)
-        held.release() } }
+        releaseReference(project); held.release() } }
     } catch (error) { held.release(); throw error }
   }
   const materialize = async (project: SkillProjectGrant, version: Version, signal: AbortSignal): Promise<ResidentResult<CopyGrant>> => {
@@ -410,7 +463,13 @@ export function createSkillProjectWork(input: SkillProjectWork): SkillProjectPor
       parent(project)
       const scanned = await store(client, control, { workspaceId: project.workspaceId, root: project.project,
           assertRegistered: parent(project).current }), existing = scanned.rows.get(file(project.workspaceId))
-      if (existing === undefined) unknown()
+      if (existing === undefined) {
+        // This parent was issued without an association. A copy needs one; a later project preparation creates it when a slot is free.
+        if (scanned.rows.size >= input.limits.maxProjects) {
+          exhausted('associations', 'Skill copies are already associated with the configured number of Workspaces for this account; this Workspace cannot hold a skill copy.')
+        }
+        denied('FS_STALE_VERSION')
+      }
       const value = existing.value
       const actual = await validateParent(client, value, control)
       if (!sameRoot(project.project, actual.project) || !sameDirectory(project.skillsDirectory, actual.skillsDirectory)
@@ -423,7 +482,7 @@ export function createSkillProjectWork(input: SkillProjectWork): SkillProjectPor
       if (found !== undefined) return (await verifyCopy(client, project, value, version, control)).directory
       if (value.copies.length >= input.limits.maxCopiesPerProject) denied('FS_TOO_LARGE')
       const pending: RecordValue = { ...value, schema: 'format' in version ? 2 : value.schema, state: 'preparing-copy', pending: source(version) }
-      const written = await write(client, scanned.root, pending, existing.revision, control)
+      const written = await write(client, scanned.root, pending, existing.revision, control, () => { parent(project) })
       const settlement = new AbortController().signal
       try {
         const facts = await projectCopy(client, value, version, '0', settlement)
@@ -465,24 +524,45 @@ export function createSkillProjectWork(input: SkillProjectWork): SkillProjectPor
     },
     prepareProject: async (workspace, assertRegistered, signal) => {
       current(); assertRegistered()
-      if (parentBorrows >= input.limits.maxParentBorrows) denied('FS_TOO_LARGE')
+      if (parentBorrows >= input.limits.maxParentBorrows) exhausted('parent-borrows', 'The configured number of concurrent skill project grants for this account is in use.')
       const held = await io(async (client, control) => {
         assertRegistered()
         const root = await input.project(client, workspace, control)
         const preexistingParent = await client.lstat(root, '.pe/skills', control)
-        const scanned = await store(client, control, { workspaceId: workspace.id, root, assertRegistered }, preexistingParent === undefined)
+        const scanned = await store(client, control, { workspaceId: workspace.id, root, assertRegistered }, true)
         const existing = scanned.rows.get(file(workspace.id))
         if (existing !== undefined) {
           if (!sameRoot(existing.value.project, root)) denied('FS_STALE_VERSION')
           return await validateParent(client, existing.value, control)
         }
-        if (preexistingParent !== undefined) unknown()
-        if (scanned.rows.size >= input.limits.maxProjects) denied('FS_TOO_LARGE')
+        const full = scanned.rows.size >= input.limits.maxProjects
+        if (preexistingParent !== undefined || full) {
+          // Either an existing parent lost its association, or every bounded record is charged to another Workspace.
+          // A natively verified parent without entries protects nothing: readopt it into a free record, or issue it without one.
+          const rootMountId = root.rootMountId
+          if (rootMountId === undefined) unknown()
+          const metadata = await client.prepareProjectMetadata(root, input.uid, input.gid, control)
+          const metadataRoot = child(root, '.pe', metadata.directory)
+          const skills = await client.skillDirectory(metadataRoot, input.uid, input.gid,
+            preexistingParent === undefined ? 'parent-create' : 'parent-verify', input.limits, control)
+          if (preexistingParent === undefined && !skills.created) unknown()
+          const listed = await client.list(child(metadataRoot, 'skills', skills.directory), '.', input.limits.maxCopiesPerProject,
+            input.maxReplyBytes, control)
+          if (listed.length !== 0) unassociated()
+          if (!full) {
+            const adopted: RecordValue = { schema: 1, accountId: input.binding.accountId, workspaceId: workspace.id, project: root,
+              sourceContext: scanned.context, metadata: metadata.directory, skills: skills.directory, state: 'complete',
+              pending: null, copies: [] }
+            current(); assertRegistered()
+            await write(client, scanned.root, adopted, undefined, control, () => { current(); assertRegistered() })
+          }
+          return parentGrant(workspace.id, root, rootMountId, metadata.directory, skills.directory)
+        }
         const metadata = await client.prepareProjectMetadata(root, input.uid, input.gid, control)
         const pending: RecordValue = { schema: 1, accountId: input.binding.accountId, workspaceId: workspace.id,
           project: root, sourceContext: scanned.context, metadata: metadata.directory, skills: null, state: 'preparing-parent',
           pending: null, copies: [] }
-        const written = await write(client, scanned.root, pending, undefined, control)
+        const written = await write(client, scanned.root, pending, undefined, control, () => { current(); assertRegistered() })
         const settlement = new AbortController().signal
         try {
           const skills = await client.skillDirectory(child(root, '.pe', metadata.directory), input.uid, input.gid, 'parent-create',
@@ -495,12 +575,12 @@ export function createSkillProjectWork(input: SkillProjectWork): SkillProjectPor
       }, signal, 'parent')
       try {
         current(); signal.throwIfAborted(); assertRegistered()
-        if (parentBorrows >= input.limits.maxParentBorrows) denied('FS_TOO_LARGE')
+        if (parentBorrows >= input.limits.maxParentBorrows) exhausted('parent-borrows', 'The configured number of concurrent skill project grants for this account is in use.')
         const value = issueParent(held.value, assertRegistered)
         parentBorrows++; parentRefs.set(value, (parentRefs.get(value) ?? 0) + 1)
         let released = false
-        return { value, release: () => { if (released) return; released = true; parentBorrows--; parentRefs.set(value,
-          (parentRefs.get(value) ?? 1) - 1); held.release() } }
+        return { value, release: () => { if (released) return; released = true; parentBorrows--
+          releaseReference(value); held.release() } }
       } catch (error) { held.release(); throw error }
     },
     borrow: (project, selected, signal) => borrowLegacy(project, selected, signal),
