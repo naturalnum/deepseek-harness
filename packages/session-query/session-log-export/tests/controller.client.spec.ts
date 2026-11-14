@@ -13,10 +13,10 @@ afterEach(() => {
 })
 
 describe('SessionLogDownloadController', () => {
-  it('requests a browser download and retains the same bound URL for an explicit retry', async () => {
+  it('downloads the host ZIP and publishes one shared success state', async () => {
     const fetcher = vi.fn(async () => new Response('zip', { status: 200 }))
     const save = vi.fn()
-    const controller = new SessionLogDownloadController(fetcher, save, url => `${url}&account=bound`)
+    const controller = new SessionLogDownloadController(fetcher, save)
 
     await controller.download(SID)
 
@@ -26,12 +26,11 @@ describe('SessionLogDownloadController', () => {
     expect(init.method).toBe('HEAD')
     expect(init.signal).toBeInstanceOf(AbortSignal)
     expect(save).toHaveBeenCalledWith(
-      `${route}&account=bound`,
+      route,
       'dsh-session-session-export-controller.zip',
     )
     expect(controller.store.getSnapshot().bySession[SID]).toEqual({
-      open: true, status: 'success', error: null,
-      download: { url: `${route}&account=bound`, filename: 'dsh-session-session-export-controller.zip' },
+      order: 0, open: true, status: 'success', error: null,
     })
   })
 
@@ -58,6 +57,7 @@ describe('SessionLogDownloadController', () => {
     )
     await http.download(SID)
     expect(http.store.getSnapshot().bySession[SID]).toEqual({
+      order: 0,
       open: true,
       status: 'error',
       error: 'Export failed: HTTP 500 backend unavailable',
@@ -98,6 +98,55 @@ describe('SessionLogDownloadController', () => {
     await controller.dispose()
   })
 
+  it('waits for every aborted preflight and never saves a late successful response', async () => {
+    const first = Promise.withResolvers<Response>(), second = Promise.withResolvers<Response>()
+    const signals: AbortSignal[] = []
+    const save = vi.fn()
+    const fetcher = vi.fn((_input: string | URL, init?: RequestInit) => {
+      if (init?.signal === undefined || init.signal === null) throw new Error('Missing cancellation signal')
+      signals.push(init.signal)
+      return signals.length === 1 ? first.promise : second.promise
+    })
+    const controller = new SessionLogDownloadController(fetcher, save)
+    const a = controller.download(SID)
+    const b = controller.download('another' as SessionId)
+    const beforeDisposal = controller.store.getSnapshot()
+    let disposed = false
+    const disposal = controller.dispose().then(() => { disposed = true })
+    expect(signals.every(signal => signal.aborted)).toBe(true)
+    first.resolve(new Response('late ZIP'))
+    await a
+    expect(disposed).toBe(false)
+    second.reject(new Error('aborted second preflight'))
+    await b
+    await disposal
+    expect(disposed).toBe(true)
+    expect(save).not.toHaveBeenCalled()
+    expect(controller.store.getSnapshot()).toBe(beforeDisposal)
+  })
+
+  it('keeps per-operation initiation order across concurrent Sessions and repeated requests', async () => {
+    const response = Promise.withResolvers<Response>()
+    const fetcher = vi.fn(() => response.promise)
+    const save = vi.fn()
+    const controller = new SessionLogDownloadController(fetcher, save)
+    const first = controller.download(SID)
+    const other = controller.download('another' as SessionId)
+    const initial = controller.store.getSnapshot()
+    expect(initial.bySession[SID]?.order).toBe(0)
+    expect(initial.bySession.another?.order).toBe(1)
+    controller.dismiss(SID)
+    expect(controller.download(SID)).toBe(first)
+    expect(controller.store.getSnapshot().bySession[SID]).toMatchObject({ open: false, order: 0 })
+    response.resolve(new Response('zip'))
+    await Promise.all([first, other])
+    expect(save).toHaveBeenCalledTimes(2)
+    await controller.download(SID)
+    expect(controller.store.getSnapshot().bySession[SID]).toMatchObject({ open: true, order: 2 })
+    expect(controller.store.getSnapshot().bySession.another?.order).toBe(1)
+    await controller.dispose()
+  })
+
   it('requests the document-relative route through the default carrier', async () => {
     const fetcher = vi.fn(async (_input: string | URL, _init?: RequestInit) => new Response('zip'))
     vi.stubGlobal('fetch', fetcher)
@@ -132,9 +181,7 @@ describe('SessionLogDownloadController', () => {
 
 describe('browser download helpers', () => {
   it('sanitizes the archive filename and hands the relative route to a download anchor', () => {
-    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function(this: HTMLAnchorElement) {
-      expect(this.isConnected).toBe(true)
-    })
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
 
     expect(sessionLogZipFilename('a/b' as SessionId)).toBe('dsh-session-a_b.zip')
     downloadUrl('api/session.export?sessionId=a', 'archive.zip')
@@ -142,6 +189,5 @@ describe('browser download helpers', () => {
     const anchor = click.mock.instances[0] as HTMLAnchorElement
     expect(anchor.getAttribute('href')).toBe('api/session.export?sessionId=a')
     expect(anchor.download).toBe('archive.zip')
-    expect(anchor.isConnected).toBe(false)
   })
 })

@@ -103,6 +103,8 @@ Workspace 注册不意味着拥有其目录。未来的破坏性文件系统操�
 
 归档准入是本包声明并派发的两个宿主事件之上的能力接缝：`workspace/session-activity`（waterfall）向已组合的提供方询问某会话还有什么在跑，`workspace/session-stop`（parallel）请它们停止这些工作。`archiveSession(sessionId)` 只询问一次活动 waterfall，对非空答案以 `WorkspaceActiveSessionError` 拒绝，其 `activity` 按族列出各项——键由各提供方自己合并进本包留空的 `SessionActivityKindMap`；`archiveSession(sessionId, { stopActivity: true })` 跳过活动检查，先写入归档，再派发停止事件，因此持久化的归档集合已经拦住停止所引发的每一次唤醒；提供方抛错只记日志，归档保留。调用在每个提供方的停止请求都已发出后返回，被停止的工作自行收敛。两种询问都在存在性检查之后进行，对已归档 id 从不发生。随附的提供方是 Agent 注册表（运行中的回合）、任务注册表接缝（所属任务）、Subagent runtime（运行中的子孙）与 Schedule 插件（活跃提醒）；没有提供方的组合可自由归档。
 
+`workspace/session-archived` 在归档持久化并发出停止请求后，接纳可选的后续工作。它在注册表的写队列内派发，因此监听器只登记工作并返回；工作本身及其所需的无界 I/O 在之后执行。提供方负责取消、失败报告和释放；准入失败会记录日志，但不撤销归档。`workspace/session-unarchiving` 让提供方在移除归档标记前取消或结束后续工作。注册表不包含 Git 清理策略。
+
 ### 源码地图
 
 | 文件 | 职责 |
@@ -118,10 +120,6 @@ Workspace 注册不意味着拥有其目录。未来的破坏性文件系统操�
 注册表打开 `workspace` 领域（版本 2）：一张以 `WorkspaceId` 为键的 `workspaces` 表，加上一个持有 `workspaceIds`（权威显示顺序）、`archivedSessionIds`、`pinnedSessionIds`、可选的首次使用身份 `defaultWorkspaceId` 与可选 `pendingMutation` 标记的全局状态。归档与置顶集合存储会话 id 字符串，默认值为空，不包含逐项对象或时间戳；置顶数组把最近置顶的 id 放在前面。归档在同一次全局状态写入中清除置顶，但不改变 Workspace 成员关系。取消归档不做会话存在性探测，因为从集合中移除 id 不可能引入未知 id，而归档会在加入前校验会话。
 
 ### 生命周期
-
-Host 子类可覆盖 protected `createDirectoryMetadata()` 方法，返回已就绪的 `WorkspaceDirectoryMetadata` 提供者。注册表在初始化开始、打开领域之前，一次选定并绑定其 `canonicalPath`、`isDirectory` 和 `ensureDirectory` 方法；原生注册表和实体的全部目录操作均使用同一提供者。返回 `undefined` 保留原有 Node 后端。必需提供者不可用时必须抛错，不支持迟到安装或替换；所属图关闭后，注入操作及晚到结果均拒绝。提供者继续持有实际 I/O 和未完成目录创建的责任；注册表关闭不表示 I/O 已结算，也不会删除目录。
-
-注入提供者仅用 `WorkspaceDirectoryMetadataError` 的 `missing` 和 `not-directory` 原因报告确定的 ENOENT 与 ENOTDIR。其他拒绝均为 `unavailable` 并保留原始 `cause`；原生头部索引和成员附加上抛该失败，`status()` 也拒绝而非报告 `missing-dir`。初始化在引导写入前解析本次 live 头部快照，不把仅 live 头部加入历史分组。不可用观察不会写入成功初始化标记或剪除失败头部的成员关系，此前已完成的独立持久化写入仍已完成。默认 Node 后端保留既有错误行为。
 
 启动时，注册表打开领域、若存在标记则补全被标记的变更、校验已存状态——重复路径、重复会话记账与顺序漂移都会明确报错——并在尚未初始化时先凭持久化头部引导历史、最后写入已初始化标记，因此被中断的引导可以安全恢复。全新空注册表一旦初始化即成为正式状态，绝不会再次引导。
 

@@ -5,7 +5,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-api-gateway/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import { TerminalView, type TerminalRemote } from './model.ts'
-import { createSnapshotStore, resolveClientPersistence, type ClientPersistence, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import type { TerminalShell, WebTerminalId, WebTerminalInfo } from '../types.ts'
 import { preferredShell, rememberShell } from './shell-preference.ts'
@@ -13,8 +13,10 @@ import { TerminalCloseRequests, type TerminalCloseRequest } from './close-reques
 import { TerminalWindowHold } from './retention.ts'
 import { TerminalBindings } from './bindings.ts'
 import { TerminalInventory } from './inventory.ts'
+import { TerminalRosters, type TerminalRosterListener } from './roster.ts'
 
 export type { TerminalView, TerminalViewState, TerminalViewIssue, TerminalRenderFrame, TerminalRemote } from './model.ts'
+export type { TerminalRosterListener } from './roster.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -40,16 +42,18 @@ export interface TerminalCloseFailure {
 export class ClientTerminals extends Service {
   /** Failed cleanup tasks; successful and in-progress closes have no visible notification. */
   readonly closeFailures: SnapshotStore<readonly TerminalCloseFailure[]> = createSnapshotStore<readonly TerminalCloseFailure[]>([])
-  private readonly persistence: ClientPersistence
-  private readonly requests: TerminalCloseRequests
+  private readonly requests = new TerminalCloseRequests()
   private readonly closing = new Map<WebTerminalId, Promise<void>>()
-  private readonly closed: Set<WebTerminalId>
+  private readonly closed = new Set<WebTerminalId>(this.requests.pending().map(request => request.id))
   private disposed = false
   private readonly views = new Map<SessionId, Map<string, TerminalView>>()
   private readonly inventories = new Map<SessionId, TerminalInventory>()
-  private readonly bindings: TerminalBindings
+  private readonly bindings = new TerminalBindings()
   private readonly holds = new Map<SessionId, Map<WebTerminalId, TerminalWindowHold>>()
   private readonly releasing = new Set<Promise<void>>()
+  private readonly rosters: TerminalRosters
+  /** Terminals this window bound to a tab before any view mounted. */
+  private readonly adopted = new Set<WebTerminalId>()
   private openTabs: readonly { sessionId: SessionId; tabId: string; contentId: string }[] = []
 
   /**
@@ -58,13 +62,13 @@ export class ClientTerminals extends Service {
    */
   constructor(ctx: Context, private readonly remote: TerminalRemote) {
     super(ctx, 'webTerminals')
-    this.persistence = resolveClientPersistence(ctx.get('clientPersistence'))
-    this.requests = new TerminalCloseRequests(this.persistence)
-    this.closed = new Set(this.requests.pending().map(request => request.id))
-    this.bindings = new TerminalBindings(this.persistence)
+    this.rosters = new TerminalRosters(ctx.remote, remote, (sessionId, terminals) => {
+      this.inventories.get(sessionId)?.reconcile(terminals)
+    }, (error) => { this.ctx.logger.warn('Terminal roster failed', error) })
     const connection = ctx.get('connection') as ConnectionHandle
     let connected = connection.generation.getSnapshot() !== undefined
     ctx.on('connection/reset', () => {
+      this.rosters.resume()
       if (!connected) { connected = true; return }
       for (const [sessionId, inventory] of this.inventories) {
         void inventory.reset()?.catch((error: unknown) => {
@@ -83,7 +87,7 @@ export class ClientTerminals extends Service {
       this.bindings.clear()
       const holds = [...this.holds.values()].flatMap(holds => [...holds.values()].map(hold => hold.dispose()))
       this.holds.clear()
-      await Promise.all([...listing, ...detaching, ...holds, ...this.releasing, ...this.closing.values()])
+      await Promise.all([...listing, ...detaching, ...holds, this.rosters.dispose(), ...this.releasing, ...this.closing.values()])
     }, 'terminal-controller.client.views')
     for (const request of this.requests.pending()) this.cleanup(request)
   }
@@ -106,12 +110,56 @@ export class ClientTerminals extends Service {
       const id = saved ?? randomUUID() as WebTerminalId
       this.bindings.set(sessionId, contentId, id)
       view = new TerminalView(sessionId, this.remote, this.ctx.remote, this.inventory(sessionId), id, saved === undefined, shellPath,
-        signal => this.hold(sessionId, id).ready(signal), this.persistence)
+        signal => this.hold(sessionId, id).ready(signal))
       views.set(key, view)
       this.reconcileHolds()
       void view.refresh()
     }
     return view
+  }
+
+  /**
+   * Watch one Session's retained terminals; every watcher in this window shares one Host stream.
+   * @param sessionId - watched Session.
+   * @param listener - receives each whole roster after the shared terminal list adopts it, dropping unlisted terminals.
+   * @returns the release.
+   */
+  watch(sessionId: SessionId, listener: TerminalRosterListener): () => void {
+    return this.rosters.watch(sessionId, listener)
+  }
+
+  /**
+   * Read the Host terminal a tab's content is bound to in this window.
+   * @param sessionId - owning Session.
+   * @param contentId - the tab's globally unique content identity.
+   * @returns the bound terminal, or undefined for an unbound tab.
+   */
+  boundTerminal(sessionId: SessionId, contentId: string): WebTerminalId | undefined {
+    return this.bindings.get(sessionId, contentId)
+  }
+
+  /**
+   * Bind a just-opened tab to an existing Host terminal so reload and later mounts attach to it.
+   * @param sessionId - owning Session.
+   * @param contentId - the tab's globally unique content identity.
+   * @param id - existing Host terminal identity.
+   */
+  bind(sessionId: SessionId, contentId: string, id: WebTerminalId): void {
+    this.bindings.set(sessionId, contentId, id)
+    this.adopted.add(id)
+    this.reconcileHolds()
+  }
+
+  /**
+   * Report whether this window already shows, binds or is closing a terminal.
+   * @param sessionId - owning Session.
+   * @param id - Host terminal identity.
+   * @returns true when opening another tab for it would duplicate or revive it.
+   */
+  isRepresented(sessionId: SessionId, id: WebTerminalId): boolean {
+    if (this.adopted.has(id) || this.closed.has(id) || this.closing.has(id)) return true
+    if ([...this.views.get(sessionId)?.values() ?? []].some(view => view.id === id)) return true
+    return this.openTabs.some(tab => tab.sessionId === sessionId && this.bindings.get(sessionId, tab.contentId) === id)
   }
 
   private inventory(sessionId: SessionId): TerminalInventory {
@@ -132,7 +180,7 @@ export class ClientTerminals extends Service {
   async launchShells(sessionId: SessionId, signal: AbortSignal): Promise<TerminalLaunchShells> {
     const result = await this.remote.shells(sessionId, signal)
     if (!result.ok) throw new Error(result.error.message)
-    const previous = preferredShell(this.persistence)
+    const previous = preferredShell()
     return { shells: result.value, selectedShell: result.value.find(shell => shell.path === previous)?.path ?? result.value[0]?.path }
   }
 
@@ -140,7 +188,7 @@ export class ClientTerminals extends Service {
    * Remember the guide selection before allocating its terminal tab.
    * @param path - shell selected from Host discovery.
    */
-  selectShell(path: string): void { rememberShell(path, this.persistence) }
+  selectShell(path: string): void { rememberShell(path) }
 
   /**
    * Save a close intent and release the tab immediately; cleanup outlives DOM unmount and reload.

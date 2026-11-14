@@ -62,7 +62,7 @@ Persistence returns the physically valid log; semantic repair belongs to the rea
 
 ### Failures and recovery
 
-For versioned artifacts, `stat` and `list` expose `formatStatus` as `current` or `migration-required`. The separate `header` remains current logical metadata. This status describes storage, not an in-memory preparation or migration task; providers without this information omit it.
+For versioned artifacts, `stat` and `list` expose `formatStatus` as `current` or `migration-required`. The separate `header` remains current logical metadata. This status describes storage, not an in-memory preparation or migration task; providers without this information omit it. A materialized snapshot also carries `location` with the backend-resolved selected per-Session artifact path when the backend keeps one; this observational metadata supports diagnostics and export, is not persisted Session content, and is omitted for an unmaterialized pending Session.
 
 A stored log the current build cannot faithfully interpret is refused with a direction-aware error, never misread. `SessionHandle` exposes only current logical records identified by `SESSION_FORMAT_VERSION`; a provider must convert any supported historical storage before returning a handle, and the shipped JSONL provider migrates supported historical generations through its static catalog. A newer format instructs the operator to upgrade the harness. An event type unknown to this build refuses unless its envelope marks it `ignorable`, and committed-prefix corruption rejects as `SessionPersistenceCorruptionError`.
 
@@ -106,12 +106,6 @@ Each `session/event` for the writer's session copies into that handle's internal
 ### Stored-record validation
 
 The seam's shared helpers validate current logical records identified by `SESSION_FORMAT_VERSION`, and appends write only the current format ([rationale](../../../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.md)). Historical decoding and immutable successor publication belong inside each provider before it returns a handle. Every backend runs `storage-contract` validation on handle reads and write-open priming, refusing an unknown event type as `SessionFormatUnsupportedError` and a malformed current record as `SessionPersistenceCorruptionError`, with the raw-log `SessionLocation` attached when the backend keeps one artifact per session.
-
-`isQuiescent(maximum)` is a read-only producer observation. The base provider returns false, so a provider that has not implemented actual pending-work observation cannot authorize an idle configuration update. This observation neither flushes nor closes persistence.
-
-`statSettlesOnAbort` defaults to false. A provider may opt in only when every settled `stat` call, including a cancelled one, has completed its own work and reports cleanup failures instead of cancellation. This per-call guarantee does not cover `open`, `read`, other calls, or provider-wide quiescence.
-
-`readOperationsSettleOnAbort` also defaults to false. A provider may opt in only when read `open`, the resulting handle’s `read`, and `close` each settle their own work and preserve independent failures, including an error equal to the signal reason. This does not establish provider-wide quiescence. An advertised guarantee continues to cover calls already started even if it is later revoked; provider identity remains stable for the instance lifetime.
 
 </details>
 -----

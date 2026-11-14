@@ -5,7 +5,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { PeerScope, RemoteUplinkWindow, TypertResourceReader } from '@deepseek-ai/dsh-typert-protocol'
-import type { RemoteEventHostInfo } from './stream-protocol.ts'
+import type { RemoteEventAgentId, RemoteEventHostInfo } from './stream-protocol.ts'
 
 /** One Remote method request after a carrier has decoded its envelope. */
 export interface InvokeRemoteRequest {
@@ -144,12 +144,10 @@ export type TypertGatewayErrorCode =
   | 'gateway/signature-invalid'
   | 'gateway/uplink-overflow'
 
-/** Explicit optional per-client Remote event buffering limits; omission preserves native unbounded buffering. */
-export interface RemoteEventQueueLimits {
-  readonly maxQueuedEvents: number
-  readonly maxQueuedBytes: number
-  /** Complete encoded native wire-frame bytes, including ready and event envelopes. */
-  readonly maxFrameBytes: number
+/** Public metadata of one unsettled forwarded Remote event. */
+export interface PendingRemoteEventInfo {
+  readonly event: string
+  readonly agentId: RemoteEventAgentId
 }
 
 /** Host dispatcher consumed by Connection adapters. */
@@ -163,17 +161,18 @@ export interface TypertGateway {
    */
   hasLiveClient(): boolean
 
+  /** @returns detached metadata for all unsettled forwarded events in arrival order. */
+  getPendingRemoteEvents(): readonly PendingRemoteEventInfo[]
+
   /**
    * Register the application-selected forwarded-event source.
    * @param source - stream factory installed by the Remote assembly.
    * @param host - stable Host facts included in each Client generation's opening frame.
-   * @param limits - optional positive finite per-client item, resident-byte and complete-frame limits; no defaults.
-   * @returns disposer joining this exact source and cancelling its active streams; bounded cleanup failures retain identity.
+   * @returns disposer removing this exact source and cancelling its active streams.
    */
   registerRemoteEvents(
     source: TypertRemoteEventSource,
     host: RemoteEventHostInfo,
-    limits?: RemoteEventQueueLimits,
   ): () => Promise<void>
 
   /**

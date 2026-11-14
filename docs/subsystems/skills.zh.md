@@ -36,18 +36,18 @@ interface SkillProvider {
    * plugins register synchronously during `apply()`; remote initialization,
    * authentication, and discovery are awaited inside this method. Implementations
    * should settle promptly when `options.signal` aborts.
-   * @param options - view options; `scope` carries caller context, `cwd` selects workspace-sensitive skills and `signal` cancels work.
+   * @param options - lookup options; `cwd` selects workspace-sensitive skills and `signal` cancels work.
    * @returns provider candidates as a complete-array shorthand, or an explicit
    *   observation when usable candidates came from incomplete discovery.
    */
-  readonly list: (options: SkillViewOptions) => Promise<readonly SkillCandidate[] | SkillProviderObservation>
+  readonly list: (options: SkillLookupOptions) => Promise<readonly SkillCandidate[] | SkillProviderObservation>
   /**
    * Load a complete skill body for a previously listed candidate.
    * @param candidate - the winning candidate originally returned by this provider.
-   * @param options - view options; `scope` carries caller context, `cwd` selects workspace-sensitive skills and `signal` cancels work.
+   * @param options - lookup options; `cwd` selects workspace-sensitive skills and `signal` cancels work.
    * @returns the full skill body, or `undefined` if it is no longer loadable.
    */
-  readonly get: (candidate: SkillCandidate, options: SkillViewOptions) => Promise<SkillDefinition | undefined>
+  readonly get: (candidate: SkillCandidate, options: SkillLookupOptions) => Promise<SkillDefinition | undefined>
 }
 ```
 
@@ -74,59 +74,11 @@ interface SkillProviderControl {
 | 500 | `user-agents` | `<agentsHome>/skills` |
 | 600 | `bundled` | 配置了 `Config.bundledSkillDir` 时使用该目录 |
 
-项目根目录为包含 `.git` 的最近祖先目录；找不到时使用当前 cwd。当 `ctx.fs` 可用时，git-root 向上查找通过文件系统服务探测 `.git`，使远程或沙箱工作区不会回退到宿主文件系统边界。用户 DSH 根目录会跳过其 `.system` 子目录。本地提供方不会合成内置系统 skill；部署方通过已配置的 bundled 根目录或专用提供方提供随包 skill。
+项目根目录为包含 `.git` 的最近祖先目录；找不到时使用当前 cwd。当 `ctx.fs` 可用时，git-root 向上查找通过文件系统服务探测 `.git`，使远程或沙箱工作区不会回退到宿主文件系统边界。用户 DSH 根目录会跳过其 `.system` 子目录。本地提供方不会合成内置系统 skill；部署方通过已配置的 bundled 根目录或专用提供方提供随包 skill。失败的根目录不提供候选项，因此在恢复之前，其他根中较低优先级的同名 skill 可能同时提供目录描述与加载的正文。
 
 `dsh-skill-badge` 在 `BUNDLED_SKILL_RANK` 注册一个不可变的 `bundled` 候选项，并通过 `resourceBase` 公开其随包资产目录。交付的 CLI（命令行界面）将该插件声明为禁用，因此启用其组合配置行即为显式选择加入。
 
 Chokidar 会监视现有根目录中直属 bundle 和平铺条目的添加与移除，以及直属 skill 条目的变更。缺失的根目录会从最近的现有祖先开始，逐个跟踪缺失路径段，直至 Chokidar 可以附加。bundle 下的资源文件变更不属于目录变更。面向模型的 `write` 和 `edit` 观测会在目标路径与目录相关时同步使提供方目录失效，而宿主 watcher 覆盖 IDE、Git、shell 和外部进程产生的变更。watcher 失败会使当前观测不完整，但不会在直接加载时隐藏可读候选项；项目作用域 watcher 使用按配置设限的 LRU。
-
-## 受限程序化 source
-
-`FileSystemSkillProvider` 的可选代码参数接入受限读取来源，继续使用原生发现和 YAML 解析；它要求显式根、关闭 watcher 且不配置宿主 bundled 根。每个实例固定一个来源版本，发现与加载分别借用该版本；加载在同一次借用中解析正文并等待资源准备完成，失败不发布可用路径。来源拥有者须核验实际调用者、保留版本和实际 I/O，并只返回调用者可访问的资源指引。普通插件没有该参数时保留既有文件系统行为。
-
-```ts type-equiv
-/** Read operations borrowed from an explicit filesystem source; no writer or host fallback is granted. */
-type FileSystemSkillReader = Pick<FileSystem, 'resolve' | 'stat' | 'listDir' | 'readText' | 'processPath'>
-```
-
-```ts type-equiv
-/** Resource guidance returned only after the source finishes making the loaded version available to this caller. */
-interface FileSystemSkillResources {
-  /** Caller-usable directory, URL or provider description; never an inaccessible source location. */
-  readonly resourceBase: SkillResourceBase
-  /** Optional caller-usable instruction path; source-private paths remain inside provider locators. */
-  readonly path?: string
-}
-```
-
-```ts type-equiv
-/** One borrowed source scope binds native parsing and caller resource preparation to the same source version. */
-interface FileSystemSkillRead {
-  /** Read-only operations valid for this borrowed source scope. */
-  readonly files: FileSystemSkillReader
-  /**
-   * Finish caller-specific resource preparation for the same source version while its read scope remains borrowed.
-   * @param directory Directory selected by this provider's native discovery, not a caller-chosen path.
-   * @param options Original lookup context; the source derives actual caller/project authority independently of cwd.
-   * @returns Complete usable guidance; failures must reject without publishing a partial location.
-   */
-  materialize(directory: string, options: SkillViewOptions): Promise<FileSystemSkillResources>
-}
-```
-
-```ts type-equiv
-/** Optional programmatic source for explicit roots; ordinary ctx.fs/Node discovery remains unchanged without it. */
-interface FileSystemSkillSource {
-  /**
-   * Borrow the source for one discovery or load, retaining actual work until the callback and I/O settle.
-   * Candidate locators may outlive this call; the source must continue to identify their exact version.
-   * @param read Native discovery/body reader and same-version resource preparation.
-   * @param options Original lookup context; scope identifies a caller only after the source owner's admission checks.
-   * @returns The native result after actual source work has settled; cancellation alone is not settlement.
-   */
-  withFiles<T>(read: (source: FileSystemSkillRead) => Promise<T>, options: SkillViewOptions): Promise<T>
-}
-```
 
 ## skill 身份
 
@@ -175,7 +127,7 @@ interface SkillSummary {
 
 `ctx.skills.list()` 保留全部四种策略组合。`isModelInvocable(skill)` 和 `isUserInvocable(skill)` 分别读取对应的必填字段。仅供模型调用的 skill 设置 `{ modelInvocable: true, userInvocable: false }`，仅供用户调用的 skill 设置 `{ modelInvocable: false, userInvocable: true }`，两个字段均设为 `false` 后，该 skill 只能由受信的 `ctx.skills.get()` 调用方获取。本地提供方读取名称完全匹配的 kebab-case frontmatter 键 `disable-model-invocation` 和 `user-invocable`，将省略的字段默认为 `true`，并为每个解析出的 skill 生成这个规范化策略。
 
-`SkillCatalogSnapshot` 用于区分已确定的不存在与提供方的瞬时失败或发现期间持续变化的目录。`skills` 包含该次观测中收集、排序且与调用策略无关的摘要；只有每个已注册提供方都在没有并发目录修订时完成发现，`complete` 才为 true。不完整快照不会缓存，因此每个消费方可以保留上一份经过自身过滤的可用目录并重试。
+`SkillCatalogSnapshot` 用于区分已确定的不存在与提供方的瞬时失败或发现期间持续变化的目录。`skills` 包含该次观测中收集、排序且与调用策略无关的摘要；只有每个已注册提供方都在没有并发目录修订时完成发现，`complete` 才为 true。不完整快照不会缓存，因此下次查询会重试发现；各消费方自行决定如何呈现部分结果。
 
 ```ts type-equiv
 /** One catalog observation plus whether discovery completed within a stable catalog revision. */
@@ -187,11 +139,7 @@ interface SkillCatalogSnapshot {
 }
 ```
 
-`ctx.skills.inspect(options)` 从与 `snapshot()`、`get()` 相同的收集和胜出映射中返回仅供 Host 使用的 `SkillCatalogInspection`。按名称排序的 `candidates` 包含每个借用的原始 `candidate`、`selected` 标记，以及被覆盖行的 `overriddenBy`。来源元数据和 opaque locator 会被保留，但不加载正文，也不授予资源权限。`complete` 与快照含义相同；不完整结果中的覆盖关系仅描述已观测候选项。消费方必须授权并限制公开投影，不得序列化私有路径或 locator。
-
-`SkillPackage` 为不可变内置来源提供完整版本清单和经过哈希校验的文件/归档读取能力。此 Host 能力不进入模型目录或远程元数据。
-
-`SkillCandidate` 是提供方到注册表的形状。`locator` 是提供方拥有的不透明状态；注册表为获胜提供方的 `get()` 和仅供 Host 使用的检查接口保留它，它不是资源能力。
+`SkillCandidate` 是提供方到注册表的形状。`locator` 是提供方的不透明状态；注册表只存储它并在调用获胜提供方的 `get()` 时传回。
 
 ```ts type-equiv
 /** Provider catalog entry used by the registry to merge and later load skills. */
@@ -200,8 +148,6 @@ interface SkillCandidate extends SkillSummary {
   readonly rank: number
   /** Opaque provider-owned handle passed back to `provider.get()`. */
   readonly locator: unknown
-  /** Optional immutable package capability for management consumers; loading and precedence remain provider-owned. */
-  readonly package?: SkillPackage
   /** Parsed optional metadata object from provider-specific skill frontmatter. */
   readonly metadata?: Readonly<Record<string, unknown>>
 }
@@ -241,7 +187,7 @@ type SkillRegistration = Omit<SkillDefinition, 'invocation' | 'provider'> & {
 
 ## 查找与配置
 
-skill 查找对 cwd 敏感，因为提供方可能暴露工作区本地的 skill；可选的 signal 为调用方取消提供方的工作。注册表读取还通过 `SkillViewOptions` 携带观察 scope——消费方传入调用中的 agent，agent 本身就是自己的 scope key；注册表消费 `scope` 做层选择，提供方收到同一个借用的选项对象，也可读取调用者 scope；提供方必须独立核验调用者和项目，`scope` 或 `cwd` 本身不授予权限。取消在目录选择前后（包括缓存命中时）都会检查，并与发现和完整定义加载竞争。如果找不到 git root，本地提供方将所提供的 cwd 本身视为项目根目录。
+skill 查找对 cwd 敏感，因为提供方可能暴露工作区本地的 skill；可选的 signal 为调用方取消提供方的工作。注册表读取还通过 `SkillViewOptions` 携带观察 scope——消费方传入调用中的 agent，agent 本身就是自己的 scope key；注册表消费 `scope` 做层选择，提供方只从同一个借用的选项对象中读取其 `SkillLookupOptions` 约定。取消在目录选择前后（包括缓存命中时）都会检查，并与发现和完整定义加载竞争。如果找不到 git root，本地提供方将所提供的 cwd 本身视为项目根目录。
 
 注册表不缓存完整定义。每次调用 `get()` 都会携所选候选项调用胜出提供方，因此本地提供方会重新读取当前正文。名称与该候选项不再匹配的定义会被拒绝，并使该提供方实例失效以便重新发现。
 
@@ -259,8 +205,8 @@ interface SkillLookupOptions {
 /**
  * Registry read options: provider lookup context plus the viewing scope.
  * The registry consumes `scope` to select layers; providers receive the same
- * borrowed options object and may use its caller context. Scope is not
- * authorization: providers must validate caller identity before preparing resources.
+ * borrowed options object and read only their {@link SkillLookupOptions}
+ * contract from it.
  */
 interface SkillViewOptions extends SkillLookupOptions {
   /** Viewing scope (the calling agent); omitted reads the global layer alone. */
@@ -280,9 +226,9 @@ interface Config {
 
 ## 会话目录与工具约定
 
-`dsh-tool-skill` 在存活会话中第一个观察到非空完整视图的 `agent/pre-step` 注入初始的持久 user-role `<system-reminder>`。目录只包含已排序的 skill `name` 和规范化、经 XML 转义的 `description`；不包含正文、路径、来源、提供方或路由提示。发现通过 `SkillLookupOptions` 转发该步骤的 abort signal。`catalogDescriptionMaxLength` 是消费方用于 description 上限的配置，默认值为 `500`，整数最小值为 `3`。
+`dsh-tool-skill` 在存活会话中第一个观察到可用 skill 或发现不完整的 `agent/pre-step` 注入初始的持久 user-role `<system-reminder>`。目录只包含已排序的 skill `name` 和规范化、经 XML 转义的 `description`；不包含正文、路径、来源、提供方或路由提示。发现通过 `SkillLookupOptions` 转发该步骤的 abort signal。`catalogDescriptionMaxLength` 是消费方用于 description 上限的配置，默认值为 `500`，整数最小值为 `3`。
 
-在后续每个模型步骤之前，消费方都会应用精确的工具可见性，并对完整快照中 `<available_skills>` 标签之间精确渲染的条目计算 digest。它以该插件所发布、最新一条可识别且仍可见的目录消息中的相同条目作为比较基线。digest 发生变化时，会通过 `agent.inject()` 追加一条持久的完整目录替换；删除所有 skill 时会追加一条显式的空替换。不完整快照会保留上一份可用模型视图。如果压缩（compaction）隐藏了所有历史目录消息，下一份完整快照会重新建立当前目录；如果视图为空且从未发布目录，则不发送任何内容。这些目录消息属于会话历史，而非 World State。
+在后续每个模型步骤之前，消费方都会应用精确的工具可见性，并将条目与完整性同会话日志中最新一条可识别且仍可见的目录消息比较。观测变化时，会向 pre-step 决策提供一条持久的替换目录；删除所有 skill 时会追加显式的空替换。发现不完整时会发布可用子集，并附带警告和可选的 `incomplete: true` 来源元数据；缺少该标记表示完整。恢复后即使条目未变也会重新发布目录。如果压缩（compaction）隐藏了所有历史目录消息，下一次观测会重新建立当前目录；完整的空视图在从未发布目录时不发送任何内容。这些目录消息属于会话历史，而非 World State。
 
 面向模型的 `skill({ name })` 工具校验 kebab-case 名称，在与调用策略无关的目录中查找摘要，并在加载前通过 `isModelInvocable` 拒绝无权访问的 skill；随后它根据调用方 agent 的 cwd 重新读取完整定义，并在返回内容前再次检查策略。该工具将无法解析的 skill 报告为未知或已不可用，并返回包含 `<skill_content name="...">`、`<skill_resources>` 和 `<skill_instructions>` 的工具结果。`resourceBase` 仅按需解析显式引用的脚本、参考资料和资产；加载结果不枚举 skill 目录。因此，仅修改正文会改变后续工具调用，而不会生成目录消息或改写先前工具结果。
 
@@ -368,16 +314,6 @@ async list(options: SkillViewOptions = {}): Promise<SkillSummary[]>
 async snapshot(options: SkillViewOptions = {}): Promise<SkillCatalogSnapshot>
 
 /**
- * Inspect every contributed candidate and its actual winner in the same observation used by list/get.
- * Candidate values and locators remain borrowed readonly provider objects; inspection loads no bodies
- * and grants no resource authority. Incomplete results describe only the observed candidates and are
- * not cached. Scope, invalidation and cancellation use the original catalog collection.
- * @param options - original scope/cwd lookup context and optional discovery cancellation signal.
- * @returns name-sorted candidates with selected/overridden relationships and discovery completeness.
- */
-async inspect(options: SkillViewOptions = {}): Promise<SkillCatalogInspection>
-
-/**
  * Load and validate the winning candidate, passing its opaque discovery locator back to the
  * provider. Cancellation is rechecked after selection, including cache hits, and raced against
  * loading so an uncooperative provider cannot hang the caller.
@@ -412,5 +348,5 @@ A skill provider, runtime contribution, or provider-backed catalog may have chan
 'skills/change'(): void
 ```
 
-Source: [`packages/skill/skill/src/types.ts`](../../packages/skill/skill/src/types.ts)
+Source: [`packages/skill/skill/src/index.ts`](../../packages/skill/skill/src/index.ts)
 <!-- END GENERATED cordis-surface -->

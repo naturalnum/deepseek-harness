@@ -161,8 +161,6 @@ A standing-policy change appends a superseding runtime-context snapshot after re
 
 ## Known Limitations and Deferred Work
 
-Terminal allocation forwards the same resolved Session policy with its exact confined argv to the subprocess provider.
-
 <a id="known-limitations-and-deferred-work"></a>
 
 

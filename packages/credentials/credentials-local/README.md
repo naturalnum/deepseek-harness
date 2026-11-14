@@ -60,11 +60,11 @@ declare const ctx: Context
 
 const ref = credentialRef('DEEPSEEK_API_KEY')
 await ctx.credentials.set(ref, 'sk-…')          // save
-await ctx.credentials.describe(ref)             // { configured, source?, writable } — never the value
+await ctx.credentials.describe(ref)             // { configured, source?, writable, masked? } — never the value
 await ctx.credentials.unset(ref)                // remove
 ```
 
-A key you save is usable by the next request that names it, and `describe` reports whether it is set, where it comes from, and whether you can write to it — never the value itself. Records persist in the same file, addressed by `<owner>/<id>` and managed with the seam's record operations (`readRecord`, `describeRecord`, `listRecords`, `modifyRecord`, `deleteRecord`).
+A key you save is usable by the next request that names it, and `describe` reports whether it is set, where it comes from, and whether you can write to it — never the value itself. A stored file value also reports a `masked` preview; environment fallbacks omit this field. The preview splits the provider identifier after the first hyphen or underscore, or uses no identifier when neither exists. It keeps the identifier and the first five/last four key code points only when at least eight key code points remain hidden. Otherwise it masks the whole value, including the identifier. Counts and slicing use `Array.from` Unicode code points; combining sequences are not treated as one grapheme. The identifier is intentionally visible and must not be assumed nonsensitive merely because it precedes a separator. Records persist in the same file, addressed by `<owner>/<id>` and managed with the seam's record operations (`readRecord`, `describeRecord`, `listRecords`, `modifyRecord`, `deleteRecord`).
 
 ### Where keys come from
 
@@ -151,10 +151,6 @@ This section explains the design decisions behind the provider and points at the
 `modifyRecord` runs on the same chain and lock: it re-reads the document, passes the record as it stands to the mutation, admits the result — a non-empty API key, a grant payload that survives a JSON round trip — renders the record wholesale, and commits, firing `credentials/record-updated` once. A composition the product CLI did not boot has only the inherited environment as its layer.
 
 ### Reload lifecycle
-
-The provider's `set`, `unset`, `modifyRecord` and `deleteRecord` submit through the credential service's optional save hook before joining the operation chain. The observed Promise includes lock acquisition, an asynchronous record mutator, atomic replacement, cache updates and update-event dispatch. A failed task remains observable even though the internal queue recovers for later tasks; optional listener failures retain their existing contained behavior. Read-only refreshes are not save submissions.
-
-Initialization submits a recognized flat-document migration as `migrate-flat-document` before acquiring its writer lock. The observed Promise includes the atomic rewrite and subsequent parsing and cache loading; refusal or failure prevents service readiness. An embedding Host must mount a subclass whose constructor calls `super(ctx, config)` and then `this.registerSaveHook(hook)`, binding the hook to that instance before Cordis calls `Service.init`. A hook installed through the ready service cannot protect initialization. Without a hook, startup retains its ordinary migration behavior.
 
 A watcher event or the ready-time reconciliation queues a refresh behind the same chain. `reconcileFromDisk` re-checks permissions, re-reads the text, replaces both snapshots wholesale when the text differs, and publishes one event per changed reference or record; content equal to the text cache — including the provider's own writes — is a no-op. Disposal sets the closed flag, stops accepting events, closes the watcher, and waits out queued operations so nothing publishes after teardown.
 

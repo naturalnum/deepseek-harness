@@ -53,12 +53,12 @@ declare const ctx: Context
 
 const ref = credentialRef('DEEPSEEK_API_KEY')          // POSIX shell identifier, branded
 const hit = await ctx.credentials.resolve(ref)         // { value, source } | undefined
-const info = await ctx.credentials.describe(ref)       // { configured, source?, writable } — never the value
+const info = await ctx.credentials.describe(ref)       // { configured, source?, writable, masked? } — never the value
 await ctx.credentials.set(ref, 'sk-…')                 // the stored value outranks environment fallbacks
 await ctx.credentials.unset(ref)                       // no-op when absent; an environment fallback then applies again
 ```
 
-Store a key with `set`, remove it with `unset`, check its status with `describe`, and read the current value with `resolve` when an operation needs it. `describe` reports whether the key is set, where it comes from, and whether you can write to it — it never returns the value.
+Store a key with `set`, remove it with `unset`, check its status with `describe`, and read the current value with `resolve` when an operation needs it. `describe` reports whether the key is set, where it comes from, and whether you can write to it — it never returns the value. Providers may disclose a masked stored-value preview through the optional `masked` field; the full value stays on the Host.
 
 ### Storing, updating, and removing records
 
@@ -140,10 +140,6 @@ The `./types` subpath export holds the event declarations together with the `Cre
 ### Lifecycle
 
 The service is a Cordis `Service` registered by the provider: disposing the mounting fiber removes `ctx.credentials`.
-
-An embedding Host can install one `CredentialSaveSubmissionHook` using `registerSaveHook()`. Providers opt in by calling the protected `submitSave(operation, submit)` before their own writer queue. The hook decides admission synchronously, invokes the actual submission at most once, and observes its Promise through required storage and publication, preserving results and failures. `CredentialSaveOperation` carries only the operation kind and, for addressed writes, the reference or record address; `migrate-flat-document` identifies initialization migration without an address. Without a hook, submission returns the original operation Promise. This Service Definition owns the hook independently of configuration persistence; a provider has no dependency on config-editor. A registered hook covers only instrumented provider writers. Stop and settle those writers before disposing the hook; caller unload also removes it.
-
-A provider subclass can call `registerSaveHook()` in its constructor after `super()`. Cordis calls `Service.init` after the complete constructor returns, so this registration can protect initialization saves. Mount that subclass with the Host's hook bound to its own instance; registering through a ready service cannot cover earlier writes.
 
 </details>
 

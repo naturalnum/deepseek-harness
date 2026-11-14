@@ -61,9 +61,7 @@ A command may declare `input.attachments` to accept composer images and generic 
 
 An interactive adapter calls `execute(agent, line, attachments, signal)` with the exact receiving agent, the full command line, and the submission's ordered attachments. It returns the settled `CommandExecution` — the normalized result plus its lifecycle `commandId` — or `undefined` for invalid syntax or an unknown name. `list(agent)` and `find(agent, name)` serve discovery after agent-scoped shadowing.
 
-### Deployment admission
-
-A deployment subclass can override the synchronous protected `assertCommandInvocation(agent)` check. The executor calls it after attachment admission and immediately before entering the registered handler; the default accepts the invocation. Throwing prevents handler side effects and settles the existing `command/run` with a `command/done` error. Attachments already stored during admission remain subject to the ordinary unreferenced-object collection policy. This check does not interrupt a handler that has already started.
+The stateless `@deepseek-ai/dsh-commands/builtin` entry shares first-party identity, English/Chinese input tokens, and descriptor resolution across Host and Client adapters. `builtinCommandName()` identifies the definition independently of its registered name; `resolveCommand()` preserves exact-name priority and follows aliases by definition ID. Adapters choose their supported subset; the registry itself continues to accept arbitrary definitions.
 
 ### Cancellation
 
@@ -86,6 +84,7 @@ The observable behavior is covered in [Use this package](#use-this-package); thi
 | [`src/index.ts`](src/index.ts) | `CommandRuntime` service: registration, scoping, dispatch, lifecycle events |
 | [`src/types.ts`](src/types.ts) | Command definition, descriptor, execution, and result types |
 | [`src/brand.ts`](src/brand.ts) | Stable command-definition identities and per-execution lifecycle ids |
+| [`src/builtin.ts`](src/builtin.ts) | First-party identity and token resolution for Host and Client adapters |
 
 ### Lifecycle events
 

@@ -62,7 +62,7 @@ await ctx.sessionPersistence.flush()                           // backend-wide d
 
 ### 失败与恢复
 
-对于版本化产物，`stat` 与 `list` 通过 `formatStatus` 暴露 `current` 或 `migration-required`。独立的 `header` 仍是当前逻辑元数据。该状态描述存储，不描述内存准备或迁移任务；没有这项信息的提供方省略该字段。
+对于版本化产物，`stat` 与 `list` 通过 `formatStatus` 暴露 `current` 或 `migration-required`。独立的 `header` 仍是当前逻辑元数据。该状态描述存储，不描述内存准备或迁移任务；没有这项信息的提供方省略该字段。已物化快照还包含 `location`，在后端保留独立产物时给出后端解析的选中每 Session 产物路径；这项观察元数据用于诊断与导出，不是持久化 Session 内容，未物化的待定 Session 省略它。
 
 当前构建无法忠实解读的存储日志会被拒绝，并返回指明拒绝方向的错误，绝不会被误读。`SessionHandle` 只暴露由 `SESSION_FORMAT_VERSION` 标识的当前逻辑记录；提供方必须在返回句柄前转换任何受支持的历史存储，随产品交付的 JSONL 提供方会通过静态 catalog 迁移受支持的历史代际。更新的格式会要求操作者升级 harness。本构建不认识的事件类型会被拒绝，除非其信封标记为 `ignorable`；已提交前缀中的损坏以 `SessionPersistenceCorruptionError` 拒绝。
 
@@ -106,12 +106,6 @@ await ctx.sessionPersistence.flush()                           // backend-wide d
 ### 存储记录校验
 
 seam 的共享辅助函数校验由 `SESSION_FORMAT_VERSION` 标识的当前逻辑记录，append 只写当前格式（[理由](../../../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.zh.md)）。历史解码与不可变后继发布属于各提供方内部，并在其返回句柄前完成。每个后端都在句柄读取与写 open 预热时运行 `storage-contract` 校验，把未知事件类型作为 `SessionFormatUnsupportedError` 拒绝，把格式错误的当前记录作为 `SessionPersistenceCorruptionError` 拒绝，并在后端为每个会话保留一份产物时附上原始日志的 `SessionLocation`。
-
-`isQuiescent(maximum)` 是只读的 producer 观察。基础 provider 返回 false，因此没有实现实际待处理工作观察的 provider 不能授权 idle 配置更新。该观察不会 flush 或关闭持久化。
-
-`statSettlesOnAbort` 默认为 false。只有当每次已结算的 `stat`（包括被取消的调用）均已完成自身工作，并且清理失败不会被取消覆盖时，provider 才能启用它。这个逐次保证不覆盖 `open`、`read`、其他调用或 provider 整体空闲状态。
-
-`readOperationsSettleOnAbort` 同样默认为 false。只有只读 `open`、所得句柄的 `read` 和 `close` 各自完成自身工作并保留独立失败（包括与 signal 原因相同的错误）时，provider 才能启用它。该保证不代表 provider 整体空闲。已声明的保证即使后来被撤回，也必须继续覆盖已开始的调用；provider identity 在实例生命周期内保持稳定。
 
 </details>
 -----

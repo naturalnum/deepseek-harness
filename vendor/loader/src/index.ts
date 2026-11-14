@@ -1,10 +1,10 @@
-import { Context, FiberState, Inject, Service, type Fiber } from '@deepseek-ai/cordis'
-import { defineProperty, isNullable, type Dict } from '@deepseek-ai/cosmokit'
+import { Context, FiberState, Inject, Service } from '@deepseek-ai/cordis'
+import { defineProperty, isNullable, type Awaitable, type Dict } from '@deepseek-ai/cosmokit'
 import { ModuleLoader } from './internal.ts'
-import { Entry, type EntryOptions, type EntryConfigUpdatePlan } from './config/entry.ts'
+import { Entry, type EntryOptions } from './config/entry.ts'
 import { EntryGroup } from './config/group.ts'
 import isolate from './config/isolate.ts'
-import { EntryTree } from './config/tree.ts'
+import { EntryTree, type EntryChange } from './config/tree.ts'
 import { interpolate } from './config/utils.ts'
 
 /** Re-export entry node APIs. */
@@ -38,7 +38,7 @@ declare module '@deepseek-ai/cordis' {
      * @param next - continue context refresh and Loader's config update.
      * @mode waterfall
      */
-    'loader/patch-context'(entry: Entry, next: () => void): void
+    'loader/patch-context'(entry: Entry, next: () => Awaitable<void>): Awaitable<void>
   }
 
   interface Context {
@@ -69,60 +69,10 @@ export namespace Loader {
   }
 }
 
-/** Synchronous checks run before each actual tree mutation in a guarded operation. */
-export interface LoaderUpdateGuard {
-  /**
-   * Check an entry before its options or runtime state changes.
-   * @param entry - target entry.
-   * @param options - proposed options.
-   * @param create - whether options replace the row.
-   * @param force - native force flag.
-   * @returns A prepared live plan, or undefined for an explicitly audited carrier update.
-   */
-  entry(entry: Entry, options: Partial<EntryOptions>, create: boolean, force: boolean): EntryConfigUpdatePlan | undefined
-  /**
-   * Check a group before its child list changes.
-   * @param group - target group.
-   * @param config - complete proposed child rows.
-   */
-  group(group: EntryGroup, config: EntryOptions[]): void
-  /**
-   * Check a child before assigning its id or parent.
-   * @param group - target group.
-   * @param options - proposed child row.
-   */
-  create(group: EntryGroup, options: Omit<EntryOptions, 'id'>): void
-  /**
-   * Check an entry before it stops and leaves its group.
-   * @param entry - entry about to stop.
-   */
-  remove(entry: Entry): void
-}
-
-/**
- * Host-owned async execution scope for one guarded operation. Only the operation
- * and its async descendants may observe its guard; unrelated work observes none.
- * The provider must preserve this isolation across awaits until actual settlement.
- */
-export interface LoaderUpdateScope {
-  /**
-   * Read the guard bound to this async execution.
-   * @returns The operation's guard, or undefined outside its async descendants.
-   */
-  getStore(): LoaderUpdateGuard | undefined
-  /**
-   * Execute and return the complete operation in its isolated async scope.
-   * @param guard - guard to bind only to this operation and its descendants.
-   * @param operation - complete mutation operation, including awaited child work.
-   * @returns The original operation's actual settlement and result.
-   */
-  run<T>(guard: LoaderUpdateGuard, operation: () => Promise<T>): Promise<T>
-}
-
 /**
  * Service that owns a loader entry tree and imports configured plugins.
  *
- * Subclasses provide persistence by implementing `write()` on `EntryTree`.
+ * Subclasses provide persistence by implementing `commit(change)` on `EntryTree`.
  */
 export class Loader extends EntryTree {
   declare [Service.config]: Loader.Intercept
@@ -135,39 +85,6 @@ export class Loader extends EntryTree {
   public internal = ModuleLoader.fromInternal()
 
   public builtins: Dict<any> = Object.create(null)
-  private updateReservation: { guard: LoaderUpdateGuard; scope: LoaderUpdateScope } | undefined
-
-  /**
-   * Active mutation checks for this Loader.
-   * @returns The active checks, or undefined without a guarded operation.
-   * @throws If a concurrent unbound update attempts a reserved tree mutation.
-   */
-  get updateGuard(): LoaderUpdateGuard | undefined {
-    const reservation = this.updateReservation
-    if (reservation === undefined) return undefined
-    if (reservation.scope.getStore() !== reservation.guard) {
-      throw new Error('Loader configuration is reserved by a guarded update')
-    }
-    return reservation.guard
-  }
-
-  /**
-   * Reserve this Loader's mutations for one checked native update operation.
-   * @param guard - synchronous checks at the actual mutation points.
-   * @param operation - complete persistence/application operation; await all child updates.
-   * @param scope - Host-owned async scope; undefined rejects before reserving or executing work.
-   * @returns The operation's result after the reservation releases.
-   * @throws If scope is absent or another guarded operation already reserves this Loader.
-   */
-  async withUpdateGuard<T>(
-    guard: LoaderUpdateGuard, operation: () => Promise<T>, scope: LoaderUpdateScope | undefined,
-  ): Promise<T> {
-    if (scope === undefined) throw new Error('Loader guarded update requires an async execution scope')
-    if (this.updateReservation !== undefined) throw new Error('Loader configuration is already reserved')
-    this.updateReservation = { guard, scope }
-    try { return await scope.run(guard, operation) }
-    finally { this.updateReservation = undefined }
-  }
 
   constructor(ctx: Context, public config: Loader.Config = {}) {
     super(ctx)
@@ -184,26 +101,25 @@ export class Loader extends EntryTree {
 
     ctx.reflect.provide('loader', this, this[Service.check])
 
-    ctx.on('internal/config', function (this: Fiber, _config, next) {
+    ctx.on('internal/config', (fiber, next) => {
       const config = next()
-      if (!this.entry || this.parent.fiber?.entry === this.entry) return config
-      // Tree carriers (Group, Include) keep their configs literal: their
-      // entry and patch lists hold other rows' configs, whose `!!js`
-      // expressions belong to those rows' own fibers.
-      const plugin = this.runtime?.callback as Record<PropertyKey, unknown> | undefined
-      if (plugin?.[EntryGroup.key]) return config
-      return interpolate(this.ctx, config)
-    }, { global: true })
+      if (!fiber.entry || fiber.parent.fiber?.entry === fiber.entry) return config
+      // Tree carriers preserve the expressions owned by their child entries.
+      if (fiber.runtime?.callback[EntryGroup.key]) return config
+      return interpolate(fiber.ctx, config)
+    })
 
-    ctx.on('internal/update', function (config, noSave, next) {
-      if (!this.entry || noSave || this.parent.fiber?.entry === this.entry) return next()
-      const unparse = this.runtime?.Config?.['simplify']
-      this.entry.options.config = unparse ? unparse.call(this.runtime!.Config, config) : config
-      this.entry.parent.tree.write()
-      return next()
-    }, { global: true, prepend: true })
+    ctx.on('internal/commit', (fiber, config) => {
+      if (!fiber.entry || fiber.parent.fiber?.entry === fiber.entry) return
+      const schema = fiber.runtime?.Config
+      const unparse = schema?.['simplify']
+      const { entry } = fiber
+      const legacy = { ...entry.options }
+      entry.options.config = unparse ? unparse.call(schema, config) : config
+      entry.parent.tree.commit({ id: entry.options.id, group: entry.parent, options: entry.options, legacy })
+    })
 
-    ctx.on('internal/update', function (config, _, next) {
+    ctx.on('internal/update', function (config, next) {
       if (!this.entry || this.parent.fiber?.entry === this.entry) return next()
       self.showLog(this.entry, 'reload')
       return next()
@@ -235,25 +151,33 @@ export class Loader extends EntryTree {
       if (!ctx.registry.has(fiber.runtime!.callback)) return
 
       // case 5: the entry's tree is being disposed
-      const treeOwner = fiber.entry.parent.tree.ctx.fiber
-      if (!treeOwner.uid || treeOwner.state === FiberState.UNLOADING) return
+      if (!fiber.entry.parent.tree.ctx.fiber.uid) return
 
-      this.showLog(fiber.entry, 'unload')
+      const { entry } = fiber
+      this.showLog(entry, 'unload')
 
-      // case 6: fiber is disposed by loader behavior
+      // case 6: the entry's parent is being unloaded, which takes the entry with it
+      // (the parent may still be registered, e.g. when it has lost a dependency)
+      if (fiber.parent.fiber.state === FiberState.UNLOADING) return
+
+      // case 7: the entry is being removed by the loader (`EntryGroup.remove`
+      // unregisters it before disposing the fiber)
+      if (entry.parent.tree.store[entry.options.id] !== entry) return
+
+      // case 8: fiber is disposed by loader behavior
       // such as inject checker, config file update, ancestor group disable
-      if (fiber.entry.ownsPreparedDisposal(fiber)) return
-      if (fiber.entry.disabled) return
+      if (entry.disabled) return
 
-      fiber.entry.options.disabled = true
-      fiber.entry.parent.tree.write()
+      const legacy = { ...entry.options }
+      entry.options.disabled = true
+      entry.parent.tree.commit({ id: entry.options.id, group: entry.parent, options: entry.options, legacy })
     })
 
     ctx.plugin(isolate)
   }
 
-  write() {
-    // Loader's root tree is in-memory; writes are no-ops.
+  commit(_change: EntryChange) {
+    // Loader's root tree is in-memory; commits are no-ops.
   }
 
   [Service.check]() {

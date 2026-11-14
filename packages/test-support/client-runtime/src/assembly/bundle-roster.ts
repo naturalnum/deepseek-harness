@@ -15,7 +15,7 @@
  */
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { evaluate, isJsExpr, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { applyEntryPatches, entryListSchema, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
@@ -23,7 +23,10 @@ import { exactPackageSpecifier, parseDshClient } from '@deepseek-ai/dsh-client-m
 import * as yaml from 'js-yaml'
 import { ClientRoster, type ClientRosterRow } from './roster.ts'
 
-/** The `web` profile's bundle layers, in the order `dsh --profile web` applies them (app-boot `PROFILE_TEMPLATES.web`). */
+/**
+ * The `web` profile's bundle layers, in the order `dsh --profile web` applies them
+ * (`PROFILE_TEMPLATES.web` in `@deepseek-ai/dsh-official-bundles`).
+ */
 export const WEB_PROFILE_BUNDLES: readonly string[] = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']
 
 interface PackageManifest {
@@ -64,7 +67,7 @@ export function bundleRoster(
     if (disabledContext !== undefined
       && disabled.some(value => isJsExpr(value) && Boolean(evaluate(disabledContext, value.__jsExpr)))) continue
     seen.add(name)
-    const manifestPath = locateManifest(anchors, name, bundles)
+    const manifestPath = locateManifest(anchors, name)
     if (manifestPath === undefined) {
       throw new Error(`client-test-runtime: cannot resolve plugin package ${name} from ${bundles.join(', ')}`)
     }
@@ -130,17 +133,18 @@ function readManifest(path: string): PackageManifest {
   return JSON.parse(readFileSync(path, 'utf8')) as PackageManifest
 }
 
-/** Resolve linked bundles and their dependencies in anchor and search-depth order. */
-function locateManifest(anchors: readonly string[], name: string, bundleNames: readonly string[] = []): string | undefined {
-  const searches = anchors.map((anchor, index) => ({
-    anchor,
-    bundleName: bundleNames[index],
-    paths: createRequire(anchor).resolve.paths(name) ?? [],
-  }))
-  for (let depth = 0; depth < Math.max(...searches.map(search => search.paths.length)); depth++) {
-    for (const search of searches) {
-      if (depth === 0 && search.bundleName === name) return search.anchor
-      const directory = search.paths[depth]
+/**
+ * Prefer an anchor manifest with the requested package name, then search dependencies by depth and anchor order.
+ * Return real paths so linked bundles use their own dependency directories.
+ */
+function locateManifest(anchors: readonly string[], name: string): string | undefined {
+  for (const anchor of anchors) {
+    if (basename(anchor) === 'package.json' && readManifest(anchor).name === name) return realpathSync(anchor)
+  }
+  const paths = anchors.map(anchor => createRequire(anchor).resolve.paths(name) ?? [])
+  for (let depth = 0; depth < Math.max(...paths.map(search => search.length)); depth++) {
+    for (const search of paths) {
+      const directory = search[depth]
       if (directory === undefined) continue
       const candidate = join(directory, name, 'package.json')
       if (existsSync(candidate)) return realpathSync(candidate)

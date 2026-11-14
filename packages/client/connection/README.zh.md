@@ -29,10 +29,6 @@ kind: "package-reference"
 
 静态桌面页面可以通过 `__DSH_TRANSPORT__.streamBaseUrl` 提供其所拥有 Host 的 HTTP origin。Gateway 将该 origin 用于 WebSocket，HTTP 传输仍独立选择。桌面载体负责认证；仅设置 origin 不会授予访问权限。
 
-嵌入式 Node 载体可通过已导出的 `HostConnectionService` 类缩窄 connection 类型，再调用 `handleNodeRequest(req, res, peer, maxRequestBodyBytes)`。调用方必须完成认证和请求准入、校验 Host/Origin、选择存活的 Peer，并保留未读取的请求体。该方法复用原生 `/api` bridge、请求体模式和限制及 envelope 校验，不注册路由或开启监听。Node 请求类型仅位于此 Host 类；与其他载体共享的 `HostConnectionHandle` 保持载体无关。
-
-取消流式请求会终止待完成的请求体读取，不会排空剩余字节。bridge 使用 `Connection: close` 刷出提前响应，然后销毁原始未读 Node 请求并等待销毁完成。因此，客户端可以在 socket 关闭前收到存储拒绝原因；bridge 完成时仍保留原始销毁失败。
-
 一元 RPC 请求使用 JSON。Host handler 可以返回已经从 JSON 兼容结果值中分离的字节附件，每个附件标明其相对于结果的路径。Connection 将这些值写为 multipart 部分。JSON `metadata` 部分包含带 `null` 占位值的 RPC 响应信封，以及记录各路径、codec 和部分标识符的附件表。路径使用字符串键与数字数组下标，不保留任何业务字段名。Client 校验信封、`rpcId`、附件表和各部分，再将每个字节值恢复为以 `ArrayBuffer` 为底层缓冲区的视图。没有附件的结果（包括 base64 字符串）与失败仍使用 JSON。逻辑 RPC 载体直接返回解码后的原生值。Connection 不识别二进制字段，也不依赖 Typert；拥有结果协议的 handler 在返回前执行按类型或按运行时值的投影。不支持二进制参数、事件和二进制流式结果。
 
 浏览器通过 HTTP POST 执行 Remote 一元调用；API Gateway 自己拥有 `/api/remote.mux` WebSocket 及其逻辑流。由 shell 持有的组合通过 `connection.rpc.open` 提供等价的 Remote 流（包括流的上行），不打开 WebSocket。浏览器插件读取页面 transport、恢复设置与 location，再委托 `installConnection(ctx, options)`。持有自身载体的组合可以直接调用同一个安装函数；整机客户端测试档就是这一消费者。非页面载体通过 `ClientTransportHooks.createWebSocket` 使用与 HTTP 相同的认证 Cookie，并提供 `streamBaseUrl`；`ConnectionHandle.openWebSocket()` 根据该 base 解析 Mux 路径，再调用所选工厂。每次调用都会创建一个归所属 Context 的服务，因此同一 realm 中的多棵 Client 树可以使用不同载体。Host half 始终提供与载体无关的 RPC 注册表和精确 `GET`/`HEAD`/`POST` 路由注册表。存在 Web 载体时，它还持有唯一 `/api` route、Fetch bridge、浏览器认证与 Host/Origin 校验；由 shell 持有的载体则直接分派共享 Fetch handler。每条精确路由会在 bridge 读取任何字节前声明缓冲或流式请求体处理方式。Typert Gateway 认领生成的 Remote endpoint，功能包注册 Session 日志下载、原始文件上传等非 JSON 响应，未认领的请求返回 404。Loopback hostname 判定只供浏览器侧当前页面状态使用，留在包内。浏览器原始请求体传输由 [`dsh-client-file-upload`](../file-upload/README.zh.md) 提供。
@@ -54,11 +50,7 @@ HTTPS cookie 名称与签名 audience 包含 `https:` scheme，因此即使 host
 
 仅供 API 使用的 `GET /connect?token=...&interactions=answer|none` 立即创建 principal 为 owner 的 Peer，返回 302、Mux 目标地址与签名 API Cookie。API 连接默认 `none`，非法或重复声明返回 400。HTTP 可先于 WebSocket 建立。一条 API socket 负责清理：重复关联返回 409，关闭时移除其 Peer，之后使用该 Cookie 的 HTTP 被拒绝。已受理 unary 调用保留请求级取消，但 Peer 释放后 `invocation.peer.ctx` 不再接受新的 effect 注册。API 调用方将 Cookie 与浏览器存储分开；两者使用相同的 authority 专属 Cookie 名称。
 
-外部已准入的 carrier 可向 `HostConnectionService.handleNodeRequest` 或 `createSharedFetchHandler` 传入 `beforeDispatch`。原生选择器报告实际的 `ConnectionDispatch`：exact Fetch 的 method/path，或完成 JSON 与 envelope 校验后的 RPC endpoint。同步 guard 紧靠真实 handler 调用前执行；抛错交回外层 carrier 安全映射响应。它可在正文传输后重查权限，不能用被遮盖的 RPC 名称批准实际 Fetch。省略时保留普通原生分派。
-
-Node carrier 也可向 `handleNodeRequest` 传入同步的 `beforeResponse`。bridge 在 handler 返回后、发送响应头前调用它；省略时保持普通路径。若回调抛错，bridge 中止请求并等待响应体取消后再传播拒绝。若取消失败，已导出的 `ResponseCleanupError` 保留两个失败；取消未结算时 bridge 继续等待。carrier 负责安全错误映射和所持资源。
-
-通过认证的共享 HTTP 请求在传输请求体之前经过 `connection/request` waterfall。监听器可以拒绝新请求，或等待 `next()` 直到响应完成；释放所属 fiber 会移除准入行为。Desktop 使用此扩展点，在已批准的安装期间锁住新的 API 工作，而不取消已接纳的工作。客户端断开会中止处理函数的信号；桥接器停止写入 socket，并排空剩余响应块。取消流式请求会停止接收数据，并等待原 Node 请求销毁后才返回；迟到的数据不会重新打开已取消的请求体。WebSocket 流仍由 API Gateway 负责。
+通过认证的共享 HTTP 请求在传输请求体之前经过 `connection/request` waterfall。监听器可以拒绝新请求，或等待 `next()` 直到响应完成；释放所属 fiber 会移除准入行为。Desktop 使用此扩展点，在已批准的安装期间锁住新的 API 工作，而不取消已接纳的工作。客户端断开会中止处理函数的信号；桥接器停止写入 socket，并排空剩余响应块。WebSocket 流仍由 API Gateway 负责。
 
 <a id="connection-generation"></a>
 ## Connection generation

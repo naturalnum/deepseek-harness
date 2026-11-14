@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package lets browser features store a `Blob`, exact bytes, or a `ReadableStream<Uint8Array>` for one Session and receive an opaque receipt for a later prompt. Served pages send Blob and stream bodies without aggregating their bytes on the page thread; pages whose Host runs in another execution context supply a Fetch-shaped carrier before Cordis boots. Callers can observe consumed bytes and cancel an active operation. A stream body is consumed once and transfers ownership when it crosses a Worker boundary. Exact bytes use the generated Remote.
+This package lets browser features store a `Blob`, exact bytes, or a `ReadableStream<Uint8Array>` for one Session and receive an opaque receipt for a later prompt. Served pages send Blob and stream bodies without aggregating their bytes on the page thread; pages whose Host runs in another execution context supply a Fetch-shaped carrier before Cordis boots. Callers can observe consumed bytes and cancel an active operation. A stream body is consumed once and transfers ownership when it crosses a Worker boundary. An image upload stages a normalized prompt image that a later prompt cites by receipt.
 
 ## Table of Contents
 
@@ -25,16 +25,14 @@ This package lets browser features store a `Blob`, exact bytes, or a `ReadableSt
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount the package before a consumer that injects `fileUpload`, then call `ctx.fileUpload.upload(sessionId, body, name, signal, onProgress)`. The Session identity addresses both the raw route and generated Remote fallback; callers do not assemble either request.
+Mount the package before a consumer that injects `fileUpload`, then call `ctx.fileUpload.upload(sessionId, body, name, signal, onProgress)`, or `ctx.fileUpload.uploadImage(sessionId, blob, mediaType, name, signal, onProgress)` for a prompt image. The Session identity addresses both the raw route and generated Remote fallback; callers do not assemble either request.
 
 ```yaml
 - id: file-upload
   name: '@deepseek-ai/dsh-client-file-upload'
 ```
 
-The Host option `maxPendingReceipts` is a positive safe integer and defaults to 128. It bounds staged receipts and in-flight native intakes together, including zero-byte uploads and cold Agent resolution; a full owner refuses new intake before pulling its body. Retirement and Session disposal release only receipts actually removed, while unfinished native work keeps its slot. A `Blob` uses XMLHttpRequest inside a dedicated Worker so the service can report browser upload progress, including the total when the browser provides it. A `ReadableStream` transfers to that Worker and feeds Fetch incrementally; progress reports consumed bytes without a total. An `AbortSignal` terminates the dedicated Worker or reaches a page-owned carrier. Exact bytes use the generated Remote.
-
-A page owner can install `ctx.provide('fileUploadHooks', { fetch: capturedFetch })` on its fresh Client Context before the upload plugin activates. The service captures that Fetch function once, ahead of the legacy `__DSH_FILE_UPLOAD__` hook; later dependency or global changes do not redirect an existing instance. The carrier owns identity binding, revocation and actual request settlement. It receives the original body and signal; this Fetch path does not produce upload-progress events or retry unknown uploads.
+The package has no Cordis configuration fields. A `Blob` uses XMLHttpRequest inside a dedicated Worker so the service can report browser upload progress, including the total when the browser provides it. A `ReadableStream` transfers to that Worker and feeds Fetch incrementally; progress reports consumed bytes without a total. An `AbortSignal` terminates the dedicated Worker or reaches a page-owned carrier. Exact bytes use the generated Remote.
 
 -----
 
@@ -44,9 +42,9 @@ A page owner can install `ctx.provide('fileUploadHooks', { fetch: capturedFetch 
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The Client plugin provides `ctx.fileUpload`. Its `upload()` method receives the owning Session identity, assembles the raw route request, and invokes the generated Remote for exact bytes. The provider captures the optional Context-owned `fileUploadHooks.fetch`, then falls back to the legacy pre-Cordis `__DSH_FILE_UPLOAD__` hook. Without either input, each Blob or stream request owns a short-lived Worker and releases it after completion, failure, or cancellation. Startup failures release acquired browser resources before propagating the original error. With a Fetch carrier, the service sends the body through that captured function; the Web Worker runtime transfers stream bodies through its request frame and exposes them to the Host HTTP bridge as backpressured chunks.
+The Client plugin provides `ctx.fileUpload`. Its `upload()` method receives the owning Session identity, assembles the raw route request, and invokes the generated Remote for exact bytes. The provider reads the optional pre-Cordis `__DSH_FILE_UPLOAD__` hook once. Without a hook, each Blob or stream request owns a short-lived Worker and releases it after completion, failure, or cancellation. With the hook, the service sends the body through the page-owned Fetch carrier; the Web Worker runtime transfers stream bodies through its request frame and exposes them to the Host HTTP bridge as backpressured chunks.
 
-The Host plugin provides `ctx.fileUploads`. It owns the authenticated streaming route, encoded Remote fallback, command receipt resolver, and staged-receipt lifecycle; encoded admission, attachment-error recognition, and byte storage stay behind `ctx.attachments`. Host callers supply an Agent with its runtime-owned context; receipt tables use that Agent's exact Session object as their key. Host subclasses can override the awaited `storeFileStream(agent, input)` step to admit the original stream under that resolved Agent before storage begins; the default forwards to the attachment store, and no receipt is published before the hook completes. A rejected hook does not establish storage rollback or source closure. If the hook returned a saved reference but Agent recheck or receipt handoff fails, intake remains unconfirmed. A receipt row left by a failed handoff cannot be used, and Session disposal does not release its unknown slot. An original attachment error marked `settlement: 'unknown'` becomes `FileUploadIntakeUnconfirmedError` with the exact cause; ordinary attachment refusals keep their existing slot-release behavior. An override reports unconfirmed work with `FileUploadIntakeUnconfirmedError`: its slot remains occupied, new intake closes, and owner disposal reports the unconfirmed settlement. Owner disposal joins actual intake promises; physical Request/socket completion remains with the Connection/ingress owner. The raw HTTP route closes its body iterator after the upload service settles or request validation rejects, even when no bytes were read; it awaits reader cancellation and any active read. Cancel or join failure is reported as unconfirmed with `details.reason` set to `FILE_UPLOAD_INTAKE_UNCONFIRMED`; a rejection before files-lane admission does not retain that lane. The Session Controller registers the resolver that can resume a cold ordinary Agent and consumes receipts during prompt admission. Prompt delivery holds each receipt binding in a disposable transaction: disposal restores the previous binding until successful delivery commits it, and queue or history observation then retires the committed receipt.
+The Host plugin provides `ctx.fileUploads`. It owns the authenticated streaming route, encoded Remote fallback, command receipt resolver, and staged-receipt lifecycle; encoded admission, attachment-error recognition, and byte storage stay behind `ctx.attachments`. A raw upload with a `mediaType` query parameter reads at most the smaller of the deployment's per-image and per-message image byte limits and stores the image through `ctx.attachments.saveImages`; its receipt records the upload's byte length and resolves to that image during prompt admission, where those bytes count toward the per-message image byte limit, and commands accept only file receipts. A cancelled image upload receives no receipt: cancellation before storage begins stores nothing, and an image whose storage already began stays stored. Host callers supply an Agent with its runtime-owned context; receipt tables use that Agent's exact Session object as their key. The Session Controller registers the resolver that can resume a cold ordinary Agent and consumes receipts during prompt admission. Prompt delivery holds each receipt binding in a disposable transaction: disposal restores the previous binding until successful delivery commits it, and queue or history observation then retires the committed receipt.
 
 | File | Role |
 |---|---|
@@ -72,10 +70,6 @@ Each upload receipt belongs to one exact Session, and each request uses one sele
 
 -----
 
-## Workspace-only streamed uploads
-
-The raw HTTP route accepts optional `directory` and `workspaceOnly=true` metadata. Prepared storage hooks receive the directory separately from attachment content. The ordinary provider rejects an explicit workspace directory unless an authorized integration implements it. Workspace-only uploads use the same intake owner, Agent resolution, cancellation and stream hook but do not retain a prompt receipt after completion; conversation uploads retain existing receipt behavior. Blob/stream upload completion emits `file-upload/complete` for the receiving Session so native file trees can refresh. File bytes remain raw HTTP bodies.
-
 <a id="model-experience"></a>
 ## Model Experience
 
@@ -92,7 +86,6 @@ None; this package neither assembles nor sends a provider request.
 These limits apply to the transport operation itself.
 
 - **Uploads are not resumable** — a failed or cancelled retry starts from the first byte.
-- **Fetch cancellation belongs to the carrier** — forwarding an abort does not prove server cleanup. A carrier must reject a revoked page and handle late responses; the service waits for its promise and does not replay an unknown upload.
 - **Stream bodies are one-shot** — transferring a `ReadableStream` locks the caller's object, so retry requires a newly created stream.
 - **Stream progress has no total** — callers receive consumed-byte counts because the stream API carries no byte length.
 - **The browser Worker is self-contained** — its source is emitted from a function string. Adding runtime imports requires moving it to a standalone Worker entry bundled by tsdown.

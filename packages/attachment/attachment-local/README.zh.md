@@ -38,11 +38,11 @@ kind: "package-reference"
 | 字段 | 默认值 | 含义 |
 |---|---|---|
 | `dshHome` | 自动解析 | 显式 harness home；省略时依次跟随 `$DSH_HOME` 与 `~/.dsh` |
-| `maxImageBytes` | `20 MiB` | 单张图片接受的最大编码源字节数 |
+| `maxImageBytes` | `50 MiB` | 单张图片接受的最大编码源字节数 |
 | `maxImagesPerMessage` | `20` | 单条提交消息接受的最大图片数量 |
 | `maxMessageImageBytes` | `200 MiB` | 单条提交消息接受的最大编码源图字节总数 |
 | `maxImagePixels` | `64,000,000` | 源图宽度与高度乘积的最大值 |
-| `maxImageDimension` | `8192` | 源图接受的最大宽度或高度 |
+| `maxImageDimension` | `65,535` | 源图接受的最大宽度或高度；默认值让 `maxImagePixels` 单独把关，长边由规范化缩小 |
 | `normalizedImageMaxPixels` | `2048 × 2048` | 已存规范化图片的总像素预算 |
 | `normalizedImageMaxDimension` | `8192` | 应用总像素预算后的最大长边 |
 | `normalizedImageMaxBytes` | `4 MiB` | 编码字节目标；没有候选满足时保留质量阶梯中的最小输出 |
@@ -83,15 +83,13 @@ kind: "package-reference"
 
 对象存放在 `<DSH_HOME>/attachments/v1/objects/<sha256-prefix>/<sha256>`；相同字节会去重为同一个对象和同一个 `sha256:` 标识符。首次写入前，进程会把 home 的每个祖先目录逐级同步到文件系统根目录，因此绝不会把另一个进程已创建但尚未同步的目录误认为安全边界。随后，写入过程把字节暂存到 `v1/tmp`、同步临时文件、以原子且排他的硬链接发布，并同步发布目录——在 Windows 上，文件系统元数据日志负责目录项持久性。保存操作完成后，返回的引用已具备持久性。
 
-准入允许每条消息最多 20 张图片与 200 MiB 源字节；单个源图最多 20 MiB、6400 万像素与单边 8192 像素。系统应用方向、移除元数据与色彩配置，并把规范化结果限制在 2048×2048 总像素预算、8192 像素长边和 4 MiB 编码字节目标内，因此，即使宽高比极端，图片也会保留短边分辨率。已经满足限制的干净、单帧、8-bit sRGB/sRGBA PNG、JPEG 或 WebP 会逐字节直通；GIF、动画、元数据、方向、16-bit PNG 与不兼容色彩空间会触发转换。
+图片读取接收包含规范 `sha256:` ID 的完整引用，在该存储目录内推导对象路径，校验完整摘要，并探测图片文件头。实际格式、字节数、宽度和高度必须与传入引用一致。返回的引用把可选的 `name` 和 `originalDimensions` 作为调用方提交的显示信息原样保留，不根据对象校验这两个字段。读取不查询 Session 历史，也不重新应用准入限制；对象缺失或校验失败都会拒绝读取。
+
+准入允许每条消息最多 20 张图片与 200 MiB 源字节；单个源图最多 50 MiB、6400 万像素与单边 65,535 像素。系统应用方向、移除元数据与色彩配置，并把规范化结果限制在 2048×2048 总像素预算、8192 像素长边和 4 MiB 编码字节目标内，因此，即使宽高比极端，图片也会保留短边分辨率。已经满足限制的干净、单帧、8-bit sRGB/sRGBA PNG、JPEG 或 WebP 会逐字节直通；GIF、动画、元数据、方向、16-bit PNG 与不兼容色彩空间会触发转换。
 
 请求版本位于由 `dshCachePath` 解析的 `<DSH_HOME>/cache/attachments/request-images/`；显式 `dshHome` 设置同时适用于缓存与持久存储。在两次请求之间清空此缓存会保留持久附件，后续读取会重新生成请求版本。`readImageRequest` 在不放大的前提下缩放到路由选定的目标尺寸，缩放只按长边给定，短边由编码器按路由预测的方式推出，随后通过相同的 alpha 路由与质量阶梯应用独立编码字节目标。缓存身份包含附件 id、变换版本、目标尺寸、字节目标与固定编码参数；缓存字节会先通过文件头探测格式、8-bit sRGB/sRGBA、尺寸与 alpha 信息，不匹配时重新生成。并发调用方共享一次变换与缓存写入，且只在没有等待方时由取消停止共享工作。`imageHostPath` 派生规范化对象的宿主路径，挂载的文件系统可以把该路径映射进执行世界，而不会写入持久历史。
 
-通用文件字节的唯一规范对象位于 `<DSH_HOME>/attachments/v1/file-objects/<digest-prefix>/<digest>`。每条引用路径 `<DSH_HOME>/attachments/v1/files/<digest-prefix>/<digest>/<name>` 都是只读硬链接，所以名称不同但字节相同的文件不会重复占用磁盘。`readFileStream` 以有界分块读取引用路径，并在消费方成功结束前校验完整摘要与记录的字节数。对象缺失、被改写或截断时，消费方会失败，不会得到字节已经变化的完整导出。每次文件读取都会等待源流实际关闭后，才结算正常结束、取消、读取失败或迭代器提前返回。
-
-普通取消或写入错误只有在自有描述符关闭且临时文件清理成功后才返回。流式文件一旦开始对象发布，原生发布或之后的别名失败会抛出 `AttachmentPublicationUnconfirmedError`，保留原始 cause，且不代表已经回滚。关闭或临时文件 unlink 失败会抛出导出的 `AttachmentCleanupError`（`ATTACHMENT_WRITE_FAILED`），并保留 cause；这两类错误都带有提供方中立的 `settlement: 'unknown'` 标记。调用方继续承担未结算的工作或存储责任，不得重试失败的 close。去重完整性读取同样等待流关闭，并通过该错误报告关闭失败。即使保存失败，已经发布的私有对象也会保留，存储所有者必须继续计入其容量占用。
-
-`AttachmentStorageCapacityError`（`ATTACHMENT_STORAGE_CAPACITY`）只在描述符关闭和临时文件 unlink 成功后，保留自有暂存 `open`、`write` 或 `sync` 的原始 `ENOSPC` 或 `EDQUOT` 及阶段。源迭代器抛出相同 errno 不会被归为存储容量不足；取消、清理失败及已经尝试的发布继续沿用原处理。该标记确认自有存储清理，不代表任意输入源已经关闭。
+通用文件字节的唯一规范对象位于 `<DSH_HOME>/attachments/v1/file-objects/<digest-prefix>/<digest>`。每条引用路径 `<DSH_HOME>/attachments/v1/files/<digest-prefix>/<digest>/<name>` 都是只读硬链接，所以名称不同但字节相同的文件不会重复占用磁盘。`readFileStream` 以有界分块读取引用路径，并在消费方成功结束前校验完整摘要与记录的字节数。对象缺失、被改写或截断时，消费方会失败，不会得到字节已经变化的完整导出。
 
 ### 源码地图
 

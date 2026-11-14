@@ -23,19 +23,7 @@ Web Client 是由独立加载插件组装而成的浏览器侧 Cordis 应用。�
 
 Host 把组合后的 `WebBootGraph` 写入 `window.__DSH_BOOT__`，并在 parser-preloaded script 执行前安装浏览器 module-loader facade。模块系统是一张 lazy CommonJS 表：加载 bundle 只注册 factory；materialize entry 时才以同步 `require` 运行 factory，并解析 platform module 和已声明的动态依赖。
 
-Web boot kernel 创建模块系统、预取 `immediately` entry、挂载 vendored Cordis Loader，再创建图中的每个 entry。Cordis service injection 决定激活顺序；module graph 顺序只决定同步 import 能否被 materialize。完整 roster 到达 settled 状态后，`ui-renderer` hydrate 不依赖框架的 boot DOM，并调用唯一一次 context 级 `renderSlot('root')`。[Client Modules](client-modules.zh.md)负责 graph、bundle route、cache revision 与 loader 细节。
-
-`AppWebEntry` 可接收通用 `ClientPersistence` 依赖，提供 `getItem`、`setItem`、`removeItem` 及逻辑 `keys`。指定 `requirePersistence` 后，缺少依赖会在 boot DOM 或 module system 创建之前拒绝。传入对象在 Loader 激活之前安装到新 Context。Snapshot store、Slot store 实例化及直接 UI 缓存都捕获同一页面依赖；普通浏览器组合保留其浏览器存储行为。自定义 store 包装须转发 `StoreHandle.create` 的可选 persistence 参数。
-
-`AppWebEntry` 还接受可选的可信 `prepareContext(ctx)`，在持久化与生命周期跟踪安装后、`bootClient` 前准备 Context。entry 等待实际准备结算；失败阻止插件激活，销毁在释放 Context 前加入该工作。此回调独立于模块加载器选项，迟到完成不能重启已销毁的 entry。
-
-可选的同步 `beforeDispose()` 在销毁 promise 发布后、启动页或任意子插件清理前只运行一次。它撤销页面拥有的输入，不等待同一个原生销毁；回调失败保持可观察，实际清理仍须加入。两个回调都不会转发给模块创建。
-
-可选的可信输入 `modules` 在 Context 创建前的页面准备完成后复用原始公开 `ClientModuleLoader`。`AppWebEntry` 使用该表及其 manifest，不再次调用 bootstrap `create()`；预取、原生激活及销毁保留现有所有权。省略时正常创建模块表，复用输入不会作为模块创建选项转发。
-
-既有 `apps/web` 入口可根据可选的公开部署 manifest 选择 Cloud 启动。应用拥有的登录与退出控件在原始原生挂载前或外围显示；Cookie 认证、正式准备及加入销毁遵循 [Cloud client](../../packages/cloud/pe-cloud-client/README.zh.md) 的要求。部署 manifest 不携带账户身份或可变的当前页面授权。
-
-部署 owner 可提供有界且可撤销的实现，例如 [Cloud 页面生命周期](../../packages/cloud/pe-cloud-client/README.zh.md)。该 owner 固定账户/代际命名空间，在原生或载体销毁之前撤销写入，并只在实际结算后清理自身命名空间。通用 port 不携带认证或 Host 持久化授权。
+Web boot kernel 创建模块系统、预取 `immediately` entry、挂载 vendored Cordis Loader，再创建图中的每个 entry。Cordis service injection 决定激活顺序；module graph 顺序只决定同步 import 能否被 materialize。完整 roster 到达 settled 状态且启动审计通过后（浏览器必需名单中的 entry 未激活会拒绝启动；其他未激活 entry 输出一条控制台警告），`ui-renderer` hydrate 不依赖框架的 boot DOM，并调用唯一一次 context 级 `renderSlot('root')`。[Client Modules](client-modules.zh.md)负责 graph、bundle route、cache revision 与 loader 细节。
 
 ## Remote 通信
 

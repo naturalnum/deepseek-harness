@@ -60,11 +60,11 @@ declare const ctx: Context
 
 const ref = credentialRef('DEEPSEEK_API_KEY')
 await ctx.credentials.set(ref, 'sk-…')          // save
-await ctx.credentials.describe(ref)             // { configured, source?, writable } — never the value
+await ctx.credentials.describe(ref)             // { configured, source?, writable, masked? } — never the value
 await ctx.credentials.unset(ref)                // remove
 ```
 
-你保存的密钥会被下一个按名引用它的请求使用；`describe` 报告它是否已设置、来自哪里、能否写入——绝不返回值本身。记录也持久化在同一文件中：插件按 `<owner>/<id>` 寻址一条记录，并用 seam 的记录操作（`readRecord`、`describeRecord`、`listRecords`、`modifyRecord`、`deleteRecord`）管理它。
+你保存的密钥会被下一个按名引用它的请求使用；`describe` 报告它是否已设置、来自哪里、能否写入——绝不返回值本身。文件中已保存的值还会报告 `masked` 脱敏预览；环境后备值不包含此字段。预览在第一个连字符或下划线之后划分提供商标识；没有分隔符时不划分标识。只有密钥部分至少保留八个隐藏码点时，才显示标识及密钥的前五、后四个码点；否则遮住整串，包括标识。计数和切片使用 `Array.from` 的 Unicode 码点，组合序列不按单个字素处理。标识会有意显示，不能仅因它位于分隔符前就认定其不含机密。记录也持久化在同一文件中：插件按 `<owner>/<id>` 寻址一条记录，并用 seam 的记录操作（`readRecord`、`describeRecord`、`listRecords`、`modifyRecord`、`deleteRecord`）管理它。
 
 ### 密钥从哪里来
 
@@ -151,10 +151,6 @@ records:
 `modifyRecord` 走同一条链与同一把锁：它重新读取文档、把当前记录交给变更函数、准入其结果——非空的 API 密钥、能经受 JSON 往返的 grant payload——整体渲染该记录并提交，恰好触发一次 `credentials/record-updated`。并非由产品 CLI（命令行界面）启动的组合只有继承环境这一层。
 
 ### 重载生命周期
-
-Provider 的 `set`、`unset`、`modifyRecord` 与 `deleteRecord` 在加入操作链之前通过凭据服务的可选保存 hook 提交。被观察的 Promise 包含获取锁、异步记录变更函数、原子替换、缓存更新和更新事件分发。即使内部队列从失败中恢复以继续后续任务，失败任务仍可被观察；可选监听器失败保留原有隔离行为。只读刷新不属于保存提交。
-
-初始化将识别出的扁平文档迁移作为 `migrate-flat-document` 提交，早于获取写锁。被观察的 Promise 包含原子重写及其后的解析和缓存装载；拒绝或失败会阻止服务就绪。嵌入式 Host 必须挂载一个子类，其构造函数先调用 `super(ctx, config)`，再调用 `this.registerSaveHook(hook)`，在 Cordis 调用 `Service.init` 前把 hook 绑定到该实例。通过已就绪服务安装的 hook 无法保护初始化。没有 hook 时，启动保留通常的迁移行为。
 
 watcher 事件或就绪时的对账会将一次刷新排到同一链条之后。`reconcileFromDisk` 重新检查权限、重读文本，文本有差异时整体替换两个快照，并按变更引用或记录逐个发布事件；与文本缓存一致的内容——包括提供方自己的写入——是 no-op。释放时设置关闭标志、停止接收事件、关闭 watcher，并等待排队操作结算完毕，确保资源销毁后不再发布任何事件。
 

@@ -1,8 +1,12 @@
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { agentPresetProjectionDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
-import SessionStore, { SESSION_FORMAT_VERSION, SessionLogOffset, SessionId } from '@deepseek-ai/dsh-session'
+import SessionStore, { SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionHeader } from '@deepseek-ai/dsh-session'
 import { SessionAlreadyOwnedError } from '@deepseek-ai/dsh-session-persistence'
 import type { SessionObservation } from '@deepseek-ai/dsh-session-query'
@@ -11,33 +15,35 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ApiSessionAgentController,
   ApiSessionCwdConflict,
-  ApiSessionNotFound,
-  inspectApiSession,
 } from '../src/agent.ts'
-import { installModelSelectionProjection } from '../src/model-selection-projection.ts'
 import { installSessionReadTestServices, testSessionPersistence } from './test-remote.ts'
 
 const roots: Context[] = []
 
+/** Session cwd roots created per test, removed after their context settles. */
+const tempDirs: string[] = []
+
 afterEach(async () => {
   await Promise.all(roots.splice(0).map(ctx => ctx.fiber.dispose()))
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
-async function harness(ensureProjectDirectory = async (_cwd: string): Promise<void> => {}):
-Promise<{ ctx: Context; agents: ApiSessionAgentController }> {
+async function harness(): Promise<{ ctx: Context; agents: ApiSessionAgentController }> {
   const ctx = new Context()
   roots.push(ctx)
   await ctx.plugin(TypertRegistry)
   await ctx.plugin(SessionStore)
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(AgentRegistry)
   installSessionReadTestServices(ctx)
-  ctx.sessionProjections.register(agentPresetProjectionDefinition)
-  installModelSelectionProjection(ctx)
+  await ctx.sessionProjections.register(agentPresetProjectionDefinition)
   ctx.provide('agentDefaultModel', {
     currentSelection: () => ({ provider: 'fixture', model: 'fixture-model' }),
     saveSelection: () => Promise.resolve(),
   } as never)
-  return { ctx, agents: new ApiSessionAgentController(ctx, ensureProjectDirectory) }
+  const agents = new ApiSessionAgentController(ctx)
+  agents.initialize()
+  return { ctx, agents }
 }
 
 function header(id: string, cwd: string | null = '/workspace'): SessionHeader {
@@ -74,61 +80,6 @@ describe('ApiSession identity failures', () => {
       .toContain('records no cwd')
     expect(new ApiSessionCwdConflict(SessionId('wrong-cwd'), '/wanted', '/existing').message)
       .toContain('belongs to "/existing"')
-  })
-
-  it('maps absent and cwd-less point observations to not found', async () => {
-    const ctx = new Context()
-    roots.push(ctx)
-    await ctx.plugin(SessionStore)
-    installSessionReadTestServices(ctx)
-    await expect(inspectApiSession(ctx, SessionId('missing')))
-      .rejects.toBeInstanceOf(ApiSessionNotFound)
-
-    const inspect = vi.fn(() => Promise.resolve(undefined))
-    const stat = vi.fn(() => Promise.resolve(undefined))
-    const disposeMissing = providePersistence(ctx, {
-      list: () => Promise.resolve([]),
-      stat,
-      inspect,
-    })
-    await expect(inspectApiSession(ctx, SessionId('missing'))).rejects.toBeInstanceOf(ApiSessionNotFound)
-    // Absence is decided by the stat preflight; the log itself is never opened.
-    expect(stat).toHaveBeenCalledOnce()
-    expect(inspect).not.toHaveBeenCalled()
-    disposeMissing()
-
-    const listed = header('cwd-less-catalog', null)
-    const disposeListed = providePersistence(ctx, {
-      list: () => Promise.resolve([listed]),
-      inspect: () => Promise.resolve({ meta: listed, events: [] }),
-    })
-    await expect(inspectApiSession(ctx, listed.id)).rejects.toBeInstanceOf(ApiSessionNotFound)
-    disposeListed()
-
-    const catalog = header('cwd-less-inspect')
-    const inspected = header('cwd-less-inspect', null)
-    providePersistence(ctx, {
-      list: () => Promise.resolve([catalog]),
-      inspect: () => Promise.resolve({ meta: inspected, events: [] }),
-    })
-    await expect(inspectApiSession(ctx, catalog.id)).rejects.toBeInstanceOf(ApiSessionNotFound)
-  })
-
-  it('forwards an explicit inspection signal', async () => {
-    const ctx = new Context()
-    roots.push(ctx)
-    await ctx.plugin(SessionStore)
-    installSessionReadTestServices(ctx)
-    const meta = header('signalled-inspection')
-    const inspect = vi.fn(() => Promise.resolve({ meta, inheritedEventCount: SessionLogOffset(0), events: [] }))
-    providePersistence(ctx, {
-      list: () => Promise.resolve([meta]),
-      inspect,
-    })
-    const signal = new AbortController().signal
-
-    await expect(inspectApiSession(ctx, meta.id, signal)).resolves.toEqual({ meta, inheritedEventCount: SessionLogOffset(0), events: [] })
-    expect(inspect).toHaveBeenCalledWith(meta.id, signal)
   })
 })
 
@@ -280,48 +231,6 @@ describe('ApiSession Agent lookup and recovery', () => {
   })
 })
 
-describe('ApiSession model selection', () => {
-  it('requires the model-selection projection', async () => {
-    const { ctx, agents } = await harness()
-    const live = agent(ctx, header('missing-model-projection'))
-    vi.spyOn(ctx.sessionProjections, 'stateOf').mockReturnValue(undefined)
-
-    expect(() => agents.selectionFor(live)).toThrow('required modelSelection projection')
-  })
-
-  it('reads a reasoning-free request and consumes only the exact pending selection', async () => {
-    const { ctx, agents } = await harness()
-    const logged = agent(ctx, header('logged-model'))
-    logged.session.append('request/header', {
-      header: { config: { provider: 'logged-provider', model: 'logged-model' } },
-      reason: 'initial',
-    })
-    expect(agents.selectionFor(logged).current).toEqual({
-      provider: 'logged-provider',
-      model: 'logged-model',
-    })
-
-    const pending = agent(ctx, header('pending-model'))
-    const selection = agents.selectionFor(pending)
-    agents.selectForNextRequest(pending, {
-      provider: 'selected-provider',
-      model: 'selected-model',
-      reasoningEffort: 'high' as never,
-    })
-    expect(selection.current).toMatchObject({
-      provider: 'selected-provider', model: 'selected-model', reasoningEffort: 'high',
-    })
-    expect(agents.consumeSelection(pending, 'other-provider', 'selected-model', 'high')).toBe(false)
-    expect(agents.consumeSelection(pending, 'selected-provider', 'other-model', 'high')).toBe(false)
-    expect(agents.consumeSelection(pending, 'selected-provider', 'selected-model', 'low')).toBe(false)
-    expect(agents.consumeSelection(pending, 'selected-provider', 'selected-model', 'high')).toBe(true)
-    expect(selection.current).toEqual({ provider: 'fixture', model: 'fixture-model' })
-
-    const untouched = agent(ctx, header('uninstalled-model'))
-    expect(agents.consumeSelection(untouched, 'fixture', 'fixture-model', undefined)).toBe(false)
-  })
-})
-
 describe('ApiSession creation', () => {
   it('rejects a resume that subagent routing adopts before publication', async () => {
     const child = await harness()
@@ -344,13 +253,13 @@ describe('ApiSession creation', () => {
     })
   })
 
-  it('retains the owning Controller directory preparation failure before Agent creation', async () => {
-    const failure = new Error('directory provider unavailable')
-    const ensure = vi.fn(async () => { throw failure })
-    const { ctx, agents } = await harness(ensure)
-    const create = vi.spyOn(ctx.agents, 'create')
-    await expect(agents.createSession({ cwd: '/project', reusable: () => true })).rejects.toBe(failure)
-    expect(ensure).toHaveBeenCalledWith('/project')
-    expect(create).not.toHaveBeenCalled()
+  it('surfaces directory creation failure', async () => {
+    const { agents } = await harness()
+    const parent = mkdtempSync(join(tmpdir(), 'dsh-session-controller-file-'))
+    tempDirs.push(parent)
+    const file = join(parent, 'file')
+    writeFileSync(file, 'not a directory')
+    await expect(agents.createSession({ cwd: join(file, 'child'), reusable: () => true }))
+      .rejects.toThrow('failed to ensure project directory')
   })
 })

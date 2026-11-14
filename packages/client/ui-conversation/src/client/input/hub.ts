@@ -3,26 +3,25 @@
  * Each retained Session binding owns one shell, its input listeners, and its
  * catalog subscription. Saved drafts enter the model before the first lookup
  * returns; Session-scope disposal releases the shell and its resources.
- * Trigger and popup lookups return undefined after the Sessions provider is
- * withdrawn; operations requiring a Session still reject its absence.
  */
 import type {} from '@deepseek-ai/dsh-client-product-analytics/client'
-import type { ModelSelectionProjection } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { PlanProjection } from '@deepseek-ai/dsh-plan-mode/types'
 import type { GoalProjection } from '@deepseek-ai/dsh-goal/types'
 import type { Context } from '@deepseek-ai/cordis'
 import type {
   ISessions, SessionBinding, SessionFace,
 } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionId, SessionSeq } from '@deepseek-ai/dsh-session/types'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type { InboxState } from '@deepseek-ai/dsh-agent/types'
-import { resolveClientPersistence, type ClientPersistence, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
+import type { ModelSelectionProjection } from '@deepseek-ai/dsh-agent/types'
+import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type {
   DraftAttachmentId, DraftAttachmentSerializationResult, DraftInitializationOptions, DraftInitializationResult, InputTriggerController,
   SessionInputResolver, SessionInput, SubmitOutcome,
 } from '../contract/input.ts'
 import type { ComposerKeyboard } from '../contract/draft-editor.ts'
+import type { ComposerBlocks } from '../contract/composer-blocks.ts'
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
 import type { PopupDismissFace } from './facade.ts'
 import { SessionInputShell } from './facade.ts'
@@ -42,12 +41,14 @@ interface InputTriggerServiceFace {
 
 /** Attachment-send face resolved lazily to keep hub/service construction acyclic. */
 interface ConversationAttachmentFace {
+  readonly blocks: ComposerBlocks
   sendSession(
     session: SessionFace,
     text: string,
     attachmentIds: readonly DraftAttachmentId[],
     mode: InputSubmitMode,
     signal?: AbortSignal,
+    accept?: () => void,
   ): Promise<SubmitOutcome>
   serializeDraftAttachments(attachmentIds: readonly DraftAttachmentId[]): Promise<DraftAttachmentSerializationResult>
   releaseDraftAttachment(id: DraftAttachmentId): void
@@ -55,7 +56,6 @@ interface ConversationAttachmentFace {
 
 /** Session-addressed input facade registry (SessionInputResolver face + composer-layer extras). */
 export class InputHub implements SessionInputResolver {
-  private readonly persistence: ClientPersistence
   private readonly shells = new WeakMap<SessionBinding, SessionInputShell>()
 
   /**
@@ -65,7 +65,7 @@ export class InputHub implements SessionInputResolver {
   constructor(
     private readonly rootCtx: Context,
     private readonly t: TranslateNS<'conversation'>,
-  ) { this.persistence = resolveClientPersistence(rootCtx.get('clientPersistence')) }
+  ) {}
 
   /**
    * Resolve the facade for one session-scope ctx (SessionInputResolver face).
@@ -107,6 +107,7 @@ export class InputHub implements SessionInputResolver {
         const model = session.projections.faceOf('modelSelection').getSnapshot() as ModelSelectionProjection | undefined
         const plan = session.projections.faceOf('plan').getSnapshot() as PlanProjection | undefined
         const goal = session.projections.faceOf('goal').getSnapshot() as GoalProjection | null | undefined
+        const agentPreset = session.projections.faceOf('agentPreset').getSnapshot()
         const selection = model?.next ?? model?.lastUsed
         return Object.freeze({
           ...state.blank ? {} : { sessionId: state.sessionId },
@@ -116,13 +117,22 @@ export class InputHub implements SessionInputResolver {
           }) },
           runMode: plan?.active ? 'plan' : goal?.goal.phase === 'active' ? 'goal' : 'default',
           running: state.running,
+          newSession: state.blank,
+          ...typeof agentPreset === 'string' ? { agentPreset } : {},
         })
       },
       messageSubmitted: (submission) => { reportMessageSubmission(this.rootCtx, submission) },
       inputTriggers: () => this.controller(actx),
       popup: () => this.popup(actx),
       inbox: session.projections.faceOf('inbox') as ObservableSnapshot<InboxState | undefined>,
-      defaultSink: (text, attachmentIds, mode, signal) => this.sink(session, text, attachmentIds, mode, signal),
+      defaultSink: (text, attachmentIds, mode, signal, accept) => this.sink(session, text, attachmentIds, mode, signal, accept),
+      quoteRemoveLabel: () => this.t('quote.remove'),
+      quoteInsertionAllowed: () => {
+        const state = session.getSnapshot()
+        return !state.removed && (state.subagent === null
+          || state.subagent.address.mode === 'continuable')
+          && this.conversation().blocks.storeFor(session.sessionId).getSnapshot() === undefined
+      },
       steerQueue: () => { void this.steerQueue(session, shell) },
       commandAttachments: {
         serialize: async (ids) => {
@@ -170,7 +180,7 @@ export class InputHub implements SessionInputResolver {
         return () => { shell.refreshLexiconSubscription() }
       }, 'conversation.input: reference catalogs')
     })
-    shell.setDraft(readConversationDraft(binding.sessionId, this.persistence))
+    shell.setDraft(readConversationDraft(binding.sessionId))
     return shell
   }
 
@@ -195,6 +205,29 @@ export class InputHub implements SessionInputResolver {
    */
   keyboard(id: SessionId): ComposerKeyboard {
     return this.shell(id)
+  }
+
+  /**
+   * Submit empty input to retry a failed generation through the ordinary composer. Stale
+   * failures, active work, and drafts keep their current input unchanged.
+   * @param id - retained ordinary Session identity.
+   * @param failureSeq - failed turn/end sequence the displayed button addresses.
+   */
+  retry(id: SessionId, failureSeq: SessionSeq): void {
+    const binding = this.sessions().binding(id)
+    if (binding === undefined
+      || binding.session.projections.faceOf('conversationContinuation').getSnapshot() !== failureSeq) return
+    const session = binding.session.getSnapshot()
+    const shell = this.shellFor(binding)
+    const input = shell.snapshot
+    const inbox = binding.session.projections.faceOf('inbox').getSnapshot() as InboxState | undefined
+    if (session.running || session.removed || session.openState !== 'open' || session.subagent !== null
+      || session.pendingSubmissions.length > 0 || input.phase !== 'plain'
+      || input.draft.trim() !== '' || input.attachmentIds.length > 0
+      || (inbox?.['next-turn'].length ?? 0) > 0
+      || inbox?.['next-step'].some(message => message.source.kind === 'user')
+      || this.conversation().blocks.storeFor(id).getSnapshot() !== undefined) return
+    shell.submit('queue', 'click', true)
   }
 
   /**
@@ -228,10 +261,10 @@ export class InputHub implements SessionInputResolver {
   }
 
   /**
-   * Default sink: optimistic clear + prompt. The session is always a real
-   * host entity (materialized when its workspace was picked), so there is
-   * exactly one path; a failed first prompt is an ordinary prompt failure
-   * (banner via promptError, draft restored only while untouched).
+   * Default sink: prompt while the composer holds the sent draft. The session
+   * is always a real host entity (materialized when its workspace was picked),
+   * so there is exactly one path; a refused or failed prompt is an ordinary
+   * prompt failure (banner via promptError, draft kept in the composer).
    */
   private sink(
     session: SessionFace,
@@ -239,9 +272,12 @@ export class InputHub implements SessionInputResolver {
     attachmentIds: readonly DraftAttachmentId[],
     mode: InputSubmitMode,
     signal: AbortSignal,
+    accept: () => void,
   ): Promise<SubmitOutcome> {
-    if (text === '' && attachmentIds.length === 0) return Promise.resolve({ kind: 'success' })
-    return this.conversation().sendSession(session, text, attachmentIds, mode, signal)
+    if (text === '' && attachmentIds.length === 0) {
+      return session.prompt([], mode, signal).then(result => result.ok ? { kind: 'success' } : { kind: 'error' })
+    }
+    return this.conversation().sendSession(session, text, attachmentIds, mode, signal, accept)
   }
 
   /**
@@ -270,15 +306,13 @@ export class InputHub implements SessionInputResolver {
   }
 
   private controller(actx: Context): InputTriggerController | undefined {
-    const sessions = this.rootCtx.get('sessions')
-    if (sessions === undefined || sessions.sessionOf(actx) === undefined) return undefined
+    if (this.sessions().sessionOf(actx) === undefined) return undefined
     const inputTriggers = this.rootCtx.get('inputTriggers') as InputTriggerServiceFace | undefined
     return inputTriggers?.sessionOf(actx)
   }
 
   private popup(actx: Context): PopupDismissFace | undefined {
-    const sessions = this.rootCtx.get('sessions')
-    if (sessions === undefined || sessions.sessionOf(actx) === undefined) return undefined
+    if (this.sessions().sessionOf(actx) === undefined) return undefined
     const command = this.rootCtx.get('commandUi') as CommandFace | undefined
     return command?.popupFor(actx)
   }

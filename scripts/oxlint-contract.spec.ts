@@ -1,48 +1,48 @@
 /**
+ * Executable lint checks use private copies of repository sources and configuration.
  * Process-spawning cases set Vitest's case timeout to 90 seconds, including
  * plain local runs without a CI override. Configuration-only cases keep the default.
  */
 import { spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
-import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { existsSync, globSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, relative, sep } from 'node:path'
+import { cp, lstat, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { basename, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { flattenDiagnosticMessageText, parseConfigFileTextToJson } from 'typescript'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 const sourceRepositoryRoot = fileURLToPath(new URL('..', import.meta.url))
-let repositoryRoot: string
-const temporaryRoots: string[] = []
-const oxlintCli = fileURLToPath(new URL('../node_modules/oxlint/bin/oxlint', import.meta.url))
-const tsxCli = fileURLToPath(new URL('../node_modules/tsx/dist/cli.mjs', import.meta.url))
+let repositoryRoot = ''
 
+// Probes belong to a private copy: repository compiler scans run in other workers and processes.
 beforeAll(async () => {
-  const temporary = await mkdtemp(join(tmpdir(), 'dsh-oxlint-contract-'))
-  temporaryRoots.push(temporary)
-  repositoryRoot = await realpath(temporary)
-  const directories = new Set(['packages', 'apps', 'scripts', 'vendor', 'native', 'benchmarks', 'website'])
-  const files = new Set(['package.json', 'pnpm-workspace.yaml', 'lefthook.yml', '.oxlintrc.json', '.oxlintrc.staged.json',
-    '.gitignore', 'eslint.format.config.mjs'])
-  const entries = (await readdir(sourceRepositoryRoot, { withFileTypes: true }))
-    .filter(entry => directories.has(entry.name) || files.has(entry.name) || /^tsconfig.*\.json$/.test(entry.name))
-  await Promise.all(entries.map(entry => cp(join(sourceRepositoryRoot, entry.name), join(repositoryRoot, entry.name), {
-    recursive: true,
-    async filter(path) {
-      const parts = relative(sourceRepositoryRoot, path).split(sep)
-      if (parts.some(part => ['node_modules', '.git', 'lib', 'dist'].includes(part))) return false
-      return (await stat(path)).isDirectory()
-          || /\.(?:[cm]?[jt]sx?|json|ya?ml)$/.test(path)
-          || files.has(relative(sourceRepositoryRoot, path))
-    },
-  })))
-  await symlink(join(sourceRepositoryRoot, 'node_modules'), join(repositoryRoot, 'node_modules'), 'junction')
+  repositoryRoot = await mkdtemp(join(tmpdir(), 'dsh-oxlint-contract-'))
+  repositoryRoot = await realpath(repositoryRoot)
+  const files = [
+    ...globSync('tsconfig*.json', { cwd: sourceRepositoryRoot }),
+    '.oxlintrc.json', '.oxlintrc.staged.json', 'package.json', 'lefthook.yml',
+    'apps', 'native', 'packages', 'python', 'scripts', 'vendor', 'website',
+  ]
+  for (const path of files) {
+    await cp(join(sourceRepositoryRoot, path), join(repositoryRoot, path), {
+      recursive: true,
+      async filter(source) {
+        if (['node_modules', 'lib', '.typecheck'].includes(basename(source))) return false
+        return (await lstat(source)).isDirectory() || /\.(?:json|[cm]?[jt]sx?)$/u.test(source) || source.endsWith('lefthook.yml')
+      },
+    })
+  }
+  await symlink(join(sourceRepositoryRoot, 'node_modules'), join(repositoryRoot, 'node_modules'),
+    process.platform === 'win32' ? 'junction' : 'dir')
 }, 90_000)
 
 afterAll(async () => {
-  for (const root of temporaryRoots.splice(0)) await rm(root, { recursive: true, force: true, maxRetries: 3 })
+  if (repositoryRoot !== '') await rm(repositoryRoot, { recursive: true, force: true })
 }, 90_000)
+const oxlintCli = fileURLToPath(new URL('../node_modules/oxlint/bin/oxlint', import.meta.url))
+const tsxCli = fileURLToPath(new URL('../node_modules/tsx/dist/cli.mjs', import.meta.url))
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -53,7 +53,7 @@ function isUnknownArray(value: unknown): value is unknown[] {
 }
 
 function runRepositoryOxlint(args: readonly string[], env: NodeJS.ProcessEnv = {}) {
-  return spawnSync(process.execPath, [tsxCli, 'scripts/run-oxlint.ts', ...args], {
+  return spawnSync(process.execPath, [tsxCli, join(sourceRepositoryRoot, 'scripts/run-oxlint.ts'), ...args], {
     cwd: repositoryRoot,
     encoding: 'utf8',
     env: { ...process.env, NO_COLOR: '1', ...env },
@@ -105,6 +105,7 @@ probePromise()
         const path = join(repositoryRoot, parent, `oxlint-contract-${suffix}${extension}`)
         await writeFile(path, source)
         paths.push([label, relative(repositoryRoot, path), tsconfig])
+        expect(existsSync(join(sourceRepositoryRoot, relative(repositoryRoot, path)))).toBe(false)
       }
       const clientScript = 'scripts/client-bundle-purity.spec.ts'
 
@@ -252,7 +253,7 @@ export const longProbe = 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 +
     )
     expect(packageJson.devDependencies).not.toHaveProperty('eslint')
     expect(packageJson.devDependencies).not.toHaveProperty('@typescript-eslint/parser')
-    expect(existsSync(join(repositoryRoot, 'eslint.format.config.mjs'))).toBe(false)
+    expect(existsSync(join(sourceRepositoryRoot, 'eslint.format.config.mjs'))).toBe(false)
 
     const lefthook = await readFile(join(repositoryRoot, 'lefthook.yml'), 'utf8')
     expect(lefthook).toContain('scripts/run-oxlint.ts --config .oxlintrc.staged.json --fix')

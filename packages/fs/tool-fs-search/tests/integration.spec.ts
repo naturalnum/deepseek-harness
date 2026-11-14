@@ -1,6 +1,6 @@
 /**
  * Integration tests: the REAL local subprocess service plus the PACKAGED
- * ripgrep binary (`@vscode/ripgrep`), exercised through `ctx.tools.execute()`.
+ * ripgrep binary (`@vscode/ripgrep`), exercised through `executeToolFixture()`.
  * These verify the WORLD — actual files on disk are discovered and grepped,
  * hostile patterns stay inert (they are plain argv elements; there is no
  * shell layer to escape), and real `rg` stderr classifies into the
@@ -8,22 +8,21 @@
  * suite runs on every platform without a system `rg` install; the
  * fake-service suite (tools.spec.ts) carries the coverage gate.
  */
+import { executeModelToolFixture, executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { provideWorkingDirectoryFixture } from '@deepseek-ai/dsh-agent-loop-testkit'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { spawnSync } from 'node:child_process'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, symlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { TOOL_ABORTED_BEFORE_DISPATCH } from '@deepseek-ai/dsh-tools'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as ToolFsSearch from '@deepseek-ai/dsh-tool-fs-search'
-import { rgPath } from '@vscode/ripgrep'
-import { buildGlobCommand } from '../src/glob.ts'
 
 const testToolSignal = new AbortController().signal
 
@@ -32,7 +31,7 @@ let ctx: Context
 
 let callCounter = 0
 function call(name: string, args: unknown, agentObj?: object) {
-  return ctx.tools.execute({
+  return executeToolFixture(ctx, {
     signal: testToolSignal,
     callId: ToolCallId(`it-${++callCounter}`),
     name,
@@ -69,15 +68,90 @@ describe('search tools over the real subprocess service + the packaged rg', () =
     provideWorkingDirectoryFixture(ctx)
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
+    await ctx.plugin(NativeToolExecutor)
     await ctx.plugin(LocalSubprocessRuntime)
     await ctx.plugin(ToolFsSearch, { sampleOverCapGlobResults: true })
   })
 
   afterEach(async () => {
+    vi.restoreAllMocks()
+    await ctx.fiber.dispose()
     await rm(dir, { recursive: true, force: true })
   })
 
   describe('glob', () => {
+    it('prunes unrelated directories and preserves workspace-relative results', async () => {
+      await mkdir(join(dir, 'packages', 'core', 'src', 'nested'), { recursive: true })
+      await writeFile(join(dir, 'packages', 'core', 'src', 'old.ts'), '')
+      await writeFile(join(dir, 'packages', 'core', 'src', '.hidden.ts'), '')
+      await writeFile(join(dir, 'packages', 'core', 'src', 'nested', 'other.ts'), '')
+      await mkdir(join(dir, 'packages', 'src', 'core'), { recursive: true })
+      await writeFile(join(dir, 'packages', 'src', 'core', 'other.ts'), '')
+      await writeFile(join(dir, '.gitignore'), 'packages/\n')
+      await utimes(join(dir, 'packages', 'core', 'src', 'old.ts'), new Date(2000, 0, 1), new Date(2000, 0, 1))
+      const spawn = vi.spyOn(ctx.subprocess, 'spawn')
+      const ensure = vi.spyOn(ctx.workingDirectory, 'ensure')
+      const result = await call('glob', { pattern: 'packages/core/src/*.ts' }, agent())
+      expect(ensure).toHaveBeenCalledTimes(1)
+      expect(result.isError).toBe(false)
+      if (result.isError) throw new Error('expected glob success')
+      expect(result.value).toEqual({ root: '.', paths: [
+        join('packages', 'core', 'src', 'old.ts'),
+        join('packages', 'core', 'src', '.hidden.ts'),
+      ] })
+      expect(spawn.mock.calls[0]?.[0].argv.slice(3, 6)).toEqual([
+        '--glob=!**', '--glob={packages,core,src}/', '--glob=packages/core/src/*.ts',
+      ])
+      expect(spawn.mock.calls[0]?.[0].argv).not.toContain('--')
+    })
+
+    it.each(['*.ts', '**/*.ts', 'src/**/*.ts', '!src/*.ts', './src/*.ts', 'src/../src/*.ts', '.git/*.ts'])(
+      'keeps the original traversal for %s', async (pattern) => {
+        const spawn = vi.spyOn(ctx.subprocess, 'spawn')
+        const result = await call('glob', { pattern }, agent())
+        expect(result.isError).toBe(false)
+        expect(spawn.mock.calls[0]?.[0].argv).not.toContain('--glob=!**')
+      },
+    )
+
+    it.each(['missing/*.ts', 'notes.md/*.ts', 'src/alpha.ts/*.ts'])('reports no matches when a literal prefix names a missing directory or file: %s', async (pattern) => {
+      const result = await call('glob', { pattern }, agent())
+      expect(result.isError).toBe(false)
+      expect(text(result)).toBe('No files found')
+    })
+
+    it.each([[1, 8170, 8192], [1, 8171, 0], [1500, 1, 23], [16, 240, 262]])('keeps %i directories of length %i searchable through Native execution', async (depth, length, pruningBytes) => {
+      const pattern = `${Array.from({ length: depth }, () => 'a'.repeat(length)).join('/')}/*.ts`
+      const spawn = vi.spyOn(ctx.subprocess, 'spawn')
+      const result = await executeModelToolFixture(ctx, {
+        signal: testToolSignal,
+        callId: ToolCallId(`deep-glob-${++callCounter}`),
+        name: 'glob',
+        arguments: { pattern },
+        agent: agent() as never,
+      })
+      expect(result.isError).toBe(false)
+      expect(text(result)).toBe('No files found')
+      const argv = spawn.mock.calls[0]?.[0].argv ?? []
+      const pruning = argv.slice(3, argv.indexOf(`--glob=${pattern}`))
+      expect(pruning.reduce((bytes, arg) => bytes + Buffer.byteLength(arg) + 1, 0)).toBe(pruningBytes)
+    })
+
+    it('preserves case-sensitive matching while pruning directories', async () => {
+      const spawn = vi.spyOn(ctx.subprocess, 'spawn')
+      expect(text(await call('glob', { pattern: 'SRC/*.ts' }, agent()))).toBe('No files found')
+      expect(spawn.mock.calls[0]?.[0].argv).toContain('--glob={SRC}/')
+    })
+
+    it('prunes without adding a search root or following a directory link', async () => {
+      await mkdir(join(dir, 'src', 'nested'))
+      await writeFile(join(dir, 'src', 'nested', 'file.ts'), '')
+      await symlink(join(dir, 'src'), join(dir, 'linked'), 'junction')
+      const spawn = vi.spyOn(ctx.subprocess, 'spawn')
+      expect(text(await call('glob', { pattern: 'linked/nested/*.ts' }, agent()))).toBe('No files found')
+      expect(spawn.mock.calls[0]?.[0].argv).not.toContain('--')
+    })
+
     it('discovers files by pattern, sorted by modification time, hidden included, .git excluded', async () => {
       const result = await call('glob', { pattern: '**/*.ts' }, agent())
       expect(result.isError).toBe(false)
@@ -94,6 +168,27 @@ describe('search tools over the real subprocess service + the packaged rg', () =
       expect(text(result).split('\n').sort()).toEqual([join('src', 'alpha.ts'), join('src', 'beta.ts')])
     })
 
+    it('keeps an explicit path as the only search root when the pattern has a literal prefix', async () => {
+      const spawn = vi.spyOn(ctx.subprocess, 'spawn')
+      const result = await call('glob', { pattern: 'src/*.ts', path: '.' }, agent())
+      expect(result.isError).toBe(false)
+      expect(text(result).split('\n')).toEqual(['alpha.ts', 'beta.ts'].map(name => `.${sep}${join('src', name)}`))
+      const argv = spawn.mock.calls[0]?.[0].argv
+      expect(argv?.filter(part => part === '--')).toHaveLength(1)
+      expect(argv?.slice(-2)).toEqual(['--', '.'])
+      expect(argv).not.toContain('--glob=!**')
+    })
+
+    it('discovers files in a directory named dash without treating it as stdin', async () => {
+      await mkdir(join(dir, '-'))
+      await writeFile(join(dir, '-', 'file.ts'), '')
+      const spawn = vi.spyOn(ctx.subprocess, 'spawn')
+      const result = await call('glob', { pattern: '-/*.ts' }, agent())
+      expect(result.isError).toBe(false)
+      expect(text(result)).toBe(join('-', 'file.ts'))
+      expect(spawn.mock.calls[0]?.[0].argv).not.toContain('--')
+    })
+
     it('reports zero discoveries as No files found', async () => {
       expect(text(await call('glob', { pattern: '*.nomatch' }, agent()))).toBe('No files found')
     })
@@ -104,43 +199,6 @@ describe('search tools over the real subprocess service + the packaged rg', () =
       expect(text(await call('glob', { pattern: '*', path: '.git' }, agent()))).toBe('No files found')
     })
 
-    it('grouped exclusions preserve legacy discoveries across VCS roots and ordinary hidden paths', async () => {
-      const vcsNames = ['.git', '.svn', '.hg', '.bzr', '.jj', '.sl']
-      const roots = [undefined, '.', 'nested', '资料', '-leading']
-      const visible = ['.github/workflows/keep.yml', '.git-backup/keep.txt', 'plain/.dotdir/keep.txt',
-        'ignored-dir/keep.txt', '资料/测试.txt', '-leading/文档.txt']
-      const hidden = vcsNames.flatMap(name => [`${name}/internal/secret.txt`, `nested/${name}/internal/secret.txt`])
-      for (const path of [...visible, ...hidden]) {
-        await mkdir(join(dir, path, '..'), { recursive: true })
-        await writeFile(join(dir, path), path + '\n')
-      }
-      await writeFile(join(dir, '.gitignore'), 'ignored-dir/\n')
-      for (const name of vcsNames) roots.push(name, `${name}/internal`, `nested/${name}`, `nested/${name}/internal`)
-      const run = (argv: string[]): string => {
-        const result = spawnSync(rgPath, ['--no-config', ...argv], { cwd: dir, encoding: 'utf8' })
-        expect(result.error).toBeUndefined()
-        expect([0, 1]).toContain(result.status)
-        expect(result.stderr).toBe('')
-        return result.stdout
-      }
-      for (const path of roots) {
-        for (const pattern of ['**/*', '*']) {
-          const legacy = ['--files', `--glob=${pattern}`, '--sort=modified', '--no-ignore', '--hidden',
-            ...vcsNames.flatMap(name => [`--glob=!**/${name}`, `--glob=!**/${name}/**`])]
-          if (path !== undefined) legacy.push('--', path)
-          const grouped = buildGlobCommand({ pattern, ...path === undefined ? {} : { path } })
-          expect([rgPath, '--no-config', ...grouped].length).toBeLessThanOrEqual(16)
-          expect(run(grouped), `pattern=${pattern}, path=${String(path)}`).toBe(run(legacy))
-        }
-      }
-      const discovered = run(buildGlobCommand({ pattern: '**/*' })).split('\n')
-      for (const path of visible) expect(discovered).toContain(join(...path.split('/')))
-      for (const path of hidden) expect(discovered).not.toContain(join(...path.split('/')))
-      const atVcsRoot = buildGlobCommand({ pattern: '**/*', path: '.git' })
-      expect(run(atVcsRoot)).toBe('')
-      expect(run(atVcsRoot.filter(flag => !flag.endsWith('}/**')))).toContain('secret.txt')
-    }, 15_000)
-
     it('classifies an invalid glob as SEARCH_INVALID_PATTERN', async () => {
       const result = await call('glob', { pattern: '[' }, agent())
       expect(result.isError).toBe(true)
@@ -149,8 +207,8 @@ describe('search tools over the real subprocess service + the packaged rg', () =
   })
 
   describe('grep', () => {
-    it('greps a directory tree with grouped, line-numbered output', async () => {
-      const result = await call('grep', { pattern: 'alpha' }, agent())
+    it.each([undefined, ''])('greps without a file filter when include is %j', async (include) => {
+      const result = await call('grep', { pattern: 'alpha', ...include !== undefined ? { include } : {} }, agent())
       expect(result.isError).toBe(false)
       const output = text(result)
       expect(output).toContain('Found 3 matches')
@@ -222,7 +280,7 @@ describe('search tools over the real subprocess service + the packaged rg', () =
     it('a pre-aborted registry call is ABORTED_BEFORE_DISPATCH', async () => {
       const controller = new AbortController()
       controller.abort()
-      const result = await ctx.tools.execute({
+      const result = await executeToolFixture(ctx, {
         callId: ToolCallId(`it-${++callCounter}`),
         name: 'grep',
         arguments: { pattern: 'x' },
@@ -232,9 +290,9 @@ describe('search tools over the real subprocess service + the packaged rg', () =
       expect(result.error).toMatchObject({ info: { name: 'AbortError', code: TOOL_ABORTED_BEFORE_DISPATCH } })
     })
 
-    it('an unusable session cwd provider rejection is SEARCH_FAILED', async () => {
+    it.each(['*', 'src/*.ts'])('an unusable session cwd provider rejection is SEARCH_FAILED for %s', async (pattern) => {
       const gone = join(dir, 'deleted-session-dir')
-      const result = await call('glob', { pattern: '*' }, { session: { header: { id: 'session-int', cwd: gone } } })
+      const result = await call('glob', { pattern }, { session: { header: { id: 'session-int', cwd: gone } } })
       expect(result.isError).toBe(true)
       expect(result.error).toMatchObject({ info: { name: 'SearchError', code: 'SEARCH_FAILED' } })
       expect(text(result)).toContain('subprocess failed before reporting an outcome')

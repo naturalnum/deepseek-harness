@@ -3,78 +3,63 @@
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
-import { FileUploadIntakeUnconfirmedError, type FileUploads } from './index.ts'
-import type { FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import type { FileUploadValue } from './types.ts'
+import type { FileUploads } from './index.ts'
+import type { FileUploadValue, ImageUploadValue } from './types.ts'
 
 type FileUploadHttpResult =
-  | { readonly ok: true; readonly value: FileUploadValue | FileAttachmentRef }
+  | { readonly ok: true; readonly value: FileUploadValue | ImageUploadValue }
   | {
     readonly ok: false
     readonly error: { readonly code: string; readonly message: string; readonly details: object }
   }
 
 /**
- * Handle one authenticated raw-byte upload.
+ * Handle one authenticated raw-byte upload. A `mediaType` query parameter
+ * stages the body as a prompt image; without it the body is stored verbatim.
  * @param service - Host upload service receiving streamed bytes.
  * @param request - authenticated HTTP request from Connection.
  * @returns JSON result using HTTP status 200 after request validation.
  */
 export async function handleFileUploadHttp(service: FileUploads, request: Request): Promise<Response> {
   if (request.method !== 'POST') {
-    return rejectBeforeIntake(request.body, new Response(null, { status: 405, headers: { allow: 'POST' } }))
+    return new Response(null, { status: 405, headers: { allow: 'POST' } })
   }
   const mediaType = request.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase()
   if (mediaType !== 'application/octet-stream') {
-    return rejectBeforeIntake(request.body, new Response('content type must be application/octet-stream', { status: 415 }))
+    return new Response('content type must be application/octet-stream', { status: 415 })
   }
   const url = new URL(request.url)
   const sessionId = url.searchParams.get('sessionId')
   if (sessionId === null || sessionId === '') {
-    return rejectBeforeIntake(request.body, new Response('sessionId is required', { status: 400 }))
+    return new Response('sessionId is required', { status: 400 })
   }
   const name = url.searchParams.get('name') ?? undefined
-  const workspaceDirectory = url.searchParams.get('directory') ?? undefined
+  const imageMediaType = url.searchParams.get('mediaType') ?? undefined
+  const upload = {
+    sessionId: brandString<SessionId>(sessionId),
+    data: requestBodyChunks(request.body),
+    signal: request.signal,
+    ...(name === undefined ? {} : { name }),
+  }
   let result: FileUploadHttpResult
-  const body = requestBodyChunks(request.body)
   try {
-    let value: FileUploadValue | FileAttachmentRef | undefined
-    let uploadError: unknown
-    let uploadFailed = false
-    try {
-      value = url.searchParams.get('workspaceOnly') === 'true' ? await service.uploadWorkspaceStream({
-        sessionId: brandString<SessionId>(sessionId), workspaceDirectory: workspaceDirectory ?? '.',
-        data: body, signal: request.signal, ...name === undefined ? {} : { name },
-      }) : await service.uploadStream({
-        sessionId: brandString<SessionId>(sessionId),
-        data: body,
-        ...workspaceDirectory === undefined ? {} : { workspaceDirectory },
-        signal: request.signal,
-        ...(name === undefined ? {} : { name }),
-      })
-    } catch (error) { uploadFailed = true; uploadError = error }
-    try { await body.return() }
-    catch (cleanupError) {
-      const cause = uploadFailed ? new AggregateError([uploadError, cleanupError], 'Upload and request cleanup failed.') : cleanupError
-      throw new FileUploadIntakeUnconfirmedError({ cause })
+    result = {
+      ok: true,
+      value: imageMediaType === undefined
+        ? await service.uploadStream(upload)
+        : await service.uploadImageStream({ ...upload, mediaType: imageMediaType }),
     }
-    if (uploadFailed) throw uploadError
-    if (value === undefined) throw new FileUploadIntakeUnconfirmedError()
-    result = { ok: true, value }
   } catch (error) {
     const failure = remoteErrorOf(error)
     result = {
       ok: false,
-      error: error instanceof FileUploadIntakeUnconfirmedError
-        ? { code: 'gateway/internal', message: 'File upload intake settlement is unconfirmed.',
-          details: { reason: 'FILE_UPLOAD_INTAKE_UNCONFIRMED' } }
-        : failure !== undefined
-          ? { code: failure.code, message: failure.message, details: failure.details }
-          : {
-            code: 'gateway/internal',
-            message: error instanceof Error ? error.message : String(error),
-            details: {},
-          },
+      error: failure !== undefined
+        ? { code: failure.code, message: failure.message, details: failure.details }
+        : {
+          code: 'gateway/internal',
+          message: error instanceof Error ? error.message : String(error),
+          details: {},
+        },
     }
   }
   return new Response(JSON.stringify(result), {
@@ -86,70 +71,16 @@ export async function handleFileUploadHttp(service: FileUploads, request: Reques
   })
 }
 
-async function rejectBeforeIntake(body: ReadableStream<Uint8Array> | null, response: Response): Promise<Response> {
-  try { await requestBodyChunks(body).return(); return response }
-  catch {
-    return new Response(JSON.stringify({ ok: false, error: { code: 'gateway/internal',
-      message: 'File upload intake settlement is unconfirmed.', details: { reason: 'FILE_UPLOAD_INTAKE_UNCONFIRMED' } } }), {
-      status: 200, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
-    })
-  }
-}
-
-function requestBodyChunks(
-  body: ReadableStream<Uint8Array> | null,
-): AsyncIterableIterator<Uint8Array> & { return(): Promise<IteratorResult<Uint8Array>> } {
-  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
-  let reading: Promise<ReadableStreamReadResult<Uint8Array>> | undefined
-  let ending: Promise<IteratorResult<Uint8Array>> | undefined
-  let unconfirmed: FileUploadIntakeUnconfirmedError | undefined
-  let ended = false
-  const pendingReturn = (): Promise<IteratorResult<Uint8Array>> | undefined => ending
-  const done = (): IteratorResult<Uint8Array> => ({ done: true, value: undefined })
-  const release = () => {
-    try { reader?.releaseLock(); reader = undefined }
-    catch { throw unconfirmed ??= new FileUploadIntakeUnconfirmedError() }
-  }
-  return {
-    [Symbol.asyncIterator]() { return this },
-    async next() {
-      if (unconfirmed !== undefined) throw unconfirmed
-      if (ending !== undefined) { await ending; return done() }
-      if (ended || body === null) return done()
-      if (reading !== undefined) throw unconfirmed ??= new FileUploadIntakeUnconfirmedError()
-      reader ??= body.getReader()
-      const active = reading = reader.read()
-      try {
-        const chunk = await active
-        const closing = pendingReturn()
-        if (closing !== undefined) { await closing; return done() }
-        if (chunk.done) { ended = true; release(); return done() }
-        return { done: false, value: chunk.value }
-      } catch (error) {
-        const closing = pendingReturn()
-        if (closing !== undefined) await closing
-        else { ended = true; release() }
-        throw error
-      } finally {
-        if (reading === active) reading = undefined
-      }
-    },
-    return() {
-      if (unconfirmed !== undefined) return Promise.reject(unconfirmed)
-      if (ending !== undefined) return ending
-      if (ended || body === null) { ended = true; return Promise.resolve(done()) }
-      ended = true
-      const active = reading
-      ending = (async () => {
-        try {
-          reader ??= body.getReader()
-          await reader.cancel()
-          if (active !== undefined) await active
-          release()
-          return done()
-        } catch { throw unconfirmed ??= new FileUploadIntakeUnconfirmedError() }
-      })()
-      return ending
-    },
+async function* requestBodyChunks(body: ReadableStream<Uint8Array> | null): AsyncIterable<Uint8Array> {
+  if (body === null) return
+  const reader = body.getReader()
+  try {
+    while (true) {
+      const chunk = await reader.read()
+      if (chunk.done) return
+      yield chunk.value
+    }
+  } finally {
+    reader.releaseLock()
   }
 }

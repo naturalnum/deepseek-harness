@@ -64,14 +64,6 @@ kind: "package-reference"
 
 失败带有稳定的 `SessionQueryError.code` 类型。你会遇到的包括：id 不存在时 `SESSION_QUERY_SESSION_NOT_FOUND`；同一会话的实时与持久化观察在不可变 header 上不一致时 `SESSION_QUERY_SOURCE_CONFLICT`；已挂载持久化不可读时 `SESSION_QUERY_PERSISTENCE_FAILED`；持久化记录未通过 Session 校验，或实时或 prepared 观察的投影计算失败时 `SESSION_QUERY_CORRUPT_SESSION`；加载的日志破坏表层约定时 `SESSION_QUERY_INVALID_SURFACE`。投影失败会将原始错误保留为 `cause`。针对已知实时会话的读取从不查询持久化，因此后端故障不会让当前内存历史变得不可读。
 
-冷 `observeSession` 读取时，即使读取同时失败或取消与关闭并发，句柄关闭失败仍会作为持久化失败保留。其 cause 保留关闭错误，以及存在时先前的读取错误。取消期间报告的独立后端失败也会保留；这并不证明已脱离的后端工作已经结算。
-
-取消识别信号的原始原因，以及 Node 的 `AbortError`：其代码须为 `ABORT_ERR`，且 cause 必须严格等于该原因。聚合清理错误即使带有这些字段也会保留。观察期间映射的后端持久化和损坏失败使用固定消息，并在 cause 中保留后端诊断信息。
-
-当取消发生在 provider 明确保证已结算的 `stat` 期间，`SessionQuerySettledStatAbortError` 在保留 `SESSION_QUERY_ABORTED` 的同时标识这一狭义情况。请求 `settleCancellation` 且 provider 同时保证读取结算时，观察会等待 open、read 和句柄 close，在后续阶段前停止，并以 `SessionQuerySettledReadAbortError` 报告成功结算的取消。真实失败仍为失败。
-
-观察在调用前固定 provider identity 和已声明的保证。identity 缺失或改变、provider 更换、保证撤回或后来才出现时，取消保持未确认。这些逐次结果不代表 provider 整体空闲。
-
 -----
 
 <a id="understand-the-implementation"></a>
@@ -116,6 +108,8 @@ kind: "package-reference"
 ### 观察缓存
 
 `observeSession` 不经过列表预检直接构建定点观察。实时观察以当前日志长度固定 cut，并在首次读取时才物化 `events`，因此只需要 header、cursor 或 projection 的消费者永远不会复制日志；日志只会追加，所以延后的首次读取得到的仍然正好是该前缀。冷路径先对存储会话执行 `stat`，再查询自有的有界缓存，缓存键为持久化实例加 `stat` 修订：修订未变则复用已恢复的未发布 Session，不再重读日志；修订变化或持久化实例被替换则经句柄 seam 重新加载并替换条目。缓存保留 `preparedSessionCacheSize` 个条目并按最久未用淘汰，被活跃观察租约钉住的条目从不被淘汰；读取中途转为实时的会话会重试实时路径。
+
+`inspectSession(id, read, signal?)` 准备冷 Session，但不发布或恢复运行它，然后在新的实时或准备状态截面上调用同步的领域读取函数。读取函数可以读取自己拥有的投影或解析策略，但不能修改或保留 Session。读取函数返回或抛出异常后都会释放观察；调用方只保留返回的数据。准备过程复用观察缓存并验证持久化历史。
 
 ### 读取与追踪
 

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Give newly created agents a shared default provider and model when their sessions do not specify one. Provider, model, and reasoning effort are live Config fields. Saved selections update the active profile patch and apply to subsequent reads; per-session selection remains owned by the entry point.
+Give newly created agents a shared default provider and model when their sessions do not specify one. Provider, model, and reasoning effort are live Config fields. Saved selections update the active profile patch and apply to subsequent reads; per-session selection belongs to the [Agent model API](../agent/README.md).
 
 ## Table of Contents
 
@@ -55,8 +55,6 @@ await ctx.agentDefaultModel.saveSelection({ provider, model, reasoningEffort: 'h
 ```
 
 Without a configuration editor, `saveSelection()` is a no-op. The service does not validate catalog membership; the consumer opening a model request owns availability diagnostics.
-
-`saveSelection()` uses ConfigEditor’s optional [save submission hook](../../boot/config-editor/README.md#use-this-package) with writer id `agent-default-model/saveSelection` before entering its private save queue. The observed operation includes queued work, the profile write and required reconciliation; background callers can retain that Promise independently of their response.
 
 -----
 
@@ -114,7 +112,7 @@ Changing the default affects only agents that subsequently resolve from it. An e
 
 These limits define the service's scope. They are current package constraints, not a task backlog.
 
-- **One process-wide default** — the service owns a single default; per-session model selection remains the entry point's responsibility.
+- **One process-wide default** — the service owns a single default; per-session model selection belongs to the [Agent model API](../agent/README.md).
 - **Persistence requires a profile configuration editor** — without it, saving a default does not retain the selection.
 
 <a id="dev-note"></a>

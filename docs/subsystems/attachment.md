@@ -4,10 +4,6 @@ English | [中文](attachment.zh.md)
 
 The attachment seam separates binary image and generic-file ownership from the session log. A producer gives bytes to [`ctx.attachments`](#ctxattachments--attachmentstore-abstract-seam); the service publishes an immutable content-addressed reference only after the object is durable. Session events and model-visible attachment blocks contain that reference and metadata, never a browser object URL, host temporary path, provider URL, or base64 payload. The independent [`ctx.fileUploads`](#ctxfileuploads--fileuploads) service binds browser file transfers and staged receipts to the receiving Agent.
 
-`AttachmentError.settlement` is `'unknown'` when the provider cannot confirm resource cleanup or publication; omission retains ordinary failure handling. Native file-upload intake preserves the original error as cause, retains its occupied slot and closes new intake for a marked failure.
-
-`ATTACHMENT_STORAGE_CAPACITY` is an additive storage-error category. The local provider emits `AttachmentStorageCapacityError` only for its own staging `open`, `write` or `sync` returning `ENOSPC` or `EDQUOT`, after owned descriptor close and temporary unlink succeed. Its `phase` distinguishes failure before source iteration from a write or sync attempt. It does not establish arbitrary source closure; cancellation, cleanup uncertainty and attempted publication retain their original error and ownership.
-
 Unsent browser drafts may stay in memory and native clients may stage them in operating-system temporary storage. Browser generic files become durable before they receive a staged prompt receipt. Once the host accepts a user message, its images move below `<DSH_HOME>/attachments/v1` before the user event is appended. Structured model image output follows the same persist-before-event rule.
 
 Source: [`packages/attachment/attachment/src/types.ts`](../../packages/attachment/attachment/src/types.ts)
@@ -60,9 +56,9 @@ interface ImageAttachmentLimits {
 }
 ```
 
-The local backend admits at most 20 images and 200 MiB of encoded source data per message. One source may use up to 20 MiB, 64,000,000 pixels, and 8192 pixels on either side. These source limits precede the independent normalization stage, which limits the long edge to 2048 pixels and encoded data to 4 MiB by default.
+The local backend admits at most 20 images and 200 MiB of encoded source data per message. One source may use up to 50 MiB, 64,000,000 pixels, and 65,535 pixels on either side. These source limits precede the independent normalization stage, which limits the long edge to 2048 pixels and encoded data to 4 MiB by default.
 
-The reference records intrinsic dimensions and encoded length so clients can lay out history without decoding first, while every authoritative read still re-checks digest, media signature, dimensions, and metadata against the object.
+The reference records intrinsic dimensions and encoded length so clients can lay out history without decoding first. Reads verify the stored object against the supplied reference's ID, format, byte length, width, and height. Optional display names and pre-normalization dimensions are returned unchanged as caller-supplied display information, without verification against stored bytes.
 
 ## Commit and verified-read payloads
 
@@ -84,10 +80,16 @@ type PromptContentPart =
 ```
 
 ```ts type-equiv
-/** Host prompt content whose file receipts are resolved and whose image bytes await admission. */
+/**
+ * Host prompt content whose upload receipts are resolved. An image part
+ * carries encoded bytes awaiting admission, or references an image this
+ * service already stored for an upload the same Session staged, with
+ * `encodedBytes` holding the byte length of that upload.
+ */
 type AttachmentAdmissionPart =
   | PromptContentPart
   | { readonly type: 'file'; readonly attachment: FileAttachmentRef }
+  | { readonly type: 'image'; readonly attachment: ImageAttachmentRef; readonly encodedBytes: number }
 ```
 
 ```ts type-equiv
@@ -171,7 +173,7 @@ interface RequestImageAttachment {
 }
 ```
 
-`saveImage()` prepares and atomically commits a provider-independent normalized attachment before returning its `ImageAttachmentRef`. `saveImages()` prepares every validated attachment once before publishing the batch, so validation rejection leaves no partial objects and publication does not repeat decoding or quality selection. `admitPromptContent()` accepts the complete ordered Host prompt after file receipt resolution, replaces base64 image uploads with durable references, and passes durable file references unchanged. `admitEncodedImages()` supports other wire entries and delegates count, aggregate-byte, and ordered batch admission to `saveImages()`. `admitEncodedFile()` gives encoded protocol adapters the same service-owned canonical-base64 admission, and `isAttachmentError()` lets those adapters recognize stable attachment failures without importing implementation helpers. `readImage()` verifies a normalized attachment from an authorized session path. `imageHostPath()` exposes only the provider-owned host object location; it does not decide whether the current tool execution world can read it. `readImageRequest()` derives and caches one deterministic request version at an exact route-chosen target size and encoded-byte target. That version contains encoded bytes and metadata but no execution-world path. New entries are fully decoded before publication, while cache hits use a bounded metadata probe. Callers use `Promise.all` over the singular method when they need an ordered batch. The local implementation lazily encodes preferred candidates, singleflights equal request identities, lets each waiter cancel independently, stops shared work when no waiter remains, and bounds all transforms with its instance-level limiter, which defaults to two simultaneous transformations. The service is retention-neutral: resumed and forked sessions may share objects, so reference-aware garbage collection is deferred rather than tied to one session's deletion.
+`saveImage()` prepares and atomically commits a provider-independent normalized attachment before returning its `ImageAttachmentRef`. `saveImages()` prepares every validated attachment once before publishing the batch, so validation rejection leaves no partial objects and publication does not repeat decoding or quality selection. `admitPromptContent()` accepts the complete ordered Host prompt after upload receipt resolution, replaces base64 image uploads with durable references, passes durable file references and already stored images unchanged, and counts every image toward the per-message image count and aggregate byte limits, a stored image by the bytes of its upload. `admitEncodedImages()` supports other wire entries and delegates count, aggregate-byte, and ordered batch admission to `saveImages()`. `admitEncodedFile()` gives encoded protocol adapters the same service-owned canonical-base64 admission, and `isAttachmentError()` lets those adapters recognize stable attachment failures without importing implementation helpers. `readImage()` verifies a normalized object against the supplied complete reference without consulting Session history, then returns that reference with the bytes. Access policy belongs to the calling API; Session Controller uses the store-level [image access rule](../../.agents/notes/implemented/architecture/2026-10-23-store-scoped-image-reads.md). `imageHostPath()` exposes only the provider-owned host object location; it does not decide whether the current tool execution world can read it. `readImageRequest()` derives and caches one deterministic request version at an exact route-chosen target size and encoded-byte target. That version contains encoded bytes and metadata but no execution-world path. New entries are fully decoded before publication, while cache hits use a bounded metadata probe. Callers use `Promise.all` over the singular method when they need an ordered batch. The local implementation lazily encodes preferred candidates, singleflights equal request identities, lets each waiter cancel independently, stops shared work when no waiter remains, and bounds all transforms with its instance-level limiter, which defaults to two simultaneous transformations. The service is retention-neutral: resumed and forked sessions may share objects, so reference-aware garbage collection is deferred rather than tied to one session's deletion.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -204,9 +206,12 @@ abstract validateImage(input: SaveImageAttachment): Promise<void>
 async saveImages(inputs: readonly SaveImageAttachment[]): Promise<readonly ImageAttachmentRef[]>
 
 /**
- * Admit one Host prompt and replace each uploaded image with its durable reference.
- * Text and durable file references pass through unchanged. A prompt without image parts performs no storage operation.
- * @param content - prompt parts in message order after file receipt resolution.
+ * Admit one Host prompt and replace each encoded image with its durable reference.
+ * Text, durable file references, and already stored images pass through unchanged.
+ * Every image part counts toward `maxImagesPerMessage` and `maxMessageImageBytes`;
+ * a stored image counts the bytes of the upload that stored it. Refused content
+ * starts no writes. A prompt without encoded images performs no storage operation.
+ * @param content - prompt parts in message order after upload receipt resolution.
  * @returns admitted prompt parts in the same order as `content`.
  * @throws AttachmentError when the image batch is refused.
  */
@@ -238,8 +243,8 @@ isAttachmentError(error: unknown): error is AttachmentError
 abstract saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef>
 
 /**
- * Read one image and verify that bytes still match the recorded reference.
- * @param ref - durable reference from the session log.
+ * Read one image and verify its ID, format, byte length, and dimensions against the supplied reference.
+ * @param ref - supplied image reference; name and originalDimensions are preserved without file verification.
  * @param signal - optional cancellation for backend read and verification work.
  * @returns the verified bytes and normalized attachment reference.
  * @throws the signal reason when aborted, or a storage error when verification fails.
@@ -277,7 +282,7 @@ saveFileStream(input: SaveFileStreamAttachment): Promise<FileAttachmentRef>
  * Read and verify one verbatim stored file as bounded chunks. Providers must
  * not collect the complete file in memory. Backends without verbatim file
  * reads keep this default rejection.
- * @param ref - durable reference from the session log.
+ * @param ref - durable file reference from the session log.
  * @param signal - optional cancellation for backend reads and verification work.
  * @returns exact file bytes in order; integrity failures reject the iteration.
  */
@@ -324,29 +329,36 @@ registerAgentResolver(resolve: AgentResolver): () => void
  * @param signal - caller cancellation before storage begins.
  * @returns the staged receipt and durable file reference.
  */
-@Remote('upload') upload(agent: Agent, request: EncodedFileUploadRequest, signal: AbortSignal): Promise<FileUploadValue>
+@Remote('upload') async upload(agent: Agent, request: EncodedFileUploadRequest, signal: AbortSignal): Promise<FileUploadValue>
 
 /**
  * Persist raw chunks for one Session without aggregating the upload.
  * @param request - Session identity, ordered bytes, cancellation, and optional display name.
  * @returns the staged receipt and durable file reference.
  */
-async uploadStream(request: { readonly sessionId: SessionId readonly workspaceDirectory?: string readonly data: AsyncIterable<Uint8Array> readonly signal?: AbortSignal readonly name?: string }): Promise<FileUploadValue>
+async uploadStream(request: { readonly sessionId: SessionId readonly data: AsyncIterable<Uint8Array> readonly signal?: AbortSignal readonly name?: string }): Promise<FileUploadValue>
 
 /**
- * Store a workspace-only upload without retaining a conversation receipt.
- * @param request Session, bytes and explicit workspace destination; the prepared store owns authorization and publication.
- * @returns Closed native reference. A post-storage failure is unconfirmed and retains intake responsibility.
+ * Persist one prompt image for a Session: read at most the smaller of the
+ * deployment's per-image and per-message byte limits, then validate,
+ * normalize, and store the image the way prompt admission does, so a later
+ * prompt cites it by receipt.
+ * Cancellation before storage begins stores nothing; a cancelled upload
+ * never receives a receipt, although an image whose storage already began
+ * stays in the content-addressed store.
+ * @param request - Session identity, ordered bytes, the declared media type that this deployment
+ * must accept, cancellation, and optional display name.
+ * @returns the staged receipt and durable normalized image reference.
  */
-uploadWorkspaceStream(request: { readonly sessionId: SessionId readonly workspaceDirectory: string readonly data: AsyncIterable<Uint8Array> readonly name?: string readonly signal?: AbortSignal }): Promise<FileAttachmentRef>
+async uploadImageStream(request: { readonly sessionId: SessionId readonly data: AsyncIterable<Uint8Array> readonly mediaType: string readonly signal?: AbortSignal readonly name?: string }): Promise<ImageUploadValue>
 
 /**
  * Resolve one staged receipt for the receiving Agent's exact Session.
  * @param agent - receiving Agent.
  * @param receiptId - opaque receipt minted for one completed upload.
- * @returns durable file reference, or `undefined` for an unknown or foreign receipt.
+ * @returns the staged file or image, or `undefined` for an unknown or foreign receipt.
  */
-resolve(agent: Agent, receiptId: FileUploadReceiptId): FileAttachmentRef | undefined
+resolve(agent: Agent, receiptId: FileUploadReceiptId): StagedAttachment | undefined
 
 /**
  * Bind receipts while one prompt enters an Agent inbox.

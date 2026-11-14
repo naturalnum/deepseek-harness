@@ -38,8 +38,6 @@ Reset restores the value beneath the profile override, including schema defaults
 
 Each form reports `autoGenerate`, enabled by default, for clients that build pages from the schema; no shipped client does so yet. A plugin that ships its own page registers `configure({ auto: false }, ctx.fiber)` as an effect inside an optional `ctx.inject(['settings'], ...)` child from `apply`: the child names the plugin fiber the policy belongs to, a late-loading or replaced Settings service picks the policy up, and the business plugin runs without Settings. The policy does not remove configuration reads or writes.
 
-Trusted Host callers may pass `SettingsWriteControl` to `update`, `replace` or `mutate`. Settings carries that original check to ConfigEditor’s actual edit and replacement points; revision comparison still runs in the native serialized write. Omission preserves ordinary native writes.
-
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
@@ -48,11 +46,7 @@ Trusted Host callers may pass `SettingsWriteControl` to `update`, `replace` or `
 
 The [form projection](src/schema.ts) strips runtime references and ordinary fields. The [service](src/index.ts) supplies revisioned descriptors and validates edits against the full plugin Config before delegating persistence. Business plugins read their Config references directly.
 
-`update`, `replace` and `mutate` submit through config-editor's optional save hook before validation and writing. Their observed Promise includes the editor operation and the required descriptor publication afterward. The nested editor call shares that admission. Legacy import submits its rename and each section separately: it retains the original partial-import behavior, and a rejected section remains observable even though the importer logs and continues. Install the hook before import starts to observe those startup writes.
-
-Secret roles are redacted from values, inherited values, profile overrides, and schema defaults; clients receive presence markers. Tuple positions use the same markers as arrays; a secret dictionary key makes the dictionary opaque so its key cannot leak through a marker path. Path edits preserve fields a client did not receive.
-
-The shared `applyConfigPathOp` path editor preserves untouched siblings and object defaults when a parent is absent or null; ConfigEditor remains responsible for validation and persistence.
+Secret roles are redacted from values, inherited values, profile overrides, and schema defaults; clients receive presence markers. Path edits preserve fields a client did not receive.
 
 </details>
 

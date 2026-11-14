@@ -37,9 +37,9 @@ A skill is either a directory bundle `<name>/SKILL.md` or a flat file `<name>.md
 
 `disable-model-invocation: true` keeps the skill out of model-facing catalogs and loaders; `user-invocable: false` keeps it out of human-facing commands, and omitted fields default to permitting their surface. The two keys accept YAML booleans plus the case-insensitive `true`/`false`, `yes`/`no`, `on`/`off`, and `1`/`0` forms; a rejected spelling or a non-boolean value drops the whole skill with a warning rather than silently permitting a surface.
 
-For ordinary filesystem roots, catalog entries and loaded skills expose the resolved instruction-file path, so symlinked directories and flat files can open as regular-file previews. Reload locators and resource bases retain the discovered paths, including symlinks.
+Catalog entries and loaded skills expose the resolved instruction-file path, so symlinked directories and flat files can open as regular-file previews. Reload locators and resource bases retain the discovered paths, including symlinks.
 
-For ordinary filesystem roots, the catalog and the body have separate lifecycles: discovery parses frontmatter into the catalog entry, and every load re-reads the current file, so editing a skill body needs no versioning or cache invalidation.
+The catalog and the body have separate lifecycles: discovery parses frontmatter into the catalog entry, and every load re-reads the current file, so editing a skill body needs no versioning or cache invalidation.
 
 ### Roots and priority
 
@@ -68,23 +68,13 @@ Load the plugin alongside the skill registry; it requires `ctx.skills`.
 |---|---|---|
 | `providerName` | `filesystem` | Unique provider name registered on `ctx.skills` |
 | `includeDefaultRoots` | `true` | Include project and user roots around `customSkillDirs` |
-| `includeDefaultUserRoots` | `true` | Include default user roots when default roots are enabled |
 | `dshHome` | `$DSH_HOME` or `~/.dsh` | Harness config root; its `skills` subdirectory is scanned |
 | `agentsHome` | `$DSH_AGENTS_HOME` or `~/.agents` | Shared agent config root scanned for compatible skills |
 | `customSkillDirs` | `[]` | Additional local skill roots, after project roots and before user roots |
 | `watch` | `true` | Watch local roots and invalidate the provider when the catalog may have changed |
 | `bundledSkillDir` | — | Bundled skill root scanned at rank 600 when configured |
-| `bundledInvocation` | Skill frontmatter | Invocation ceiling for an explicit bundled root; never enables an entry point disabled by its source. Custom, project and user skills are unchanged. |
 
 The remaining `watch*` fields tune Chokidar behavior — polling, stability window, interval, project cap, and symlink following. The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-skill-filesystem) is the exhaustive source for every field.
-
-### Programmatic source
-
-An owner with a restricted read source can construct `FileSystemSkillProvider(ctx, control, config, source)`. This optional fourth argument is a `FileSystemSkillSource`, supplied in code rather than Loader configuration; it requires `includeDefaultRoots: false`, `watch: false`, and no `bundledSkillDir`. The ordinary plugin continues to use `ctx.fs` and its existing host fallback.
-
-`source.withFiles(read, options)` lends a `FileSystemSkillRead` containing only the five native read methods and a `materialize(directory, options)` operation. Discovery and loading reuse this package's existing parser. Each provider instance must identify one stable source version even when its candidates outlive discovery. During a load, body parsing and resource preparation use the same borrowed source. The owner retains the actual source work until both finish, including after caller cancellation, and owns version retention and disposal.
-
-Source-backed catalog entries expose neither an instruction path nor a resource base. Loading returns guidance only after `materialize` resolves with a caller-usable resource base and, optionally, an instruction path. A failed or incomplete preparation must reject; the provider supplies no source-path fallback. `SkillViewOptions.scope` passes the original caller context to both source operations, but the owner must validate that caller and select its actual project independently of `cwd` or the discovered directory. This generic interface grants no storage, project projection, or account authority.
 
 ### Change detection
 
@@ -92,13 +82,9 @@ Existing roots are watched, so adding, renaming, or deleting a skill (or editing
 
 ### Observable success and failures
 
-A valid skill under any scanned root appears in the session catalog sorted by name, and loading it returns the current file body. A file without valid frontmatter, an invalid name, or an invalid invocation value is skipped with a warning, so the model catalog receives no per-skill diagnostic and cannot distinguish an absent skill from an invalid one. Unexpected discovery or read failures leave the catalog observation incomplete rather than replacing the last-good view with a misleading deletion.
+A valid skill under any scanned root appears in the session catalog sorted by name, and loading it returns the current file body. A file without valid frontmatter, an invalid name, or an invalid invocation value is skipped with a warning, so the model catalog receives no per-skill diagnostic and cannot distinguish an absent skill from an invalid one. A root whose discovery or file read fails is logged with its path and omitted; other roots remain available. The observation is incomplete and is retried on the next lookup rather than cached. The model catalog identifies incomplete discovery separately from confirmed absence.
 
 -----
-
-`packagedBundles: true` requires build-generated `.dsh-package.json` and `.dsh-package.zip` carriers in each bundled directory. `readSkillPackage` checks every returned file/archive against its byte count and SHA256. `bundledExecutionRoot` maps an explicit Host `bundledSkillDir` to the identical, read-only guest tree without changing discovery, ranks or loading. Deployment binds both trees to the same release. Report assets retain their source bytes and sibling layout; internal-use origin is recorded in [source notice](../skill-office/assets/reports/SOURCES.json).
-
-`bundledInstructions` appends explicit deployment guidance only when a bundled body is loaded; it requires an explicit `bundledSkillDir`. Catalog descriptions, downloaded package bytes and custom/project/user skills remain unchanged. The native skill tool logs the appended body with the original load result, so resumed Sessions retain it.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
@@ -160,7 +146,8 @@ These limits define when the provider is a poor fit or needs special operational
 
 - **Discovery is one level deep** — only `<root>/<name>/SKILL.md` and `<root>/<name>.md` are recognized; nested skill trees and package manifests are ignored.
 - **Project scope is the nearest `.git` ancestor** — workspaces without that marker fall back to the supplied cwd, with no alternate project-root marker or monorepo subproject selection.
-- **Malformed entries disappear with a warning** — the model catalog receives no per-skill diagnostic and cannot distinguish an absent skill from an invalid one; unexpected I/O failures preserve the last-good catalog instead.
+- **Malformed entries disappear with a warning** — the model catalog receives no per-skill diagnostic and cannot distinguish an absent skill from an invalid one.
+- **I/O failures omit the whole root** — one unreadable skill also hides its readable siblings for that observation. Other roots remain available, so a lower-priority same-name skill can supply the description and loaded body. Discovery retries on each lookup and restores normal priority when the root recovers.
 - **Missing-root observation polls one path segment** — roots absent at startup use `fs.watchFile` at `watchPollIntervalMs` until Chokidar can attach, trading bounded detection latency for reliable creation detection across IDE, Git, and shell workflows.
 - **No body revision protocol** — a loaded body is ordinary retained tool history; later file edits affect later calls but neither rewrite old results nor announce that the body changed.
 

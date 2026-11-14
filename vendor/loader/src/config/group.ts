@@ -7,7 +7,6 @@ export class EntryGroup {
   static readonly key = Symbol.for('cordis.group')
 
   public data: EntryOptions[] = []
-  private updateTask: { readonly promise: Promise<void>; pending: boolean } | undefined
 
   constructor(public ctx: Context, public tree: EntryTree) {
     const entry = ctx.fiber.entry
@@ -19,7 +18,6 @@ export class EntryGroup {
   }
 
   async create(options: Omit<EntryOptions, 'id'>) {
-    this.ctx.loader.updateGuard?.create(this, options)
     const id = this.tree.ensureId(options)
     const entry: Entry = this.tree.store[id] ??= new Entry(this.ctx.loader)
     // Entry may be moved from another group,
@@ -38,50 +36,17 @@ export class EntryGroup {
 
   remove(id: string, isDispose = false) {
     const entry = this.tree.store[id]
-    if (!entry) return
-    this.ctx.loader.updateGuard?.remove(entry)
+    if (!entry || entry.parent !== this) return
+    // Unregister before disposal so Loader can distinguish removal from self-disposal.
+    delete this.tree.store[id]
     entry.fiber?.dispose()
     if (!isDispose) {
       this.unlink(entry.options)
     }
-    delete this.tree.store[id]
     this.context.emit('loader/partial-dispose', entry, entry.options, false)
   }
 
-  /** Join actual updates enrolled on this group before its observed work settles.
-   * Call from an external observer; child setup and cleanup must not await their own group update.
-   * @returns Joined settlement, including updates enrolled while waiting; preserves the first observed failure.
-   */
-  async awaitUpdate(): Promise<void> {
-    let observed = this.updateTask
-    let failure: { readonly error: unknown } | undefined
-    while (observed !== undefined) {
-      try { await observed.promise } catch (error) { failure ??= { error } }
-      if (observed === this.updateTask) break
-      observed = this.updateTask
-    }
-    if (failure !== undefined) throw failure.error
-  }
-
-  /** Update this group's children without serializing independent native updates.
-   * @param config Replacement child entry list.
-   * @returns This update's original async caller promise, retaining its rejection responsibility;
-   * awaitUpdate separately observes enrolled internal work.
-   */
-  async update(config: EntryOptions[]): Promise<void> {
-    const previous = this.updateTask, actual = Promise.withResolvers<undefined>()
-    const joined = previous?.pending ? Promise.allSettled([previous.promise, actual.promise]).then((results) => {
-      for (const result of results) if (result.status === 'rejected') throw result.reason
-    }) : actual.promise
-    const current = { promise: joined, pending: true }
-    this.updateTask = current
-    void joined.then(() => { current.pending = false }, () => { current.pending = false })
-    void this.updateChildren(config).then(() => { actual.resolve(undefined) }, actual.reject)
-    return actual.promise
-  }
-
-  private async updateChildren(config: EntryOptions[]) {
-    this.ctx.loader.updateGuard?.group(this, config)
+  async update(config: EntryOptions[]) {
     const oldConfig = this.data as EntryOptions[]
     this.data = config
     const oldMap = Object.fromEntries(oldConfig.map(options => [options.id, options]))
@@ -114,9 +79,7 @@ export class Group extends EntryGroup {
 
   constructor(public ctx: Context, public config: EntryOptions[]) {
     super(ctx, ctx.fiber.entry!.parent.tree)
-    ctx.on('internal/update', (config) => {
-      this.update(config)
-    })
+    ctx.on('internal/update', config => this.update(config))
   }
 
   async* [Service.init]() {

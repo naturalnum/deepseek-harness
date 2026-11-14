@@ -15,17 +15,17 @@
   en: d152484eb41ac6b4
   zh: 09388d293f9be9cb
 /deepseek-ai-dsh-app-boot/use-this-package:
-  en: f6fa378225009c8f
-  zh: 324c0e4640bb1358
+  en: 8e42ac55d685e0f1
+  zh: e9e8804af1b2df2b
 /deepseek-ai-dsh-app-boot/use-this-package/when-to-use-it:
   en: 2fdfe02f2ed4a258
   zh: d748228ece579c4a
 /deepseek-ai-dsh-app-boot/use-this-package/starting-the-app:
-  en: 4a424cd401556f20
-  zh: 0b34dd18e0db6cea
+  en: 65bf2834b81f87da
+  zh: c864ac60a3005b99
 /deepseek-ai-dsh-app-boot/use-this-package/profiles:
-  en: 523007722797a413
-  zh: 7fa89888cc5a88f2
+  en: 781fe487a973ee6f
+  zh: e95188274f75f9ad
 /deepseek-ai-dsh-app-boot/use-this-package/previewing-the-effective-configuration:
   en: 646a0ccdd7881ad1
   zh: e3696acb1573dd7b
@@ -33,23 +33,23 @@
   en: c4a301652b851ce9
   zh: 784871e19cd9db0a
 /deepseek-ai-dsh-app-boot/use-this-package/reading-plugin-display-metadata:
-  en: a9afb263b03d112c
-  zh: 31f5e797cd953c15
+  en: 91d80c444ac0cfe5
+  zh: e7db496043528ffb
 /deepseek-ai-dsh-app-boot/use-this-package/startup-and-reload-failures:
-  en: f67c3186010c26e4
-  zh: a0d9031c5f7707db
+  en: dc13dfa1f79292e4
+  zh: d51682ced7a18ac2
 /deepseek-ai-dsh-app-boot/understand-the-implementation:
   en: f4a2695cb4c8a570
   zh: 89837235d2f376cf
 /deepseek-ai-dsh-app-boot/understand-the-implementation/design-notes:
-  en: 57ff8160975461a0
-  zh: 6b42c31743f74785
+  en: 6eba01e24a2a68ab
+  zh: 64af424489087ec7
 /deepseek-ai-dsh-app-boot/understand-the-implementation/helper-behavior:
-  en: 96691ad32f90c661
-  zh: d8f1c73b2ca26934
+  en: 6fa850d1bb000d0e
+  zh: aa83a40a9d3db295
 /deepseek-ai-dsh-app-boot/understand-the-implementation/source-map:
-  en: 5050fb8db308fc14
-  zh: aad1f9068486bdc0
+  en: 541700d5c39e0ab4
+  zh: 7522dbd9cd68c930
 /deepseek-ai-dsh-app-boot/further-exploration:
   en: 401269cc5ea8593e
   zh: cd337c356b320565

@@ -1,30 +1,12 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, expect, it, type TestContext } from 'vitest'
-import { findRepositoryReferences, scanRepositoryReferences, uniquePrefixMatch } from './verify-repository-references.ts'
+import { findRepositoryReferences, repositoryCommits, scanRepositoryReferences, uniquePrefixMatch } from './verify-repository-references.ts'
 
 const organizationUrl = `https://${['github.com', ['deepseek', 'harness'].join('-')].join('/')}`
-
-describe('research source revision fields', () => {
-  const revision = 'a'.repeat(40), commits = new Set([revision])
-  const file = 'integrations/epri-research/source-records/cloud-integration.json'
-  const record = { sourceRepository: 'https://github.com/naturalnum/deepseek-harness',
-    sourceBranch: 'GMZ/deepscientist-airalogy-native', sourceCommit: revision }
-  it('retains exact structured source pins while still rejecting ordinary prose and unrelated JSON fields', () => {
-    expect(findRepositoryReferences(file, JSON.stringify(record), commits)).toEqual([])
-    expect(findRepositoryReferences(file, JSON.stringify({ ...record, note: revision }), commits)).toHaveLength(1)
-    expect(findRepositoryReferences('integrations/epri-research/CLOUD.md', revision, commits)).toHaveLength(1)
-    expect(findRepositoryReferences(file, JSON.stringify({ ...record, sourceBranch: 'unreviewed' }), commits)).toHaveLength(1)
-  })
-  it('accepts only the selected upstream source-lock repository commit field', () => {
-    const lock = 'integrations/epri-research/source-records/source-lock.json'
-    expect(findRepositoryReferences(lock, JSON.stringify({ sources: [{ repo: 'airalogy/airalogy', commit: revision }] }), commits)).toEqual([])
-    expect(findRepositoryReferences(lock, JSON.stringify({ sources: [{ repo: 'another/repo', commit: revision }] }), commits)).toHaveLength(1)
-  })
-})
 
 function repository(test: TestContext) {
   const root = mkdtempSync(join(tmpdir(), 'dsh-repository-references-'))
@@ -69,6 +51,7 @@ function collidingCommitBodies(tree: string, length: number): [string, string] {
   for (let index = 0; ; index += 1) {
     const body = `tree ${tree}\nauthor T <t@example.invalid> 0 +0000\ncommitter T <t@example.invalid> 0 +0000\n\ncollision ${String(index)}\n`
     const prefix = createHash(algorithm).update(`commit ${String(Buffer.byteLength(body))}\0${body}`).digest('hex').slice(0, length)
+    if (!/[a-f]/.test(prefix)) continue
     const previous = seen.get(prefix)
     if (previous !== undefined) return [previous, body]
     seen.set(prefix, body)
@@ -90,39 +73,73 @@ describe('unique object-name prefix search', () => {
 })
 
 describe('maintained repository reference policy', () => {
-  it('keeps exact Office source pins while rejecting prose, unrelated metadata and extra references', () => {
-    const commit = 'a'.repeat(40), commits = new Set([commit, commit.slice(0, 7)])
-    const file = 'packages/skill/skill-office/assets/office-docx/DSH-SOURCE.json'
-    const record = { name: 'office-docx', source: {
-      repository: 'https://github.com/deepseek-ai/deepseek-harness', commit,
-    } }
-    const text = JSON.stringify(record, undefined, 2)
-    expect(findRepositoryReferences(file, text, commits)).toEqual([])
-    expect(findRepositoryReferences(file, JSON.stringify(record), commits)).toEqual([])
-    for (const path of ['guide.md', 'another/DSH-SOURCE.json', file.replace('office-docx/', 'other/')]) {
-      expect(findRepositoryReferences(path, text, commits)).toHaveLength(1)
-    }
-    expect(findRepositoryReferences(file, JSON.stringify({ ...record, note: commit }, undefined, 2), commits)).toHaveLength(1)
-    expect(findRepositoryReferences(file, JSON.stringify({ ...record, extra: { commit } }, undefined, 2), commits)).toHaveLength(1)
-    expect(findRepositoryReferences(file, JSON.stringify({ ...record, source: {
-      ...record.source, repository: 'https://example.invalid/other',
-    } }, undefined, 2), commits)).toHaveLength(1)
-    expect(findRepositoryReferences(file, JSON.stringify({ ...record, name: 'office-xlsx' }), commits)).toHaveLength(1)
-    expect(findRepositoryReferences(file, JSON.stringify({ ...record, source: {
-      ...record.source, commit: commit.slice(0, 7),
-    } }), commits)).toHaveLength(1)
+  const numericCommit = String(6_344_383)
+
+  it.each([
+    ['uv.lock', `artifact = { size = ${numericCommit} }`],
+    ['python/sdk/uv.lock', `sdist.size = ${numericCommit}`],
+    ['fixture.json', `{"context_length": ${numericCommit}}`],
+    ['package.json', `{"version": "1.0.${numericCommit}"}`],
+    ['config.toml', `rev = "${numericCommit}"`],
+    ['notes.md', `commit ${numericCommit}\nhttps://example.invalid/commit/${numericCommit}`],
+    ['source.ts', `// commit ${numericCommit}`],
+  ])('accepts decimal-only tokens in %s even when they name a commit', (file, source) => {
+    expect(findRepositoryReferences(file, source, new Set([numericCommit]))).toEqual([])
   })
 
-  it('distinguishes decimal uv artifact sizes from commit references in the same lock file', () => {
-    const commit = '6'.repeat(7), commits = new Set([commit]), file = 'python/sdk/uv.lock'
-    const size = `{ url = "https://files.example.test/package.whl", size = ${commit} }`
-    expect(findRepositoryReferences(file, size, commits)).toEqual([])
-    for (const source of [`reference = "${commit}"`, `size = "${commit}"`,
-      `{ size = ${commit}, reference = "${commit}" }`]) {
-      expect(findRepositoryReferences(file, source, commits)).toEqual([{ file, line: 1, kind: 'commit-hash' }])
+  it.each([7, 12, 40])('accepts a decimal-only %i-character token beside a hexadecimal commit', (length) => {
+    const decimal = '1'.repeat(length)
+    const hexadecimal = `${'1'.repeat(length - 1)}a`
+    expect(findRepositoryReferences('source.md', `${decimal} ${hexadecimal}`, new Set([decimal, hexadecimal]))).toEqual([
+      { file: 'source.md', line: 1, kind: 'commit-hash' },
+    ])
+    expect(findRepositoryReferences('source.md', decimal, new Set([decimal]))).toEqual([])
+  })
+
+  it.each([
+    ['python/sdk/uv.lock', 'size = "HASH"', 1],
+    ['fixture.json', '{"revision": "HASH"}', 1],
+    ['notes.md', 'release\ncommit HASH', 2],
+    ['source.ts', '// commit HASH', 1],
+  ] as const)('rejects commit tokens containing a hex letter in %s', (file, template, line) => {
+    const hash = `${numericCommit}a`
+    expect(findRepositoryReferences(file, template.replace('HASH', hash), new Set([hash]))).toEqual([
+      { file, line, kind: 'commit-hash' },
+    ])
+  })
+
+  it('accepts byte counts in the real lockfile and still rejects references on added lines', () => {
+    const file = 'python/sdk/uv.lock'
+    const source = readFileSync(join(import.meta.dirname, '..', file), 'utf8').trimEnd()
+    const sizes = new Set([...source.matchAll(/\bsize\s*=\s*(\d+)/g)].map(match => match[1] ?? ''))
+    expect(sizes.size).toBeGreaterThan(0)
+    expect(sizes).not.toContain('')
+    expect(findRepositoryReferences(file, source, sizes)).toEqual([])
+    const hash = `${numericCommit}a`
+    expect(findRepositoryReferences(file, `${source}\n# commit ${hash}\n# ${organizationUrl}`, new Set([...sizes, hash]))).toEqual([
+      { file, line: source.split('\n').length + 1, kind: 'commit-hash' },
+      { file, line: source.split('\n').length + 2, kind: 'organization-url' },
+    ])
+  })
+
+  it('excludes a real numeric commit prefix from both candidate resolution and file findings', (test) => {
+    const fixture = repository(test)
+    const algorithm = fixture.tree.length === 64 ? 'sha256' : 'sha1'
+    for (let index = 0; ; index += 1) {
+      const body = `tree ${fixture.tree}\nauthor T <t@example.invalid> 0 +0000\ncommitter T <t@example.invalid> 0 +0000\n\nnumeric ${String(index)}\n`
+      const commit = createHash(algorithm).update(`commit ${String(Buffer.byteLength(body))}\0${body}`).digest('hex')
+      if (!/^\d{7}/.test(commit) || !/[a-f]/.test(commit.slice(0, 40))) continue
+      fixture.git(['hash-object', '-t', 'commit', '-w', '--stdin'], body)
+      const decimal = commit.slice(0, 7)
+      const hexadecimal = commit.slice(0, Math.max(8, commit.search(/[a-f]/) + 1))
+      const source = `commit ${decimal}\ncommit ${hexadecimal}`
+      expect(repositoryCommits(fixture.root, [source])).toEqual(new Set([hexadecimal]))
+      fixture.write('references.md', source)
+      expect(scanRepositoryReferences(fixture.root)).toEqual([
+        { file: 'references.md', line: 2, kind: 'commit-hash' },
+      ])
+      return
     }
-    expect(findRepositoryReferences('guide.md', size, commits)).toHaveLength(1)
-    expect(findRepositoryReferences('another.lock', size, commits)).toHaveLength(1)
   })
 
   it('permits only the independent kit repository and its source URLs', () => {
@@ -137,9 +154,10 @@ describe('maintained repository reference policy', () => {
   it('rejects complete and abbreviated commit identifiers in tracked, staged, and new files', (test) => {
     const fixture = repository(test)
     fixture.write('tracked.md', `release\n${fixture.commit}\n${fixture.commit.toUpperCase()}\n`)
-    fixture.write('staged.md', fixture.commit.slice(0, 7))
+    const firstLetterEnd = fixture.commit.search(/[a-f]/) + 1
+    fixture.write('staged.md', fixture.commit.slice(0, Math.max(7, firstLetterEnd)))
     fixture.git(['add', 'staged.md'])
-    fixture.write('new.md', `\0${fixture.commit.slice(0, 12)}`)
+    fixture.write('new.md', `\0${fixture.commit.slice(0, Math.max(12, firstLetterEnd))}`)
 
     expect(scanRepositoryReferences(fixture.root)).toEqual(expect.arrayContaining([
       { file: 'tracked.md', line: 2, kind: 'commit-hash' },

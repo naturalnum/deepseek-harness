@@ -21,7 +21,7 @@
       "path": "../../util/launch-environment"
     },
     {
-      "path": "../../sandbox/sandbox"
+      "path": "../../util/error"
     }
   ]
 }

@@ -286,7 +286,7 @@ interface RemoteInvocation {
 
 ## Remote 访问资源
 
-每个 Remote 方法都受 [`dsh-api-remote-access`](../../packages/api/remote-access/README.zh.md) 的访问控制：只有当该 principal 种类的 policy 在调用访问的每个资源上都绑定了列出该端点 action 的 role 时，非 owner 调用才被放行。拥有某个身份类型的包把其资源种类声明合并进 `TypertResourceMap`；内置的无身份资源 `global` 从不是其中的种类。Gateway 从 `@Remote({ resources })` 或 `@RemoteScope(key, { resources })` 的 `resources` 读取函数读取某个种类的身份，其次是把该种类声明为 `resource` 的 lookup 参数或作用域 Context，再次是在 `typert.resources` 中登记的默认字段；不指向任何资源的调用访问 `global`。决策由 [Peer 身份属性 Agent Note](../../.agents/notes/implemented/architecture/2026-10-12-peer-principal-and-remote-access.zh.md) 负责。
+每个 Remote 方法都受 [`dsh-api-remote-access`](../../packages/api/remote-access/README.zh.md) 的访问控制：只有当该 principal 种类的 policy 在调用访问的每个资源上都绑定了列出该端点 action 的 role 时，非 owner 调用才被放行。拥有某个身份类型的包把其资源种类声明合并进 `TypertResourceMap`；内置的无身份资源 `global` 从不是其中的种类。Gateway 从 `@Remote({ resources })` 或 `@RemoteScope(key, { resources })` 的 `resources` 读取函数读取某个种类的身份，其次是把该种类声明为 `resource` 的 lookup 参数或作用域 Context，再次是在 `typert.resources` 中登记的默认字段或 resolver；不指向任何资源的调用访问 `global`。决策由 [Peer 身份属性 Agent Note](../../.agents/notes/implemented/architecture/2026-10-12-peer-principal-and-remote-access.zh.md) 负责。
 
 ```ts type-equiv
 /**
@@ -334,11 +334,14 @@ interface RemoteScopeOptions<WireArgs extends readonly unknown[] = never> {
    * throw, an empty list, or an identity other than a non-empty string
    * refuses the call. For a kind without a reader, the Gateway reads the
    * identity of a scoped Context whose Host adapter declares that `resource`
-   * and of lookup parameters declaring it, else the field registered in
-   * `typert.resources`: a top-level argument or, failing that, the first
-   * object argument. A call that carries no identity touches `global`. The
-   * readers and these defaults together must name every resource the method
-   * accesses: access control never checks a resource they omit.
+   * and of lookup parameters declaring it, else the registered default of
+   * `typert.resources`: a `resolve` function receiving the validated named
+   * wire values and their ordered parameters, or a `field` naming a top-level
+   * argument or, failing that, a field of the first object argument. A
+   * throwing resolver, an array result, or a field holding an array refuses
+   * the call. A call that carries no identity touches `global`. The readers
+   * and these defaults together must name every resource the method accesses:
+   * access control never checks a resource they omit.
    */
   readonly resources?: TypertResourceReaders<WireArgs>
 }
@@ -358,7 +361,7 @@ interface RemoteMethodOptions<WireArgs extends readonly unknown[] = never> exten
 
 ## Typert 注册表
 
-`ctx.typert` 分开保存当前环境的 descriptor、显式选择的 Remote contribution、lookup 提供方、作用域上下文提供方与资源种类的默认字段。lookup 提供方拥有稳定 wire 声明和默认 resolver；Host 组合可以为同一个 key 配置 effect-scoped 同步或异步 resolver，配置卸载后恢复默认策略。各项注册都是由 Cordis 持有的 effect，并返回可等待的 disposer。
+`ctx.typert` 分开保存当前环境的 descriptor、显式选择的 Remote contribution、lookup 提供方、作用域上下文提供方与资源种类的默认字段或 resolver。lookup 提供方拥有稳定 wire 声明和默认 resolver；Host 组合可以为同一个 key 配置 effect-scoped 同步或异步 resolver，配置卸载后恢复默认策略。各项注册都是由 Cordis 持有的 effect，并返回可等待的 disposer。
 
 ```ts type-equiv
 /** Minimal Typert runtime consumed through dependency inversion. */
@@ -441,17 +444,17 @@ interface TypertGateway {
    * @returns whether an owner stream is open and has not been cancelled.
    */
   hasLiveClient(): boolean
+  /** @returns detached metadata for all unsettled forwarded events in arrival order. */
+  getPendingRemoteEvents(): readonly PendingRemoteEventInfo[]
   /**
    * Register the application-selected forwarded-event source.
    * @param source - stream factory installed by the Remote assembly.
    * @param host - stable Host facts included in each Client generation's opening frame.
-   * @param limits - optional positive finite per-client item, resident-byte and complete-frame limits; no defaults.
-   * @returns disposer joining this exact source and cancelling its active streams; bounded cleanup failures retain identity.
+   * @returns disposer removing this exact source and cancelling its active streams.
    */
   registerRemoteEvents(
     source: TypertRemoteEventSource,
     host: RemoteEventHostInfo,
-    limits?: RemoteEventQueueLimits,
   ): () => Promise<void>
   /**
    * Invoke one live Remote method without assuming a carrier or response envelope.
@@ -563,10 +566,9 @@ decide(request: RemoteAccessRequest<Principal>): RemoteAccessDecision
 allows(resource: RemoteAccessResource): boolean
 
 /**
- * The baseline a page opens with before its snapshot stream connects. A
- * business package rendering a non-owner page assigns this value to
- * {@link REMOTE_ACCESS_SNAPSHOT_KEY} after every index injection row,
- * replacing the owner baseline the webServer index carries.
+ * The baseline a page opens with before its snapshot stream connects; every
+ * index the webServer renders carries it under
+ * {@link REMOTE_ACCESS_SNAPSHOT_KEY} for the Peer the page speaks for.
  * @param principal - the page's caller identity.
  * @returns the owner baseline for the owner; otherwise the principal's current grants.
  */
@@ -659,29 +661,24 @@ Resolve strict generated definitions or conservative SRC markers against current
 
 ```ts cordis-catalog
 /**
- * Create a native Node mux pinned to an externally authenticated Peer.
- * The caller owns authentication, Host/Origin checks, and the Peer's lifetime.
- * @param peer - fixed live Peer selected by the external carrier.
- * @param beforeOpen - synchronous guard before each logical-stream dispatch; a throw refuses that stream.
- * @param options - optional frame limit and pre-allocation logical resource reservation; settlement is synchronous.
- * @returns carrier closed explicitly or when the calling Context unloads.
- */
-createNodeStreamTransport( peer: PeerScope, beforeOpen: (endpoint: string) => void, options?: NodeStreamTransportOptions, ): NodeStreamTransport
-
-/**
  * Check for an active owner Client event stream, the only kind that can answer forwarded waterfalls.
  * @returns whether an owner stream is open and has not been cancelled.
  */
 hasLiveClient(): boolean
 
 /**
+ * Inspect unsettled forwarded events without changing their lifetime.
+ * @returns detached event names and Agent identities.
+ */
+getPendingRemoteEvents(): readonly PendingRemoteEventInfo[]
+
+/**
  * Register the sole application-selected forwarded-event source.
  * @param source - stream factory installed by the Remote assembly.
  * @param host - stable Host facts included in each Client generation's opening frame.
- * @param limits - optional positive finite per-client item, resident-byte and complete-frame limits; no defaults.
  * @returns disposer removing this source and cancelling its active streams.
  */
-registerRemoteEvents( source: TypertRemoteEventSource, host: RemoteEventHostInfo, limits?: RemoteEventQueueLimits, ): () => Promise<void>
+registerRemoteEvents( source: TypertRemoteEventSource, host: RemoteEventHostInfo, ): () => Promise<void>
 
 /**
  * Invoke one live Remote method through strict generated reflection or SRC markers.
@@ -692,22 +689,12 @@ registerRemoteEvents( source: TypertRemoteEventSource, host: RemoteEventHostInfo
 async invoke(request: InvokeRemoteRequest): Promise<unknown>
 
 /**
- * Inspect the same strict or source definition used by a real invocation, without resolving resources or calling it.
- * @param namespace Exact wire namespace.
- * @param method Exact exported method.
- * @returns Current native invocation definition; inspection grants no call or resource authorization.
- */
-inspectInvocation(namespace: string, method: string): InvocationDescriptor
-
-/**
  * Open one live stream Remote method without assuming a physical carrier.
  * @param request - decoded endpoint, named wire arguments, and the Client uplink when the carrier has one.
  * @returns a cancellation-aware iterable over the business results.
  */
 async stream(request: InvokeRemoteRequest): Promise<AsyncIterable<unknown>>
 ```
-
-Types: [NodeStreamTransport](../../packages/api/gateway/README.zh.md) · [NodeStreamTransportOptions](../../packages/api/gateway/README.zh.md) · [RemoteEventQueueLimits](../../packages/api/gateway/README.zh.md)
 
 Source: [`packages/api/gateway/src/index.ts`](../../packages/api/gateway/src/index.ts)
 <!-- END GENERATED cordis-surface -->

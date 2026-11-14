@@ -21,23 +21,20 @@
   en: 012a123601c7d8f2
   zh: 0e13f5e0d2e4ea7a
 /deepseek-ai-dsh-skill-filesystem/use-this-package/skill-format:
-  en: ab4acb5b1bcabd5e
-  zh: eed38b75f50a0d22
+  en: 78ac4e731c6a24c1
+  zh: e8c33db4aa0cc527
 /deepseek-ai-dsh-skill-filesystem/use-this-package/roots-and-priority:
   en: 265594f30ba5d848
   zh: 5de6a94864cab8d6
 /deepseek-ai-dsh-skill-filesystem/use-this-package/mount-and-configure:
-  en: c3723ab346c4c874
-  zh: b5c0c3036631ddff
-/deepseek-ai-dsh-skill-filesystem/use-this-package/programmatic-source:
-  en: c1ffe8171a5ffd4d
-  zh: 36c856cd80c4c893
+  en: 5e7a4ff37f33f8a5
+  zh: 2f6dd45e696cb92b
 /deepseek-ai-dsh-skill-filesystem/use-this-package/change-detection:
   en: 77acbd43e89b6043
   zh: 8169bbbc55f3f114
 /deepseek-ai-dsh-skill-filesystem/use-this-package/observable-success-and-failures:
-  en: fdbe1f0a0760127b
-  zh: 7401a0cba0d0e77a
+  en: 5e7ef5a233c9d8a1
+  zh: af39bc94f6bbf9bb
 /deepseek-ai-dsh-skill-filesystem/understand-the-implementation:
   en: a95eb63f5a570c79
   zh: cd964a36cf8a3715
@@ -63,8 +60,8 @@
   en: 14ddbda337682082
   zh: 2e4dc3c26b45f62c
 /deepseek-ai-dsh-skill-filesystem/known-limitations-and-deferred-work:
-  en: a7f37a7b9e54945d
-  zh: b9d3b15027757301
+  en: 0d5a15f8442b1342
+  zh: b07748ab499971f8
 /deepseek-ai-dsh-skill-filesystem/known-limitations-and-deferred-work/dev-note:
   en: 53584bc8292df1f9
   zh: 921253cd64aa7511

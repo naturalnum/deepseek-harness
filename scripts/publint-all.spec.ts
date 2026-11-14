@@ -38,7 +38,7 @@ function fixture(options: {
     version: '0.0.1',
     type: 'module',
     license: 'MIT',
-    engines: { node: '>=22.19' },
+    engines: { node: '>=24.9.0' },
     sideEffects: false,
     files: options.filesPatterns ?? ['lib'],
     exports: { '.': { default: options.exportPath ?? './lib/index.js' } },

@@ -82,23 +82,13 @@ kind: "package-reference"
 
 ### 读取日志
 
-已实体化的 `stat` 与 `list` 快照在转换后的逻辑 `header` 之外，通过 `formatStatus` 保留格式 catalog 的头部分类。只读准备不会改变所选历史版本；发布后继之后，状态才变为 `current`。尚未实体化的待定 Session 省略 `formatStatus`。
+已实体化的 `stat` 与 `list` 快照在转换后的逻辑 `header` 之外，通过 `formatStatus` 保留格式 catalog 的头部分类。它们还包含选中物理 generation 的 `location: { kind: 'jsonl', path }`。只读准备不会改变所选历史版本；发布后继之后，状态才变为 `current`。尚未实体化的待定 Session 省略 `formatStatus` 与 `location`。
 
 `open(id, 'read'|'write')` 选择最高规范 generation。当前格式输入走普通快速路径。对于历史输入，只读 open 会单遍解码并迁移源、校验当前逻辑结果，然后在不发布后继的情况下返回。写 open 会在可用时复用按 revision 为键的 preparation，否则执行同一套 preparation，再按有界分片编码同目录临时文件、在 Worker Thread 中校验、复查源修订，并在返回前以不覆盖方式发布当前后继。源保持逐字节不变。如果源在 preparation 后发生变化，该次写 open 会失败，已经返回给读方的逻辑历史不会被替换；后续写 open 会针对新的 revision 重新执行 preparation。后端在 memo 化前冻结已解码的 event graph，并在此时将其标记为 `shared-frozen`；每个嵌套对象和数组都会冻结，句柄读取和 slice 即使为空也保留该状态。只有尚未实体化的 pending 空日志报告 `detached`。`stat(id)` 与 `list()` 只选择并转换最高 generation 的 header，不读取事件行，也不启动迁移；快照携带所选文件的 `sizeBytes` 与尽力而为的修订号。当前格式修订号标识该文件；历史格式修订号还包含持久化根目录中所选文件的指纹，因此子日志变化会使缓存的逻辑事件失效。指纹只读取文件系统元数据；无关变化也会保守地使历史修订号失效。一次 `list()` 为其历史条目共用一个全库指纹。选择 `compression: 'none'` 后，日志是外部读取方可直接消费的换行分隔文本；压缩默认值必须经后端读取。
 
 校验只有在 Worker 自然以退出码 0 结束后，才接受其成功响应。并发配额一直保留到该次退出；取消或 Worker 错误会先终止并等待 Worker 退出，再使校验失败。
 
-当调用方仍在等待时，header、当前解码器以及历史父、子会话读取的资源关闭失败会以 `JsonlReadCleanupError` 拒绝。该错误是 `AggregateError`，其 cause 为关闭失败，errors 中也保留已到达清理边界的先前读取或解码失败。存在性探测成功打开后，关闭失败（包括 `ENOENT`）同样会报告；只有打开时的 `ENOENT` 表示不存在。取消的历史 open 等待者会等待共享准备，并收到实际发生的关闭错误。
-
-header 读取同样只把打开文件失败时的 `ENOENT` 视为不存在。文件成功打开后读取产生的 `ENOENT` 仍是 I/O 失败，即使它与取消并发发生。 句柄读取被取消时，会等待正在执行的文件操作并跳过后续工作；即使独立失败与取消原因相同，也会保留该失败。
-
-句柄的 `close()` 立即拒绝新读取，并在从后端跟踪中释放句柄前等待所有已准入读取结算。它不会取消这些读取，也不会替换其失败。重复关闭会等待同一个不可取消的完成结果，因此后端不会在尚有读取未结算时报告空闲。
-
-历史 preparation 会一直跟踪到其实际 promise 结算，即使最后一个等待者取消或新版 revision 替换了可加入的条目。 最后一个等待者在历史来源文件打开期间取消时，已取得的句柄会关闭，不再启动正文读取。取消的等待者不再需要结果，但仍会等待共享工作与清理结算；它不会取消其他等待者所需的工作。 并发发现会等待已启动的操作；取消并发发生时，独立失败（包括关闭失败）仍会保留。后端保留并报告 preparation 的实际关闭失败，之后不会报告空闲。provider 卸载会停止新请求，等待待处理请求和 preparation，并通过正常 disposer 诊断报告保留的清理失败。
-
-JSONL 启用 `statSettlesOnAbort`：调用前已取消时不会开始工作；`stat` 进行期间取消时，先等待进行中的文件系统工作与 header 清理完成，再返回取消，且不会继续启动后续读取、解码和目录探测。已与其他调用方共享的根编码检查会等待完成，不取消其他调用方。即使取消并发发生，后端失败仍可观察。JSONL 也为只读 open、句柄 read 和 close 启用 `readOperationsSettleOnAbort`。取消报告前已启动的工作会结算；共享准备可能需要等待其他调用方，因此不承诺固定延迟。这些逐次保证不代表后端整体空闲。
-
-历史正文准备通过 [V3→V4](../session-format-v3-to-v4/README.zh.md) 补齐父目录：从 header 找到候选直属子 Session，通过历史编解码器逐个读取其自身 descriptor，保留紧凑证据与来源修订。此过程不准备子目录，也不发布子后继。不可读或不支持的 header（包括损坏的 Zstandard header 帧）不参与发现，也不出现在 `list()` 中。直接访问损坏的压缩 header 仍会失败；header 的 I/O 错误与取消错误继续传播。可恢复的子日志解码或 descriptor 字段失败会产生带子路径的警告；父目录没有完整条目时，通过 `subagent/catalog` 保留 header 身份信息。健康子项和已有父目录项仍可使用。打开损坏子 Session 时仍报告该子会话的错误。缺失、不支持或多个 descriptor 同样生成模式未知的目录项，不编造标签。已发布的未知条目仍可浏览；读取子历史时会重试实际日志，并从有效 descriptor 确定模式。准备返回、复用与发布前会重新检查成员集合及已检查来源的修订，也包括读取失败的子日志，使修复后的子日志能够使旧准备缓存失效。来源变化时只读打开重试一次，写打开拒绝发布。取消仍会中止操作。当前 V4 打开跳过发现，并在暴露事件前校验目录字段、唯一性及当前投递归属。
+历史正文准备通过 [V3→V4](../session-format-v3-to-v4/README.zh.md) 补齐父目录：从 header 找到候选直属子 Session，通过历史编解码器逐个读取其自身 descriptor，保留紧凑证据与来源修订。此过程不准备子目录，也不发布子后继。不可读或不支持的 header（包括损坏的 Zstandard header 帧）不参与发现，也不出现在 `list()` 中。直接访问损坏的压缩 header 仍会失败；header 的 I/O 错误与取消错误继续传播。子日志解码或 descriptor 字段失败会产生带子路径的警告；父目录没有完整条目时，通过 `subagent/catalog` 保留 header 身份信息。健康子项和已有父目录项仍可使用。打开损坏子 Session 时仍报告该子会话的错误。缺失、不支持或多个 descriptor 同样生成模式未知的目录项，不编造标签。已发布的未知条目仍可浏览；读取子历史时会重试实际日志，并从有效 descriptor 确定模式。准备返回、复用与发布前会重新检查成员集合及已检查来源的修订，也包括读取失败的子日志，使修复后的子日志能够使旧准备缓存失效。来源变化时只读打开重试一次，写打开拒绝发布。取消仍会中止操作。当前 V4 打开跳过发现，并在暴露事件前校验目录字段、唯一性及当前投递归属。
 
 历史格式的 `stat` 与 `list` 修订号需要与根目录 Session 数量成正比的元数据工作。首次正文准备扫描所有所选 header 并解码直属子正文；复用准备缓存仍扫描成员集合并检查修订。只读访问从不发布升级，因此冷进程与被淘汰的准备缓存会重复这些工作。当前 V4 正文读取和修订号避开历史全库扫描。见[实测成本与诊断命令](../../../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.zh.md#catalog-scan-measurements)。
 
@@ -131,8 +121,6 @@ JSONL 启用 `statSettlesOnAbort`：调用前已取消时不会开始工作；`s
 | [`src/migration-verifier.ts`](src/migration-verifier.ts) | stage 与竞争 generation 校验的 Worker 生命周期 |
 | [`src/zstd.ts`](src/zstd.ts) | Zstandard 帧压缩、解码与帧扫描 |
 | [`src/win32.ts`](src/win32.ts) | Windows write-through 发布与目录创建 |
-
-JSONL 的静止观察包含实际 mutation/read continuation、实时事件 buffer 与 timer、活动 drain、未物化 Session、迁移准备及列表工作。显式访问上限也限制检查的 open handle 数量。任一原工作尚存时返回 false，不 flush 或取消工作。
 
 </details>
 

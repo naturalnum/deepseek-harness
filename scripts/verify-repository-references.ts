@@ -4,7 +4,6 @@ import { execFileSync } from 'node:child_process'
 import { lstatSync, readFileSync, readlinkSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import ts from 'typescript'
 import { canonicalReferenceText } from './verify-public-repository-links.ts'
 
 const root = resolve(import.meta.dirname, '..')
@@ -12,7 +11,8 @@ const organization = ['deepseek', 'harness'].join('-')
 const organizationUrl = new RegExp(`\\bgithub\\.com/${organization}(?![a-z0-9-])`)
 // The independent kit repository owns the engine source and documentation.
 const kitRepositoryUrl = new RegExp(`\\bgithub\\.com/${organization}/libreoffice-kit(?:\\.git)?(?=/|[^a-zA-Z0-9_.-]|$)`, 'g')
-const commitCandidate = /(?<![a-z0-9])[\da-f]{7,40}(?![a-z0-9])/gi
+// Decimal-only tokens collide with sizes, counts, and version components; see docs/AGENTS.md#repository-references.
+const commitCandidate = /(?<![a-z0-9])(?=[\da-f]{0,39}[a-f])[\da-f]{7,40}(?![a-z0-9])/gi
 const excludedPrefixes = ['vendor/', '.agents/notes/archived/']
 const gitOutputLimit = 64 * 1024 * 1024
 // One 41-byte line per object; 1.2 million objects produce about 49 MiB.
@@ -32,80 +32,13 @@ function isMaintained(file: string): boolean {
   return !excludedPrefixes.some(prefix => file.startsWith(prefix))
 }
 
-/** Read one unambiguous JSON object property from TypeScript's JSON syntax tree. */
-function property(object: ts.ObjectLiteralExpression, key: string): ts.Expression | undefined {
-  const matches = object.properties.filter((node): node is ts.PropertyAssignment => ts.isPropertyAssignment(node)
-    && ts.isStringLiteralLike(node.name) && node.name.text === key)
-  return matches.length === 1 ? matches[0]?.initializer : undefined
-}
-
-/** Exact upstream revision in the generated Office source notice, never prose or an arbitrary JSON field. */
-function officeSourcePin(file: string, source: string): { value: string; line: number; column: number } | undefined {
-  const matched = /^packages\/skill\/skill-office\/assets\/([^/]+)\/DSH-SOURCE\.json$/.exec(file)
-  const skillName = matched?.[1]
-  if (skillName === undefined || !/^office(?:-docx|-pptx|-xlsx|-render|-recalculate|-export-pdf)?$/.test(skillName)) return undefined
-  let record: unknown
-  try { record = JSON.parse(source) } catch { return undefined }
-  if (typeof record !== 'object' || record === null || !('name' in record) || record.name !== skillName
-    || !('source' in record) || typeof record.source !== 'object' || record.source === null) return undefined
-  const origin = record.source
-  if (!('repository' in origin) || origin.repository !== 'https://github.com/deepseek-ai/deepseek-harness'
-    || !('commit' in origin) || typeof origin.commit !== 'string' || !/^[a-f0-9]{40}$/.test(origin.commit)) return undefined
-  const parsed = ts.parseJsonText(file, source)
-  const first = parsed.statements[0]
-  if (first === undefined || !ts.isExpressionStatement(first) || !ts.isObjectLiteralExpression(first.expression)) return undefined
-  const sourceObject = property(first.expression, 'source')
-  if (sourceObject === undefined || !ts.isObjectLiteralExpression(sourceObject)) return undefined
-  const commit = property(sourceObject, 'commit')
-  if (commit === undefined || !ts.isStringLiteralLike(commit) || !/^"[a-f0-9]{40}"$/.test(commit.getText(parsed))) return undefined
-  const position = parsed.getLineAndCharacterOfPosition(commit.getStart(parsed))
-  return { value: origin.commit, line: position.line, column: position.character + 1 }
-}
-
-/** Exact revision fields in the independent research import's two structured source records. */
-function researchSourcePins(file: string, source: string): { value: string; line: number; column: number }[] {
-  const prefix = 'integrations/epri-research/source-records/'
-  if (file !== prefix + 'cloud-integration.json' && file !== prefix + 'source-lock.json') return []
-  try { JSON.parse(source) } catch { return [] }
-  const parsed = ts.parseJsonText(file, source), first = parsed.statements[0]
-  if (first === undefined || !ts.isExpressionStatement(first) || !ts.isObjectLiteralExpression(first.expression)) return []
-  const literal = (object: ts.ObjectLiteralExpression, key: string): string | undefined => {
-    const value = property(object, key)
-    return value !== undefined && ts.isStringLiteralLike(value) ? value.text : undefined
-  }
-  const pins: ts.StringLiteralLike[] = []
-  const collect = (object: ts.ObjectLiteralExpression, key: string): void => {
-    const value = property(object, key)
-    if (value !== undefined && ts.isStringLiteralLike(value) && /^[a-f0-9]{40}$/u.test(value.text)
-      && /^"[a-f0-9]{40}"$/u.test(value.getText(parsed))) pins.push(value)
-  }
-  const object = first.expression
-  if (file.endsWith('/cloud-integration.json')) {
-    if (literal(object, 'sourceRepository') !== 'https://github.com/naturalnum/deepseek-harness'
-      || literal(object, 'sourceBranch') !== 'GMZ/deepscientist-airalogy-native') return []
-    for (const key of ['sourceCommit', 'sourceBaseCommit', 'cloudBaseCommit']) collect(object, key)
-  } else {
-    const sources = property(object, 'sources')
-    if (sources === undefined || !ts.isArrayLiteralExpression(sources)) return []
-    const repos = new Set(['ResearAI/DeepScientist_V2', 'deepseek-ai/deepseek-harness', 'airalogy/airalogy'])
-    for (const item of sources.elements) {
-      if (!ts.isObjectLiteralExpression(item)) continue
-      const repo = literal(item, 'repo')
-      if (repo !== undefined && repos.has(repo)) collect(item, 'commit')
-    }
-  }
-  return pins.map((node) => {
-    const position = parsed.getLineAndCharacterOfPosition(node.getStart(parsed))
-    return { value: node.text, line: position.line, column: position.character + 1 }
-  })
-}
-
 /**
  * Inspect a maintained source file against known commit identifiers.
  * @param file - Repository-relative path used in diagnostics and exclusions.
  * @param source - File text or a symlink's stored target.
  * @param commits - Lowercase, unambiguous full or abbreviated commit identifiers.
- * @returns One finding per line and reference kind; digests, other Git object types and decimal uv artifact sizes are accepted.
+ * @returns One finding per line and reference kind; digests and other Git object types are accepted.
+ * Decimal-only tokens are ignored, including actual commit identifiers.
  */
 export function findRepositoryReferences(
   file: string,
@@ -113,18 +46,12 @@ export function findRepositoryReferences(
   commits: ReadonlySet<string>,
 ): RepositoryReference[] {
   if (!isMaintained(file)) return []
-  const officePin = officeSourcePin(file, source)
-  const sourcePins = [...officePin === undefined ? [] : [officePin], ...researchSourcePins(file, source)]
   const references: RepositoryReference[] = []
   for (const [index, line] of source.split('\n').entries()) {
     if (organizationUrl.test(canonicalReferenceText(line).replace(kitRepositoryUrl, ''))) {
       references.push({ file, line: index + 1, kind: 'organization-url' })
     }
-    const artifactSizes = file === 'uv.lock' || file.endsWith('/uv.lock')
-      ? [...line.matchAll(/(?<=\bsize\s*=\s*)\d+(?=\s*(?:[,}]|$))/g)] : []
-    if ([...line.matchAll(commitCandidate)].some(match => commits.has(match[0].toLowerCase())
-      && !artifactSizes.some(size => size.index === match.index && size[0] === match[0])
-      && !sourcePins.some(pin => match[0] === pin.value && index === pin.line && match.index === pin.column))) {
+    if ([...line.matchAll(commitCandidate)].some(match => commits.has(match[0].toLowerCase()))) {
       references.push({ file, line: index + 1, kind: 'commit-hash' })
     }
   }
@@ -182,7 +109,7 @@ export function uniquePrefixMatch(objects: readonly string[], prefix: string): s
  * Resolve commit-identifier candidates in maintained sources against the local object database.
  * @param repoRoot - Working tree whose Git objects are inspected.
  * @param sources - File texts or symlink targets to extract candidates from.
- * @returns Lowercase candidates that name exactly one available object, which is a commit.
+ * @returns Lowercase candidates containing a hexadecimal letter that name exactly one available object, which is a commit.
  */
 export function repositoryCommits(repoRoot: string, sources: Iterable<string>): Set<string> {
   const candidates = [...new Set([...sources].flatMap(source =>
@@ -221,7 +148,7 @@ const invokedPath = process.argv[1]
 if (invokedPath !== undefined && import.meta.url === pathToFileURL(resolve(invokedPath)).href) {
   const references = scanRepositoryReferences(root)
   if (references.length === 0) {
-    console.log('verify-repository-references: maintained files contain no repository commit identifiers or disallowed organization URLs.')
+    console.log('verify-repository-references: maintained files contain no prohibited references (decimal-only tokens are ignored).')
   } else {
     console.error('verify-repository-references: use release tags or maintained repository links:')
     for (const { file, line, kind } of references) console.error(`  ${file}:${String(line)} ${kind}`)

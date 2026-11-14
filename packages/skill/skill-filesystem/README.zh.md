@@ -37,9 +37,9 @@ skill 可以是被扫描根目录顶层的目录 bundle `<name>/SKILL.md`，也�
 
 `disable-model-invocation: true` 会把 skill 从面向模型的目录和 loader 中排除；`user-invocable: false` 会把它从面向用户的命令中排除，省略的字段默认允许对应接口调用。这两个键接受 YAML 布尔值，以及不区分大小写的 `true`/`false`、`yes`/`no`、`on`/`off` 和 `1`/`0` 形式；被拒绝的拼写或非布尔值会让整个 skill 随警告一起被丢弃，而不会静默允许某个接口。
 
-对于普通文件系统根，目录条目和已加载 skill 提供解析后的指令文件路径，使符号链接目录和扁平文件都能作为普通文件预览。重新加载的定位信息和资源根保留发现时的路径，包括符号链接。
+目录条目和已加载 skill 提供解析后的指令文件路径，使符号链接目录和扁平文件都能作为普通文件预览。重新加载的定位信息和资源根保留发现时的路径，包括符号链接。
 
-对于普通文件系统根，目录与正文具有独立的生命周期：发现阶段把 frontmatter 解析进目录条目，每次加载都会重新读取当前文件，因此编辑 skill 正文无需版本化或缓存失效。
+目录与正文具有独立的生命周期：发现阶段把 frontmatter 解析进目录条目，每次加载都会重新读取当前文件，因此编辑 skill 正文无需版本化或缓存失效。
 
 ### 根目录与优先级
 
@@ -68,23 +68,13 @@ skill 可以是被扫描根目录顶层的目录 bundle `<name>/SKILL.md`，也�
 |---|---|---|
 | `providerName` | `filesystem` | 注册到 `ctx.skills` 的唯一提供方名称 |
 | `includeDefaultRoots` | `true` | 在 `customSkillDirs` 周围包含项目根与用户根 |
-| `includeDefaultUserRoots` | `true` | 启用默认根目录时包含默认用户根目录 |
 | `dshHome` | `$DSH_HOME` 或 `~/.dsh` | Harness 配置根目录；扫描其 `skills` 子目录 |
 | `agentsHome` | `$DSH_AGENTS_HOME` 或 `~/.agents` | 为兼容 skill 扫描的共享 agent 配置根目录 |
 | `customSkillDirs` | `[]` | 其他本地 skill 根目录，位于项目根之后、用户根之前 |
 | `watch` | `true` | 监视本地根，并在目录可能变化时使提供方失效 |
 | `bundledSkillDir` | — | 配置后按 rank 600 扫描的随包提供的 skill 根目录 |
-| `bundledInvocation` | 技能 frontmatter | 显式内置根目录的调用上限；不会启用来源已关闭的调用入口。自定义、项目和用户技能保持原样。 |
 
 其余 `watch*` 字段用于调节 Chokidar 行为——轮询、稳定窗口、间隔、项目上限与符号链接跟随。生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-skill-filesystem)完整列出了所有字段，是这些字段的真源。
-
-### 程序化 source
-
-持有受限读取 source 的 owner 可构造 `FileSystemSkillProvider(ctx, control, config, source)`。可选的第四个参数为 `FileSystemSkillSource`，由代码传入，不属于 Loader 配置；必须设置 `includeDefaultRoots: false`、`watch: false`，并省略 `bundledSkillDir`。普通插件继续使用 `ctx.fs` 及既有的宿主机回退行为。
-
-`source.withFiles(read, options)` 借出 `FileSystemSkillRead`，其中只包含五个原生读取方法以及 `materialize(directory, options)` 操作。发现与加载复用本包现有解析器。每个 provider 实例必须标识一个稳定的 source 版本，即使候选在发现结束后仍被保留。加载时，正文解析与资源准备使用同一次借用的 source。owner 必须保留实际 source 工作，直到两者全部结束，包括调用者取消之后；版本保留和释放也由 owner 负责。
-
-使用 source 的目录条目不暴露指令路径或资源基址。只有 `materialize` 完成并返回调用者可用的资源基址及可选指令路径，加载才返回资源指引。准备失败或尚未完成时必须拒绝；provider 不会回退到 source 路径。`SkillViewOptions.scope` 将原调用者上下文传给两个 source 操作，但 owner 必须验证调用者，并独立于 `cwd` 或发现目录选择其实际项目。此通用接口不授予存储、项目投影或账户权限。
 
 ### 变更检测
 
@@ -92,13 +82,9 @@ skill 可以是被扫描根目录顶层的目录 bundle `<name>/SKILL.md`，也�
 
 ### 可观察的成功与失败
 
-任一被扫描根目录下的有效 skill 都会按名称排序出现在会话目录中，加载它即可返回当前文件正文。缺少有效 frontmatter、名称无效或调用值无效的文件会随警告被跳过，因此模型目录不会收到逐 skill 诊断，也无法区分缺失的 skill 与无效的 skill。意外的发现或读取失败会让目录观测保持不完整，而不会用看似发生删除的结果替换最后一份可用视图。
+任一被扫描根目录下的有效 skill 都会按名称排序出现在会话目录中，加载它即可返回当前文件正文。缺少有效 frontmatter、名称无效或调用值无效的文件会随警告被跳过，因此模型目录不会收到逐 skill 诊断，也无法区分缺失的 skill 与无效的 skill。某个根目录的发现或文件读取失败时，会记录其路径并跳过该根，其他根目录仍然可用。此观测标记为不完整，不被缓存，并在下次查询时重试。模型目录会区分发现不完整与已确认的缺失。
 
 -----
-
-`packagedBundles: true` 要求每个内置目录含构建生成的 `.dsh-package.json` 和 `.dsh-package.zip`。`readSkillPackage` 校验每次返回文件/归档的字节数与 SHA256。`bundledExecutionRoot` 将显式 Host `bundledSkillDir` 映射到完全相同的只读 guest 树，不改变发现、优先级或加载；部署方负责两棵树属于同一发布。报告资源保留原始字节及同级结构，内部使用来源见 [来源说明](../skill-office/assets/reports/SOURCES.json)。
-
-`bundledInstructions` 仅在加载内置技能正文时附加显式部署指引，必须配置显式 `bundledSkillDir`。目录描述、下载包字节和自定义/项目/用户技能均保持原样。原生技能工具把附加正文与加载结果一起记录，因此恢复后的 Session 保留该指引。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现
@@ -160,7 +146,8 @@ watcher 触发的失效可促使上述消费方在现有请求历史中追加替
 
 - **发现深度为一层**——只识别 `<root>/<name>/SKILL.md` 与 `<root>/<name>.md`；忽略嵌套 skill 树与包 manifest（元数据清单）。
 - **项目范围为最近 `.git` 祖先**——没有该标记的工作区回退到提供的 cwd，不支持其他项目根标记或 monorepo 子项目选择。
-- **格式错误的条目随警告消失**——模型目录不会收到逐 skill 诊断，无法区分缺失的 skill 与无效的 skill；意外的 I/O 失败则会保留最后一份可用目录。
+- **格式错误的条目随警告消失**——模型目录不会收到逐 skill 诊断，无法区分缺失的 skill 与无效的 skill。
+- **I/O 失败会省略整个根目录**——一个不可读 skill 会使该次观测同时隐藏同根下的可读 skill。其他根仍可用，因此较低优先级的同名 skill 可能提供描述与加载的正文。每次查询都会重试发现，根目录恢复后重新按正常优先级选择。
 - **缺失根观察每次轮询一个路径段**——启动时不存在的根会使用 `fs.watchFile` 按 `watchPollIntervalMs` 轮询，直至 Chokidar 可以附加；这以有界检测延迟换取跨 IDE、Git 与 shell 工作流的可靠创建检测。
 - **无正文修订协议**——已加载正文是普通的已保留工具历史；后续文件编辑会影响后续调用，但既不会改写旧结果，也不会通知正文已变化。
 

@@ -24,20 +24,22 @@ import { AppearanceRow } from './AppearanceRow.tsx'
 import type { FontSettingsInjected } from './FontSettingsGroup.tsx'
 import { FontSettingsGroup } from './FontSettingsGroup.tsx'
 import { createAppearanceRowStore, createFontRowStore } from './settings-store.ts'
+import { ICON_SYMBOLS, type IconSymbolId } from '@deepseek-ai/dsh-client-ui-primitives'
+import { installIconSprite, type IconReplacements } from './icon-sprite.ts'
 import { installThemeStyles } from './styles.ts'
-import { en, zh, type ThemeKey } from './locales.ts'
+import { en, ja, es, fr, de, ru, pt, zh, type ThemeKey } from './locales.ts'
 import {
   DEFAULT_FONT_SIZES, DEFAULT_PREFERENCE, FONT_FAMILY_FIELDS, FONT_ROLES, FONT_SIZE_SPECS,
   fontFamilyVariable, isFontSize, isThemePreference, normalizeFontFamily, sectionFontSizes,
   THEME_PREFERENCE_FIELD, THEME_SETTINGS_NAMESPACE,
-  type FontFamilies, type FontRole, type FontSizes, type ThemePreference, type ThemeSaveState, type ThemeSettings,
+  type FontFamilies, type FontRole, type FontSizes, type ThemePreference, type ThemeSettings,
 } from '../theme-settings.ts'
 
 export type { AppearanceRowComponentProps, AppearanceRowInjected } from './AppearanceRow.tsx'
 export type { FontSettingsGroupProps, FontSettingsInjected } from './FontSettingsGroup.tsx'
 export type { AppearanceRowState, FontRowState } from './settings-store.ts'
 export type { ThemeKey } from './locales.ts'
-export type { FontFamilies, FontRole, FontSizes, ThemePreference, ThemeSaveState, ThemeSettings } from '../theme-settings.ts'
+export type { FontFamilies, FontRole, FontSizes, ThemePreference, ThemeSettings } from '../theme-settings.ts'
 
 /** Namespace owning this feature's settings-row copy. */
 export const SETTINGS_NS = 'settings.theme'
@@ -78,11 +80,25 @@ export interface ThemeDefinition {
   colorScheme: 'light' | 'dark'
   /** Alias-layer overrides applied as inline CSS variables over the base palette. */
   tokens: ThemeTokens
+  /**
+   * Product icon replacements: ui-primitives `ICON_SYMBOLS` ids to complete
+   * SVG documents, trusted like the registering plugin's code. The icon
+   * sprite renders each replacement as that id's `<symbol>`: the root's
+   * `viewBox` and presentation attributes carry over, its `width`, `height`,
+   * `class`, and `aria-hidden` are ignored because the use site sizes the
+   * icon, and painted elements inherit `currentColor` and CSS variables from
+   * the use site. Gradients and other paint servers resolve their stops in
+   * the sprite, which sits in `body`, so they follow palette tokens but not
+   * use-site overrides. Each document needs an SVG-namespace root with a
+   * `viewBox`, no `<style>` or `<script>` (they would apply to the whole
+   * document), and element ids prefixed with `<symbol id>-`.
+   */
+  icons?: IconReplacements | undefined
 }
 
 /** Immutable theme state published on every change. */
 export interface ThemeSnapshot {
-  /** Current preference or pending preview (may be `system`); getSaveState reports Host acceptance. */
+  /** The persisted preference (may be `system`). */
   preference: ThemePreference
   /** Integer px font sizes by role, each within its `FONT_SIZE_SPECS` range (`text` is the conversation content size). */
   fontSizes: FontSizes
@@ -96,7 +112,7 @@ export interface ThemeSnapshot {
   active: ThemeDefinition
   /** Registered themes in registration order. */
   themes: readonly ThemeDefinition[]
-  /** Monotonic change counter (registry, active theme, or save feedback changes). */
+  /** Monotonic change counter (registry or active changes). */
   revision: number
 }
 
@@ -120,8 +136,8 @@ declare module '@deepseek-ai/cordis' {
   }
   interface Events {
     /**
-     * Theme presentation or appearance-write feedback changed (including OS
-     * color scheme changes while the preference is `system`).
+     * Theme state changed (preference switched, registry updated, or the OS
+     * color scheme changed while the preference is `system`).
      * @param snapshot - Current immutable theme snapshot.
      * @mode emit
      */
@@ -172,8 +188,6 @@ export class ThemeRuntime {
   private revision = 0
   /** Own settings writes not yet settled; adoption waits for zero so a Host echo of an earlier write cannot revert a later local change. */
   private pendingWrites = 0
-  private writeOutcome: 'idle' | 'saved' | 'refused' | 'unknown' = 'idle'
-  private saveState: ThemeSaveState = 'loading'
   private snapshot: ThemeSnapshot
   private readonly media: MediaQueryList | undefined
   /** Override layers by source; seq (monotonic) is the stacking order. */
@@ -188,8 +202,7 @@ export class ThemeRuntime {
   constructor(ctx: ClientContext, host: ConfigForm<ThemeSettings>) {
     this.ctx = ctx
     this.host = host
-    this.preference = DEFAULT_PREFERENCE
-    this.saveState = this.readSaveState()
+    this.preference = bootstrapPreference()
     // Non-browser runs (node e2e booting the client tree) have no matchMedia.
     this.media = typeof matchMedia === 'undefined' ? undefined : matchMedia('(prefers-color-scheme: dark)')
     this.snapshot = this.buildSnapshot()
@@ -215,13 +228,6 @@ export class ThemeRuntime {
    */
   getTheme(): ThemeSnapshot {
     return this.snapshot
-  }
-
-  /** Read Host availability and write settlement, separately from the theme preview.
-   * @returns Saving until all own writes settle; only Host acceptance reports saved.
-   */
-  getSaveState(): ThemeSaveState {
-    return this.saveState
   }
 
   /**
@@ -311,44 +317,23 @@ export class ThemeRuntime {
     this.publish()
   }
 
-  /** Observe one original Host write, then adopt its durable section when all own writes settle. */
+  /** Queue one settings write, then adopt the durable section once no own write remains. */
   private write(operation: () => Promise<boolean>): void {
     this.pendingWrites += 1
-    this.saveState = 'saving'
-    void this.settleWrite(operation)
-  }
-
-  private async settleWrite(operation: () => Promise<boolean>): Promise<void> {
-    let outcome: 'saved' | 'unknown'
-    // The shared boolean face folds Host refusal and structured carrier failure into false.
-    try { outcome = await operation() ? 'saved' : 'unknown' }
-    catch (_error) { outcome = 'unknown' }
-    this.pendingWrites -= 1
-    this.writeOutcome = outcome
-    this.adopt()
-  }
-
-  private readSaveState(): ThemeSaveState {
-    if (this.writeOutcome === 'unknown') return 'unknown'
-    const host = this.host.getSnapshot()
-    if (host.status === 'loading') return 'loading'
-    if (host.status !== 'ready' || !host.writable) return 'readonly'
-    return this.writeOutcome
+    void operation().finally(() => {
+      this.pendingWrites -= 1
+      this.adopt()
+    })
   }
 
   /** Adopt the scope's accepted durable preference without writing it back. */
   private adopt(): void {
     if (this.pendingWrites > 0) return
-    const previousSaveState = this.saveState
-    this.saveState = this.readSaveState()
     const section = this.host.getSnapshot().value
-    if (section === undefined) {
-      if (previousSaveState !== this.saveState) this.publish()
-      return
-    }
+    if (section === undefined) return
     const fontFamilies = durableFontFamilies(section)
     const fontSizes = sectionFontSizes(section)
-    if (previousSaveState === this.saveState && this.preference === section.preference
+    if (this.preference === section.preference
       && FONT_ROLES.every(role => this.fontSizes[role] === fontSizes[role] && this.fontFamilies[role] === fontFamilies[role])) return
     this.preference = section.preference
     this.fontSizes = fontSizes
@@ -359,7 +344,9 @@ export class ThemeRuntime {
   /**
    * Register a theme. Duplicate id throws (single occupant per id; the
    * built-in pair counts; `system` is a preference, not a registrable id).
-   * @param definition - theme id, colorScheme, and alias-token overrides.
+   * @param definition - theme id, colorScheme, alias-token overrides, and
+   * optional icon replacements; the runtime keeps a frozen copy of `icons`.
+   * Invalid icon replacements throw a `TypeError` naming the theme and icon.
    * @returns disposer. Disposing the theme backing the active preference
    * resets the preference to the default so the UI never keeps tokens of an
    * unregistered theme.
@@ -369,7 +356,8 @@ export class ThemeRuntime {
     if (this.themes.some(t => t.id === definition.id)) {
       throw new Error(`theme "${definition.id}" is already registered`)
     }
-    this.themes = [...this.themes, definition]
+    const icons = validateIcons(definition)
+    this.themes = [...this.themes, Object.freeze({ ...definition, icons })]
     this.publish()
     return () => {
       if (!this.themes.some(t => t.id === definition.id)) return
@@ -451,6 +439,14 @@ export class ThemeRuntime {
   }
 }
 
+/** Preserve the Host boot palette while the settings scope is loading. */
+function bootstrapPreference(): ThemePreference {
+  /* v8 ignore next -- documentless client compositions have no boot injection */
+  if (typeof document === 'undefined') return DEFAULT_PREFERENCE
+  const preference = document.documentElement.dataset.dsThemeSource
+  return isThemePreference(preference) ? preference : DEFAULT_PREFERENCE
+}
+
 /**
  * Read the font sizes the Host boot script wrote on `body` before any plugin
  * ran, so the initial snapshot matches first paint and ui-layout's presenter
@@ -516,6 +512,38 @@ function durableFontFamilies(section: ThemeSettings): FontFamilies {
   return validated
 }
 
+const SVG_NS = 'http://www.w3.org/2000/svg'
+
+/**
+ * Reject icon replacements a sprite cannot render (untyped dynamic-package
+ * callers reach this boundary, as with {@link validateOverrides}): unknown
+ * symbol ids, documents without an SVG-namespace `<svg viewBox>` root,
+ * document-wide `<style>` or `<script>`, and element ids outside the
+ * symbol's own `<symbol id>-` namespace.
+ * @returns a frozen copy of the replacements, or undefined when there are none.
+ */
+function validateIcons({ id, icons }: ThemeDefinition): IconReplacements | undefined {
+  // Untyped callers may pass null; treat it like an absent field.
+  if (icons == null) return undefined
+  const copy: Partial<Record<IconSymbolId, string>> = {}
+  for (const [name, markup] of Object.entries<unknown>(icons)) {
+    const fail = (problem: string): never => { throw new TypeError(`theme "${id}" icon "${name}" ${problem}`) }
+    if (!Object.hasOwn(ICON_SYMBOLS, name)) fail('is not an ICON_SYMBOLS id')
+    if (typeof markup !== 'string') fail('must be an SVG document string')
+    copy[name as IconSymbolId] = markup as string
+    /* v8 ignore next -- needs a documentless run (node e2e booting the client tree), where no sprite renders either */
+    if (typeof DOMParser === 'undefined') continue
+    const root = new DOMParser().parseFromString(markup as string, 'image/svg+xml').documentElement
+    if (root.namespaceURI !== SVG_NS || root.localName !== 'svg' || root.querySelector('parsererror') !== null) fail('is not a well-formed SVG-namespace <svg> document')
+    if (!root.hasAttribute('viewBox')) fail('needs a viewBox')
+    if (root.querySelector('style, script') !== null) fail('must not contain <style> or <script>')
+    for (const element of root.querySelectorAll('[id]')) {
+      if (!element.id.startsWith(`${name}-`)) fail(`element id "${element.id}" must start with "${name}-"`)
+    }
+  }
+  return Object.freeze(copy)
+}
+
 function dynamicToken(name: string): ThemeTokenInspection {
   return {
     name,
@@ -575,17 +603,18 @@ export const inject = ['slots', 'locale', 'remote', 'configForms']
  */
 export function apply(ctx: ClientContext): void {
   installThemeStyles(ctx)
-  ctx.effect(() => ctx.locale.register(SETTINGS_NS, { zh, en }), 'ui-theme: settings row dictionaries')
+  ctx.effect(() => ctx.locale.register(SETTINGS_NS, { zh, en, ja, es, fr, de, ru, pt }), 'ui-theme: settings row dictionaries')
   const host = ctx.configForms.get<ThemeSettings>(THEME_SETTINGS_NAMESPACE)
   const theme = new ThemeRuntime(ctx, host)
   ctx.provide('theme', theme)
+  installIconSprite(ctx, theme.getTheme().active.icons)
 
   const store = createAppearanceRowStore()
   let bound: BoundActions<typeof store> | undefined
   const fontStore = createFontRowStore()
   let fontBound: BoundActions<typeof fontStore> | undefined
   const sync = (snapshot: ThemeSnapshot): void => {
-    bound?.sync(snapshot.preference, theme.getSaveState(), snapshot.revision)
+    bound?.sync(snapshot.preference, snapshot.revision)
     fontBound?.sync(snapshot.fontSizes, snapshot.fontFamilies, snapshot.revision)
   }
   ctx.on('theme/change', sync)
@@ -595,10 +624,7 @@ export function apply(ctx: ClientContext): void {
     // first render (the store's revision guard drops stale duplicates).
     sync(theme.getTheme())
     return {
-      setTheme: (id) => {
-        const state = theme.getSaveState()
-        if (state === 'idle' || state === 'saved' || state === 'refused') theme.setTheme(id)
-      },
+      setTheme: (id) => { theme.setTheme(id) },
     }
   }
   ctx.slots.inject('settings.general.item', () => ctx.slots.register({

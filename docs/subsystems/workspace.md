@@ -18,44 +18,6 @@ type WorkspaceId = Branded<'WorkspaceId'>
 
 `WorkspaceId` is a [branded id](core.md#branded-ids). Path identity is separate: `realpathNormalize` (`fs.realpath`; trailing slashes, `..`, and symlinks resolved) is the one uniqueness canon — workspace paths are stored canonicalized, uniqueness is string equality of canonical paths (a symlink to an owned directory collides), and attach-time session cwd checks go through the same canon.
 
-## Directory metadata
-
-`WorkspaceDirectoryMetadata` supplies canonical path, directory observation and recursive directory preparation. The registry selects it once at initialization and shares it with its entities; the default uses Node. Providers preserve realpath identity. [Package installation](../../packages/workspace/workspace/README.md) owns provider selection and lifecycle details.
-
-```ts type-equiv
-/**
- * Graph-lived directory I/O selected before the Workspace registry starts.
- * Determinate absence and path-component failures use
- * `WorkspaceDirectoryMetadataError` with `missing` or `not-directory`;
- * every other rejection is unavailable and retains its original cause.
- * Providers own actual I/O settlement after a caller stops waiting.
- */
-interface WorkspaceDirectoryMetadata {
-  /**
-   * Canonicalize an existing fully qualified path using realpath semantics.
-   * @param path - Fully qualified path already checked by the native registry.
-   * @returns its canonical absolute spelling; aliases share one identity.
-   */
-  canonicalPath(path: string): Promise<string>
-
-  /**
-   * Check actual directory metadata; unavailable observations must reject.
-   * @param path - Fully qualified directory candidate.
-   * @returns true for a directory, false for an observed existing non-directory.
-   */
-  isDirectory(path: string): Promise<boolean>
-
-  /**
-   * Recursively ensure a directory, preserving an existing directory.
-   * @param path - Fully qualified requested directory.
-   * @returns after the directory exists; failure may leave completed creation.
-   */
-  ensureDirectory(path: string): Promise<void>
-}
-```
-
-`WorkspaceDirectoryMetadataError` distinguishes `missing`, `not-directory` and `unavailable`, preserving the provider failure as `cause`. Only determinate filesystem results enter absence handling. Unavailable observations reject status, attachment and indexing without replacing them with missing-directory facts; startup does not write a successful initialization marker because of such a failure.
-
 ## The workspace entity
 
 Consumers see only the `Workspace` interface; the implementation stays package-private.
@@ -149,9 +111,6 @@ interface Workspace {
    * Live directory check, uncached: whether {@link path} currently exists and
    * is a directory. A missing directory never mutates the record — the
    * directory may only be temporarily moved.
-   * An injected metadata provider rejects unavailable observations, including
-   * a closed graph; the default Node backend retains its missing-dir behavior
-   * for filesystem errors.
    * @returns `'ok'` when the directory exists, `'missing-dir'` otherwise.
    */
   status(): Promise<'ok' | 'missing-dir'>
@@ -307,6 +266,44 @@ Typed Remote control of transient Session-owned terminal processes.
  * @returns the existing or newly committed terminal.
  */
 @Remote async create(agent: Agent, request: TerminalCreateRequest, signal: AbortSignal): Promise<WebTerminalInfo>
+
+/**
+ * Open a terminal for the Session's Agent under a caller-resolved sandbox policy; it appears in every
+ * window that watches the Session and passes to the person on the person's first typed input.
+ * @param agent - Session owner whose Agent requests the terminal.
+ * @param request - title, directory, dimensions, sandbox policy and shell preference.
+ * @param signal - allocation cancellation; a committed terminal outlives it.
+ * @returns the Agent's handle for the committed terminal.
+ * @throws RemoteError `terminal/limit-reached` when the Session or Agent terminal limit is reached.
+ * @throws Error when the title is blank or longer than 120 characters.
+ */
+async openForAgent(agent: Agent, request: AgentTerminalRequest, signal: AbortSignal): Promise<AgentTerminal>
+
+/**
+ * Render a page of any terminal in the Agent's Session, including terminals the person opened.
+ * @param agent - Session owner.
+ * @param id - terminal identity.
+ * @param request - page position and byte bound.
+ * @returns rendered screen text, including output received before the call.
+ * @throws RemoteError `terminal/unavailable` when the terminal is missing or closes before the screen is read.
+ */
+readScreen(agent: Agent, id: WebTerminalId, request: TerminalScreenRequest): Promise<TerminalScreenPage>
+
+/**
+ * Observe whether a Session terminal's shell is running a command.
+ * @param agent - Session owner.
+ * @param id - terminal identity.
+ * @returns idle, busy, or unknown for unsupported shells and sandboxed launches.
+ */
+inspectActivity(agent: Agent, id: WebTerminalId): Promise<'idle' | 'busy' | 'unknown'>
+
+/**
+ * Stream the Session's retained terminals as whole sets, without resolving or activating an Agent.
+ * @param sessionId - watched Session identity.
+ * @param signal - stream cancellation.
+ * @returns the current set, then a new set after creation, removal or any published state change.
+ */
+@Remote({ mode: 'stream' }) async *watch(sessionId: SessionId, signal: AbortSignal): AsyncIterable<WebTerminalInfo[]>
 
 /**
  * Retain an existing terminal for a window without activating its Agent or taking input control.
@@ -489,6 +486,22 @@ Host Remote file reads and workspace directory observations over the composed fi
 @Remote async list(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceDirectoryListing>
 
 /**
+ * Search files and their inferred ancestor directories with packaged ripgrep.
+ * Native ignore rules apply unless disabled; VCS metadata, symlinks and empty
+ * directories are absent. Within the bounded set of listed files, matches
+ * sort by depth, then workspace-relative path.
+ * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
+ * @param request - the query, literal exclusions, and hidden/ignore switches.
+ * @param signal - caller cancellation, forwarded to the subprocess; rejection preserves its reason.
+ * @returns matches capped by search.maxResults; incomplete marks excess rg files or exit 2.
+ * @throws RemoteError `gateway/bad-request`: the query is blank.
+ * @throws RemoteError `workspace-file/not-found`: the workspace root does not exist.
+ * @throws RemoteError `workspace-file/not-directory`: the workspace root is not a directory.
+ * @throws RemoteError `workspace-file/search-failed`: subprocess is missing, rg cannot launch or execute, or the search times out.
+ */
+@Remote async search( workspaceFileScope: WorkspaceFileScope, request: WorkspaceFileSearchRequest, signal: AbortSignal, ): Promise<WorkspaceFileSearchResult>
+
+/**
  * Watch one file or a directory's direct entries in the Session's filesystem.
  * Files use the backend's read authority; directories remain workspace-scoped.
  * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
@@ -585,7 +598,7 @@ insertBefore(id: WorkspaceId, beforeId?: WorkspaceId): Promise<readonly Workspac
  * resolves without writing, asking, or stopping.
  * @param sessionId - The session to archive.
  * @param options - Whether running work is stopped instead of refusing.
- * @returns resolution after durability and, with `stopActivity`, after every stop request was issued.
+ * @returns resolution after durability, any stop requests, and follow-up admission.
  */
 archiveSession(sessionId: SessionId, options: ArchiveSessionOptions = {}): Promise<void>
 
@@ -660,6 +673,26 @@ Ask the composed providers what still runs for a session before it is archived. 
 
 Source: [`packages/workspace/workspace/src/index.ts`](../../packages/workspace/workspace/src/index.ts)
 
+<a id="workspacesession-archived--parallel"></a>
+
+#### `workspace/session-archived` — parallel
+
+Admit optional follow-up work after durable archival and any stop requests. Dispatched inside the registry's write queue: a listener registers its work and returns, and runs the work and any unbounded I/O afterwards. Listener failures are logged without undoing archival. Listeners own and drain their background work.
+
+```ts cordis-catalog
+/**
+ * Admit optional follow-up work after durable archival and any stop requests.
+ * Dispatched inside the registry's write queue: a listener registers its work
+ * and returns, and runs the work and any unbounded I/O afterwards. Listener
+ * failures are logged without undoing archival. Listeners own and drain their background work.
+ * @param request - newly archived Session; repeated archive requests do not dispatch.
+ * @mode parallel
+ */
+'workspace/session-archived'(request: SessionActivityRequest): Promise<void> | void
+```
+
+Source: [`packages/workspace/workspace/src/index.ts`](../../packages/workspace/workspace/src/index.ts)
+
 <a id="workspacesession-stop--parallel"></a>
 
 #### `workspace/session-stop` — parallel
@@ -682,6 +715,24 @@ Stop a session's running work because the caller archived it with `stopActivity`
  * @mode parallel
  */
 'workspace/session-stop'(request: SessionActivityRequest): Promise<void> | void
+```
+
+Source: [`packages/workspace/workspace/src/index.ts`](../../packages/workspace/workspace/src/index.ts)
+
+<a id="workspacesession-unarchiving--parallel"></a>
+
+#### `workspace/session-unarchiving` — parallel
+
+Cancel or settle archive follow-up work before making a Session available again. A rejection retains the archived state.
+
+```ts cordis-catalog
+/**
+ * Cancel or settle archive follow-up work before making a Session available again.
+ * A rejection retains the archived state.
+ * @param request - Session about to leave the archive set.
+ * @mode parallel
+ */
+'workspace/session-unarchiving'(request: SessionActivityRequest): Promise<void> | void
 ```
 
 Source: [`packages/workspace/workspace/src/index.ts`](../../packages/workspace/workspace/src/index.ts)
