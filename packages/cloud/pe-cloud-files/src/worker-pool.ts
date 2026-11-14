@@ -422,6 +422,8 @@ export class LinuxFilesPool implements DrainParticipant {
     private readonly createWorker: (input: FdWorkerInput) => Worker = input =>
       new Worker(new URL('./file-worker.js', import.meta.url), { workerData: input, execArgv: [] }),
     initializeAccountInventory?: import('./storage-types.ts').StaticAccountInventoryInitializer,
+    /** Current Root exclusion; omission preserves proof-only revalidation. */
+    private readonly singleInstanceActive?: () => boolean,
   ) {
     validate(config)
     this.owner = new FilesWorkOwner(limits(config))
@@ -775,6 +777,7 @@ export class LinuxFilesPool implements DrainParticipant {
         maxPathBytes: this.config.maxPathBytes,
         maxReplyBytes: this.config.content.maxReplyBytes, assertCurrent: current, source: sourceRead,
         ...revalidation === undefined ? {} : { revalidation },
+        ...this.singleInstanceActive === undefined ? {} : { singleInstanceActive: this.singleInstanceActive },
         resolveSource: descriptor => resolveSource(descriptor.id, descriptor),
         project: async (client, workspace, control) => {
           current(); const leaf = projectLeaf(workspace)

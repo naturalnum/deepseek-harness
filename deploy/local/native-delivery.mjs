@@ -5,7 +5,8 @@ import { join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import stateModule from './native-delivery-state.cjs'
 
-const { PROJECTION, NativeDeliveryOwner, NativeDeliveryUnconfirmed, requireNativeContinuation, requireNativePins } = stateModule
+const { PROJECTION, NativeDeliveryOwner, NativeDeliveryUnconfirmed, requireNativeContinuation, requireNativePins,
+  requireNativeSuccessor } = stateModule
 const RELEASE_PENDING = 'native-release.pending'
 
 function parent(directory, io) {
@@ -278,19 +279,23 @@ export async function runNativePublishContinuation({ directory, pins, authority,
  * @param {object} input Pinned operation, Root authority, fixed lifecycle effects and private state directory.
  * @returns {Promise<object>} Root-confirmed verified record; any unknown effect stops without recovery or retry.
  */
-export async function runNativeDelivery({ directory, pins, authority, effects, previousAuthority,
+export async function runNativeDelivery({ directory, pins, authority, effects, previousAuthority, successor, confirmPredecessor,
   writeProjection = value => saveNativeProjection(directory, value),
   holdOperation = action => withNativeOperationLock(directory, pins.operation, action) }) {
   requireNativePins(pins)
-  const names = pins.kind === 'matching-js' ? ['checkPair', 'stop', 'backup', 'install', 'start', 'verify']
+  const names = pins.kind !== 'fd-profile' ? ['checkPair', 'stop', 'backup', 'install', 'start', 'verify']
     : ['publish', 'stop', 'backup', 'install', 'unbind', 'bind', 'seal', 'start', 'verify']
-  if (!['fd-profile', 'matching-js'].includes(pins.kind)
+  if (!['fd-profile', 'matching-js', 'successor-js'].includes(pins.kind)
+    || pins.kind === 'successor-js' && (typeof confirmPredecessor !== 'function' || !successor)
     || names.some(name => typeof effects[name] !== 'function') || typeof effects.observeTuple !== 'function') {
     throw new NativeDeliveryUnconfirmed('missing-fixed-effect')
   }
   return holdOperation(async () => {
     // Observe the installed group inside the same operation lock as its next state transition.
-    if (pins.kind === 'matching-js') {
+    if (pins.kind === 'successor-js') {
+      const previous = await confirmPredecessor()
+      requireNativeSuccessor(previous, await effects.observeTuple(), pins, successor)
+    } else if (pins.kind === 'matching-js') {
       const previous = await previousAuthority.read()
       requireNativeContinuation(previous, await effects.observeTuple(), pins.targetTupleSha256)
       if (pins.descriptorSha256 !== previous.descriptorSha256
