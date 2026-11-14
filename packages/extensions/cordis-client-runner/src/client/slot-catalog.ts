@@ -4890,8 +4890,8 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     key: 'tool.call.toolview',
     kind: 'keyed',
     scope: 'session',
-    summary: 'Keyed Tool call view dispatched by wire Tool name, including package tools.',
-    doc: 'Keyed Tool call view dispatched by wire Tool name, including package tools.\nRegister with `key: \'<tool name>\'`; a typo never renders.\n\nRegistering an occupied key replaces its view; unclaimed keys use the\ngeneric row. The owner supplies the call identity and running\nor settled node through explicit phase props. Every stage supplies\n`name` and a lazy `args` view; preparing arguments may be incomplete.',
+    summary: 'Keyed Tool call view dispatched by wire Tool name.',
+    doc: 'Keyed Tool call view dispatched by wire Tool name. Any name is allowed,\nincluding tools registered by your package. Register with\n`key: \'<tool name>\'`; a typo never renders.\n\nRegistering an occupied key replaces its view; unclaimed keys use the generic row. The owner\nsupplies the call identity and running or settled node through explicit phase props. Every\nstage supplies `name` and a lazy `args` view; preparing arguments may be incomplete.',
     registerOptions: [
       {
         name: 'key',

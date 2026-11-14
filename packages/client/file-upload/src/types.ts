@@ -30,7 +30,7 @@ export type FileUploadReceiptId = Branded<'file-upload-receipt-id'>
  */
 export type FileUploadFetch = (input: string | URL, init: RequestInit) => Promise<Response>
 
-/** Page-owned input captured through Context.fileUploadHooks, or the legacy pre-Cordis global. */
+/** Pre-Cordis hook supplied by a page whose Host runs in another execution context. */
 export interface ClientFileUploadHooks {
   readonly fetch: FileUploadFetch
 }
