@@ -24,6 +24,7 @@ import type { SettingsDescribeValue, SettingsNamespaceView, SettingsPathOpView }
 import * as Locale from '@deepseek-ai/dsh-client-locale'
 import { RemoteError, remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+import { nativeFiberProvisions } from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { CloudAccountApi } from './account-service.ts'
 import { CloudApiError } from './errors.ts'
@@ -131,10 +132,13 @@ export function firstScreenNativeOwner(
     for (const fiber of runtime.fibers) {
       if (++visited > maximum) unavailable()
       if (fiber.ctx.root !== ctx.root || fiber.state !== FiberState.ACTIVE) continue
-      const installed = fiber.store?.[key], registered: unknown = installed?.value
-      if (installed?.fiber !== fiber) continue
-      if (registered === null || typeof registered !== 'object' || original(registered) !== target || found !== undefined) unavailable()
-      found = fiber
+      for (const installed of nativeFiberProvisions(fiber)) {
+        if (++visited > maximum) unavailable()
+        if (installed.name !== key || installed.ctx.fiber !== fiber) continue
+        const registered: unknown = installed.value
+        if (registered === null || typeof registered !== 'object' || original(registered) !== target || found !== undefined) unavailable()
+        found = fiber
+      }
     }
   }
   if (found === undefined) unavailable()

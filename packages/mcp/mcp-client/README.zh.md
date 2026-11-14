@@ -63,6 +63,8 @@ kind: "package-reference"
 | `closeTimeoutMs` | `5,000` | 传输关闭与待处理本地工作完全结算的预算 |
 | `expandTemplates` | `false` | 在运行时解析传输字符串中的 `${credential:REF}`，并在诊断中替换已解析的值 |
 | `maxInstructionBytes` | `32,768` | 包括服务器归属信息在内的服务器指令 UTF-8 字节上限；超出时连接失败 |
+| `maxIncomingResponseBytes` | 未设置 | 仅 Streamable HTTP：每次响应解码后字节数的正安全整数上限，包括累计 SSE 字节 |
+| `listMaxPages` | SDK 默认值 | SDK 完整列表聚合的正安全整数页数上限 |
 | `failOnStartupError` | `false` | 初始连接或工具同步失败时拒绝插件激活 |
 | `reconnect.enabled` | `true` | 连接丢失后自动重新连接 |
 | `reconnect.initialDelayMs` | `500` | 首次重连延迟；每次连续失败尝试翻倍 |
@@ -80,7 +82,7 @@ kind: "package-reference"
 - 发布相同工具名称（例如 `search`）的两个服务器会在各自的 namespace 下共存。
 - 两条配置项使用相同的服务器名称时，后加载的一条会在加载时以明确错误失败。
 - 服务器在工具列表中两次列出同一工具时，其工具列表会被作为无效列表拒绝，上一组工具保持可用。
-- SDK 负责发现分页及页数上限。发现失败会保留之前的工具；格式错误的游标链遵循 SDK 的处理行为。
+- SDK 负责发现分页；`listMaxPages` 覆盖其原生页数上限。发现失败会保留之前的工具；格式错误的游标链遵循 SDK 的处理行为。
 - 工具更新与已有工具名称冲突时，该更新会被整体拒绝——绝不会得到该服务器的部分工具集。
 
 ### 调用工具与读取结果
@@ -88,6 +90,8 @@ kind: "package-reference"
 模型调用 MCP 工具时，调用会以每次调用超时（默认 60 秒）发往远程服务器，并像其他工具调用一样可以取消。结果按块顺序以普通文本返回；资源链接以文本形式显示名称与 URI。如果服务器报告错误，调用会明确失败——模型不会看到虚假的成功。
 
 当前模型接受图片输入且 harness 启用了附件功能时支持图片；图片会像其他图片一样出现在对话中。不支持图片时——以及服务器返回音频或嵌入资源时——模型会看到清晰的诊断消息，而不是什么都没有。
+
+显式 `maxIncomingResponseBytes` 在 SDK 解析 JSON 或 SSE 前限制每次 HTTP 响应解码后的字节数，覆盖初始化、发现、错误和工具结果。SSE 字节按该响应的整条流累计。超大响应使对应操作失败；发现失败不会发布部分工具集。省略时不添加 HTTP 字节上限。原连接世代在 `closeTimeoutMs` 内取消并等待其响应读取器；即使传输关闭已确认，未完成的读取器仍保留清理错误并阻止替换。
 
 ### 启动、工具更新与重连
 
@@ -129,6 +133,7 @@ kind: "package-reference"
 | [`src/index.ts`](src/index.ts) | 插件入口：`Config` schema、`serverName` 预留、激活等待 |
 | [`src/connection.ts`](src/connection.ts) | 连接监督器：客户端世代、重连策略、尝试预算、dispose（资源释放） |
 | [`src/generation.ts`](src/generation.ts) | 传输归属、取消、待处理工作与关闭确认 |
+| [`src/http-incoming.ts`](src/http-incoming.ts) | 可选的解码后 HTTP 字节上限与实际响应读取器清理 |
 | [`src/credentials.ts`](src/credentials.ts) | 运行时模板绑定，并替换每个已解析的值 |
 | [`src/templates.ts`](src/templates.ts) | 凭据模板语法、替换与引用发现 |
 | [`src/server-context.ts`](src/server-context.ts) | 资源提供方注册与字面服务器指令 |
@@ -143,6 +148,8 @@ kind: "package-reference"
 导出的 `createMcpToolDefinition(ctx, options)` 将上游工具 schema 和原始结果回调适配到相同的规范值、错误和持久化图像投影。每次回调都收到原样的 `ToolExecution`，包括其 Agent 和取消信号；SDK 的规范类型校验会在投影前检查返回结果。调用方负责注册、取消截止时间和提供方卸载。原生 Cua Driver 提供方使用此适配函数，无需打开 MCP 传输。
 
 ### 生命周期与同步
+
+程序化宿主可向 `apply(ctx, config, observeLifecycle)` 传入可选的第三个观察参数，在启动等待前获得观察口；省略时不改变普通插件行为。其 `registeredTools()` 返回该监督器仍拥有的公开工具名副本，包含断线期间保留的注册。其 `close()` 等待原监督器，仅当原生状态记录传输关闭已确认且没有本地清理错误时返回 `true`；`false` 继续保留未解决的清理责任。
 
 `apply` 解析重连策略、在当前注册作用域内预留 `serverName`、启动监督器，并等待初始连接加发现完成。独立 agent（智能体）作用域可以复用相同 namespace，因为其工具与传输彼此隔离；同一作用域内重复会在加载时失败。监督器把所有同步——初始、通知与重连——串行到同一条队列，因此两次同步绝不会交错执行各自的先 dispose 后注册交换。dispose 会取消待执行的重连、关闭协商中的传输或已绑定的客户端、等待进行中的尝试与排队同步完全停稳，然后注销当前世代。
 

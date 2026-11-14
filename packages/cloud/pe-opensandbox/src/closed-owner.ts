@@ -2,6 +2,7 @@
 import { randomUUID } from 'node:crypto'
 import { FiberState, symbols, type Context } from '@deepseek-ai/cordis'
 import type { AccountBinding, AccountId, ParticipantReceipt } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+import { nativeProvision } from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import { assertInstalledExecutionBinding, IssuedExecutionPort, installIssuedExecutionPort,
   requireIssuedExecutionPort, type AccountExecutionPort } from './account-port.ts'
 import { ExecutionStateError, ExecutionUnavailableError } from './errors.ts'
@@ -168,9 +169,9 @@ export class ClosedExecutionOwner {
       return target !== null && (typeof target === 'object' || typeof target === 'function') ? target : value
     }
     for (const [key, expected] of [['shell', providers.shell], ['subprocess', providers.subprocess]] as const) {
-      const local = ctx.get(key), root = ctx.root.get(key), provided = providers.ctx.fiber.store?.[key]
+      const local = ctx.get(key), root = ctx.root.get(key), provided = nativeProvision(providers.ctx.fiber, key)
       if (local === undefined || root === undefined || original(local) !== expected || original(root) !== expected
-        || provided?.fiber !== providers.ctx.fiber || original(provided.value) !== expected) this.stale()
+        || provided?.ctx.fiber !== providers.ctx.fiber || original(provided.value) !== expected) this.stale()
     }
     this.assertPort(port, ctx)
   }

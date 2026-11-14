@@ -10,6 +10,7 @@ import type { PluginInfo, ChangeResult } from '@deepseek-ai/dsh-plugin-manager/t
 import { createConfigProjector, prepareProfileSelectionUpdate, readProfilePatches, isNativeConfigSchema, LOADER_EXPRESSION_SCHEMA, PluginPackages, type ProfileConfigUpdatePlan } from '@deepseek-ai/dsh-app-boot'
 import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
 import type { AccountBinding, ConfigurationRebuildReceipt, OperationId } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+import { nativeFiberProvisions } from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import type { ModelKeyPeerConsumer } from './cloud-model-key.ts'
 import type { ConfigSaveBarrier, PluginEditCommit, PluginEditVersion } from './save-hooks.ts'
 import { ConfigSaveOutcomeUnknown } from './config-saves.ts'
@@ -556,6 +557,7 @@ export class AccountPluginControl {
     if (entries.length > this.input.maxNativeInventoryEntries) unavailable()
     const tree = entries.find(entry => entry.id === restart.entryPrefix.slice(0, -1))?.subtree
     if (tree === undefined) unavailable()
+    let provisionVisits = 0
     for (const member of approved.members) {
       const metadata = packages.packageOf(member.moduleName, restart.baseUrl, { fresh: true })
       if (metadata?.name !== member.packageName || metadata.version !== member.packageVersion) unavailable()
@@ -568,8 +570,9 @@ export class AccountPluginControl {
         || (entry.disabled ? entry.options.disabled !== true || entry.fiber !== undefined && entry.fiber.state !== FiberState.DISPOSED
           : entry.fiber?.state !== FiberState.ACTIVE || entry.moduleNamespace !== namespace
             || entry.fiber.ctx.root !== this.owner.root)) unavailable()
-      if (entry?.fiber?.state === FiberState.ACTIVE) for (const impl of Object.values(entry.fiber.store ?? {})) {
-        if (impl.fiber.state !== FiberState.ACTIVE || impl.fiber.ctx.root !== this.owner.root) unavailable()
+      if (entry?.fiber?.state === FiberState.ACTIVE) for (const impl of nativeFiberProvisions(entry.fiber)) {
+        if (++provisionVisits > this.input.maxNativeInventoryEntries) unavailable()
+        if (impl.ctx.fiber.state !== FiberState.ACTIVE || impl.ctx.root !== this.owner.root) unavailable()
       }
     }
     if (packages.resolution !== resolution || original(this.input.resolvePackages() ?? {}) !== original(packages)) unavailable()

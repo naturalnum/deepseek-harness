@@ -174,6 +174,26 @@ describe('mcp-client plugin module exports', () => {
       reconnect: { maxAttempts: 0 },
     } as never)).toThrow()
   })
+
+  it.each([0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])(
+    'Config schema rejects invalid response and pagination limits (%s)', (value) => {
+      expect(() => ConfigSchema({ ...stdioConfig, listMaxPages: value })).toThrow()
+      for (const field of ['maxIncomingResponseBytes', 'listMaxPages'] as const) {
+        expect(() => ConfigSchema({ transport: 'streamable-http', serverName: 'srv', url: 'http://synthetic.invalid/mcp',
+          [field]: value })).toThrow()
+      }
+    },
+  )
+
+  it('keeps omitted native limits and accepts exact positive integer limits', () => {
+    expect(stdioConfig.listMaxPages).toBeUndefined()
+    const http = ConfigSchema({ transport: 'streamable-http', serverName: 'srv', url: 'http://synthetic.invalid/mcp' })
+    expect(http.listMaxPages).toBeUndefined()
+    if (http.transport !== 'streamable-http') throw new Error('Expected HTTP configuration')
+    expect(http.maxIncomingResponseBytes).toBeUndefined()
+    expect(ConfigSchema({ ...http, maxIncomingResponseBytes: 1, listMaxPages: Number.MAX_SAFE_INTEGER }))
+      .toMatchObject({ maxIncomingResponseBytes: 1, listMaxPages: Number.MAX_SAFE_INTEGER })
+  })
 })
 
 describe('apply (plugin lifecycle)', () => {
@@ -193,6 +213,23 @@ describe('apply (plugin lifecycle)', () => {
     mockCallTool.mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] })
     ctx = await mountRegistry()
   })
+
+  it.each([0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])(
+    'rejects invalid programmatic limits before registration or connection (%s)', async (value) => {
+      const effects = vi.spyOn(ctx, 'effect')
+      onTestFinished(() => { effects.mockRestore() })
+      const observe = vi.fn()
+      await expect(apply(ctx, { ...stdioConfig, listMaxPages: value }, observe)).rejects.toThrow('positive safe integer')
+      const http = ConfigSchema({ transport: 'streamable-http', serverName: 'srv', url: 'http://synthetic.invalid/mcp' })
+      for (const field of ['maxIncomingResponseBytes', 'listMaxPages'] as const) {
+        await expect(apply(ctx, { ...http, [field]: value }, observe)).rejects.toThrow('positive safe integer')
+      }
+      expect(effects).not.toHaveBeenCalled()
+      expect(mockConnect).not.toHaveBeenCalled()
+      expect(observe).not.toHaveBeenCalled()
+      expect(ctx.tools.schemas()).toEqual([])
+    },
+  )
 
   it.each([undefined, '', ' \n\t'])(
     'connects without attributed prompt text when server instructions are absent or blank (%j)', async (instructions) => {
@@ -469,11 +506,18 @@ describe('apply (plugin lifecycle)', () => {
         return Promise.resolve()
       })
       let lifecycle: import('../src/index.ts').McpClientLifecycle | undefined
-      await apply(ctx, stdioConfig, (observed) => { lifecycle = observed })
+      await apply(ctx, stdioConfig, (observed) => {
+        lifecycle = observed
+        expect(observed.registeredTools()).toEqual([])
+      })
       expect(lifecycle).toBeDefined()
+      const names = lifecycle?.registeredTools()
+      expect(names).toEqual(['mcp__srv__remote'])
       const stopped = lifecycle?.close()
       await vi.advanceTimersByTimeAsync(5000)
       expect(await stopped).toBe(confirmed)
+      expect(lifecycle?.registeredTools()).toEqual([])
+      expect(names).toEqual(['mcp__srv__remote'])
       expect(ctx.tools.get('mcp__srv__remote')).toBeUndefined()
       await expect(ctx.fiber.dispose()).resolves.toBeUndefined()
       expect(await lifecycle?.close()).toBe(confirmed)

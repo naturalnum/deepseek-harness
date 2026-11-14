@@ -234,6 +234,10 @@ describe('isAttachmentError', () => {
     expect(isAttachmentError(Object.assign(new Error('foreign storage error'), {
       code: 'ATTACHMENT_WRITE_FAILED',
     }))).toBe(true)
+    const capacity = new AttachmentError('storage exhausted', 'ATTACHMENT_STORAGE_CAPACITY')
+    expect(isAttachmentError(capacity)).toBe(true)
+    expect(isAttachmentError(Object.assign(new Error('foreign capacity error'), { code: 'ATTACHMENT_STORAGE_CAPACITY' }))).toBe(true)
+    expect(isImageAdmissionError(capacity)).toBe(false)
     expect(isAttachmentError(Object.assign(new Error('other failure'), { code: 'OTHER' }))).toBe(false)
     expect(isAttachmentError({ code: 'ATTACHMENT_WRITE_FAILED' })).toBe(false)
   })

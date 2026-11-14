@@ -128,6 +128,7 @@ One optional management capability; protocol implementation remains entirely in 
 /** Dispatch bounded account-local operations under the actual authenticated Peer.
  * @param request Complete closed request; headers are transient credential input and never returned.
  * @param signal Original request observer.
+ * A saved enabled definition with omitted headers and no registered tools is reapplied only if it still matches the successful probe.
  * @returns Actual list, generation revision and optional probe observation after complete application settlement.
  */
 @Remote('action') action(request: CloudMcpConnectionRequest, signal: AbortSignal): Promise<CloudMcpConnectionReply>

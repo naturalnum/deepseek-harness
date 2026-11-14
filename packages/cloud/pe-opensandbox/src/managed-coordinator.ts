@@ -5,6 +5,7 @@ import { FiberState, symbols, type Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { AccountBinding, AccountId, AccountRuntimeService, OperationId,
   ParticipantReceipt } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+import { nativeProvision } from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { FdMutationFailure, FilesFailure, type ExecutionMountGrant } from '@deepseek-ai/dsh-pe-cloud-files'
@@ -500,9 +501,9 @@ export class ManagedCoordinator extends SandboxCoordinator {
     }
     for (const [key, expected] of [['shell', providers.shell], ['subprocess', providers.subprocess],
       ['shellEnv', providers.shellEnv], ...providers.sandbox === undefined ? [] : [['sandbox', providers.sandbox] as const]] as const) {
-      const entry = providers.ctx.fiber.store?.[key]
+      const entry = nativeProvision(providers.ctx.fiber, key)
       if (original(ctx.get(key)) !== expected || original(ctx.root.get(key)) !== expected
-        || entry?.fiber !== providers.ctx.fiber || original(entry.value) !== expected) this.stale()
+        || entry?.ctx.fiber !== providers.ctx.fiber || original(entry.value) !== expected) this.stale()
     }
   }
 

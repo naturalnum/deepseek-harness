@@ -4,7 +4,7 @@ import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { AttachmentError } from '@deepseek-ai/dsh-attachment'
+import { AttachmentError, isAttachmentError, isImageAdmissionError } from '@deepseek-ai/dsh-attachment'
 import { AttachmentStorageCapacityError as PublicCapacityError } from '../src/index.ts'
 import { AttachmentCleanupError, AttachmentPublicationUnconfirmedError, AttachmentStorageCapacityError,
   publishImmutableObjectStream } from '../src/store.ts'
@@ -82,6 +82,8 @@ it.each(['ENOSPC', 'EDQUOT'])('waits for source return, real close and unlink be
   expect(PublicCapacityError).toBe(AttachmentStorageCapacityError)
   expect(error).toBeInstanceOf(AttachmentStorageCapacityError)
   expect(error).toMatchObject({ code: 'ATTACHMENT_STORAGE_CAPACITY', phase: 'write', cause: io.fault })
+  expect(isAttachmentError(error)).toBe(true)
+  expect(isImageAdmissionError(error)).toBe(false)
   expect(() => fstatSync(io.fd)).toThrow(); expect(await readdir(join(f.root, 'tmp'))).toEqual([])
   expect(io.closes).toBe(1); expect(io.unlinks).toBe(1)
 })

@@ -5,6 +5,8 @@ import { requireAccountBinding } from './binding.ts'
 import { AccountRuntimeError } from './errors.ts'
 import type { AccountBinding } from './types.ts'
 
+export { nativeFiberProvisions, nativeProvision } from './native-state.ts'
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     /** Immutable generation installed by the runtime's private account factory. */

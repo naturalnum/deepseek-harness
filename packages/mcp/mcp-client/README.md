@@ -63,6 +63,8 @@ Add one entry per server; nothing else is required. After the harness starts, th
 | `closeTimeoutMs` | `5,000` | Budget for transport closure and pending local work to settle |
 | `expandTemplates` | `false` | Resolve `${credential:REF}` in transport strings at runtime and redact resolved values from diagnostics |
 | `maxInstructionBytes` | `32,768` | Maximum UTF-8 bytes of server instructions including attribution; an oversized value rejects the connection |
+| `maxIncomingResponseBytes` | unset | Streamable HTTP only: positive safe integer limit on decoded bytes per response, including cumulative SSE bytes |
+| `listMaxPages` | SDK default | Positive safe integer limit for the SDK's complete list aggregation |
 | `failOnStartupError` | `false` | Reject plugin activation when the initial connection or tool synchronization fails |
 | `reconnect.enabled` | `true` | Reconnect automatically after a lost connection |
 | `reconnect.initialDelayMs` | `500` | First reconnect delay; doubles per consecutive failed attempt |
@@ -80,7 +82,7 @@ The model sees each tool under a stable server-qualified name: `mcp__<serverName
 - Two servers publishing the same tool name (for example `search`) coexist under their own namespaces.
 - Two entries using the same server name: the later one fails to load with a clear error.
 - A server that lists the same tool twice gets its tool list rejected as invalid, and the previous tool set stays active.
-- The SDK owns discovery pagination and its page limit. A discovery failure preserves the previous tools; malformed cursor chains follow the SDK's behavior.
+- The SDK owns discovery pagination; `listMaxPages` overrides its native page limit. A discovery failure preserves the previous tools; malformed cursor chains follow the SDK's behavior.
 - An update that conflicts with an already-registered tool name is rejected entirely — you never get a partial tool set from that server.
 
 ### Calling tools and reading results
@@ -88,6 +90,8 @@ The model sees each tool under a stable server-qualified name: `mcp__<serverName
 When the model calls an MCP tool, the call runs against the remote server with a per-call timeout (default 60 seconds) and can be cancelled like any other tool call. The result comes back as ordinary text in block order; resource links appear as text with their name and URI. If the server reports an error, the call fails visibly — the model does not see a fake success.
 
 Images are supported when the current model accepts image input and the harness attachment feature is enabled; they then appear in the conversation like other images. Otherwise — and for audio or embedded resources — the model sees a clear diagnostic message instead of nothing.
+
+An explicit `maxIncomingResponseBytes` bounds every decoded HTTP response before the SDK parses JSON or SSE, including initialization, discovery, errors, and tool results. SSE bytes accumulate for that response's entire stream. An oversized response fails its operation; failed discovery publishes no partial tool set. Omission adds no HTTP byte limit. The original connection generation cancels and joins its response readers within `closeTimeoutMs`; an unfinished reader remains a cleanup error even after transport closure is confirmed and blocks replacement.
 
 ### Startup, updates, and reconnection
 
@@ -129,6 +133,7 @@ This section explains the design decisions behind the bridge and points at the c
 | [`src/index.ts`](src/index.ts) | Plugin entry: `Config` schema, `serverName` reservation, activation await |
 | [`src/connection.ts`](src/connection.ts) | Connection supervisor: client generations, reconnect policy, attempt budget, disposal |
 | [`src/generation.ts`](src/generation.ts) | Transport ownership, cancellation, pending work, and confirmed closure |
+| [`src/http-incoming.ts`](src/http-incoming.ts) | Optional decoded HTTP byte limit and actual response-reader cleanup |
 | [`src/credentials.ts`](src/credentials.ts) | Runtime template binding and redaction of every resolved value |
 | [`src/templates.ts`](src/templates.ts) | Credential template syntax, substitution, and reference discovery |
 | [`src/server-context.ts`](src/server-context.ts) | Resource-provider registration and literal server instructions |
@@ -143,6 +148,8 @@ This section explains the design decisions behind the bridge and points at the c
 The exported `createMcpToolDefinition(ctx, options)` adapts an upstream tool schema and raw-result callback to the same canonical values, errors, and durable image projection. Each callback receives the exact `ToolExecution`, including its Agent and cancellation signal; SDK spec-type validation checks its result before projection. Callers own registration, cancellation deadlines, and provider teardown. The native Cua Driver provider uses this adapter without opening an MCP transport.
 
 ### Lifecycle and sync
+
+Programmatic hosts may pass an optional third observer to `apply(ctx, config, observeLifecycle)` before startup awaits; omission leaves normal plugin behavior unchanged. Its `registeredTools()` returns detached public names still owned by that supervisor, including registrations retained while disconnected. Its `close()` joins the original supervisor and returns `true` only when the native status records confirmed transport closure without a local cleanup error; `false` retains unresolved cleanup responsibility.
 
 `apply` resolves the reconnect policy, reserves the `serverName` inside the current registration scope, starts the supervisor, and awaits the initial connection plus discovery. Independent Agent scopes may reuse the same namespace because their tools and transports are isolated; a duplicate inside one scope fails at load. The supervisor serializes every sync — initial, notification, and reconnect — through one queue so two syncs can never interleave their dispose-previous/register-next swap. Disposal cancels pending reconnects, closes the negotiating transport or attached client, waits for the in-flight attempt and queued syncs to quiesce, and unregisters the current generation.
 

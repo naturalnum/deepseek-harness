@@ -80,6 +80,10 @@ The project root is the nearest ancestor containing `.git`; without one, the cur
 
 Chokidar watches existing roots for direct bundle/flat-entry additions and removals plus direct skill-entry changes. A missing root is followed one absent path segment at a time from its nearest existing ancestor until Chokidar can attach. Resource files below a bundle are not catalog changes. Model-facing `write` and `edit` observations synchronously invalidate the provider when their target is catalog-relevant, while the host watcher covers IDE, Git, shell, and external-process mutations. Watcher failures make the current observation incomplete without hiding readable candidates from direct loads; project-scoped watchers use a configured bounded LRU.
 
+### Explicit read sources
+
+The optional [`FileSystemSkillSource`](../../packages/skill/skill-filesystem/src/source.ts) supplies a readonly `FileSystemSkillReader` and returns complete `FileSystemSkillResources` after preparation. Its original caller options and source borrow span parsing and materialization; catalog metadata contains no private source path. Construction and failure behavior are defined by the provider's [programmatic source rules](../../packages/skill/skill-filesystem/README.md#programmatic-read-sources).
+
 ## Skill identity
 
 Skill names are kebab-case (`^[a-z0-9]+(?:-[a-z0-9]+)*$`). The local provider accepts directory bundles (`<name>/SKILL.md`) and flat Markdown files (`<name>.md`). Nested recursive `**/SKILL.md` discovery is not supported.

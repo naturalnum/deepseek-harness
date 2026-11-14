@@ -1,6 +1,7 @@
 /** Account capability contributions checked against the original Gateway and live Cordis owner. */
 import { FiberState, symbols, type Context } from '@deepseek-ai/cordis'
 import Gateway from '@deepseek-ai/dsh-api-gateway'
+import { nativeProvision } from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import { remoteMethods, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { CloudApiError } from './errors.ts'
 import { inventoryMethodMatches } from './inventory-method.ts'
@@ -88,9 +89,9 @@ export class AccountCapabilityInventories {
 
   private inspectOne(account: Context, namespace: string, entry: Contribution): ExposureInventory {
     if (entry.owner.root !== account.root || entry.owner.fiber.state !== FiberState.ACTIVE) unavailable()
-    const service = account.get(namespace), registration = entry.owner.fiber.store?.[namespace]
+    const service = account.get(namespace), registration = nativeProvision(entry.owner.fiber, namespace)
     if (!(service instanceof TypertRemoteService) || service.typertRemote.namespace !== namespace
-      || service.typertRemote.serviceKey !== namespace || registration?.fiber !== entry.owner.fiber
+      || service.typertRemote.serviceKey !== namespace || registration?.ctx.fiber !== entry.owner.fiber
       || original(account.root.get(namespace) ?? {}) !== original(service)
       || original(registration.value) !== original(service)) unavailable()
     if (entry.service === undefined) entry.service = service

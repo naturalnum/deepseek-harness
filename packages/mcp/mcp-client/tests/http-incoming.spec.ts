@@ -126,3 +126,27 @@ it('does not confirm closure while an original response reader cancellation is s
   cancel.resolve()
   expect(await closing).toBe(true)
 })
+
+it('retains a rejected source cancellation after reader.closed resolves and its lock releases', async () => {
+  const cause = new Error('original source cancellation failed'), cancel = vi.fn(() => Promise.reject(cause))
+  const body = new ReadableStream<Uint8Array>({ cancel })
+  const bounded = boundedHttpIncoming(16, () => Promise.resolve(new Response(body)))
+  await bounded.fetch('http://synthetic.invalid/mcp')
+  const closing = bounded.close()
+  await expect(closing).rejects.toMatchObject({ message: 'mcp-client: incoming HTTP reader cancellation is unconfirmed', cause })
+  expect(body.locked).toBe(false)
+  expect(cancel).toHaveBeenCalledOnce()
+  expect(bounded.close()).toBe(closing)
+  await expect(bounded.close()).rejects.toHaveProperty('cause', cause)
+  expect(cancel).toHaveBeenCalledOnce()
+})
+
+it('preserves an already-errored read without mistaking its stored error for failed source cancellation', async () => {
+  const cause = new Error('original response read failed'), cancel = vi.fn()
+  const body = new ReadableStream<Uint8Array>({ start(controller) { controller.error(cause) }, cancel })
+  const bounded = boundedHttpIncoming(16, () => Promise.resolve(new Response(body)))
+  await expect((await bounded.fetch('http://synthetic.invalid/mcp')).text()).rejects.toBe(cause)
+  expect(await bounded.close()).toBe(true)
+  expect(body.locked).toBe(false)
+  expect(cancel).not.toHaveBeenCalled()
+})

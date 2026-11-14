@@ -37,7 +37,7 @@ skill 可以是被扫描根目录顶层的目录 bundle `<name>/SKILL.md`，也�
 
 `disable-model-invocation: true` 会把 skill 从面向模型的目录和 loader 中排除；`user-invocable: false` 会把它从面向用户的命令中排除，省略的字段默认允许对应接口调用。这两个键接受 YAML 布尔值，以及不区分大小写的 `true`/`false`、`yes`/`no`、`on`/`off` 和 `1`/`0` 形式；被拒绝的拼写或非布尔值会让整个 skill 随警告一起被丢弃，而不会静默允许某个接口。
 
-目录条目和已加载 skill 提供解析后的指令文件路径，使符号链接目录和扁平文件都能作为普通文件预览。重新加载的定位信息和资源根保留发现时的路径，包括符号链接。
+普通文件系统目录条目和已加载 skill 提供解析后的指令文件路径，使符号链接目录和扁平文件都能作为普通文件预览。重新加载的定位信息和资源根保留发现时的路径，包括符号链接。
 
 目录与正文具有独立的生命周期：发现阶段把 frontmatter 解析进目录条目，每次加载都会重新读取当前文件，因此编辑 skill 正文无需版本化或缓存失效。
 
@@ -80,6 +80,14 @@ skill 可以是被扫描根目录顶层的目录 bundle `<name>/SKILL.md`，也�
 
 现有根目录会被监视，因此新增、改名或删除 skill（或编辑其 frontmatter）会在下一个模型步骤触发目录刷新；`references`、`scripts`、`assets` 等 bundle 资源下的编辑不会触发。当第一方 `write` 与 `edit` 工具的目标可能影响受监视的 skill 时，它们会直接使提供方失效，因此模型无需等待宿主 watcher 即可观察到自身的文件系统变更。外部 IDE、Git 与 shell 变更由宿主 watcher 捕获；尚不存在的根目录会被探测，直至其出现。
 
+<a id="programmatic-read-sources"></a>
+
+### 程序化只读来源
+
+`FileSystemSkillProvider` 接受可选的第四个 `FileSystemSkillSource` 参数，通过所提供的只读文件操作复用 Native 发现与 frontmatter 解析。显式来源要求 `includeDefaultRoots: false` 与 `watch: false`，并拒绝 `bundledSkillDir`；它不会回退到 Node、默认宿主根目录或宿主监视器。省略时保留普通文件系统行为。
+
+发现保留私有定位器，但不公开来源路径或资源基址。加载在解析与完整的 `materialize(directory, options)` 结算期间持有同一个来源借用，两步均传入原始注册表视图对象。只有物化方给出的公开资源基址与可选指令路径进入定义。取消不能提前释放实际准备工作；取消、注册撤销或准备失败均不返回部分定义。调用者授权与资源释放由来源所有者负责。
+
 ### 可观察的成功与失败
 
 任一被扫描根目录下的有效 skill 都会按名称排序出现在会话目录中，加载它即可返回当前文件正文。缺少有效 frontmatter、名称无效或调用值无效的文件会随警告被跳过，因此模型目录不会收到逐 skill 诊断，也无法区分缺失的 skill 与无效的 skill。某个根目录的发现或文件读取失败时，会记录其路径并跳过该根，其他根目录仍然可用。此观测标记为不完整，不被缓存，并在下次查询时重试。模型目录会区分发现不完整与已确认的缺失。
@@ -103,6 +111,7 @@ skill 可以是被扫描根目录顶层的目录 bundle `<name>/SKILL.md`，也�
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 插件入口、提供方、根解析、frontmatter 解析、监视管理器 |
+| [`src/source.ts`](src/source.ts) | 借用的只读来源与完整公开资源指引 |
 
 ### 发现流程
 

@@ -25,12 +25,15 @@ import {
   type SkillCandidate,
   type SkillDefinition,
   type SkillInvocationPolicy,
-  type SkillLookupOptions,
   type SkillProvider,
   type SkillProviderControl,
   type SkillProviderObservation,
   type SkillSource,
+  type SkillViewOptions,
 } from '@deepseek-ai/dsh-skill'
+import type { FileSystemSkillReader, FileSystemSkillResources, FileSystemSkillSource } from './source.ts'
+
+export type { FileSystemSkillReader, FileSystemSkillResources, FileSystemSkillSource } from './source.ts'
 
 const PROJECT_DSH_RANK = 100
 const PROJECT_AGENTS_RANK = 200
@@ -156,11 +159,21 @@ export class FileSystemSkillProvider implements SkillProvider {
   private readonly bundledSkillDir: string | undefined
   private disposal: Promise<void> | undefined
 
+  /**
+   * @param ctx Native parser diagnostics and default filesystem services.
+   * @param control Original registration lifetime and catalog invalidation.
+   * @param config Root and watcher settings; an explicit source requires isolated custom roots without host watching or bundled roots.
+   * @param source Optional borrowed source; omission retains normal native filesystem discovery and directory guidance.
+   */
   constructor(
     private readonly ctx: Context,
-    control: SkillProviderControl,
+    private readonly control: SkillProviderControl,
     config: Config = {},
+    private readonly source?: FileSystemSkillSource,
   ) {
+    if (source !== undefined && (config.includeDefaultRoots !== false || config.watch !== false || config.bundledSkillDir !== undefined)) {
+      throw new Error('An explicit source requires isolated roots with host watching and bundled roots disabled')
+    }
     this.name = config.providerName ?? 'filesystem'
     this.includeDefaultRoots = config.includeDefaultRoots ?? true
     this.dshHome = resolveDshHome(config.dshHome)
@@ -178,15 +191,25 @@ export class FileSystemSkillProvider implements SkillProvider {
 
   /**
    * Discover local skill summaries for a cwd-sensitive workspace.
-   * @param options - lookup options; `cwd` selects the project roots to scan.
+   * @param options - original registry view; `cwd` selects roots and an explicit source receives the same caller object.
    * @returns candidates from readable roots with stable ranks. Failed roots are
    *   logged and omitted; root or watcher failures make the observation incomplete.
    */
-  async list(options: SkillLookupOptions): Promise<SkillCandidate[] | SkillProviderObservation> {
+  async list(options: SkillViewOptions): Promise<SkillCandidate[] | SkillProviderObservation> {
+    if (this.source === undefined) return this.discover(options)
+    options.signal?.throwIfAborted()
+    this.control.signal.throwIfAborted()
+    const result = await this.source.withFiles(({ files }) => this.discover(options, files), options)
+    options.signal?.throwIfAborted()
+    this.control.signal.throwIfAborted()
+    return result
+  }
+
+  private async discover(options: SkillViewOptions, reader?: FileSystemSkillReader): Promise<SkillCandidate[] | SkillProviderObservation> {
     const roots = await this.roots(options.cwd)
     let complete = true
     try {
-      await this.watchManager.observeRoots(roots)
+      if (reader === undefined) await this.watchManager.observeRoots(roots)
     } catch (error) {
       if (this.disposal !== undefined) throw error
       complete = false
@@ -195,7 +218,7 @@ export class FileSystemSkillProvider implements SkillProvider {
     for (const root of roots) {
       options.signal?.throwIfAborted()
       try {
-        const discovered = await discoverRoot(root, this.ctx, this.name)
+        const discovered = await discoverRoot(root, this.ctx, this.name, reader, options.signal)
         options.signal?.throwIfAborted()
         candidates.push(...discovered)
       } catch (error) {
@@ -210,13 +233,34 @@ export class FileSystemSkillProvider implements SkillProvider {
   /**
    * Load a complete local skill body from the candidate's file locator.
    * @param candidate - the winning candidate returned by this provider.
-   * @param options - lookup options whose signal cancels filesystem reads.
-   * @returns the full local skill, or `undefined` if the file disappeared.
+   * @param options - original registry view used for reads and explicit resource preparation.
+   * @returns the complete skill after source-owned resource preparation, or `undefined` if the file disappeared.
    */
-  async get(candidate: SkillCandidate, options: SkillLookupOptions): Promise<SkillDefinition | undefined> {
+  async get(candidate: SkillCandidate, options: SkillViewOptions): Promise<SkillDefinition | undefined> {
     const locator = candidate.locator as LocalLocator
+    if (this.source !== undefined) {
+      options.signal?.throwIfAborted()
+      this.control.signal.throwIfAborted()
+      const result = await this.source.withFiles(async (source) => {
+        const parsed = await parseSkillFile(locator.path, this.ctx, options.signal, false, source.files)
+        options.signal?.throwIfAborted()
+        this.control.signal.throwIfAborted()
+        if (parsed === undefined) return undefined
+        const resources = await source.materialize(locator.directory, options)
+        options.signal?.throwIfAborted()
+        this.control.signal.throwIfAborted()
+        return this.definition(candidate, parsed, resources)
+      }, options)
+      options.signal?.throwIfAborted()
+      this.control.signal.throwIfAborted()
+      return result
+    }
     const parsed = await parseSkillFile(locator.path, this.ctx, options.signal, candidate.source === 'bundled')
     if (parsed === undefined) return undefined
+    return this.definition(candidate, parsed, { resourceBase: { kind: 'directory', path: locator.directory }, path: parsed.path })
+  }
+
+  private definition(candidate: SkillCandidate, parsed: ParsedSkill, resources: FileSystemSkillResources): SkillDefinition {
     return {
       name: parsed.name,
       description: parsed.description,
@@ -224,8 +268,8 @@ export class FileSystemSkillProvider implements SkillProvider {
       invocation: parsed.invocation,
       source: candidate.source,
       provider: this.name,
-      resourceBase: { kind: 'directory', path: locator.directory },
-      path: parsed.path,
+      resourceBase: resources.resourceBase,
+      ...resources.path === undefined ? {} : { path: resources.path },
       ...parsed.metadata !== undefined ? { metadata: parsed.metadata } : {},
       content: parsed.content,
     }
@@ -734,10 +778,12 @@ function hasErrorCode(error: unknown, code: string): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === code
 }
 
-async function discoverRoot(root: SkillRoot, ctx: Context, provider: string): Promise<SkillCandidate[]> {
+async function discoverRoot(root: SkillRoot, ctx: Context, provider: string,
+  reader?: FileSystemSkillReader, signal?: AbortSignal): Promise<SkillCandidate[]> {
   const skills: SkillCandidate[] = []
-  const entries = await listSkillRootEntries(root, ctx)
+  const entries = reader === undefined ? await listSkillRootEntries(root, ctx) : await listSkillRootEntriesFromFileSystem(root, reader)
   for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    signal?.throwIfAborted()
     if (root.skipSystem && entry.name === '.system') continue
     const locator = entry.type === 'directory'
       ? { path: join(entry.path, 'SKILL.md'), directory: entry.path }
@@ -745,7 +791,7 @@ async function discoverRoot(root: SkillRoot, ctx: Context, provider: string): Pr
         ? { path: entry.path, directory: root.path }
         : undefined
     if (locator === undefined) continue
-    const parsed = await parseSkillFile(locator.path, ctx, undefined, root.trustedHost === true)
+    const parsed = await parseSkillFile(locator.path, ctx, signal, root.trustedHost === true, reader)
     if (parsed === undefined) continue
     skills.push({
       name: parsed.name,
@@ -756,8 +802,7 @@ async function discoverRoot(root: SkillRoot, ctx: Context, provider: string): Pr
       source: root.source,
       rank: root.rank,
       locator,
-      resourceBase: { kind: 'directory', path: locator.directory },
-      path: parsed.path,
+      ...reader === undefined ? { resourceBase: { kind: 'directory' as const, path: locator.directory }, path: parsed.path } : {},
       ...parsed.metadata !== undefined ? { metadata: parsed.metadata } : {},
     })
   }
@@ -770,7 +815,7 @@ async function listSkillRootEntries(root: SkillRoot, ctx: Context): Promise<Skil
   return await listSkillRootEntriesFromNode(root, ctx)
 }
 
-async function listSkillRootEntriesFromFileSystem(root: SkillRoot, fs: FileSystem): Promise<SkillRootEntry[]> {
+async function listSkillRootEntriesFromFileSystem(root: SkillRoot, fs: FileSystemSkillReader): Promise<SkillRootEntry[]> {
   try {
     return (await fsListDir(fs, root.path)).map(entryFromFs)
   } catch (error) {
@@ -779,7 +824,7 @@ async function listSkillRootEntriesFromFileSystem(root: SkillRoot, fs: FileSyste
   }
 }
 
-async function fsListDir(fs: FileSystem, path: string): Promise<FsDirEntry[]> {
+async function fsListDir(fs: FileSystemSkillReader, path: string): Promise<FsDirEntry[]> {
   const target = await fs.resolve(path)
   return await fs.listDir(target)
 }
@@ -808,8 +853,10 @@ async function listSkillRootEntriesFromNode(root: SkillRoot, ctx: Context): Prom
   return result
 }
 
-async function parseSkillFile(path: string, ctx: Context, signal?: AbortSignal, trustedHost = false): Promise<ParsedSkill | undefined> {
-  const raw = await readSkillText(ctx, path, signal, trustedHost)
+async function parseSkillFile(path: string, ctx: Context, signal?: AbortSignal,
+  trustedHost = false, reader?: FileSystemSkillReader): Promise<ParsedSkill | undefined> {
+  const raw = reader === undefined ? await readSkillText(ctx, path, signal, trustedHost)
+    : await readSkillTextFromFileSystem(ctx, reader, path, signal)
   signal?.throwIfAborted()
   if (raw === undefined) {
     return undefined
@@ -874,7 +921,7 @@ async function readSkillText(ctx: Context, path: string, signal?: AbortSignal, t
 }
 
 async function readSkillTextFromFileSystem(
-  ctx: Context, fs: FileSystem, path: string, signal?: AbortSignal,
+  ctx: Context, fs: FileSystemSkillReader, path: string, signal?: AbortSignal,
 ): Promise<SkillText | undefined> {
   // A missing or temporarily inaccessible skill file is not fatal to discovery.
   signal?.throwIfAborted()

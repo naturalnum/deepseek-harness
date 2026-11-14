@@ -3,6 +3,7 @@ import { FiberState, symbols, type Context, type Fiber } from '@deepseek-ai/cord
 import WorkspaceFiles from '@deepseek-ai/dsh-api-workspace-files'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+import { nativeFiberProvisions, nativeProvision } from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import { CloudApiError } from './errors.ts'
 import type { ExposureInventory } from './types.ts'
 
@@ -57,9 +58,11 @@ export function createNativeWorkspaceFiles(
       for (const fiber of runtime.fibers) {
         consume()
         if (fiber.ctx.root !== ctx.root || fiber.state !== FiberState.ACTIVE) continue
-        for (const key of keys) {
-          const installed = fiber.store?.[key], value: unknown = installed?.value
-          if (installed?.fiber !== fiber) continue
+        for (const installed of nativeFiberProvisions(fiber)) {
+          consume()
+          const key = keys.find(key => key === installed.name)
+          if (key === undefined || installed.ctx.fiber !== fiber) continue
+          const value: unknown = installed.value
           if (value === null || typeof value !== 'object' || found.has(key)) unavailable()
           found.set(key, { value: original(value), fiber })
         }
@@ -79,8 +82,8 @@ export function createNativeWorkspaceFiles(
     throw new CloudApiError('cloud/invalid-config', 'The account already has a WorkspaceFiles service.')
   }
   const value = new WorkspaceFiles(ctx, config)
-  const installed = ctx.fiber.store?.workspaceFiles, registered: unknown = installed?.value
-  if (installed?.fiber !== ctx.fiber || registered === null || typeof registered !== 'object'
+  const installed = nativeProvision(ctx.fiber, 'workspaceFiles'), registered: unknown = installed?.value
+  if (installed?.ctx.fiber !== ctx.fiber || registered === null || typeof registered !== 'object'
     || original(registered) !== original(value)) unavailable()
   registrations.set('workspaceFiles', { value: original(value), fiber: ctx.fiber })
   const assertCurrent = (): void => {

@@ -9,7 +9,8 @@
     "src/owner-types.ts",
     "src/account.ts",
     "src/binding.ts",
-    "src/errors.ts"
+    "src/errors.ts",
+    "src/native-state.ts"
   ],
   "references": [
     {
@@ -23,6 +24,9 @@
     },
     {
       "path": "../../util/launch-environment"
+    },
+    {
+      "path": "../../../vendor/loader"
     }
   ]
 }

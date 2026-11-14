@@ -11,6 +11,9 @@
 /skills/local-discovery-priority:
   en: 390fc00bbccfb777
   zh: 96ff7abfbd4b911b
+/skills/local-discovery-priority/explicit-read-sources:
+  en: e3b496cd643bbbe0
+  zh: 45a4039653f6e178
 /skills/skill-identity:
   en: 61295a9cf1c51588
   zh: 1c4c1582688d2310

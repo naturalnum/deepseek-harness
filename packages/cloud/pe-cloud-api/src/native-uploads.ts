@@ -6,6 +6,7 @@ import type {} from '@deepseek-ai/dsh-commands'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { FileAttachmentRef, SaveFileStreamAttachment } from '@deepseek-ai/dsh-attachment'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+import { nativeFiberProvisions } from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import type { ExposureInventory } from './types.ts'
 import { CloudApiError } from './errors.ts'
 
@@ -116,11 +117,13 @@ export function createNativeUploads(
       for (const fiber of runtime.fibers) {
         if (++visited > maximum) unavailable()
         if (fiber.ctx.root !== ctx.root || fiber.state !== FiberState.ACTIVE) continue
-        const store = fiber.store?.fileUploads
-        if (store?.fiber !== fiber) continue
-        const registered: unknown = store.value
-        if (++owners !== 1 || fiber !== ctx.fiber || registered === null || typeof registered !== 'object'
-          || original(registered) !== value) unavailable()
+        for (const provision of nativeFiberProvisions(fiber)) {
+          if (++visited > maximum) unavailable()
+          if (provision.name !== 'fileUploads' || provision.ctx.fiber !== fiber) continue
+          const registered: unknown = provision.value
+          if (++owners !== 1 || fiber !== ctx.fiber || registered === null || typeof registered !== 'object'
+            || original(registered) !== value) unavailable()
+        }
       }
     }
     if (owners !== 1 || ctx.connection.createSharedFetchHandler('/api').requestBodyMode({

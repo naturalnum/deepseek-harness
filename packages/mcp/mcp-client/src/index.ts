@@ -36,6 +36,16 @@ export { probeServer } from './probe.ts'
 export { assertTemplateSyntax } from './templates.ts'
 export type { McpProbeOptions } from './probe.ts'
 
+/** Original supervisor registration and cleanup observation for programmatic hosts. */
+export interface McpClientLifecycle {
+  /** Read registrations independently of transport reachability.
+   * @returns Detached public names still registered by this exact supervisor.
+   */
+  registeredTools(): readonly string[]
+  /** Stop and join the supervisor; false retains unconfirmed transport or local cleanup responsibility. */
+  close(): Promise<boolean>
+}
+
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'mcp-client'
 
@@ -100,6 +110,8 @@ export interface StdioConfig {
   failOnStartupError: boolean
   /** Maximum UTF-8 bytes of attributed server instructions (default 32768). */
   maxInstructionBytes?: number
+  /** Positive maximum pages for SDK list aggregation; omission retains the native SDK cap. */
+  listMaxPages?: number
   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
   reconnect?: ReconnectConfig
 }
@@ -130,6 +142,13 @@ export interface StreamableHttpConfig {
   failOnStartupError: boolean
   /** Maximum UTF-8 bytes of attributed server instructions (default 32768). */
   maxInstructionBytes?: number
+  /**
+   * Positive decoded-byte maximum per HTTP response, including cumulative SSE bytes.
+   * Omission leaves HTTP responses uncapped here.
+   */
+  maxIncomingResponseBytes?: number
+  /** Positive maximum pages for SDK list aggregation; omission retains the native SDK cap. */
+  listMaxPages?: number
   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
   reconnect?: ReconnectConfig
 }
@@ -172,6 +191,7 @@ export const Config = z.union([
     expandTemplates: z.boolean().default(false),
     failOnStartupError: z.boolean().default(false),
     maxInstructionBytes: z.number().step(1).min(1).default(DEFAULT_MAX_INSTRUCTION_BYTES),
+    listMaxPages: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER),
     reconnect: ReconnectSchema,
   }),
   z.object({
@@ -185,6 +205,8 @@ export const Config = z.union([
     expandTemplates: z.boolean().default(false),
     failOnStartupError: z.boolean().default(false),
     maxInstructionBytes: z.number().step(1).min(1).default(DEFAULT_MAX_INSTRUCTION_BYTES),
+    maxIncomingResponseBytes: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER),
+    listMaxPages: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER),
     reconnect: ReconnectSchema,
   }),
 ]) as z<ConfigInput, Config>
@@ -198,9 +220,18 @@ export const Config = z.union([
  * ordinary function as a constructor, whose returned Promise is not startup work.
  * @param ctx - plugin context carrying the tool registry.
  * @param config - resolved transport and server namespace configuration.
+ * @param observeLifecycle - optional original supervisor observation before startup awaits; omission installs no observer.
  * @returns startup readiness after connection and initial tool discovery settle.
  */
-export async function apply(ctx: Context, config: Config): Promise<void> {
+export async function apply(ctx: Context, config: Config, observeLifecycle?: (lifecycle: McpClientLifecycle) => void): Promise<void> {
+  for (const [field, value] of [
+    ['listMaxPages', config.listMaxPages],
+    ['maxIncomingResponseBytes', config.transport === 'streamable-http' ? config.maxIncomingResponseBytes : undefined],
+  ] as const) {
+    if (value !== undefined && (!Number.isSafeInteger(value) || value < 1)) {
+      throw new TypeError(`mcp-client(${config.serverName}): ${field} must be a positive safe integer`)
+    }
+  }
   // Fail loud at load: reconnect misconfiguration (including programmatic
   // construction that bypassed Schemastery) rejects THIS instance before any
   // effect registers.
@@ -250,6 +281,14 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   }, { global: true })
   ctx.effect(() => dispose, 'mcp-client.connection')
   registerServerContext(ctx, config.serverName, connection)
+  observeLifecycle?.({
+    registeredTools: () => connection.registeredTools(),
+    async close() {
+      await dispose()
+      const result = status.closure()
+      return result.closeConfirmed && result.cleanupError === undefined
+    },
+  })
 
   // Block plugin activation on the initial connection + tool discovery so
   // Cordis consumers observe the tools immediately after the fiber activates.

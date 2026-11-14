@@ -1,0 +1,9 @@
+- id: credentials
+  name: '@deepseek-ai/dsh-credentials-local'
+  disabled: false
+  config:
+    path: !!js dshHomePath('snapshot-mcp-credentials.yaml')
+    watch: false
+- insert:
+    - id: cloud-mcp-saved-recovery-fixture
+      name: '../../../packages/cloud/pe-cloud-api/tests/fixtures/mcp-recovery-snapshot.ts'

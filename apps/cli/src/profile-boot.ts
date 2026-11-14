@@ -35,7 +35,7 @@ import { PROFILE_TEMPLATES } from '@deepseek-ai/dsh-official-bundles'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { installProxyFromEnvironment } from '@deepseek-ai/dsh-http-proxy'
 import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
-import { provideCmdline, type AppReady } from '@deepseek-ai/dsh-cmdline'
+import { provideCmdline, type AppReady, type AppShutdown } from '@deepseek-ai/dsh-cmdline'
 import { createProcessShutdown, type ProcessShutdown } from './process-shutdown.ts'
 
 const NAME = 'dsh'
@@ -60,6 +60,43 @@ function createAppReady(): { service: AppReady; commit(): void } {
       ready = true
       for (const listener of [...listeners]) listener()
       listeners.clear()
+    },
+  }
+}
+
+/** Join original close outcomes without acquiring or releasing the participants' resources. */
+function createAppShutdown(): { service: AppShutdown; begin(): Promise<readonly unknown[]> } {
+  const participants = new Set<{ join(): Promise<void> }>()
+  let stopping = false
+  let settlement: Promise<readonly unknown[]> | undefined
+  return {
+    service: {
+      register(close) {
+        if (stopping) throw new Error('dsh: application shutdown has already started')
+        let pending: Promise<void> | undefined
+        const participant = { join(): Promise<void> {
+          if (pending !== undefined) return pending
+          const settled = Promise.withResolvers<undefined>()
+          pending = settled.promise
+          try { void close().then(() => { settled.resolve(undefined) }, settled.reject) }
+          catch (error) { settled.reject(error) }
+          void pending.then(
+            () => { participants.delete(participant) },
+            (_error: unknown) => { /* Retain failed original close outcomes for process shutdown. */ },
+          )
+          return pending
+        } }
+        participants.add(participant)
+        return () => participant.join()
+      },
+    },
+    begin() {
+      stopping = true
+      return settlement ??= Promise.allSettled([...participants].map(participant => participant.join())).then((results) => {
+        const failures: unknown[] = []
+        for (const result of results) if (result.status === 'rejected') failures.push(result.reason)
+        return failures
+      })
     },
   }
 }
@@ -253,6 +290,8 @@ export interface RunProfileOptions {
   resolvedProfile?: ResolvedProfileRuntime | undefined
   /** Shipped template that replaces the named profile before boot. */
   fromDefaultProfile?: string | undefined
+  /** Optional integer process-exit grace from 1 through 2147483647 ms; omission keeps the 5000 ms default. */
+  shutdownTimeoutMs?: number | undefined
   /** `--patch` overlay paths, in argv order. */
   patchFiles: readonly string[]
   /** The invocation's inner arguments, handed to the tree through `ctx.cmdlineArgs`. */
@@ -277,9 +316,15 @@ export function userAgentProfile(name: string): string {
  * mounted plugins (or to a one-shot runner the composition mounts).
  * @param options - environment snapshot, profile name, overlays, and the booted app's own arguments.
  * @returns the settled root context and the shutdown controller.
+ * @throws RangeError before proxy setup or profile I/O for an explicit shutdown budget outside its integer range.
  * @throws after disposing startup resources; cleanup failures retain the original error.
  */
 export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ProcessShutdown }> {
+  const shutdownTimeoutMs = options.shutdownTimeoutMs
+  if (shutdownTimeoutMs !== undefined
+    && (!Number.isInteger(shutdownTimeoutMs) || shutdownTimeoutMs < 1 || shutdownTimeoutMs > 2_147_483_647)) {
+    throw new RangeError('dsh: shutdownTimeoutMs must be an integer from 1 to 2147483647 milliseconds')
+  }
   // Model providers see which profile sent a request.
   process.env.DSH_USER_AGENT_SUFFIX = `dsh-profile/${userAgentProfile(options.profile)}`
   // Before the first plugin mounts and before anything can issue a request: Node's fetch ignores the
@@ -292,12 +337,15 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   )
 
   const app: { current?: Context } = {}
+  const appShutdown = createAppShutdown()
   let disposal: Promise<void> | undefined
   const dispose = (): Promise<void> => disposal ??= (async () => {
     const failures: unknown[] = []
-    for (const release of [() => app.current?.fiber.dispose(), disposeProxy]) {
-      try { await release() } catch (error) { failures.push(error) }
-    }
+    // Start required closes before Fiber disposal can withdraw their registrations.
+    const required = appShutdown.begin()
+    try { await app.current?.fiber.dispose() } catch (error) { failures.push(error) }
+    failures.push(...await required)
+    try { await disposeProxy() } catch (error) { failures.push(error) }
     if (failures.length === 1) throw failures[0]
     if (failures.length > 1) throw new AggregateError(failures, 'dsh: profile cleanup failed')
   })()
@@ -306,7 +354,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
       options.profile, options.patchFiles, options.fromDefaultProfile, options.resolvedProfile,
     )
     const appReady = createAppReady()
-    const shutdown = createProcessShutdown(dispose)
+    const shutdown = createProcessShutdown(dispose, undefined, undefined, shutdownTimeoutMs)
     const signalShutdown = new AbortController()
     const interrupt = (code: number): void => {
       signalShutdown.abort()
@@ -314,14 +362,11 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     }
     // Signals own teardown throughout the startup window, not only after boot()
     // settles: an inserted provider can publish before sibling rows finish mounting.
-    // SIGTERM is a supervisor's ordinary stop request and exits 0 on every
-    // surface — the launcher does not know whether the app considered its work
-    // complete; SIGINT is a user interrupt and reports 130.
+    // SIGTERM reports 0 when disposal resolves; failure, timeout or escalation reports nonzero.
+    // Resolved disposal does not independently verify every resource. SIGINT reports 130.
     process.on('SIGTERM', () => { interrupt(0) })
     process.on('SIGINT', () => { interrupt(130) })
-    installFailLoud(NAME, process, async () => {
-      await app.current?.fiber.dispose()
-    })
+    installFailLoud(NAME, process, dispose)
 
     const rootConfig = join(composed.profile.dir, PROFILE_ROOT_FILENAME)
     const profileContext: ProfileContext = {
@@ -348,6 +393,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
         args: options.args,
         exit: code => void shutdown.shutdown(code),
         ready: appReady.service,
+        shutdown: appShutdown.service,
       })
     })
     app.current = ctx

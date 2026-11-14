@@ -37,7 +37,7 @@ A skill is either a directory bundle `<name>/SKILL.md` or a flat file `<name>.md
 
 `disable-model-invocation: true` keeps the skill out of model-facing catalogs and loaders; `user-invocable: false` keeps it out of human-facing commands, and omitted fields default to permitting their surface. The two keys accept YAML booleans plus the case-insensitive `true`/`false`, `yes`/`no`, `on`/`off`, and `1`/`0` forms; a rejected spelling or a non-boolean value drops the whole skill with a warning rather than silently permitting a surface.
 
-Catalog entries and loaded skills expose the resolved instruction-file path, so symlinked directories and flat files can open as regular-file previews. Reload locators and resource bases retain the discovered paths, including symlinks.
+Ordinary filesystem catalog entries and loaded skills expose the resolved instruction-file path, so symlinked directories and flat files can open as regular-file previews. Reload locators and resource bases retain the discovered paths, including symlinks.
 
 The catalog and the body have separate lifecycles: discovery parses frontmatter into the catalog entry, and every load re-reads the current file, so editing a skill body needs no versioning or cache invalidation.
 
@@ -80,6 +80,14 @@ The remaining `watch*` fields tune Chokidar behavior — polling, stability wind
 
 Existing roots are watched, so adding, renaming, or deleting a skill (or editing its frontmatter) triggers a catalog refresh for the next model step; edits below `references`, `scripts`, `assets`, and other bundle resources do not. The first-party `write` and `edit` tools invalidate the provider directly when their target could affect a watched skill, so the model observes its own filesystem mutation without waiting for the host watcher. External IDE, Git, and shell changes are picked up by the host watcher, and a root that does not exist yet is probed until it appears.
 
+<a id="programmatic-read-sources"></a>
+
+### Programmatic read sources
+
+`FileSystemSkillProvider` accepts an optional fourth `FileSystemSkillSource` argument. It reuses native discovery and frontmatter parsing through the supplied readonly filesystem operations. Explicit sources require `includeDefaultRoots: false` and `watch: false`, and reject `bundledSkillDir`; they never fall back to Node, default host roots or host watchers. Omission preserves normal filesystem behavior.
+
+Discovery retains private locators but publishes no source path or resource base. Loading keeps the same source borrowed through parsing and complete `materialize(directory, options)` settlement, passing the original registry view object to both operations. Only the materializer's public resource base and optional instruction path enter the definition. Cancellation cannot release actual preparation early; cancellation, registration withdrawal or preparation failure prevents a partial definition from being returned. The source owns caller authorization and resource release.
+
 ### Observable success and failures
 
 A valid skill under any scanned root appears in the session catalog sorted by name, and loading it returns the current file body. A file without valid frontmatter, an invalid name, or an invalid invocation value is skipped with a warning, so the model catalog receives no per-skill diagnostic and cannot distinguish an absent skill from an invalid one. A root whose discovery or file read fails is logged with its path and omitted; other roots remain available. The observation is incomplete and is retried on the next lookup rather than cached. The model catalog identifies incomplete discovery separately from confirmed absence.
@@ -103,6 +111,7 @@ The provider is built on two separations. First, catalog versus body: discovery 
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry, provider, root resolution, frontmatter parsing, watch manager |
+| [`src/source.ts`](src/source.ts) | Borrowed readonly source and completed public resource guidance |
 
 ### Discovery flow
 

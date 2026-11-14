@@ -6,6 +6,7 @@ import { McpLocalError } from './diagnostic.ts'
 import { createTransport } from './transport.ts'
 import type { Config } from './index.ts'
 import type { McpCloseResult } from './types.ts'
+import { boundedHttpIncoming, type HttpIncomingOwner } from './http-incoming.ts'
 
 /** Tracks actual tasks separately from their interruptible callers. */
 export class McpGeneration {
@@ -14,6 +15,7 @@ export class McpGeneration {
   private readonly pending = new Set<Promise<unknown>>()
   private readonly closed = Promise.withResolvers<void>()
   private transport: Transport | undefined
+  private incoming: HttpIncomingOwner | undefined
   private started = false
   private closeObserved = false
   private closing: Promise<McpCloseResult> | undefined
@@ -32,7 +34,10 @@ export class McpGeneration {
    */
   connect(config: Config, timeoutMs: number | undefined): Promise<void> {
     this.lifetime.signal.throwIfAborted()
-    const transport = this.transport = createTransport(config)
+    this.incoming = config.transport === 'streamable-http' && config.maxIncomingResponseBytes !== undefined
+      ? boundedHttpIncoming(config.maxIncomingResponseBytes) : undefined
+    const transport = this.transport = this.incoming === undefined
+      ? createTransport(config) : createTransport(config, this.incoming.fetch)
     const close = transport.close.bind(transport)
     let closing: Promise<void> | undefined
     transport.close = () => closing ??= close()
@@ -84,7 +89,7 @@ export class McpGeneration {
   }
 
   /**
-   * Cancel callers, close the transport, and await owned work within the cleanup budget.
+   * Cancel callers, close the transport and HTTP readers, and await owned work within the cleanup budget.
    * @returns the shared cleanup result, distinguishing transport closure from cleanup failure.
    */
   close(): Promise<McpCloseResult> {
@@ -95,12 +100,16 @@ export class McpGeneration {
     this.lifetime.abort(new McpLocalError('MCP connection closed'))
     let cleanupError: string | undefined
     const work = async (): Promise<void> => {
+      const incoming = this.incoming?.close().then((confirmed) => {
+        if (!confirmed) throw new McpLocalError('MCP incoming HTTP reader cleanup is unconfirmed')
+      }).catch((error: unknown) => { cleanupError ??= this.diagnostic(error) })
       try {
         await (this.client.transport === undefined ? this.transport?.close() : this.client.close())
       } catch (error) {
-        cleanupError = this.diagnostic(error)
+        cleanupError ??= this.diagnostic(error)
       }
       await Promise.allSettled([...this.pending])
+      await incoming
       if (this.started && !this.closeObserved) await this.closed.promise
     }
     try {

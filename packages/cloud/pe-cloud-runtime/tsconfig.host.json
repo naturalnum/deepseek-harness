@@ -134,6 +134,7 @@
     "src/owner-types.ts",
     "src/account.ts",
     "src/binding.ts",
-    "src/errors.ts"
+    "src/errors.ts",
+    "src/native-state.ts"
   ]
 }

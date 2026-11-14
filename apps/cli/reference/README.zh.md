@@ -126,7 +126,11 @@ dsh web --help
 
 生产 Web 运行器需要已构建的包和前端产物（`pnpm run build`）。配置了 `--public-url` 时打印公告地址，否则打印采用监听器协议的绑定地址 URL（默认为 `http://127.0.0.1:3080`，配置 TLS 时为 `https://`）。Host/Origin 栅栏直接接受绑定 IP；代理或 DNS authority 仍需 `--trusted-host`。启动日志与默认浏览器交接都会等待完整 Loader 配置树结算。继承的 `SSH_CONNECTION` 或 `SSH_TTY` 非空时会抑制浏览器打开，但仍打印启动 URL。浏览器交接前会打印 `dsh web: opening the default browser; pass --no-open to disable`；若操作系统交接失败，stderr 会说明原因并指向启动 URL，服务器仍继续运行。
 
-进程关闭时，插件树最多有 5 秒完成 dispose。首次收到 `SIGINT` 或 `SIGTERM` 时会开始优雅排空：`SIGTERM` 是监督进程发出的常规停止请求，在所有运行模式下都以 0 退出；`SIGINT` 则报告 130。第二次收到信号时会立即强制退出。如果一次性运行在正常结束时已经卡在 dispose 阶段，第一次按下 `Ctrl+C` 就会直接升级为强制退出，而不会被忽略。
+进程关闭时，插件树与已登记的 `appShutdown` 参与方默认有 5 秒完成清理；profile 启动可用 `--shutdown-timeout-ms <ms>` 指定 1 至 2147483647 ms 的整数期限。程序化 `runProfile` 选项在代理设置或 profile I/O 前校验同一区间。
+
+原参与方在 Fiber 卸载前开始关闭，作用域与进程关闭共同等待同一次操作，提前关闭的失败保留到最终结果；其它清理失败后仍清理代理。
+
+首次收到 `SIGINT` 或 `SIGTERM` 时开始优雅排空。清理 resolve 时 `SIGTERM` 报告 0，失败、超时或升级则报告非零；`SIGINT` 报告 130。清理 resolve 本身不独立验证每个资源，历史诊断日志也不决定关闭结果。第二次信号立即强制退出。一次性运行在正常结束时已卡在卸载阶段时，第一次 `Ctrl+C` 就会立即升级。
 
 基于 base 的模式都将运行命令时所在的目录作为默认 workspace 根目录，以每条指令链 65,536 字节的渲染预算加载适用的 `AGENTS.md` 或 `CLAUDE.md` 指令，并使用内存 SQLite 会话内容索引。独立的 `sdk-minimal` profile 把运行命令时所在的目录作为沙箱策略根目录并包含 `read_image`，但省略文本文件系统工具、指令发现与 SQLite。启用的 HMR 插件会监视 profile 与 home 两个 `cordis.patch.yml` 配置层的有效变更，并以事务方式重新应用；未启用 HMR 时只应用一次。一次性运行模式通过有界关闭流程退出，该流程会 dispose 所有实时监视器。
 

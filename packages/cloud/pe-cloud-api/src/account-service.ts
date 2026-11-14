@@ -15,6 +15,7 @@ import type WorkspaceFiles from '@deepseek-ai/dsh-api-workspace-files'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import TypertGateway from '@deepseek-ai/dsh-api-gateway'
 import type { AccountBinding, AccountUse, SubagentCapacityReservation } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+import { nativeFiberProvisions, nativeProvision } from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import type { PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 import type { ModelKeyPeerConsumer } from './cloud-model-key.ts'
 import type { Session } from '@deepseek-ai/dsh-session'
@@ -1107,9 +1108,9 @@ export class CloudAccountApi extends Service {
     this.assertInstalled(owner)
     if (this.native.llm !== undefined) this.duplicateNative()
     // The actual constructor registers while its Loader fiber is still LOADING.
-    const llm = owner.get('llm', false), installed = owner.fiber.store?.llm
+    const llm = owner.get('llm', false), installed = nativeProvision(owner.fiber, 'llm')
     const installedValue: unknown = installed?.value
-    if (!(llm instanceof LlmRuntime) || installed?.fiber !== owner.fiber || installedValue === null || typeof installedValue !== 'object'
+    if (!(llm instanceof LlmRuntime) || installed?.ctx.fiber !== owner.fiber || installedValue === null || typeof installedValue !== 'object'
       || original(installedValue) !== original(llm)) this.nativeUnavailable()
     const remove = installActualLlmGuard(owner, this.binding, this.businessCurrent, allowed)
     const dispose = (): void => {
@@ -1265,9 +1266,12 @@ export class CloudAccountApi extends Service {
       for (const fiber of runtime.fibers) {
         consume(1)
         if (fiber.ctx.root !== owner.root || fiber.state !== FiberState.ACTIVE) continue
-        for (const key of ['sessionController', 'agentLoop', 'llm'] as const) {
-          const installed = fiber.store?.[key], expected = this.native[key]
-          if (installed === undefined || installed.fiber !== fiber) continue
+        for (const installed of nativeFiberProvisions(fiber)) {
+          consume(1)
+          if (installed.ctx.fiber !== fiber) continue
+          const key = installed.name
+          if (key !== 'sessionController' && key !== 'agentLoop' && key !== 'llm') continue
+          const expected = this.native[key]
           const value: unknown = installed.value
           if (++counts[key] > 1 || expected === undefined || fiber !== expected.fiber || value === null || typeof value !== 'object'
             || original(value) !== expected.value) this.nativeUnavailable()

@@ -54,7 +54,7 @@ async function fixture(): Promise<{ root: string; reader: FileSystemSkillReader 
   return { root, reader }
 }
 
-async function setup(source: FileSystemSkillSource): Promise<Context> {
+async function setup(source: FileSystemSkillSource, registered?: (unregister: () => void) => void): Promise<Context> {
   const ctx = new Context()
   const registry = ctx.plugin(SkillRegistry)
   cleanups.push(async () => { await registry.dispose() })
@@ -66,6 +66,7 @@ async function setup(source: FileSystemSkillSource): Promise<Context> {
     }, source)
     return provider
   })
+  registered?.(unregister)
   cleanups.push(async () => { unregister(); await provider.dispose() })
   return ctx
 }
@@ -107,7 +108,92 @@ describe('programmatic skill source', () => {
     allowPreparation.resolve(undefined)
     const skill = await loading
     expect(skill).toMatchObject({ name: 'sample', content: 'Read resource.bin.', resourceBase: { kind: 'directory', path: join(root, 'project-copy') } })
+    expect(skill).not.toHaveProperty('path')
     expect(await readFile(join(root, 'project-copy', 'resource.bin'), 'utf8')).toBe('same-version-resource')
+    expect(borrowed).toBe(0)
+  })
+
+  it('keeps the native parser and returns only the resource path issued for the original lookup', async () => {
+    const { root, reader } = await fixture()
+    const seen: object[] = []
+    const ctx = await setup({
+      async withFiles(read, options) {
+        seen.push(options)
+        return await read({ files: reader, materialize(directory, received) {
+          expect(directory).toBe('/snapshot/sample')
+          expect(received).toBe(options)
+          return Promise.resolve({ resourceBase: { kind: 'directory', path: '/project/copied-skill' },
+            path: '/project/copied-skill/SKILL.md' })
+        } })
+      },
+    })
+    const options = { scope: {}, cwd: '/project' }
+    await ctx.skills.list(options)
+    await writeFile(join(root, 'sample', 'SKILL.md'),
+      '---\nname: sample\ndescription: Current parsed source\ndisable-model-invocation: true\n---\nCurrent native body.\n')
+    const loaded = await ctx.skills.get('sample', options)
+    expect(seen).toContain(options)
+    expect(loaded).toMatchObject({ description: 'Current parsed source', content: 'Current native body.',
+      invocation: { modelInvocable: false, userInvocable: true },
+      resourceBase: { kind: 'directory', path: '/project/copied-skill' }, path: '/project/copied-skill/SKILL.md' })
+    expect(JSON.stringify(loaded)).not.toContain('/snapshot')
+  })
+
+  it('retains the original resource-preparation failure and releases the same source only after it settles', async () => {
+    const { reader } = await fixture()
+    const failure = new FsError('The resource projection is unavailable.', 'FS_PERMISSION_DENIED')
+    const started = Promise.withResolvers<undefined>(), finish = Promise.withResolvers<undefined>()
+    let borrowed = 0
+    const ctx = await setup({
+      async withFiles(read) {
+        borrowed += 1
+        try {
+          return await read({ files: reader, async materialize() {
+            started.resolve(undefined)
+            await finish.promise
+            throw failure
+          } })
+        } finally { borrowed -= 1 }
+      },
+    })
+    await ctx.skills.list()
+    const loading = ctx.skills.get('sample')
+    const rejected = expect(loading).rejects.toBe(failure)
+    await started.promise
+    expect(borrowed).toBe(1)
+    finish.resolve(undefined)
+    await rejected
+    expect(borrowed).toBe(0)
+  })
+
+  it('joins actual preparation after registration withdrawal and refuses its completed guidance', async () => {
+    const { reader } = await fixture()
+    const started = Promise.withResolvers<undefined>(), finish = Promise.withResolvers<undefined>()
+    const registration: { unregister?: () => void } = {}
+    let borrowed = 0, returned = false
+    const ctx = await setup({
+      async withFiles(read) {
+        borrowed += 1
+        try {
+          return await read({ files: reader, async materialize() {
+            started.resolve(undefined)
+            await finish.promise
+            return { resourceBase: { kind: 'directory', path: '/project/complete-copy' } }
+          } })
+        } finally { borrowed -= 1 }
+      },
+    }, (unregister) => { registration.unregister = unregister })
+    await ctx.skills.list()
+    const loading = ctx.skills.get('sample').then((definition) => { returned = true; return definition })
+    const rejected = expect(loading).rejects.toThrow('disposed')
+    await started.promise
+    if (registration.unregister === undefined) throw new Error('The native provider registration is absent')
+    registration.unregister()
+    expect(borrowed).toBe(1)
+    expect(returned).toBe(false)
+    finish.resolve(undefined)
+    await rejected
+    expect(returned).toBe(false)
     expect(borrowed).toBe(0)
   })
 

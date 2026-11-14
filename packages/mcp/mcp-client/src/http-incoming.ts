@@ -7,6 +7,7 @@ export interface HttpIncomingOwner {
   fetch: FetchLike
   /** Stop pending requests and join their actual reader settlement.
    * @returns True only after all readers release their original locks.
+   * @throws When cancellation or lock release fails; the original cause remains attached and cleanup stays unconfirmed.
    */
   close(): Promise<boolean>
 }
@@ -40,20 +41,31 @@ export function boundedHttpIncoming(maximum: number,
       const original = await fetcher(input, { ...init, signal: AbortSignal.any(signals) })
       if (original.body === null) return original
       const reader = original.body.getReader()
-      const terminal = reader.closed.then(() => {}, () => {})
+      let terminalFailure: { readonly reason: unknown } | undefined
+      const terminal = reader.closed.then(() => {}, (reason: unknown) => { terminalFailure = { reason } })
       let reading: Promise<ReadableStreamReadResult<Uint8Array>> | undefined
       let cleanup: Promise<boolean> | undefined, released = false, stoppingReader = false, bytes = 0
       const lease: ResponseLease = { close(reason) {
         return cleanup ??= (async () => {
           if (released) return true
           stoppingReader = true; request.abort(reason)
-          // An already-errored fetch reader rejects cancel with its stored error.
-          // Its terminal promise and pending read must still settle before lock release.
-          try { await reader.cancel(reason) } catch (_error) { /* Terminal settlement below is the authority. */ }
+          let cancellationFailure: { readonly cause: unknown } | undefined
+          try { await reader.cancel(reason) } catch (cause: unknown) {
+            await terminal
+            // An errored stream rejects cancel with its stored error without invoking source cancellation.
+            // A failed source cancel instead closes reader.closed before its cleanup promise rejects.
+            if (terminalFailure === undefined || terminalFailure.reason !== cause) cancellationFailure = { cause }
+          }
           await terminal
           await reading?.then(() => {}, () => {})
-          try { reader.releaseLock() } catch (_error) { return false }
-          released = true; leases.delete(lease)
+          try { reader.releaseLock() } catch (cause: unknown) {
+            throw new Error('mcp-client: incoming HTTP reader lock release is unconfirmed', { cause })
+          }
+          released = true
+          if (cancellationFailure !== undefined) {
+            throw new Error('mcp-client: incoming HTTP reader cancellation is unconfirmed', { cause: cancellationFailure.cause })
+          }
+          leases.delete(lease)
           return true
         })()
       } }
@@ -98,6 +110,10 @@ export function boundedHttpIncoming(maximum: number,
       for (const request of requests) request.abort(new Error('mcp-client: incoming HTTP transport closed'))
       await Promise.allSettled([...pending])
       const results = await Promise.allSettled([...leases].map(lease => lease.close()))
+      const failures: unknown[] = []
+      for (const result of results) if (result.status === 'rejected') failures.push(result.reason)
+      if (failures.length === 1) throw failures[0]
+      if (failures.length > 1) throw new AggregateError(failures, 'mcp-client: incoming HTTP reader cleanup is unconfirmed')
       return results.every(result => result.status === 'fulfilled' && result.value) && leases.size === 0
     })()
   } }

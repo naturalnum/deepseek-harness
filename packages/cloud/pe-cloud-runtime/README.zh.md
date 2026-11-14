@@ -199,7 +199,7 @@ Verifier 必须证明旧进程真实死亡、writer 失效、全部分配销毁�
 
 远程服务器启用需要已批准目录的 `remoteServers` 策略、经审核的 `cloudRemoteServers/action` 端点、使用 `cordis:pe-cloud-remote-servers` 的账户配方条目，以及原有受管执行显式启用。运行时在账户发布前准备原有文件、保存、审批和 Session 守卫；缺少条目会使现有清单审核失败。远程执行要求原生实际组合的预设及 Session 已提交的选择均为 `standard`；仅有头部声明无法授权。审批和凭据等待结束后，原账户/项目准入与 Standard 检查都会再次运行。
 
-账号策略与 Root recipe 审核所需的原生 Entry/Fiber 结构读取集中于 [native-state](src/native-state.ts)：规范 Fiber、有效配置、原提供方与隔离记录均保留真实对象身份。授权、就绪、取消与未知清理责任仍由原账号和 Root 所有者持有。更新与上下文替换观察器返回原异步完成结果，包括其拒绝。
+账号策略、Root recipe 审核、API 所有权检查与执行提供方所需的原生 Entry/Fiber 结构读取集中于 [native-state](src/native-state.ts)：规范 Fiber、有效配置、原提供方与隔离记录均保留真实对象身份，包括隔离提供方和等待原生卸载的记录。清单调用方按既有访问上限计费并拒绝重复提供方；保留的记录本身不证明就绪。授权、取消与未知清理责任仍由原账号和 Root 所有者持有。更新与上下文替换观察器返回原异步完成结果，包括其拒绝。 现有 `/account` 入口向实际 API 和执行消费者提供 `nativeFiberProvisions` 和 `nativeProvision`。同一集中模块归属低层 account 编译面，仅新增其现有 vendor Loader 依赖；声明与打包代码使用现有发布路径，无需反向引用 runtime Host 编译面。
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation

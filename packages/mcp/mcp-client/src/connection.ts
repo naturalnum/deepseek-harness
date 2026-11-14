@@ -114,6 +114,10 @@ export interface ConnectionHandle extends ServerContext {
    * the status cell and blocks replacement.
    */
   dispose(): Promise<void>
+  /** Snapshot registrations independently of current transport reachability.
+   * @returns Detached public tool names still owned by this supervisor, including disconnected registrations.
+   */
+  registeredTools(): readonly string[]
 }
 
 /**
@@ -283,6 +287,7 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
     if (isStopped()) return
     const client = new Client({ name: 'dsh-mcp-client', version: '0.0.1' }, {
       capabilities: {}, versionNegotiation: { mode: 'auto' },
+      ...config.listMaxPages === undefined ? {} : { listMaxPages: config.listMaxPages },
       listChanged: { tools: { autoRefresh: false, debounceMs: 0, onChanged: () => { void refreshTools() } } },
     })
     const record: Generation = { wire: new McpGeneration(client, config.closeTimeoutMs, error => diagnostic(error, 'cleanup')) }
@@ -347,6 +352,7 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
 
   return {
     ready: readiness.promise,
+    registeredTools: () => [...disposers.keys()],
     instructions: () => serverInstructions,
     resources: {
       async request(request, exec): Promise<JsonValue> {

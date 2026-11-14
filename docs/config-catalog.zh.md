@@ -2492,7 +2492,7 @@ export interface LspLocalServerConfig {
 ## `@deepseek-ai/dsh-mcp-client`
 
 - `inject`: `tools`
-- `source`: [`packages/mcp/mcp-client/src/index.ts:138`](../packages/mcp/mcp-client/src/index.ts)
+- `source`: [`packages/mcp/mcp-client/src/index.ts:157`](../packages/mcp/mcp-client/src/index.ts)
 
 ```ts config-catalog
 /** Configuration for one stdio or Streamable HTTP MCP server. */
@@ -2528,6 +2528,8 @@ export interface StdioConfig {
   failOnStartupError: boolean
   /** Maximum UTF-8 bytes of attributed server instructions (default 32768). */
   maxInstructionBytes?: number
+  /** Positive maximum pages for SDK list aggregation; omission retains the native SDK cap. */
+  listMaxPages?: number
   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
   reconnect?: ReconnectConfig
 }
@@ -2558,6 +2560,13 @@ export interface StreamableHttpConfig {
   failOnStartupError: boolean
   /** Maximum UTF-8 bytes of attributed server instructions (default 32768). */
   maxInstructionBytes?: number
+  /**
+   * Positive decoded-byte maximum per HTTP response, including cumulative SSE bytes.
+   * Omission leaves HTTP responses uncapped here.
+   */
+  maxIncomingResponseBytes?: number
+  /** Positive maximum pages for SDK list aggregation; omission retains the native SDK cap. */
+  listMaxPages?: number
   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
   reconnect?: ReconnectConfig
 }
@@ -3615,7 +3624,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-skill-filesystem`
 
 - `inject`: `skills`
-- `source`: [`packages/skill/skill-filesystem/src/index.ts:48`](../packages/skill/skill-filesystem/src/index.ts)
+- `source`: [`packages/skill/skill-filesystem/src/index.ts:51`](../packages/skill/skill-filesystem/src/index.ts)
 
 ```ts config-catalog
 /** Local filesystem skill provider configuration. */

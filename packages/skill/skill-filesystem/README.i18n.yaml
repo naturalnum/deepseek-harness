@@ -21,8 +21,8 @@
   en: 012a123601c7d8f2
   zh: 0e13f5e0d2e4ea7a
 /deepseek-ai-dsh-skill-filesystem/use-this-package/skill-format:
-  en: 78ac4e731c6a24c1
-  zh: e8c33db4aa0cc527
+  en: 67f0153e2695dc0a
+  zh: 6eb6fb146ef95817
 /deepseek-ai-dsh-skill-filesystem/use-this-package/roots-and-priority:
   en: 265594f30ba5d848
   zh: 5de6a94864cab8d6
@@ -30,8 +30,11 @@
   en: 5e7a4ff37f33f8a5
   zh: 2f6dd45e696cb92b
 /deepseek-ai-dsh-skill-filesystem/use-this-package/change-detection:
-  en: 77acbd43e89b6043
-  zh: 8169bbbc55f3f114
+  en: 5952b4afed456392
+  zh: e34e7b77fdf9f904
+/deepseek-ai-dsh-skill-filesystem/use-this-package/programmatic-read-sources:
+  en: fae91e15fda6ae7e
+  zh: f7271fb0374fe694
 /deepseek-ai-dsh-skill-filesystem/use-this-package/observable-success-and-failures:
   en: 5e7ef5a233c9d8a1
   zh: af39bc94f6bbf9bb
@@ -42,8 +45,8 @@
   en: 8529fb4c1989d5fc
   zh: 115372aaa959dc6c
 /deepseek-ai-dsh-skill-filesystem/understand-the-implementation/source-map:
-  en: f9d3b4bdedb897a6
-  zh: 962f7638d30741fd
+  en: 468fa5aedd1b9357
+  zh: 9d1d4df5e1b26708
 /deepseek-ai-dsh-skill-filesystem/understand-the-implementation/discovery-flow:
   en: 7e26750408a63587
   zh: 9eed631a7bdf00ae

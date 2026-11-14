@@ -68,6 +68,7 @@ kind: "package-reference"
 - **读取时校验。** 读取会把不可变对象与传入引用比对，无需查询 Session。可选的显示名称和规范化前尺寸作为调用方提交的显示信息原样返回；存储字节不校验这两个字段。
 - **角色无关的图片块。** `dsh-llm` 中的 `ImageBlock` 内容块携带 `ImageAttachmentRef`；提供方适配器按路由显式选定的目标尺寸与字节目标把引用解析为确定性请求版本，执行文件系统则可以把不可变宿主对象映射为模型可读的进程路径。
 - **按错误码路由。** `AttachmentError` 继承无依赖包 `dsh-error` 中的 `HarnessError`，因此工具结果保留其 `name` 与 `code`；消费方用 `isAttachmentError` 识别错误（它按错误码匹配，跨重复安装也有效），并按 `code` 路由。
+- **存储耗尽与清理未完成不同。** `ATTACHMENT_STORAGE_CAPACITY` 表示发布前原 staging I/O 容量耗尽，且已取得的描述符与临时名称均已释放；它不属于图片输入准入。原本地清理与发布失败保留 `ATTACHMENT_WRITE_FAILED` 和对应子类的 `settlement: 'unknown'`；调用方继续持有未解决责任，不能仅凭错误码推断可安全回滚或重试。
 - **文件原样，图片规范化。**`saveFile` 提交已有字节数组，`saveFileStream` 以背压和取消语义提交有界分块，`readFileStream` 校验并返回有界分块，`fileHostPath` 定位存储对象供按需读取投影；两种文件写入路径都不设准入限制。图片路径保留其独立的规范化、限额与请求版本流水线。`dsh-llm` 中的 `FileBlock` 内容块承载 `FileAttachmentRef`，请求组装会为每条路由将其投影为确定性的句柄文本。
 
 ### 服务操作

@@ -18,6 +18,12 @@ export function nativeEntryFiber(entry: Entry | undefined): Fiber | undefined {
  */
 export function nativeEffectiveConfig(fiber: Fiber | undefined): unknown { return fiber?.effectiveConfig }
 
+/** Read every provision retained by the original canonical fiber, including isolated names and pending disposal.
+ * @param fiber Original providing fiber; callers own readiness, visit bounds and duplicate rejection.
+ * @returns The live native set without copying records or changing their cleanup ownership.
+ */
+export function nativeFiberProvisions(fiber: Fiber): ReadonlySet<NativeImplementation> { return fiber.ctx.fiber.provisions }
+
 /** Locate a provision owned by the same canonical fiber; duplicate names remain unproven.
  * @param fiber Expected providing fiber.
  * @param name Native service key.
@@ -27,7 +33,7 @@ export function nativeProvision(fiber: Fiber | undefined, name: string): NativeI
   const owner = fiber?.ctx.fiber
   if (owner === undefined) return undefined
   let found: NativeImplementation | undefined
-  for (const provision of owner.provisions) {
+  for (const provision of nativeFiberProvisions(owner)) {
     if (provision.name !== name || provision.ctx.fiber !== owner) continue
     if (found !== undefined) return undefined
     found = provision

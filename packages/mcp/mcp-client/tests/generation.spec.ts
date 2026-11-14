@@ -3,7 +3,7 @@
 import { z } from 'zod'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { Client, InMemoryTransport, type Transport } from '@modelcontextprotocol/client'
+import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
 import { McpServer } from '@modelcontextprotocol/server'
 import { serveStdio } from '@modelcontextprotocol/server/stdio'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -12,9 +12,9 @@ import { startConnection, resolveReconnectPolicy } from '../src/connection.ts'
 import { probeServer } from '../src/probe.ts'
 import { McpGeneration } from '../src/generation.ts'
 import { McpStatusCell } from '../src/status.ts'
-import type { Config } from '../src/index.ts'
+import { Config as ConfigSchema, type Config } from '../src/index.ts'
 
-const { mockTransport } = vi.hoisted(() => ({ mockTransport: vi.fn<() => Transport>() }))
+const { mockTransport } = vi.hoisted(() => ({ mockTransport: vi.fn<typeof import('../src/transport.ts').createTransport>() }))
 vi.mock('../src/transport.ts', () => ({ createTransport: mockTransport }))
 
 const config: Config = {
@@ -119,6 +119,63 @@ it('reports confirmed transport closure when local work outlives cleanup', async
   expect(await closing).toEqual({
     closeConfirmed: true, cleanupError: 'Error: MCP cleanup did not settle',
   })
+})
+
+it.each(['delayed', 'rejected'] as const)('retains %s HTTP reader cleanup after confirmed transport closure', async (mode) => {
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+  const cancelStarted = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  const body = new ReadableStream<Uint8Array>({
+    cancel() {
+      cancelStarted.resolve(undefined)
+      return mode === 'delayed' ? release.promise : Promise.reject(new Error('original source cancellation failed'))
+    },
+  })
+  vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(new Response(body)))
+  const server = new McpServer({ name: 'fixture', version: '1' })
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+  const serving = serveStdio(() => server, { transport: serverTransport })
+  mockTransport.mockImplementationOnce((_config, fetch) => {
+    if (fetch === undefined) throw new Error('Expected the configured HTTP byte reader')
+    const start = clientTransport.start.bind(clientTransport)
+    clientTransport.start = async () => { await fetch('http://synthetic.invalid/mcp'); await start() }
+    return clientTransport
+  })
+  const client = new Client({ name: 'fixture', version: '1' }, { versionNegotiation: { mode: 'auto' } })
+  const generation = new McpGeneration(client, 100, String)
+  onTestFinished(async () => {
+    release.resolve(undefined)
+    try {
+      await generation.close()
+      await vi.waitFor(() => { expect(body.locked).toBe(false) })
+      await serving.close()
+    } finally {
+      vi.unstubAllGlobals()
+      vi.useRealTimers()
+    }
+  })
+  await generation.connect(ConfigSchema({ transport: 'streamable-http', serverName: 'fixture',
+    url: 'http://synthetic.invalid/mcp', maxIncomingResponseBytes: 16 }), 1_000)
+  expect(body.locked).toBe(true)
+  const closing = generation.close()
+  await cancelStarted.promise
+  if (mode === 'rejected') {
+    expect(await closing).toEqual({
+      closeConfirmed: true, cleanupError: 'Error: mcp-client: incoming HTTP reader cancellation is unconfirmed',
+    })
+    expect(body.locked).toBe(false)
+    expect(generation.close()).toBe(closing)
+    expect(await generation.close()).toHaveProperty('cleanupError')
+    return
+  }
+  await vi.advanceTimersByTimeAsync(101)
+  const result = await closing
+  expect(result).toEqual({ closeConfirmed: true, cleanupError: 'Error: MCP cleanup did not settle' })
+  expect(body.locked).toBe(true)
+  release.resolve(undefined)
+  await vi.waitFor(() => { expect(body.locked).toBe(false) })
+  expect(generation.close()).toBe(closing)
+  expect(await generation.close()).toEqual(result)
 })
 
 it.each([false, true])('distinguishes local work from unfinished negotiation (transport created: %s)', async (created) => {
