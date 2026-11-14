@@ -505,7 +505,9 @@ export class CloudAccountApi extends Service {
    * @param endpoint Exact native file-read method admitted on the original carrier.
    * @returns The original current exposure after native inventory and installation checks.
    */
-  requireAdmittedFileRead(endpoint: 'workspaceFiles/read' | 'workspaceFiles/stat' | 'workspaceFiles/readBytes'): EndpointExposure {
+  requireAdmittedFileRead(
+    endpoint: 'workspaceFiles/read' | 'workspaceFiles/stat' | 'workspaceFiles/readBytes' | 'workspaceFiles/list',
+  ): EndpointExposure {
     this.assertInstalled()
     const row = this.installation.exposure.requireRpc(endpoint)
     if (row.guard !== 'account-session' || row.handlerId !== 'native:workspaceFiles') this.nativeUnavailable()

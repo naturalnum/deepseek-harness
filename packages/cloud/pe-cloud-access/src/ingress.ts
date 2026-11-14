@@ -173,7 +173,7 @@ export class CloudIngress {
         if (dispatch.kind === 'rpc') {
           api.requireRpc(dispatch.endpoint)
           if (dispatch.endpoint === 'workspaceFiles/read' || dispatch.endpoint === 'workspaceFiles/stat'
-            || dispatch.endpoint === 'workspaceFiles/readBytes') api.auditFileRead()
+            || dispatch.endpoint === 'workspaceFiles/readBytes' || dispatch.endpoint === 'workspaceFiles/list') api.auditFileRead()
         }
         else api.requireFetch(dispatch.method, dispatch.pathname)
         this.requestStage(request, 'beforeDispatch.peer-current')

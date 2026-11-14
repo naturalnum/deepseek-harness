@@ -282,7 +282,7 @@ export class AccountNativeIntegration {
           const officeCall = invocation?.service === 'officeToPdf' && invocation.request.namespace === 'officeToPdf'
             && method === 'render'
           const fileRead = workspaceCall
-            && (method === 'read' || method === 'stat' || method === 'readBytes')
+            && (method === 'read' || method === 'stat' || method === 'readBytes' || method === 'list')
             && this.input.readCurrent?.(caller, binding, endpoint) === true
           // Selected native endpoints perform their full business admission in the API owner below.
           if (!fileRead && !workspaceCall && !officeCall) rootBusinessCurrent(binding)
@@ -298,7 +298,8 @@ export class AccountNativeIntegration {
               throw new CloudApiError('cloud/forbidden', 'The native file invocation namespace is not selected.')
             }
             const endpoint = `workspaceFiles/${invocation.request.method}`, manifest = this.input.exposure.manifest
-            if (fileRead && (endpoint === 'workspaceFiles/read' || endpoint === 'workspaceFiles/stat' || endpoint === 'workspaceFiles/readBytes')) {
+            if (fileRead && (endpoint === 'workspaceFiles/read' || endpoint === 'workspaceFiles/stat'
+              || endpoint === 'workspaceFiles/readBytes' || endpoint === 'workspaceFiles/list')) {
               api.requireAdmittedFileRead(endpoint)
             } else if (manifest.rpcEndpoints.some(row => row.endpoint === endpoint)) api.requireRpc(endpoint)
             else if (manifest.streamEndpoints.some(row => row.endpoint === endpoint)) api.requireStream(endpoint)

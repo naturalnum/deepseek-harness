@@ -62,7 +62,7 @@ Office 清理失败仅向 stderr 输出固定的内部阶段和 provider/root �
 
 `CloudAccountApi.createWorkspaceFiles(owner, nativeConfig)` 在完整原生 inject 依赖就绪后，于实际 Loader fiber 构造唯一原生 WorkspaceFiles。它捕获原绑定及 fs、sandboxPolicy、sessions、typert 注册，并在清单审核及 workspaceFiles RPC/stream 准入时复核 value、fiber 和唯一性。清单由全部原生 Remote marker 及其 mode 推导，开放范围仍由 manifest 精确选择。原生类、DTO、lookup、文件 I/O 和流清理保持原义。部署必须保留要求可信 Agent 或原 Gateway invocation 的 Runtime resolver；本注册不授予路径权限，也不新增 watch 支持。
 
-对原 HTTP carrier 上已准入的 `workspaceFiles/read`、`stat` 或 `readBytes`，API 在文件准入时复核所选 account-session exposure 和原 WorkspaceFiles 注册。Ingress 在分派时及响应头发送前还会审核原生文件清单；这些检查不授予文件或路径权限。
+对原 HTTP carrier 上已准入的 `workspaceFiles/read`、`stat`、`readBytes` 或 `list`，API 在文件准入时复核所选 account-session exposure 和原 WorkspaceFiles 注册。Ingress 在分派时及响应头发送前还会审核原生文件清单；这些检查不授予文件或路径权限。
 
 -----
 

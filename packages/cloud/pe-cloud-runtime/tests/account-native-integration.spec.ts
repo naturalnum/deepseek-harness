@@ -141,6 +141,7 @@ async function fixture(options: {
   legacyEditEnabled?: boolean
   auditedFileCalls?: boolean
   auditedFileBytes?: boolean
+  auditedFileList?: boolean
   installFileApi?: boolean
   office?: boolean
   officeUnselected?: boolean
@@ -164,7 +165,8 @@ async function fixture(options: {
     { id: 'exposure', name: 'cordis:exposure', config: { recipeVersion: 'm8s',
       rpcEndpoints: options.instructionSources === undefined ? [] : ['create', 'prompt', 'cancel', 'page'].map(method => ({
         endpoint: 'session/' + method, handlerId: 'native:sessionController', guard: method === 'create' ? 'account-project' : 'account-session',
-      })).concat(options.auditedFileCalls ? ['read', 'stat', ...options.auditedFileBytes ? ['readBytes'] : []].map(method => ({ endpoint: `workspaceFiles/${method}`,
+      })).concat(options.auditedFileCalls ? ['read', 'stat', ...options.auditedFileBytes ? ['readBytes'] : [],
+        ...options.auditedFileList ? ['list'] : []].map(method => ({ endpoint: `workspaceFiles/${method}`,
         handlerId: 'native:workspaceFiles', guard: 'account-session' })) : []).concat(options.office && !options.officeUnselected ? [
         { endpoint: 'officeToPdf/render', handlerId: 'native:officeToPdf', guard: 'account-session' },
         { endpoint: 'officeToPdf/generation', handlerId: 'native:officeToPdf', guard: 'authenticated-account' },
@@ -1474,6 +1476,35 @@ it('an admitted file read retains the native Session and provider checks while a
   process.stdout.write(`OFFLINE_NATIVE_FILE_READ ${JSON.stringify({ localChecks, admittedRootChecks, fallbackRootChecks: full.mock.calls.length })}\n`)
 })
 
+it('an admitted directory list retains Session ownership and avoids repeated Root admission', async () => {
+  let admitted = false
+  const f = await fixture({ instructionSources: instructionSourceFixture(),
+    nativeFiles: true, auditedFileCalls: true, auditedFileList: true,
+    readCurrent: (_caller, _binding, endpoint) => admitted && endpoint === 'workspaceFiles/list',
+    beforeBootstrap: (ctx) => { vi.spyOn(ctx.peCloudFiles, 'assertContentAvailable').mockImplementation(() => {}) } })
+  const outcome = await f.start()
+  if (outcome.status === 'failed') throw outcome.cause
+  const ctx = outcome.context, own = await ctx.sessionController.create({})
+  writeFileSync(join(f.project, 'listed.txt'), 'listed data')
+  await ctx.sessionPersistence.flush(); await ctx.agentLoop.stop()
+  const native = f.recipe.native
+  if (native === undefined) throw new Error('Original Root preparation missing')
+  const full = vi.spyOn(native, 'assertRootCurrent')
+  const peer = { id: brandString<PeerId>('list-boundary-component'), ctx, principal: { kind: 'owner' as const },
+    interactions: 'answer' as const, signal: outcome.binding.lifetime, dispose: async () => {} }
+  const list = (id = own.sessionId) => ctx.typertGateway.invoke({ namespace: 'workspaceFiles', method: 'list',
+    args: { workspaceFileScopeId: id, path: '.' }, peer })
+  await list()
+  full.mockClear()
+  const fallback = await list(), fallbackRootChecks = full.mock.calls.length
+  expect(fallback).toMatchObject({ entries: expect.arrayContaining([expect.objectContaining({ name: 'listed.txt' })]) })
+  admitted = true; full.mockClear()
+  await expect(list()).resolves.toEqual(fallback)
+  expect(full.mock.calls.length).toBeLessThan(fallbackRootChecks)
+  process.stdout.write(`OFFLINE_NATIVE_LIST ${JSON.stringify({ fallbackRootChecks, admittedRootChecks: full.mock.calls.length })}\n`)
+  await expect(list(SessionId('foreign-list-session'))).rejects.toMatchObject({ code: 'cloud/forbidden' })
+})
+
 it('retains fallback Root admission when the carrier check synchronously revokes it', async () => {
   let rootCurrent = true, revokeOnRead = false, carrierChecks = 0
   const f = await fixture({ instructionSources: instructionSourceFixture(), nativeFiles: true, auditedFileCalls: true,
@@ -1879,7 +1910,7 @@ it('uses the actual factory callback to reject Root revocation after a file scop
   }
 })
 
-it('traces real Access HTTP carrier through the native Gateway and Cloud file selection', async () => {
+it.each(['readBytes', 'list'])('traces real Access HTTP %s through the native Gateway and Cloud file selection', async (fileMethod) => {
   const access: { ingress?: CloudIngress } = {}
   const trace = { hit: 0, miss: 0, captured: 0, root: 0, sessionStatRoot: 0, sessionStatCalls: 0,
     mismatchChecks: 0, stages: [] as { stage: string; root: number; captured: number; hit: number }[] }
@@ -1887,8 +1918,13 @@ it('traces real Access HTTP carrier through the native Gateway and Cloud file se
   let revokeAtResponse = false, revokeAuthAtResponse = false, revokeGenerationAtPeer = false
   let revokePeerDuringUse = false, revokeAuthDuringUse = false, revokeAuthDuringBusiness = false
   let armAuthDuringRequest = false, dispatches = 0
+  let revokeAuthOnStat = false, revokeGenerationOnStat = false, replaceListAtResponse = false
+  let revokeLoginOnStat = false, loginInvalidation: Promise<void> | undefined
+  let generationClosedAfterStat = false, generationReadRejected = false
+  let restoreList: (() => void) | undefined
+  let output = { headers: 0, bytes: 0, text: '' }
   const f = await fixture({ instructionSources: instructionSourceFixture(), nativeFiles: true, auditedFileCalls: true,
-    auditedFileBytes: true, realFiles: true,
+    auditedFileBytes: true, auditedFileList: fileMethod === 'list', realFiles: fileMethod === 'readBytes',
     readCurrent: (caller, binding, endpoint) => {
       const peer = caller.invocation?.peer
       const ingress = access.ingress
@@ -1899,7 +1935,12 @@ it('traces real Access HTTP carrier through the native Gateway and Cloud file se
         expect(ingress.readOperationCurrent(peer, binding, 'workspaceFiles/stat')).toBe(false)
         trace.mismatchChecks++
       }
-      const admitted = ingress.readOperationCurrent(peer, binding, endpoint)
+      let admitted: boolean
+      try { admitted = ingress.readOperationCurrent(peer, binding, endpoint) }
+      catch (error) {
+        if (generationClosedAfterStat) generationReadRejected = true
+        throw error
+      }
       if (admitted) trace.hit++; else trace.miss++
       return admitted
     },
@@ -1993,6 +2034,11 @@ it('traces real Access HTTP carrier through the native Gateway and Cloud file se
     if (stage === 'beforeDispatch.peer' && ++dispatches === 2) {
       if (revokeAtResponse) rootValid = false
       if (revokeAuthAtResponse) authValid = false
+      if (replaceListAtResponse) {
+        const list = ctx.workspaceFiles.list.bind(ctx.workspaceFiles)
+        const changed = vi.spyOn(ctx.workspaceFiles, 'list').mockImplementation(list)
+        restoreList = () => { changed.mockRestore() }
+      }
     }
     if (stage === 'beforeDispatch.request' && armAuthDuringRequest) {
       armAuthDuringRequest = false; revokeAuthDuringBusiness = true
@@ -2014,13 +2060,30 @@ it('traces real Access HTTP carrier through the native Gateway and Cloud file se
     }
   })
   const stat = ctx.sessionPersistence.stat.bind(ctx.sessionPersistence)
-  vi.spyOn(ctx.sessionPersistence, 'stat').mockImplementation(async (...args) => {
+  const persistence = vi.spyOn(ctx.sessionPersistence, 'stat').mockImplementation(async (...args) => {
     trace.sessionStatCalls++; sessionStat = true
-    try { const value = await stat(...args); if (revokeOnStat) rootValid = false; return value } finally { sessionStat = false }
+    try {
+      const value = await stat(...args)
+      if (revokeOnStat) rootValid = false
+      if (revokeAuthOnStat) authValid = false
+      if (revokeLoginOnStat) {
+        revokeLoginOnStat = false
+        loginInvalidation = ingress.invalidateLogin(brandString<Branded<'pe-auth-session-id'>>('fixture-login'))
+        void loginInvalidation.catch((_error: unknown) => { /* The test joins this exact invalidation after the request. */ })
+      }
+      if (revokeGenerationOnStat) {
+        const owner = Reflect.get(ingress, 'generations') as { close(): void }
+        generationClosedAfterStat = true
+        owner.close(); revokeGenerationOnStat = false
+      }
+      return value
+    } finally { sessionStat = false }
   })
   const send = async (options: { account?: string; generation?: string; endpoint?: string; scope?: string } = {}) => {
     dispatches = 0
-    const endpoint = options.endpoint ?? 'workspaceFiles/readBytes'
+    const observed = { headers: 0, bytes: 0, text: '' }
+    output = observed
+    const endpoint = options.endpoint ?? `workspaceFiles/${fileMethod}`
     const server = createServer((request, response) => {
       void Promise.resolve(route.handler(request, response)).catch(() => { response.destroy() })
     })
@@ -2035,63 +2098,123 @@ it('traces real Access HTTP carrier through the native Gateway and Cloud file se
           'x-pe-generation': options.generation ?? generation,
           connection: 'close' }, createConnection: () => client,
       }, (response) => {
+        observed.headers++
         const chunks: Buffer[] = []
-        response.on('data', (chunk: Buffer) => { chunks.push(chunk) })
+        response.on('data', (chunk: Buffer) => {
+          chunks.push(chunk); observed.bytes += chunk.byteLength; observed.text += chunk.toString('utf8')
+        })
         response.on('end', () => {
           void (async () => {
             const type = response.headers['content-type']
             if (type === undefined) throw new Error('Missing content type')
-            if (!type.startsWith('multipart/form-data')) return { status: response.statusCode, body: Buffer.concat(chunks).toString('utf8') }
+            if (!type.startsWith('multipart/form-data')) {
+              const body = Buffer.concat(chunks).toString('utf8')
+              const metadata: unknown = type.startsWith('application/json') ? JSON.parse(body) : undefined
+              return { status: response.statusCode, body, metadata }
+            }
             const form = await new Response(Buffer.concat(chunks), { headers: { 'content-type': type } }).formData()
             const data = form.get('bytes-0'), metadata = form.get('metadata')
             if (!(data instanceof Blob) || typeof metadata !== 'string') throw new Error('Missing native binary response')
             const parsed: unknown = JSON.parse(metadata)
             return { status: response.statusCode, bytes: await data.text(), metadata: parsed }
-          })().then(resolve, reject).finally(() => { client.destroy(); incoming.destroy() })
+          })().then(resolve, reject)
         })
         response.on('error', reject)
       })
       request.on('error', reject)
       request.end(JSON.stringify({ type: 'client-request', rpcId: 'read-carrier', method: endpoint,
-        payload: { args: { workspaceFileScopeId: options.scope ?? own.sessionId, path: 'access-carrier.txt', options: {} } } }))
-    })
+        payload: { args: { workspaceFileScopeId: options.scope ?? own.sessionId,
+          ...endpoint === 'workspaceFiles/list' ? { path: '.' } : { path: 'access-carrier.txt', options: {} } } } }))
+    }).finally(() => { client.destroy(); incoming.destroy() })
+  }
+  const success = (value: unknown): void => {
+    if (fileMethod === 'readBytes') {
+      expect(value).toMatchObject({ status: 200, bytes: 'exact 15 bytes!', metadata: { result: { ok: true } } })
+    } else {
+      expect(value).toMatchObject({ status: 200, metadata: { result: { ok: true, value: {
+        entries: expect.arrayContaining([expect.objectContaining({ name: 'access-carrier.txt' })]),
+      } } } })
+    }
+  }
+  const noDirectoryPayload = (): void => {
+    if (fileMethod !== 'list') return
+    expect(output.text).not.toContain('"entries":')
+    expect(output.text).not.toContain('access-carrier.txt')
+    expect(output.text).not.toContain('foreign-account-file.txt')
+    process.stdout.write(`ACCESS_LIST_DENIED ${JSON.stringify({ headers: output.headers, bytes: output.bytes })}\n`)
   }
   trace.root = 0; trace.captured = 0; trace.hit = 0; trace.miss = 0; trace.stages.length = 0
   const warm = await send()
-  expect(warm).toMatchObject({ status: 200, bytes: 'exact 15 bytes!', metadata: { result: { ok: true } } })
+  success(warm)
   process.stdout.write(`ACCESS_FILE_WARM ${JSON.stringify({ root: trace.root, captured: trace.captured, hit: trace.hit,
     miss: trace.miss, stat: trace.sessionStatCalls, statRoot: trace.sessionStatRoot, stages: trace.stages })}\n`)
   expect(trace.hit).toBeGreaterThan(0)
   expect(trace.miss).toBe(0); expect(trace.mismatchChecks).toBe(1)
-  expect(trace.root).toBeLessThan(50)
+  if (fileMethod === 'readBytes') expect(trace.root).toBeLessThan(50)
   await ctx.agentLoop.stop()
   trace.root = 0; trace.captured = 0; trace.hit = 0; trace.miss = 0
   trace.sessionStatCalls = 0; trace.sessionStatRoot = 0; trace.stages.length = 0
   const cold = await send()
-  expect(cold).toMatchObject({ status: 200, bytes: 'exact 15 bytes!', metadata: { result: { ok: true } } })
+  success(cold)
   process.stdout.write(`ACCESS_FILE_COLD ${JSON.stringify({ root: trace.root, captured: trace.captured, hit: trace.hit,
     miss: trace.miss, stat: trace.sessionStatCalls, statRoot: trace.sessionStatRoot, stages: trace.stages })}\n`)
   expect(trace.hit).toBeGreaterThan(0)
-  expect(trace.root).toBeLessThan(47)
+  if (fileMethod === 'readBytes') expect(trace.root).toBeLessThan(47)
   await expect(send({ account: 'foreign-account' })).resolves.toMatchObject({ status: 409 })
+  noDirectoryPayload()
   await expect(send({ generation: 'wrong-generation' })).resolves.toMatchObject({ status: 409 })
-  const unselected = await send({ endpoint: 'workspaceFiles/list' })
+  noDirectoryPayload()
+  const unselected = await send({ endpoint: fileMethod === 'list' ? 'workspaceFiles/write' : 'workspaceFiles/list' })
   expect(unselected).not.toHaveProperty('bytes')
+  noDirectoryPayload()
   const foreignSession = await send({ scope: 'foreign-session' })
   expect(foreignSession).not.toHaveProperty('bytes')
   expect(JSON.stringify(foreignSession)).toContain('cloud/forbidden')
+  noDirectoryPayload()
+  if (fileMethod === 'list') {
+    const other = await fixture({ instructionSources: instructionSourceFixture(), nativeFiles: true,
+      auditedFileCalls: true, auditedFileList: true,
+      beforeBootstrap: (owner) => { vi.spyOn(owner.peCloudFiles, 'assertContentAvailable').mockImplementation(() => {}) } })
+    const foreign = await other.start()
+    if (foreign.status === 'failed') throw foreign.cause
+    expect(foreign.binding.accountId).not.toBe(binding.accountId)
+    const created = await foreign.context.sessionController.create({})
+    writeFileSync(join(other.project, 'foreign-account-file.txt'), 'other account data')
+    await foreign.context.sessionPersistence.flush(); await foreign.context.agentLoop.stop()
+    expect(await foreign.context.sessionPersistence.stat(created.sessionId)).toBeDefined()
+    const denied = await send({ scope: created.sessionId })
+    expect(JSON.stringify(denied)).toContain('cloud/forbidden')
+    expect(persistence.mock.calls.some(([id]) => id === created.sessionId)).toBe(false)
+    noDirectoryPayload()
+  }
   const workspace = ctx.peCloudFiles.project().workspace, registry = ctx.workspaceRegistry
   const getWorkspace = registry.get.bind(registry)
   const replaced = vi.spyOn(registry, 'get').mockImplementation(id => id === workspace.id ? new Proxy(workspace, {}) : getWorkspace(id))
-  try { expect(await send()).not.toHaveProperty('bytes') } finally { replaced.mockRestore() }
+  try { expect(await send()).not.toHaveProperty('bytes'); noDirectoryPayload() } finally { replaced.mockRestore() }
   const denied = async (): Promise<void> => {
-    try { expect(await send()).not.toHaveProperty('bytes') }
+    try {
+      const response = await send()
+      expect(response).not.toHaveProperty('bytes')
+      if (fileMethod === 'list') expect(JSON.stringify(response)).toContain('cloud/account-unavailable')
+    }
     catch (error) { expect(error).toMatchObject({ code: 'ECONNRESET' }) }
+    finally { noDirectoryPayload() }
   }
   revokeOnStat = true
   await denied()
   expect(rootValid).toBe(false)
   rootValid = true; revokeOnStat = false
+  if (fileMethod === 'list') {
+    revokeAuthOnStat = true
+    await denied()
+    expect(authValid).toBe(false)
+    authValid = true; revokeAuthOnStat = false
+    replaceListAtResponse = true
+    try {
+      await denied()
+      expect(dispatches).toBe(2)
+    } finally { restoreList?.(); replaceListAtResponse = false }
+  }
   revokeAtResponse = true
   await denied()
   expect(dispatches).toBe(2)
@@ -2112,9 +2235,21 @@ it('traces real Access HTTP carrier through the native Gateway and Cloud file se
   await denied()
   expect(dispatches).toBe(1)
   expect(revokePeerDuringUse).toBe(false)
-  revokeGenerationAtPeer = true
+  if (fileMethod === 'list') {
+    revokeLoginOnStat = true
+    await denied()
+    expect(revokeLoginOnStat).toBe(false)
+    if (loginInvalidation === undefined) throw new Error('The original login invalidation did not run')
+    await loginInvalidation
+  }
+  if (fileMethod === 'list') revokeGenerationOnStat = true
+  else revokeGenerationAtPeer = true
   await denied()
-  expect(dispatches).toBe(1)
-  expect(revokeGenerationAtPeer).toBe(false)
+  if (fileMethod === 'list') {
+    expect(generationClosedAfterStat).toBe(true)
+    expect(generationReadRejected).toBe(true)
+    expect(dispatches).toBe(2)
+  } else expect(dispatches).toBe(1)
+  expect(revokeGenerationAtPeer).toBe(false); expect(revokeGenerationOnStat).toBe(false)
   expect(query).not.toHaveBeenCalled()
 }, 30000)

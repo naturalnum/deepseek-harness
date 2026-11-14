@@ -172,6 +172,22 @@ async function fixture(limitOverrides: Partial<AccountAttachmentLimits> = {}, al
     insideStage: () => insideStage, fail: (error: Error) => { failure = error }, revoke: () => { lifetime.abort() } }
 }
 
+it('initializes a cold attachment directory and keeps subsequent native uploads available', async () => {
+  const f = await fixture({}, true, true), agent = await f.create('first-native-upload')
+  await expect(stat(f.store.root)).rejects.toMatchObject({ code: 'ENOENT' })
+  for (const name of ['first.txt', 'second.txt']) {
+    const bytes = Uint8Array.of(1, 2, 3)
+    const upload = await f.uploads.uploadStream({ sessionId: agent.id, name,
+      data: (async function* () { yield bytes })() })
+    expect(f.uploads.resolve(agent, upload.receiptId)).toEqual(upload.file)
+    const stored: number[] = []
+    for await (const chunk of f.store.readFileStream(upload.file)) stored.push(...chunk)
+    expect(stored).toEqual([...bytes])
+    expect(upload.file.name).toBe(name)
+  }
+  expect(await readdir(join(f.store.root, 'tmp'))).toEqual([])
+})
+
 it('persists exactly the configured upload limit and rejects one extra byte as not published', async () => {
   const maximum = 1024 * 1024
   const f = await fixture({ maxFileBytes: maximum, maxUploadChunkBytes: maximum, intakeReservationBytes: 4 * maximum }, true)

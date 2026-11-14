@@ -62,7 +62,7 @@ Office cleanup failures emit only a fixed internal phase and numeric provider/ro
 
 `CloudAccountApi.createWorkspaceFiles(owner, nativeConfig)` constructs the sole original WorkspaceFiles in its Loader fiber after its complete native inject list is ready. It captures the original binding and the fs, sandboxPolicy, sessions and typert registrations, then rechecks their values, fibers and uniqueness for inventory and workspaceFiles RPC/stream admission. Inventory derives every original Remote marker and mode; the manifest still selects exact endpoints. The native class, DTOs, lookup, file I/O and stream cleanup are unchanged. The deployment must retain the Runtime resolver that requires a trusted Agent or the original Gateway invocation; registration grants no path authority and adds no watch support.
 
-For an admitted `workspaceFiles/read`, `stat` or `readBytes` on its original HTTP carrier, the API rechecks the selected account-session exposure and original WorkspaceFiles registration during file admission. Ingress also audits the original native file inventory at dispatch and before response headers; this does not grant file or path authority.
+For an admitted `workspaceFiles/read`, `stat`, `readBytes` or `list` on its original HTTP carrier, the API rechecks the selected account-session exposure and original WorkspaceFiles registration during file admission. Ingress also audits the original native file inventory at dispatch and before response headers; this does not grant file or path authority.
 
 -----
 

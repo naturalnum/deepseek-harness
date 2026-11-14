@@ -479,7 +479,8 @@ export class LoginPeerRegistry {
           this.assertCurrent(handle, requestId)
           this.ports.beforeDispatch?.(request, dispatch, handle)
           this.assertCurrent(handle, requestId)
-          selectedRead = dispatch.kind === 'rpc' && ['workspaceFiles/read', 'workspaceFiles/stat', 'workspaceFiles/readBytes'].includes(dispatch.endpoint)
+          selectedRead = dispatch.kind === 'rpc'
+            && ['workspaceFiles/read', 'workspaceFiles/stat', 'workspaceFiles/readBytes', 'workspaceFiles/list'].includes(dispatch.endpoint)
             ? dispatch : undefined
           if (selectedRead !== undefined && dispatch.kind === 'rpc' && entry.use?.assertRetained !== undefined && this.ports.beforeDispatch !== undefined
             && this.ports.captureRead !== undefined) {

@@ -811,7 +811,7 @@ requireRpc(endpoint: string): EndpointExposure
  * @param endpoint Exact native file-read method admitted on the original carrier.
  * @returns The original current exposure after native inventory and installation checks.
  */
-requireAdmittedFileRead(endpoint: 'workspaceFiles/read' | 'workspaceFiles/stat' | 'workspaceFiles/readBytes'): EndpointExposure
+requireAdmittedFileRead( endpoint: 'workspaceFiles/read' | 'workspaceFiles/stat' | 'workspaceFiles/readBytes' | 'workspaceFiles/list', ): EndpointExposure
 
 /** Audit the original native file methods when admitting a unary read. */
 auditFileRead(): void
