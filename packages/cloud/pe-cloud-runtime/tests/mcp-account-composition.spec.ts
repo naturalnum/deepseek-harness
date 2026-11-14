@@ -11,6 +11,7 @@ import { policyFixture } from './account-policy-fixture.ts'
 import { startHttpMcpFixture } from '../../../mcp/mcp-client/tests/http-fixture.ts'
 import * as nativeTransport from '../../../mcp/mcp-client/src/transport.ts'
 import Credentials from '@deepseek-ai/dsh-credentials-local'
+import { AccountMcpConnections } from '../../pe-cloud-api/src/mcp-connection-runtime.ts'
 
 const policy: ApprovedMcpConnections = {
   limits: { maxConnections: 4, maxUrlBytes: 2048, maxHeaderBytes: 4096, maxHeaderCount: 8,
@@ -18,6 +19,8 @@ const policy: ApprovedMcpConnections = {
   runtime: { maxInstructionBytes: 4096, maxIncomingResponseBytes: 4194304, listMaxPages: 4,
     reconnect: { enabled: true, initialDelayMs: 20, maxDelayMs: 50, maxAttempts: 2 } },
 }
+const manualRecoveryPolicy: ApprovedMcpConnections = { ...policy, runtime: { ...policy.runtime,
+  reconnect: { ...policy.runtime.reconnect, enabled: false } } }
 
 async function account(name: string, selectedPolicy: ApprovedMcpConnections = policy) {
   const uses = new Map<PeerScope, AccountUse>()
@@ -236,6 +239,155 @@ it('recovers real HTTP discovery after a temporary outage and reports a bounded 
     expect(external.authorization.every(header => header === 'Bearer synthetic-reconnect-token')).toBe(true)
     expect(a.saveBarrier.snapshot().failures).toEqual([])
   } finally { await external.close() }
+}, 20000)
+
+it('reapplies an unchanged saved zero-tool connection after one authenticated probe and serves a new model turn', async () => {
+  const external = await startHttpMcpFixture({ requiredAuthorization: 'Bearer synthetic-manual-recovery' })
+  const apply = vi.spyOn(AccountMcpConnections.prototype, 'apply')
+  try {
+    external.setAvailable(false)
+    // A completed initial refusal is a real zero-tool state without a pending retry that could publish during the probe.
+    const a = await account('mcp-manual-recovery', manualRecoveryPolicy), b = await account('mcp-manual-foreign')
+    const initial = await a.invokeMcp({ action: 'list' })
+    const saved = await a.invokeMcp({ action: 'save', version: initial.version,
+      connection: { serverName: 'compute', url: external.url, enabled: true, toolCallTimeoutMs: 1000,
+        headers: { Authorization: 'Bearer synthetic-manual-recovery' } } })
+    const row = saved.connections[0]
+    if (row === undefined) throw new Error('Original saved MCP connection absent')
+    expect(row.toolCount).toBe(0)
+    const applications = () => apply.mock.calls.filter(([value]) => value.id === row.id).length
+    expect(applications()).toBe(1)
+    const definition = { serverName: row.serverName, url: row.url, enabled: row.enabled, toolCallTimeoutMs: row.toolCallTimeoutMs }
+    const refused = await a.invokeMcp({ action: 'test', id: row.id, connection: definition })
+    expect(refused.test).toEqual({ reachable: false, toolCount: 0, failure: 'connection-failed' })
+    expect(refused.connections[0]).toEqual(row)
+    expect(applications()).toBe(1)
+    expect(a.saveBarrier.snapshot().failures).toEqual([])
+    external.setAvailable(true)
+    for (const patch of [{ serverName: 'draft' }, { url: row.url + '?draft=1' }, { enabled: false },
+      { toolCallTimeoutMs: row.toolCallTimeoutMs + 1 }, { headers: { Authorization: 'Bearer synthetic-manual-recovery' } }]) {
+      const probed = await a.invokeMcp({ action: 'test', id: row.id, connection: { ...definition, ...patch } })
+      expect(probed.test).toMatchObject({ reachable: true, toolCount: 1 })
+      expect(probed.connections[0]).toEqual(row)
+      expect(probed.version).toBe(saved.version)
+      expect(applications()).toBe(1)
+    }
+    const transient = await a.invokeMcp({ action: 'test', connection: { ...definition, serverName: 'transient',
+      headers: { Authorization: 'Bearer synthetic-manual-recovery' } } })
+    expect(transient.test).toMatchObject({ reachable: true, toolCount: 1 })
+    expect(transient.connections[0]).toEqual(row)
+    expect(applications()).toBe(1)
+
+    const recovered = await a.invokeMcp({ action: 'test', id: row.id, connection: definition })
+    expect(recovered.test).toEqual({ reachable: true, toolCount: 1 })
+    expect(recovered.connections[0]).toEqual({ ...row, toolCount: 1 })
+    expect(recovered.version).toBe(saved.version)
+    expect(applications()).toBe(2)
+    const healthy = await a.invokeMcp({ action: 'test', id: row.id, connection: definition })
+    expect(healthy.connections[0]).toEqual(recovered.connections[0])
+    expect(applications()).toBe(2)
+
+    let requests = 0
+    vi.spyOn(a.adapter, 'stream').mockImplementation(async function* (options: GenerateOptions): AsyncIterable<StreamChunk> {
+      expect(options.tools?.some(tool => tool.name === 'mcp__compute__ping')).toBe(true)
+      if (requests++ === 0) yield* toolCallResponse('recovered-model-mcp', 'mcp__compute__ping', {})
+      else yield* textResponse('The recovered MCP replied pong.')
+    })
+    const created = await a.ctx.sessionController.create({}), completed: PromiseWithResolvers<void> = Promise.withResolvers()
+    a.ctx.on('session/event', (session, event) => {
+      if (session.id === created.sessionId && event.type === 'turn/end') completed.resolve()
+    })
+    await a.invoke('prompt', { sessionId: created.sessionId, requestId: 'manual-mcp-recovered-turn', mode: 'followup',
+      content: [{ type: 'text', text: 'Use the configured MCP ping tool.' }] })
+    await completed.promise; await a.ctx.sessionPersistence.flush()
+    expect(requests).toBe(2)
+    expect(external.calls).toEqual(['ping'])
+    const history = JSON.stringify(a.ctx.sessions.get(created.sessionId)?.snapshotEvents())
+    expect(history).toContain('recovered-model-mcp'); expect(history).toContain('pong')
+    expect(history).not.toContain('synthetic-manual-recovery')
+    expect(external.authorization.every(value => value === 'Bearer synthetic-manual-recovery')).toBe(true)
+    expect((await b.invokeMcp({ action: 'list' })).connections).toEqual([])
+    expect(a.saveBarrier.snapshot().failures).toEqual([])
+  } finally { apply.mockRestore(); await external.close() }
+}, 20000)
+
+it('keeps a disabled saved connection private after a successful unchanged probe', async () => {
+  const external = await startHttpMcpFixture(), apply = vi.spyOn(AccountMcpConnections.prototype, 'apply')
+  try {
+    const a = await account('mcp-disabled-probe'), initial = await a.invokeMcp({ action: 'list' })
+    const connection = { serverName: 'disabled', url: external.url, enabled: false, toolCallTimeoutMs: 1000 }
+    const saved = await a.invokeMcp({ action: 'save', version: initial.version, connection }), row = saved.connections[0]
+    if (row === undefined) throw new Error('Original disabled MCP connection absent')
+    const calls = apply.mock.calls.length
+    const probed = await a.invokeMcp({ action: 'test', id: row.id, connection })
+    expect(probed.test).toEqual({ reachable: true, toolCount: 1 })
+    expect(probed.connections).toEqual(saved.connections)
+    expect(probed.version).toBe(saved.version)
+    expect(apply).toHaveBeenCalledTimes(calls)
+    expect(a.ctx.tools.schemas().filter(tool => tool.name.startsWith('mcp__'))).toEqual([])
+  } finally { apply.mockRestore(); await external.close() }
+}, 20000)
+
+it('does not replace a saved zero-tool connection after its probing login is revoked', async () => {
+  const external = await startHttpMcpFixture(), apply = vi.spyOn(AccountMcpConnections.prototype, 'apply')
+  try {
+    external.setAvailable(false)
+    const a = await account('mcp-saved-probe-cancel', manualRecoveryPolicy), initial = await a.invokeMcp({ action: 'list' })
+    const connection = { serverName: 'compute', url: external.url, enabled: true, toolCallTimeoutMs: 1000 }
+    const saved = await a.invokeMcp({ action: 'save', version: initial.version, connection }), row = saved.connections[0]
+    if (row === undefined) throw new Error('Original saved MCP connection absent')
+    external.setAvailable(true)
+    const pending = external.holdNextRequest(), calls = apply.mock.calls.length
+    try {
+      const probing = a.invokeMcp({ action: 'test', id: row.id, connection }).then(() => true, () => false)
+      await pending.entered
+      const removing = a.invokeMcp({ action: 'remove', id: row.id, version: saved.version }).then(() => true, () => false)
+      await vi.waitFor(() => { expect(a.saveBarrier.snapshot().pending).toHaveLength(2) })
+      a.revokeLogin()
+      expect(await probing).toBe(false)
+      expect(await removing).toBe(false)
+      expect(apply).toHaveBeenCalledTimes(calls)
+      expect(a.ctx.tools.schemas().filter(tool => tool.name.startsWith('mcp__'))).toEqual([])
+      expect(a.saveBarrier.snapshot().pending).toEqual([])
+      expect(a.saveBarrier.snapshot().failures).toEqual([])
+    } finally { pending.release() }
+  } finally { apply.mockRestore(); await external.close() }
+}, 20000)
+
+it('retains an unconfirmed old connection when a successful saved-connection probe requests replacement', async () => {
+  const external = await startHttpMcpFixture(), create = nativeTransport.createTransport
+  const originalClosers: Array<() => Promise<void>> = []
+  let mountedGenerations = 0
+  const transport = vi.spyOn(nativeTransport, 'createTransport').mockImplementation((config, observeIncoming) => {
+    const actual = create(config, observeIncoming)
+    if (!config.failOnStartupError) {
+      mountedGenerations++
+      originalClosers.push(actual.close.bind(actual))
+      actual.close = () => Promise.reject(new Error('synthetic original connection close failure'))
+    }
+    return actual
+  })
+  try {
+    external.setAvailable(false)
+    const a = await account('mcp-recovery-old-close', manualRecoveryPolicy), initial = await a.invokeMcp({ action: 'list' })
+    const connection = { serverName: 'compute', url: external.url, enabled: true, toolCallTimeoutMs: 1000 }
+    const saved = await a.invokeMcp({ action: 'save', version: initial.version, connection }), row = saved.connections[0]
+    if (row === undefined) throw new Error('Original saved MCP connection absent')
+    expect(row.toolCount).toBe(0)
+    expect(mountedGenerations).toBe(1)
+    external.setAvailable(true)
+    await expect(a.invokeMcp({ action: 'test', id: row.id, connection })).rejects.toThrow()
+    expect(mountedGenerations).toBe(1)
+    expect(a.ctx.tools.schemas().filter(tool => tool.name.startsWith('mcp__'))).toEqual([])
+    expect(a.saveBarrier.snapshot().failures).toMatchObject([{ kind: 'mcp-connection', outcome: 'unknown' }])
+    a.expectUnknownSave()
+    await a.close()
+    expect((await a.observeNativeDisposal()).status).toBe('unknown')
+  } finally {
+    transport.mockRestore()
+    for (const close of originalClosers) await close()
+    await external.close()
+  }
 }, 20000)
 
 it('cancels a negotiating HTTP probe on login withdrawal, joins transport disposal and leaves no model-visible tools or failed save', async () => {

@@ -11,7 +11,7 @@ import type { ConfigSaveBarrier } from './save-hooks.ts'
 import type { ExposureInventory } from './types.ts'
 import type { CloudMcpConnectionRequest, CloudMcpConnectionReply } from './mcp-types.ts'
 import type { ApprovedMcpConnections } from './mcp-policy.ts'
-import { AccountMcpConnections, McpConnectionCleanupError } from './mcp-connection-runtime.ts'
+import { AccountMcpConnections, McpConnectionCleanupError, type McpConnectionTest } from './mcp-connection-runtime.ts'
 import { CloudApiError } from './errors.ts'
 
 /** Original Root callbacks and selected policy; no authority comes from request JSON. */
@@ -67,6 +67,7 @@ export class CloudMcpConnectionService extends TypertRemoteService {
   /** Dispatch bounded account-local operations under the actual authenticated Peer.
    * @param request Complete closed request; headers are transient credential input and never returned.
    * @param signal Original request observer.
+   * A saved enabled definition with omitted headers and no registered tools is reapplied only if it still matches the successful probe.
    * @returns Actual list, generation revision and optional probe observation after complete application settlement.
    */
   @Remote('action')
@@ -87,16 +88,22 @@ export class CloudMcpConnectionService extends TypertRemoteService {
       let test: CloudMcpConnectionReply['test']
       if (value.action === 'test') {
         const probe = await this.saves.admit('mcp-connection', async () => {
+          let observed: McpConnectionTest
+          let recovery: McpConnectionRecord | undefined
           try {
             check()
             const run = async (headers: Record<string, string>) => this.runtime.test({ ...value.connection, headers }, operationSignal)
-            const observed = value.connection.headers === undefined && value.id !== undefined
+            observed = value.connection.headers === undefined && value.id !== undefined
               ? await this.data.withHeaders(value.id, run) : await run({ ...value.connection.headers })
-            return { ok: true as const, observed }
+            check()
+            recovery = observed.reachable ? this.recoveryConnection(value) : undefined
           } catch (error) {
             if (error instanceof McpConnectionCleanupError) throw error
             return { ok: false as const, error }
           }
+          // Replacement failure belongs to the original save owner, unlike a refused read-only probe.
+          if (recovery !== undefined) { await this.runtime.apply(recovery); check() }
+          return { ok: true as const, observed }
         })
         if (!probe.ok) throw probe.error
         const observed = probe.observed
@@ -145,6 +152,16 @@ export class CloudMcpConnectionService extends TypertRemoteService {
       if (!snapshot.ok) throw snapshot.error
       return snapshot.reply
     })
+  }
+
+  private recoveryConnection(request: Extract<CloudMcpConnectionRequest, { action: 'test' }>): McpConnectionRecord | undefined {
+    if (request.id === undefined || request.connection.headers !== undefined) return undefined
+    const row = this.data.list().find(entry => entry.id === request.id), input = request.connection
+    if (row === undefined || !row.enabled || !input.enabled || row.serverName !== input.serverName
+      || row.url !== input.url || row.toolCallTimeoutMs !== input.toolCallTimeoutMs) return undefined
+    const tools = this.ctx.get('tools')
+    if (tools === undefined) unavailable()
+    return tools.schemas().some(tool => tool.name.startsWith(`mcp__${row.serverName}__`)) ? undefined : row
   }
 
   private async snapshot(check: () => void, test: CloudMcpConnectionReply['test']): Promise<CloudMcpConnectionReply> {

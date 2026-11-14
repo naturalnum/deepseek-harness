@@ -1,0 +1,12 @@
+version: 1
+scenario: cloud-mcp-saved-recovery
+profile: headless
+composition: cloud-mcp-saved-recovery
+recording: authored
+header:
+  class: cloud-mcp-saved-recovery
+  pin: true
+  systemPromptSource: cloud-remote-facts-budget
+permission: read-only
+workspace:
+  final: true

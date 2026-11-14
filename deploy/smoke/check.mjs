@@ -398,15 +398,20 @@ async function run(options) {
           command: () => send(`Use Bash to execute printf '%s\\n' '${prefix}-MCP-OFFLINE'. Report actual stdout.`,
             { tokens: [`${prefix}-MCP-OFFLINE`], bash: 1 }),
         })
-        await mcpChecks.offline(signal)
-        return 'MCP 实际调用一次，服务正常停下，退出重登后新对话命令成功'
+        const observation = await mcpChecks.offline(signal)
+        console.log('MCP 停服观察：%j', observation)
+        return '探针与账号注册分别确认，MCP 实际调用一次，服务正常停下，退出重登后新对话命令成功'
       }, numbers)
     }
     if (options.mcpRecover) {
       await check(14, '原 MCP 连接测试一次后新对话可调用工具', async signal => {
         requireThat(mcpChecks !== undefined, '缺少本轮 MCP 掉线检查前态')
-        await mcpChecks.recover(signal)
-        return '原连接工具数先为 0，正常重启服务并测试一次后实际调用成功'
+        const observation = await mcpChecks.recover(signal)
+        console.log('MCP 恢复观察：%j', observation)
+        const covered = observation.branch === 'revoked' ? '已撤销零工具' : '保留工具定义'
+        const missing = observation.branch === 'revoked' ? '保留工具定义' : '已撤销零工具'
+        console.log(`MCP 恢复前态覆盖：${covered}已验证；${missing}未验证，仍需用原正常前态另行核对`)
+        return `${covered}前态下，同一连接测试一次后注册与真实调用均通过；本次不代表两种前态完整验收`
       }, [13])
     }
     console.log('未做 10. MCP 检查；未做 11. 科研模式检查：留待对应迭代扩展')

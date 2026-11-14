@@ -25,28 +25,34 @@ export async function removeMcpSmokeConnection({ saveAttempted, authenticated, n
 }
 
 /** Keep recovery tied to the exact connection and successfully completed outage check.
+ * Recovery records an already revoked or retained registration snapshot; it never forces a zero state.
  * @param fixture This run's service and actual invocation observations.
  * @param actions Browser actions owned by the original smoke runner.
  * @param serverName Unique connection name created by this run.
- * @returns Finite outage/recovery operations and owned connection/service cleanup.
+ * @returns Finite checks with separate probe, registry and actual-call observations, plus owned cleanup.
  */
 export function mcpChecks(fixture, actions, serverName) {
   const tool = `mcp__${serverName}__ping`
   let offlineAttempted = false, offlineComplete = false, recoveryAttempted = false
   async function invoke() {
     const before = fixture.calls.length
-    await actions.invoke(tool, fixture.marker)
+    try { await actions.invoke(tool, fixture.marker) }
+    finally {
+      try { console.warn('MCP smoke calls: %j', { before, after: fixture.calls.length, delta: fixture.calls.length - before }) } catch (_diagnosticFailure) {}
+    }
     requireThat(fixture.calls.length === before + 1, '未确认本轮 MCP 工具实际执行一次')
+    return fixture.calls.length - before
   }
   return {
     async offline(signal) {
       requireThat(!offlineAttempted, 'MCP 掉线检查不能重复执行')
       offlineAttempted = true
       signal.throwIfAborted()
-      await actions.add(serverName, fixture.url)
-      await actions.waitRegistered(serverName, count => count > 0, signal)
+      const probeToolCount = await actions.add(serverName, fixture.url)
+      requireThat(probeToolCount > 0, '本轮 MCP 连通测试未发现工具')
+      const registeredToolCount = await actions.waitRegistered(serverName, count => count > 0, signal)
       signal.throwIfAborted()
-      await invoke()
+      const actualCallDelta = await invoke()
       await fixture.stop()
       requireThat(fixture.state === 'stopped', 'MCP 服务停止未确认')
       signal.throwIfAborted()
@@ -55,19 +61,24 @@ export function mcpChecks(fixture, actions, serverName) {
       await actions.newConversation()
       await actions.command()
       offlineComplete = true
+      return { probeToolCount, registeredToolCount, actualCallDelta }
     },
     async recover(signal) {
       requireThat(offlineComplete && !recoveryAttempted && fixture.state === 'stopped', 'MCP 恢复检查缺少同轮掉线前态')
       recoveryAttempted = true
-      await actions.waitRegistered(serverName, count => count === 0, signal)
+      const registeredBefore = await actions.registrationCount(serverName, signal)
+      requireThat(Number.isSafeInteger(registeredBefore) && registeredBefore >= 0, '未确认本轮 MCP 恢复前注册数')
+      const branch = registeredBefore === 0 ? 'revoked' : 'retained'
       signal.throwIfAborted()
       await fixture.restart()
       signal.throwIfAborted()
-      await actions.testOnce(serverName)
-      await actions.waitRegistered(serverName, count => count > 0, signal)
+      const probeToolCount = await actions.testOnce(serverName)
+      requireThat(probeToolCount > 0, '原连接测试未发现本轮 MCP 工具')
+      const registeredAfter = await actions.waitRegistered(serverName, count => count > 0, signal)
       signal.throwIfAborted()
       await actions.newConversation()
-      await invoke()
+      const actualCallDelta = await invoke()
+      return { branch, registeredBefore, probeToolCount, registeredAfter, actualCallDelta }
     },
     cleanupConnection: authenticated => actions.cleanupConnection(authenticated),
     close: () => fixture.close(),
@@ -82,6 +93,57 @@ const label = {
   success: /^(Connection test succeeded|连接测试成功)/,
 }
 
+/** Navigate through the Cloud account menu and close only the settings panel this owner opened.
+ * An already visible panel is borrowed. A replaced page or unconfirmed open/close remains a failure.
+ * @param getPage The original runner's current page, including replacements after cancellation.
+ * @param remaining The original step's remaining work time; no separate timeout or retry.
+ * @returns Settings entry and owned-panel cleanup using the original UI controls.
+ */
+export function createMcpSettingsNavigation(getPage, remaining) {
+  let owned, openingPage
+  async function close() {
+    requireThat(openingPage === undefined, '本轮设置面板打开结果未确认')
+    if (owned === undefined) return
+    const { page, element } = owned
+    requireThat(page === getPage() && !page.isClosed(), '本轮设置面板所属页面已变化或失联')
+    if (await element.isVisible()) {
+      requireThat(!owned.closeAttempted, '本轮设置面板关闭未确认，不重复关闭')
+      const button = await page.locator('[data-shortcut-modal="settings"]')
+        .getByRole('button', { name: /^(Close|关闭)$/ }).elementHandle({ timeout: remaining() })
+      requireThat(button !== null, '未找到本轮设置面板的关闭按钮')
+      try {
+        requireThat(await element.evaluate((panel, target) => panel.contains(target), button), '设置面板已变化，未关闭其他面板')
+        owned.closeAttempted = true
+        await button.click({ timeout: remaining() })
+      } finally { await button.dispose() }
+      await element.waitForElementState('hidden', { timeout: remaining() })
+    }
+    await element.dispose()
+    owned = undefined
+  }
+  return {
+    async open() {
+      requireThat(openingPage === undefined, '本轮设置面板打开结果未确认')
+      if (owned?.closeAttempted) await close()
+      const page = getPage(), modal = page.locator('[data-shortcut-modal="settings"]')
+      requireThat(owned === undefined || owned.page === page && !page.isClosed(), '本轮设置面板所属页面已变化或失联')
+      if (!await modal.isVisible()) {
+        await close()
+        await page.getByRole('button', { name: /^(Account:|账号[：:])/ }).click({ timeout: remaining() })
+        openingPage = page
+        await page.getByRole('menuitem', { name: /^(Settings|设置)$/ }).click({ timeout: remaining() })
+        const element = await modal.elementHandle({ timeout: remaining() })
+        requireThat(element !== null, '本轮设置面板打开结果未确认')
+        owned = { page, element, closeAttempted: false }
+        openingPage = undefined
+      }
+      await modal.waitFor({ state: 'visible', timeout: remaining() })
+      return modal
+    },
+    close,
+  }
+}
+
 /** Use the original Settings form and runner's login/chat/command actions.
  * @param input Current browser and existing account/conversation actions with their remaining budget.
  * @returns Checks owning one keyless service and, after save, one unique account connection.
@@ -90,8 +152,8 @@ export async function createBrowserMcpChecks({ getPage, signOut, signIn, newConv
   const serverName = `smoke_${randomBytes(6).toString('hex')}`
   let saveAttempted = false
   let page = getPage()
-  let modal = page.locator('[data-shortcut-modal="settings"]')
   let section = page.getByRole('region', { name: title })
+  const settings = createMcpSettingsNavigation(getPage, remaining)
 
   async function phase(name, action) {
     const started = Date.now()
@@ -100,7 +162,6 @@ export async function createBrowserMcpChecks({ getPage, signOut, signIn, newConv
       const current = getPage()
       if (current !== page) {
         page = current
-        modal = page.locator('[data-shortcut-modal="settings"]')
         section = page.getByRole('region', { name: title })
       }
       try { console.warn('MCP smoke phase: %j', { phase: name, state: 'begin' }) } catch (_diagnosticFailure) {}
@@ -110,12 +171,12 @@ export async function createBrowserMcpChecks({ getPage, signOut, signIn, newConv
     } catch (error) { throw new McpSmokeFailure(`MCP 检查未完成：${name}`, { cause: error }) }
   }
   async function open() {
-    if (!await modal.isVisible()) await page.getByRole('button', { name: /^(Settings|设置)$/ }).click()
-    await modal.getByRole('button', { name: title }).click()
-    await section.waitFor({ state: 'visible' })
+    const modal = await settings.open()
+    await modal.getByRole('button', { name: title }).click({ timeout: remaining() })
+    await section.waitFor({ state: 'visible', timeout: remaining() })
   }
   async function closeSettings() {
-    if (await modal.isVisible()) { await page.keyboard.press('Escape'); await modal.waitFor({ state: 'hidden' }) }
+    await settings.close()
   }
   function row(name) {
     // Names come only from this run's fixed smoke_ prefix and random hex.
@@ -139,7 +200,28 @@ export async function createBrowserMcpChecks({ getPage, signOut, signIn, newConv
   }
   async function probe(form) {
     await operation(form.getByRole('button', { name: label.test }))
-    await form.getByRole('status').filter({ hasText: label.success }).waitFor({ state: 'visible' })
+    const status = form.getByRole('status').filter({ hasText: label.success })
+    await status.waitFor({ state: 'visible', timeout: remaining() })
+    const count = toolCount(await status.innerText())
+    reportCount('probe-discovery', count)
+    return count
+  }
+  function toolCount(text) {
+    const match = text.match(/(\d+) discovered tools|已发现\s*(\d+)\s*个工具/)
+    requireThat(match !== null, '无法读取本轮 MCP 工具数量')
+    return Number(match[1] ?? match[2])
+  }
+  function reportCount(kind, count) {
+    try { console.warn('MCP smoke count: %j', { kind, count }) } catch (_diagnosticFailure) {}
+  }
+  async function registrationCount(name) {
+    await operation(section.getByRole('button', { name: /^(Refresh|刷新)$/ }))
+    const selected = await ownRow(name)
+    requireThat(await selected.locator('p').first().innerText() === fixture.url, '本轮 MCP 连接地址已变化')
+    await selected.getByText(/^(Enabled|已启用)$/).waitFor({ state: 'visible', timeout: remaining() })
+    const count = toolCount(await selected.innerText())
+    reportCount('account-registration', count)
+    return count
   }
   const actions = {
     add: (name, url) => phase('添加本轮连接', async () => {
@@ -149,22 +231,28 @@ export async function createBrowserMcpChecks({ getPage, signOut, signIn, newConv
       await form.getByLabel(label.name).fill(name)
       await form.getByLabel(label.url).fill(url)
       // Prove cloud-to-fixture reachability before saving any connection.
-      await probe(form)
+      const probeToolCount = await probe(form)
+      requireThat(probeToolCount > 0, '本轮 MCP 连通测试未发现工具')
       saveAttempted = true
       await operation(form.getByRole('button', { name: /^(Save|保存)$/ }))
       await row(name).waitFor({ state: 'visible' })
       await ownRow(name)
       await closeSettings()
+      return probeToolCount
+    }),
+    registrationCount: (name, signal) => phase('读取本轮恢复前注册数', async () => {
+      signal.throwIfAborted()
+      await open()
+      const count = await registrationCount(name)
+      signal.throwIfAborted()
+      await closeSettings()
+      return count
     }),
     waitRegistered: (name, accepts, signal) => phase('观察账号已注册工具数', async () => {
       await open()
       for (;;) {
         signal.throwIfAborted()
-        await operation(section.getByRole('button', { name: /^(Refresh|刷新)$/ }))
-        const selected = await ownRow(name)
-        const match = (await selected.innerText()).match(/(\d+) discovered tools|已发现\s*(\d+)\s*个工具/)
-        requireThat(match !== null, '无法读取本轮 MCP 连接的工具数')
-        const count = Number(match[1] ?? match[2])
+        const count = await registrationCount(name)
         if (accepts(count)) { await closeSettings(); return count }
         // Pace foreground list reads; success depends on observed registered state.
         await page.waitForTimeout(Math.min(500, remaining()))
@@ -178,8 +266,9 @@ export async function createBrowserMcpChecks({ getPage, signOut, signIn, newConv
       const form = section.locator('form')
       requireThat(await form.getByLabel(label.name).inputValue() === name, '测试表单没有指向本轮连接')
       requireThat(await form.getByLabel(label.url).inputValue() === fixture.url, '测试表单地址与本轮不一致')
-      await probe(form)
+      const probeToolCount = await probe(form)
       await closeSettings()
+      return probeToolCount
     }),
     invoke: (tool, marker) => phase('实际调用本轮 MCP 工具', async () => {
       await closeSettings()
@@ -213,7 +302,7 @@ export async function createBrowserMcpChecks({ getPage, signOut, signIn, newConv
         },
       })
       saveAttempted = false
-      if (result !== 'not-added') await closeSettings()
+      await closeSettings()
       return result
     }),
   }
