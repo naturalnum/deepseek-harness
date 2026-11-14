@@ -9,6 +9,7 @@ import * as fs from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, readFileSync, statSync, symlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { Worker } from 'node:worker_threads'
 import { createServer, request as httpRequest, type IncomingMessage } from 'node:http'
 import { Socket } from 'node:net'
@@ -19,7 +20,7 @@ import { CloudIngress } from '@deepseek-ai/dsh-pe-cloud-access/src/ingress.ts'
 import { BetterAuthAccess } from '@deepseek-ai/dsh-pe-cloud-access/src/auth.ts'
 import type { AccessConfig } from '@deepseek-ai/dsh-pe-cloud-access/types'
 import type { AuthIngressConfig } from '@deepseek-ai/dsh-pe-cloud-access/src/root-config.ts'
-import { LinuxFilesPool } from '@deepseek-ai/dsh-pe-cloud-files/src/worker-pool.ts'
+import { LinuxFilesPool, type PoolReadPort } from '@deepseek-ai/dsh-pe-cloud-files/src/worker-pool.ts'
 import type { NativeTextFileSystemConstructor } from '@deepseek-ai/dsh-pe-cloud-files/src/text-project.ts'
 import { tmpdir } from 'node:os'
 import { Context, FiberState, symbols } from '@deepseek-ai/cordis'
@@ -55,7 +56,7 @@ import WorkingDirectory from '@deepseek-ai/dsh-working-directory'
 import DefaultModel from '@deepseek-ai/dsh-agent-default-model'
 import RemoteAccess from '@deepseek-ai/dsh-api-remote-access'
 import Gateway from '@deepseek-ai/dsh-api-gateway'
-import Settings from '@deepseek-ai/dsh-settings'
+import Settings, * as SettingsModule from '@deepseek-ai/dsh-settings'
 import * as Locale from '@deepseek-ai/dsh-client-locale'
 import Typert from '@deepseek-ai/dsh-typert-registry'
 import SessionQuery from '@deepseek-ai/dsh-session-query'
@@ -186,7 +187,10 @@ async function fixture(options: {
       ...options.bootstrapInventory ? [{ endpoint: 'workspace/follow', handlerId: 'native:workspaceController', guard: 'account-project' }] : []],
       exactFetchRoutes: [], allowedSettings: [],
       ...options.bootstrapInventory ? { approvedConfiguration: { recipeVersion: 'm8s', catalogVersion: 'native-directory-bootstrap',
-        maxEntries: 512, maxStringBytes: 512, maxCatalogBytes: 8192, plugins: [],
+        maxEntries: 512, maxStringBytes: 512, maxCatalogBytes: 8192, plugins: [
+          { id: 'native-directory-settings', entryId: 'include:settings', moduleName: '@deepseek-ai/dsh-settings',
+            packageName: '@deepseek-ai/dsh-settings', packageVersion: '0.2.1-rc.2', installable: false, toggleable: false },
+        ],
         skills: { mode: 'closed' }, credentials: { mode: 'read-only' }, fields: [] } } : {} } },
     { id: 'execution', name: 'cordis:execution', config: { mode: 'closed', requiredCapabilities: [], maxBoundAccounts: 2 } },
   ]))
@@ -207,6 +211,7 @@ async function fixture(options: {
   initProfile(layout.profileRoot, [])
   const anchor = join(directory, 'package.json')
   writeFileSync(anchor, '{"name":"m8s-native-fixture","private":true}\n')
+  if (options.bootstrapInventory) symlinkSync(fileURLToPath(new URL('../node_modules', import.meta.url)), join(directory, 'node_modules'), 'dir')
   const configPath = join(layout.profileRoot, 'cordis.yml')
   writeFileSync(configPath, '[]\n')
   if (options.readonlyBase) chmodSync(configPath, 0o444)
@@ -310,7 +315,7 @@ async function fixture(options: {
     { id: 'controller', name: 'cordis:' + names.controller, config: { nativeOpen: false } },
     { id: 'execution', name: 'cordis:' + names.execution, config: { mode: 'closed', requiredCapabilities: [] } },
     ...options.firstScreen ? [
-      { id: 'settings', name: 'cordis:m8ax-settings' }, { id: 'locale', name: 'cordis:m8ax-locale' },
+      { id: 'settings', name: options.bootstrapInventory ? '@deepseek-ai/dsh-settings' : 'cordis:m8ax-settings' }, { id: 'locale', name: 'cordis:m8ax-locale' },
       { id: 'workspace-controller', name: 'cordis:' + firstScreenNames.workspaceController },
       { id: 'settings-controller', name: 'cordis:' + firstScreenNames.settingsController },
       { id: 'first-screen-events', name: 'cordis:' + firstScreenNames.events },
@@ -323,7 +328,7 @@ async function fixture(options: {
   const recipe: AccountRecipe = {
     profile: { name: 'account', dir: layout.profileRoot, patchPath: layout.patchPath, installAnchor: anchor,
       cwd: project, home: layout.privateRoot, startedBundles: [], overlays: [], telemetryDisabledEnv: undefined },
-    configPath, bareModuleBaseUrl: new URL('../../../../package.json', import.meta.url).href,
+    configPath, bareModuleBaseUrl: new URL(options.bootstrapInventory ? '../package.json' : '../../../../package.json', import.meta.url).href,
     requiredEntryIds: ['include', ...rows.map(row => row.id)], maxObservedEvents: 16, maxPathBytes: 4096,
     native: { saves, exposure: root.peExposure.policy, execution: root.peSandboxCoordinator, stopTimeoutMs: options.stopTimeoutMs ?? 5000,
       maxNativeInventoryEntries: options.bootstrapInventory ? 512 : options.goals ? 256 : 128,
@@ -344,6 +349,7 @@ async function fixture(options: {
       ...options.missingGuards ? {} : { guards },
       files(_ctx, installed, getFileProject): AccountFilesPreparation {
         resolveFiles = getFileProject
+        let directoryContent: PoolReadPort | undefined
         // This external Node-port fixture supplies no Linux FD, quota, exclusive namespace or production storage certificate.
         class FixtureFileSystem extends FsLocal {
           static inject = ['peAccount']
@@ -379,6 +385,7 @@ async function fixture(options: {
               const info = statSync(layout.projectsRoot, { bigint: true })
               const port = testPool.bind(installed, { rootPath: layout.projectsRoot,
                 rootDevice: String(info.dev), rootInode: String(info.ino) }, () => { assertCurrent(installed) })
+              directoryContent = port
               FileSystem = await port.createTextFileSystem(workspace, (caller) => {
                 assertCurrent(installed); caller.fiber.assertActive()
               }, getFileProject)
@@ -394,6 +401,10 @@ async function fixture(options: {
         const info = statSync(layout.projectsRoot, { bigint: true })
         return { binding: options.copiedFilesBinding ? { ...installed } : installed,
           port: { createWorkspaceRegistry: () => FixtureRegistry },
+          ...options.nativeDirectoryHelper === undefined ? {} : { assertContentAvailable: () => {
+            if (directoryContent === undefined) throw new Error('Original directory content lane has not installed')
+            directoryContent.assertContentAvailable()
+          } },
           projectFor: nativeProjectDeriver(installed, () => { assertCurrent(installed) }),
           ...options.instructionSources === undefined ? {} : {
             withInstructionReaders: options.instructionSources.bind(() => { assertCurrent(installed) }),
@@ -405,6 +416,14 @@ async function fixture(options: {
           assertUnpublished: () => { assertCurrent(installed) } }
       } },
     prepare(ctx) {
+      if (options.bootstrapInventory) {
+        // Keep the original Loader and actual source namespace on Vitest's source plane, as in bootstrap-inventory.spec.ts.
+        const internal = ctx.loader.internal
+        if (internal === undefined) throw new Error('Original native module importer is absent')
+        const originalImport = internal.import.bind(internal)
+        vi.spyOn(internal, 'import').mockImplementation(async (name, parent, attributes) =>
+          name === '@deepseek-ai/dsh-settings' ? SettingsModule : await originalImport(name, parent, attributes))
+      }
       Object.assign(ctx.loader.builtins, { 'm8s-dependencies': dependencies, 'm8s-jsonl': Jsonl, 'm8s-model': DefaultModel,
         'm8s-sandbox-policy': SandboxPolicyService, 'm8s-model-selection': SubagentModelSelection,
         'm8s-terminal-probe': { Config: z.object({ value: z.number().default(1).volatile() }), apply() {} },
@@ -2557,7 +2576,7 @@ it.skipIf(process.platform !== 'linux' || process.env.FD_HELPER === undefined ||
       expect(original.binding).toBe(binding)
       expect(borrow).toHaveBeenCalledTimes(borrows); expect(acquire).toHaveBeenCalledTimes(acquisitions)
       if (revoked === 'exposure') {
-        f.root.peExposure.policy.invalidate()
+        ctx.peCloudApi.invalidate()
         send({ type: 'item', streamId: 'revoked-directory', value: { kind: 'credit', cursor: second.nextCursor, version: second.version } })
         await vi.waitFor(() => { expect(frames.some(frame => record(frame) && frame.type === 'error' && frame.streamId === 'revoked-directory')).toBe(true) })
         expect(releasePeer).not.toHaveBeenCalled()
