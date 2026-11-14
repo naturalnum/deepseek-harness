@@ -159,21 +159,16 @@ export class CloudMcpConnectionService extends TypertRemoteService {
     const row = this.data.list().find(entry => entry.id === request.id), input = request.connection
     if (row === undefined || !row.enabled || !input.enabled || row.serverName !== input.serverName
       || row.url !== input.url || row.toolCallTimeoutMs !== input.toolCallTimeoutMs) return undefined
-    const tools = this.ctx.get('tools')
-    if (tools === undefined) unavailable()
-    return tools.schemas().some(tool => tool.name.startsWith(`mcp__${row.serverName}__`)) ? undefined : row
+    return this.runtime.toolCount(row.id) === 0 ? row : undefined
   }
 
   private async snapshot(check: () => void, test: CloudMcpConnectionReply['test']): Promise<CloudMcpConnectionReply> {
     check()
     const connections: CloudMcpConnectionReply['connections'][number][] = []
-    const tools = this.ctx.get('tools')
-    if (tools === undefined) unavailable()
-    const schemas = tools.schemas()
     for (const row of this.data.list()) {
       const configured = await this.data.configured(row.id); check()
       connections.push({ ...row, configured,
-        toolCount: schemas.filter(tool => tool.name.startsWith(`mcp__${row.serverName}__`)).length })
+        toolCount: this.runtime.toolCount(row.id) })
     }
     const reply: CloudMcpConnectionReply = { connections, version: this.data.version(),
       limits: { maxConnections: this.input.policy.limits.maxConnections,

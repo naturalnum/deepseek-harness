@@ -27,8 +27,12 @@ export { createMcpToolDefinition } from './tools.ts'
 export type { McpResult, McpToolDefinitionOptions } from './tools.ts'
 export type { ReconnectConfig, ResolvedReconnectPolicy } from './connection.ts'
 
-/** Original supervisor teardown observation for hosts that must retain unconfirmed resource responsibility. */
+/** Original supervisor registration and teardown observation; hosts retain unconfirmed resource responsibility. */
 export interface McpClientLifecycle {
+  /** Observe registrations independently of transport reachability.
+   * @returns Detached public tool names still registered by this exact supervisor.
+   */
+  registeredTools(): readonly string[]
   /** Stop and join the original supervisor; false retains an unconfirmed transport generation. */
   close(): Promise<boolean>
 }
@@ -213,7 +217,8 @@ export async function apply(ctx: Context, config: Config, observeLifecycle?: (li
     return dispose()
   }, { global: true })
   ctx.effect(() => dispose, 'mcp-client.connection')
-  observeLifecycle?.({ async close() { await dispose(); return connection.closureConfirmed() } })
+  observeLifecycle?.({ registeredTools: () => connection.registeredTools(),
+    async close() { await dispose(); return connection.closureConfirmed() } })
 
   // Block plugin activation on the initial connection + tool discovery so
   // Cordis consumers observe the tools immediately after the fiber activates.

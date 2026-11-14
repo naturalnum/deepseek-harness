@@ -146,7 +146,7 @@ The child environment starts from the subprocess seam's `scrubbedParentEnv()` â€
 
 <a id="further-exploration"></a>
 
-Programmatic hosts may pass an optional third lifecycle observer to `apply(ctx, config, observeLifecycle)`. It runs before startup awaits. The observed `close()` joins the original supervisor and returns `true` only when transport closure was confirmed; `false` retains an unknown closure even if the ordinary plugin disposer resolved. This does not alter configuration or default plugin behavior.
+Programmatic hosts may pass an optional third lifecycle observer to `apply(ctx, config, observeLifecycle)`. It runs before startup awaits. Its `registeredTools()` returns a detached list of public tool names still registered by that exact supervisor, including registrations retained while disconnected; it does not test reachability. The observed `close()` joins the original supervisor and returns `true` only when transport closure was confirmed; `false` retains an unknown closure even if the ordinary plugin disposer resolved. This does not alter configuration or default plugin behavior.
 
 ## Further Exploration
 

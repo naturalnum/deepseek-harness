@@ -438,11 +438,18 @@ describe('apply (plugin lifecycle)', () => {
         return Promise.resolve()
       })
       let lifecycle: import('../src/index.ts').McpClientLifecycle | undefined
-      await apply(ctx, stdioConfig, (observed) => { lifecycle = observed })
+      await apply(ctx, stdioConfig, (observed) => {
+        lifecycle = observed
+        expect(observed.registeredTools()).toEqual([])
+      })
       expect(lifecycle).toBeDefined()
+      const names = lifecycle?.registeredTools()
+      expect(names).toEqual(['mcp__srv__remote'])
       const stopped = lifecycle?.close()
       await vi.advanceTimersByTimeAsync(5000)
       expect(await stopped).toBe(confirmed)
+      expect(lifecycle?.registeredTools()).toEqual([])
+      expect(names).toEqual(['mcp__srv__remote'])
       expect(ctx.tools.get('mcp__srv__remote')).toBeUndefined()
       await expect(ctx.fiber.dispose()).resolves.toBeUndefined()
       expect(await lifecycle?.close()).toBe(confirmed)

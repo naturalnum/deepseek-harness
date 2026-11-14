@@ -117,6 +117,10 @@ export interface ConnectionHandle extends ServerContext {
   dispose(): Promise<void>
   /** True only when every transport generation owned by this instance confirmed closure. */
   closureConfirmed(): boolean
+  /** Snapshot registrations without testing transport reachability.
+   * @returns Detached public names still owned by this exact supervisor, including registrations retained during disconnection.
+   */
+  registeredTools(): readonly string[]
 }
 
 /**
@@ -397,6 +401,7 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
   return {
     ready,
     closureConfirmed: () => disposed && closureConfirmed,
+    registeredTools: () => [...disposers.keys()],
     instructions: () => serverInstructions,
     resources: {
       async request(request, exec): Promise<JsonValue> {

@@ -1,7 +1,7 @@
 /** Optional account HTTP MCP connections; the official client owns transport, discovery, execution and reconnection. */
 import type { Context, Fiber } from '@deepseek-ai/cordis'
 import * as McpClient from '@deepseek-ai/dsh-mcp-client'
-import { createScope, scopeOf } from '@deepseek-ai/dsh-scope'
+import { createScope } from '@deepseek-ai/dsh-scope'
 import type { AccountMcpConnectionStore, McpConnectionInput, McpConnectionRecord, McpConnectionId } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { ConfigSaveOutcomeUnknown } from './config-saves.ts'
@@ -59,6 +59,15 @@ export class AccountMcpConnections {
     return this.restoration ??= (async () => {
       for (const row of this.store.list()) await this.apply(row)
     })()
+  }
+
+  /** Observe only the saved connection's original native registrations, including definitions retained while disconnected.
+   * @param id Original account-local saved connection identifier.
+   * @returns Current owned registration count; an unmounted connection owns none.
+   */
+  toolCount(id: McpConnectionId): number {
+    this.check()
+    return this.clients.get(id)?.registeredTools().length ?? 0
   }
 
   /** Replace only the selected account connection after its durable definition has committed.
@@ -131,10 +140,8 @@ export class AccountMcpConnections {
       } })
       this.check(); signal.throwIfAborted()
       if (!observation.connected) return { reachable: false, failure: 'connection-failed' }
-      const tools = probe.ctx.get('tools')
-      if (tools === undefined) throw new Error('cloud/mcp-probe-tools-unavailable')
-      return { reachable: true, tools: tools.schemas(scopeOf(probe.ctx)).map(tool => tool.name)
-        .filter(name => name.startsWith(`mcp__${input.serverName}__`)) }
+      if (lifecycle === undefined) throw new Error('cloud/mcp-probe-lifecycle-unavailable')
+      return { reachable: true, tools: lifecycle.registeredTools() }
     } catch (_error) {
       this.check(); signal.throwIfAborted()
       return { reachable: false, failure: 'connection-failed' }

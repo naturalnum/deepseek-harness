@@ -243,20 +243,28 @@ it('recovers real HTTP discovery after a temporary outage and reports a bounded 
 
 it('reapplies an unchanged saved zero-tool connection after one authenticated probe and serves a new model turn', async () => {
   const external = await startHttpMcpFixture({ requiredAuthorization: 'Bearer synthetic-manual-recovery' })
+  const neighbor = await startHttpMcpFixture({ requiredAuthorization: 'Bearer synthetic-neighbor' })
   const apply = vi.spyOn(AccountMcpConnections.prototype, 'apply')
   try {
     external.setAvailable(false)
     // A completed initial refusal is a real zero-tool state without a pending retry that could publish during the probe.
     const a = await account('mcp-manual-recovery', manualRecoveryPolicy), b = await account('mcp-manual-foreign')
     const initial = await a.invokeMcp({ action: 'list' })
-    const saved = await a.invokeMcp({ action: 'save', version: initial.version,
-      connection: { serverName: 'compute', url: external.url, enabled: true, toolCallTimeoutMs: 1000,
+    const zero = await a.invokeMcp({ action: 'save', version: initial.version,
+      connection: { serverName: 'foo', url: external.url, enabled: true, toolCallTimeoutMs: 1000,
         headers: { Authorization: 'Bearer synthetic-manual-recovery' } } })
-    const row = saved.connections[0]
-    if (row === undefined) throw new Error('Original saved MCP connection absent')
+    const saved = await a.invokeMcp({ action: 'save', version: zero.version,
+      connection: { serverName: 'foo__bar', url: neighbor.url, enabled: true, toolCallTimeoutMs: 1000,
+        headers: { Authorization: 'Bearer synthetic-neighbor' } } })
+    const row = saved.connections[0], other = saved.connections[1]
+    if (row === undefined || other === undefined) throw new Error('Original saved MCP connections absent')
     expect(row.toolCount).toBe(0)
+    expect(other.toolCount).toBe(1)
+    expect(a.ctx.tools.schemas().filter(tool => tool.name.startsWith('mcp__')).map(tool => tool.name)).toEqual(['mcp__foo__bar__ping'])
     const applications = () => apply.mock.calls.filter(([value]) => value.id === row.id).length
+    const neighborApplications = () => apply.mock.calls.filter(([value]) => value.id === other.id).length
     expect(applications()).toBe(1)
+    expect(neighborApplications()).toBe(1)
     const definition = { serverName: row.serverName, url: row.url, enabled: row.enabled, toolCallTimeoutMs: row.toolCallTimeoutMs }
     const refused = await a.invokeMcp({ action: 'test', id: row.id, connection: definition })
     expect(refused.test).toEqual({ reachable: false, toolCount: 0, failure: 'connection-failed' })
@@ -281,17 +289,23 @@ it('reapplies an unchanged saved zero-tool connection after one authenticated pr
     const recovered = await a.invokeMcp({ action: 'test', id: row.id, connection: definition })
     expect(recovered.test).toEqual({ reachable: true, toolCount: 1 })
     expect(recovered.connections[0]).toEqual({ ...row, toolCount: 1 })
+    expect(recovered.connections[1]).toEqual(other)
     expect(recovered.version).toBe(saved.version)
     expect(applications()).toBe(2)
+    expect(neighborApplications()).toBe(1)
     const healthy = await a.invokeMcp({ action: 'test', id: row.id, connection: definition })
-    expect(healthy.connections[0]).toEqual(recovered.connections[0])
+    expect(healthy.connections).toEqual(recovered.connections)
     expect(applications()).toBe(2)
+    expect(neighborApplications()).toBe(1)
 
     let requests = 0
     vi.spyOn(a.adapter, 'stream').mockImplementation(async function* (options: GenerateOptions): AsyncIterable<StreamChunk> {
-      expect(options.tools?.some(tool => tool.name === 'mcp__compute__ping')).toBe(true)
-      if (requests++ === 0) yield* toolCallResponse('recovered-model-mcp', 'mcp__compute__ping', {})
-      else yield* textResponse('The recovered MCP replied pong.')
+      expect(options.tools?.some(tool => tool.name === 'mcp__foo__ping')).toBe(true)
+      expect(options.tools?.some(tool => tool.name === 'mcp__foo__bar__ping')).toBe(true)
+      const request = requests++
+      if (request === 0) yield* toolCallResponse('recovered-model-mcp', 'mcp__foo__ping', {})
+      else if (request === 1) yield* toolCallResponse('unaffected-model-mcp', 'mcp__foo__bar__ping', {})
+      else yield* textResponse('Both original MCP connections replied pong.')
     })
     const created = await a.ctx.sessionController.create({}), completed: PromiseWithResolvers<void> = Promise.withResolvers()
     a.ctx.on('session/event', (session, event) => {
@@ -300,15 +314,19 @@ it('reapplies an unchanged saved zero-tool connection after one authenticated pr
     await a.invoke('prompt', { sessionId: created.sessionId, requestId: 'manual-mcp-recovered-turn', mode: 'followup',
       content: [{ type: 'text', text: 'Use the configured MCP ping tool.' }] })
     await completed.promise; await a.ctx.sessionPersistence.flush()
-    expect(requests).toBe(2)
+    expect(requests).toBe(3)
     expect(external.calls).toEqual(['ping'])
+    expect(neighbor.calls).toEqual(['ping'])
+    expect(neighborApplications()).toBe(1)
     const history = JSON.stringify(a.ctx.sessions.get(created.sessionId)?.snapshotEvents())
-    expect(history).toContain('recovered-model-mcp'); expect(history).toContain('pong')
-    expect(history).not.toContain('synthetic-manual-recovery')
+    expect(history).toContain('recovered-model-mcp'); expect(history).toContain('unaffected-model-mcp')
+    expect(history).toContain('pong')
+    expect(history).not.toContain('synthetic-manual-recovery'); expect(history).not.toContain('synthetic-neighbor')
     expect(external.authorization.every(value => value === 'Bearer synthetic-manual-recovery')).toBe(true)
+    expect(neighbor.authorization.every(value => value === 'Bearer synthetic-neighbor')).toBe(true)
     expect((await b.invokeMcp({ action: 'list' })).connections).toEqual([])
     expect(a.saveBarrier.snapshot().failures).toEqual([])
-  } finally { apply.mockRestore(); await external.close() }
+  } finally { apply.mockRestore(); await external.close(); await neighbor.close() }
 }, 20000)
 
 it('keeps a disabled saved connection private after a successful unchanged probe', async () => {
