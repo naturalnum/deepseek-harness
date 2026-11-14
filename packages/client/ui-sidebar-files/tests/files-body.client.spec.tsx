@@ -28,6 +28,38 @@ function names(root: HTMLElement): string[] {
 }
 
 describe('FilesBody', () => {
+  it('replaces the page and uses the original preview/download entry only after confirmed closure', async () => {
+    const gate = Promise.withResolvers<undefined>(), nextPage = vi.fn(), releaseDirectory = vi.fn(() => gate.promise)
+    const download = vi.fn(async () => {})
+    const f = mountBody(ROOT, undefined, { download, upload: async () => {}, createDirectory: async () => 'folder' }, { nextPage, releaseDirectory })
+    await act(() => f.script.watches.ready(ROOT))
+    await act(() => f.script.settle({ ok: true, value: { ...ROOT_LEVEL, truncated: true, directoryPaging: true } }))
+    fireEvent.click(f.view.getByRole('button', { name: zh['page.browse'] }))
+    expect(nextPage).toHaveBeenCalledWith(TAB, ROOT, f.controller.signal, false)
+    await act(async () => { f.instance.actions.loaded(TAB, ROOT, { entries: [{ name: 'item-129.txt', type: 'file' }],
+      truncated: false, directoryPaging: true, page: { number: 3, more: false } }) })
+    expect(names(f.view.container)).toEqual([`${ROOT}/item-129.txt`])
+    fireEvent.click(f.view.getByRole('button', { name: 'item-129.txt' }))
+    fireEvent.click(f.view.getByRole('checkbox', { name: '选择 item-129.txt' }))
+    fireEvent.click(f.view.getByRole('button', { name: zh.download }))
+    expect(f.tabActions.openResource).not.toHaveBeenCalled(); expect(download).not.toHaveBeenCalled()
+    await act(async () => { gate.resolve(undefined); await gate.promise })
+    expect(f.tabActions.openResource).toHaveBeenCalledWith(fileAddressFor(SESSION, ROOT, `${ROOT}/item-129.txt`))
+    expect(download).toHaveBeenCalledWith(SESSION, [`${ROOT}/item-129.txt`], f.controller.signal)
+  })
+
+  it('reports unknown directory closure and blocks both original file actions', async () => {
+    const releaseDirectory = vi.fn(async () => { throw new Error('No Host acknowledgement') }), nextPage = vi.fn()
+    const download = vi.fn(async () => {})
+    const f = mountBody(ROOT, undefined, { download, upload: async () => {}, createDirectory: async () => 'folder' }, { nextPage, releaseDirectory })
+    await act(() => f.script.watches.ready(ROOT))
+    await act(() => f.script.settle({ ok: true, value: ROOT_LEVEL }))
+    await act(async () => { fireEvent.click(f.view.getByRole('button', { name: 'README.md' })) })
+    fireEvent.click(f.view.getByRole('checkbox', { name: '选择 README.md' }))
+    await act(async () => { fireEvent.click(f.view.getByRole('button', { name: zh.download })) })
+    expect(f.tabActions.openResource).not.toHaveBeenCalled(); expect(download).not.toHaveBeenCalled()
+    expect(f.view.getByText(zh['error.directoryCloseFailed'])).toBeTruthy()
+  })
   it('displays the effective file-tree refresh accelerator', async () => {
     const { view, script } = mountBody(ROOT, { id: 'page.refresh' as never, label: 'Refresh', aliases: [],
       binding: null, keys: ['Ctrl', 'R'], aria: 'Control+R', modified: true, conflicts: [], issue: null })

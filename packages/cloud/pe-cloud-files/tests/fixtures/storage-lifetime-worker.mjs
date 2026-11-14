@@ -3,7 +3,8 @@ import { parentPort, workerData } from 'node:worker_threads'
 const { record, facts, mounts, status, counters } = workerData
 const counts = new Int32Array(counters)
 const encode = value => new TextEncoder().encode(value)
-parentPort.postMessage({ kind: 'ready', abiVersion: 8, storageProbeVersion: 1, skillVersionsVersion: 1 })
+parentPort.postMessage({ kind: 'ready', abiVersion: 8, directoryListingVersion: 1,
+  storageProbeVersion: 1, skillVersionsVersion: 1 })
 parentPort.on('message', request => {
   if (request.kind === 'storage-record') {
     const bytes = encode(JSON.stringify(record))

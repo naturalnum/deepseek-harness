@@ -24,8 +24,9 @@ import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { DirLevel, createFilesStore } from './store.ts'
 import type { WorkspaceFileWatchFrame } from '@deepseek-ai/dsh-api-workspace-files/types'
-import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
+import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import { DirectoryNode } from './directory-node.ts'
+import type { DirectoryPages, OpenDirectoryPages } from './directory-pages.ts'
 
 /**
  * Observe one directory without recursively watching its descendants.
@@ -95,7 +96,8 @@ export function createList(remote: WorkspaceFilesListRemote): ListWorkspaceDirec
   return async (sessionId, path, signal) => {
     const result = await remote.workspaceFiles.list(sessionId, path, signal)
     if (!result.ok) return result
-    return { ok: true, value: { entries: result.value.entries, truncated: result.value.truncated } }
+    return { ok: true, value: { entries: result.value.entries, truncated: result.value.truncated,
+      ...result.value.directoryPaging === true ? { directoryPaging: true } : {} } }
   }
 }
 
@@ -115,6 +117,10 @@ export function childPath(parent: string, name: string): string {
 /** The tree's injected business face, as the body receives it. */
 export interface FilesInjected {
   readonly management?: import('./management.ts').WorkspaceFileManagement
+  /** Read the next page, or explicitly restart at page one, using this face's original stream. */
+  readonly nextPage: (tabId: TabId, path: string, signal: AbortSignal, restart?: boolean) => void
+  /** Close and join the owned enumeration before preview/download; undefined means there is none. */
+  readonly releaseDirectory: () => Promise<void> | undefined
   /** Refresh the open directory tree. @param tabId - owning tab. */
   readonly refresh: (tabId: TabId) => void
   /** Control automatic rereads without closing watches. @param tabId - owning tab. @param enabled - automatic-refresh setting. */
@@ -149,12 +155,14 @@ export interface FilesInjected {
  * @param list - the bound `workspaceFiles.list` call.
  * @param watch - target-scoped directory observation.
  * @param observeUpload - optional native upload completion listener; its disposer belongs to the tab.
+ * @param openPages - original optional Native page stream, with no automatic reconnect.
  * @returns the Slot `inject` factory: session and bound actions in, face out.
  */
 export function filesFace(
   list: ListWorkspaceDirectory,
   watch: WatchWorkspaceDirectory,
   observeUpload?: (sessionId: SessionId, changed: () => void) => () => void,
+  openPages?: OpenDirectoryPages,
 ): (sessionId: SessionId, actions: BoundActions<ReturnType<typeof createFilesStore>>) => FilesInjected {
   return (
     sessionId: SessionId,
@@ -163,6 +171,36 @@ export function filesFace(
     /** Per tab, per absolute path: the listing generation a settlement must match; the latest request wins. */
     const generations = new Map<TabId, Map<string, number>>()
     const roots = new Map<TabId, DirectoryNode>()
+    let active: { tabId: TabId; path: string; pages: DirectoryPages; signal: AbortSignal } | undefined
+    let serial = Promise.resolve(), queued = 0
+    const enqueue = <T>(run: () => Promise<T>): Promise<T> => {
+      queued++
+      const operation = serial.then(run).finally(() => { queued-- })
+      serial = operation.then(() => {}, () => {})
+      return operation
+    }
+    const failed = (tabId: TabId, path: string, signal: AbortSignal, error: unknown): void => {
+      if (signal.aborted || !roots.has(tabId)) return
+      const failure = remoteErrorOf(error) ?? new RemoteError('gateway/internal', error instanceof Error ? error.message : String(error), {})
+      if (failure.code === 'workspace-file/directory-changed') actions.invalidated(tabId, path, failure)
+      else {
+        actions.failed(tabId, path, failure)
+        actions.pageState(tabId, path, false, true)
+      }
+    }
+    const closeActive = async (): Promise<void> => {
+      const previous = active
+      if (previous === undefined) return
+      // Keep the same failed owner on unknown closure. A later file action or
+      // replacement must not silently acquire another slot behind it.
+      await previous.pages.close()
+      if (!previous.signal.aborted && roots.has(previous.tabId)) actions.pageState(previous.tabId, previous.path, false, true)
+      if (active === previous) active = undefined
+    }
+    const releaseDirectory = (): Promise<void> | undefined => {
+      if (active === undefined && queued === 0) return
+      return enqueue(closeActive)
+    }
     const nextGeneration = (tabId: TabId, path: string): number => {
       const byPath = generations.get(tabId) ?? new Map<string, number>()
       generations.set(tabId, byPath)
@@ -174,16 +212,53 @@ export function filesFace(
       if (signal.aborted) return
       const generation = nextGeneration(tabId, path)
       actions.loading(tabId, path)
-      return list(sessionId, path, signal).then((result) => {
+      try {
+        const result = await (active === undefined && queued === 0 ? list(sessionId, path, signal) : enqueue(async () => {
+          await closeActive()
+          if (signal.aborted) return
+          return list(sessionId, path, signal)
+        }))
+        if (result === undefined) return
         // A newer listing of this level was asked for since, or the record is
         // gone and its bookkeeping with it: nothing left for this one to write.
         if (signal.aborted || generations.get(tabId)?.get(path) !== generation) return
         if (result.ok) actions.loaded(tabId, path, result.value)
         else actions.failed(tabId, path, result.error)
         return result.ok ? result.value : undefined
-      })
+      } catch (error) { failed(tabId, path, signal, error); return }
     }
     return {
+      releaseDirectory,
+      nextPage(tabId, path, lifetime, restart = false) {
+        const node = roots.get(tabId)?.find(path)
+        if (node === undefined) return
+        const signal = AbortSignal.any([lifetime, node.lifetime])
+        if (signal.aborted || openPages === undefined) return
+        const generation = nextGeneration(tabId, path)
+        actions.pageState(tabId, path, true, false)
+        void enqueue(async () => {
+          if (signal.aborted || generations.get(tabId)?.get(path) !== generation) return
+          if (restart || active?.tabId !== tabId || active.path !== path) await closeActive()
+          if (signal.aborted) return
+          if (active === undefined) {
+            const record = { tabId, path, signal, pages: openPages(sessionId, path, signal) }
+            active = record
+            void record.pages.ended.catch((error: unknown) => {
+              if (active === record) failed(tabId, path, signal, error)
+            })
+          }
+          const level = await active.pages.next()
+          return level
+        }).then(async (level) => {
+          if (level === undefined) return
+          if (signal.aborted || generations.get(tabId)?.get(path) !== generation) return
+          await roots.get(tabId)?.find(path)?.reconcile(level)
+          if (signal.aborted || generations.get(tabId)?.get(path) !== generation) return
+          actions.loaded(tabId, path, level)
+        }).then(() => {
+          if (!signal.aborted && roots.has(tabId)) actions.pageState(tabId, path, false, false)
+        }, (error: unknown) => { failed(tabId, path, signal, error) })
+      },
       refresh: (tabId) => { void roots.get(tabId)?.refreshTree() },
       setAutoRefresh: (tabId, enabled) => {
         actions.autoRefresh(tabId, enabled)
@@ -198,6 +273,7 @@ export function filesFace(
           roots.delete(tabId)
           generations.delete(tabId)
           actions.forget(tabId)
+          if (active?.tabId === tabId) void enqueue(closeActive).catch(() => {})
         }, { once: true })
         roots.set(tabId, new DirectoryNode(root,
           (path, lifetime) => load(tabId, path, lifetime),

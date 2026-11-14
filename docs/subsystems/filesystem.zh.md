@@ -92,6 +92,10 @@ interface FsPathInfo {
 
 `listDir` 按稳定的名称顺序返回直接子条目。每个条目携带子项的 basename、类型、已解析目标，以及后端能报告时的廉价元数据。它禁止读取文件内容，因此 `size` 仅用于普通文件，`version` 来自元数据。已损坏或已消失的子项可以作为 `other` 返回且不带元数据；列出或解析子项元数据时的权限或后端 I/O 失败会以 `FS_PERMISSION_DENIED` 或 `FS_IO_ERROR` 使整个列表操作失败。
 
+可选的 `openDirectory(target, maxEntries, signal)` 返回 `FsDirectoryEnumeration`。`FsDirectoryVersion` 只属于本次枚举；`next()` 返回有界的 `FsDirectoryPage`，`eof: true` 必须同时有 `closed: true`。调用方在 credit 与交付前执行 `assertCurrent()`，空闲等待期间观察 `ended`，并在后续依赖操作前加入 `close()`。关闭使已签发页面权限失效。默认实现以 `FS_PERMISSION_DENIED` 拒绝；提供方不通过物化完整列表模拟这个原语。
+
+`listDir` 必须完整返回或失败。允许展示部分结果的消费方使用 `listDirectory(target, signal): Promise<FsDirectoryListing>`，通过必需的 `entries` 和 `truncated` 显式表达完整性。默认实现包装完整的 `listDir` 结果并返回 `truncated: false`，Local 和 SSH 提供方继承该行为。有界覆盖可以返回 `truncated: true` 的已排序子集，不保证是整个目录排序后的前若干项，也不授予遗漏项权限。提供方失败仍向上传播；该原语没有分页游标。
+
 ```ts type-equiv
 /**
  * One direct child returned by {@link FileSystem.listDir}. Listing returns
@@ -275,7 +279,7 @@ type FsErrorCode =
 
 ## 服务与插件
 
-`FileSystem`（`ctx.fs`，abstract）拥有提供方原语：`resolve`、`processPath`、`processPathFromHostPath`、`fileUrl`、`contains`、`stat`、`lstat`、`readText`、`streamText`、`readBytes`、`listDir`、`writeText` 与 `editText`。`dsh-fs-observation-policy` **不注册服务**。它通过 `fs/*` 事件门禁添加策略，根据未见、缺失或存在状态对写入与编辑意图 waterfall 作出决策，并记录 `FsObservation` 值。执行器是 `dsh-tool-fs`：它通过 `ctx.fs` 读取、写入或编辑，分发 waterfall，并 emit 记录事件。下方生成的 [`ctx.fs` 小节](#ctxfs--filesystem-abstract-seam) 展示确切的 `ctx.fs` 签名。
+`FileSystem`（`ctx.fs`，abstract）拥有提供方原语：`resolve`、`processPath`、`processPathFromHostPath`、`fileUrl`、`contains`、`stat`、`lstat`、`readText`、`streamText`、`readBytes`、`listDir`、`listDirectory`、`writeText` 与 `editText`。`dsh-fs-observation-policy` **不注册服务**。它通过 `fs/*` 事件门禁添加策略，根据未见、缺失或存在状态对写入与编辑意图 waterfall 作出决策，并记录 `FsObservation` 值。执行器是 `dsh-tool-fs`：它通过 `ctx.fs` 读取、写入或编辑，分发 waterfall，并 emit 记录事件。下方生成的 [`ctx.fs` 小节](#ctxfs--filesystem-abstract-seam) 展示确切的 `ctx.fs` 签名。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -435,9 +439,27 @@ abstract readByteRange(target: FsTarget, range: { offset: number; length: number
  * child targets plus cheap metadata only; never reads file contents.
  * @param target - the resolved directory target.
  * @param signal - aborts the listing.
- * @returns one entry per direct child, in stable name order.
+ * @returns one entry per direct child, in stable name order; incomplete listings reject.
  */
 abstract listDir(target: FsTarget, signal?: AbortSignal): Promise<FsDirEntry[]>
+
+/**
+ * List direct children while preserving a provider's explicit completeness result.
+ * Providers with bounded enumeration may override this method; the default uses the complete listing.
+ * @param target - the resolved directory target.
+ * @param signal - aborts the original provider listing.
+ * @returns stable metadata-only entries and whether children were omitted; provider failures propagate.
+ */
+async listDirectory(target: FsTarget, signal?: AbortSignal): Promise<FsDirectoryListing>
+
+/**
+ * Open an explicitly supported direct-child enumeration; the default refuses rather than slicing a full listing.
+ * @param target Original resolved directory target.
+ * @param maxEntries Consumer's existing positive per-page entry cap; provider limits may be smaller.
+ * @param signal Cancels the original enumeration while actual cleanup remains owned.
+ * @returns A finite provider enumeration with explicit version, page and actual closure facts.
+ */
+openDirectory(target: FsTarget, maxEntries: number, signal?: AbortSignal): Promise<FsDirectoryEnumeration>
 
 /**
  * Atomically create or replace UTF-8 text. `expected` guards intent and

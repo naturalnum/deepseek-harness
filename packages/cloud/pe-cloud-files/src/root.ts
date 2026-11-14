@@ -102,6 +102,11 @@ export const Config: z<Config> = z.object({
     maxReplyBytes: z.natural().min(1).max(2147483647).required(),
     operationTimeoutMs: z.natural().min(1).max(2147483647).required(),
   })]),
+  directoryPaging: z.union([z.object({
+    idleTimeoutMs: z.natural().min(1).max(2147483647).required(),
+    totalTimeoutMs: z.natural().min(1).max(2147483647).required(),
+    maxPages: z.natural().min(1).max(2147483647).required(),
+  })]),
   staging: z.union([z.object({
     helperPath: z.string().required(),
     maxFileBytes: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),

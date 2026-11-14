@@ -682,6 +682,10 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   PruneResult: 'compaction.md',
   FileReadOutcome: 'filesystem.md',
   FsDirEntry: 'filesystem.md',
+  FsDirectoryEnumeration: 'filesystem.md',
+  FsDirectoryListing: 'filesystem.md',
+  FsDirectoryPage: 'filesystem.md',
+  FsDirectoryVersion: 'filesystem.md',
   FsEditOutcome: 'filesystem.md',
   FsEditRequest: 'filesystem.md',
   FsInfo: 'filesystem.md',
@@ -1025,6 +1029,9 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   TypertPackageRecord: 'typert.md',
   TypertSchemaFilter: 'typert.md',
   TypertSchemaRecord: 'typert.md',
+  WorkspaceDirectoryControl: 'workspace.md',
+  WorkspaceDirectoryCursor: 'workspace.md',
+  WorkspaceDirectoryFrame: 'workspace.md',
 }
 
 /** TypeScript lib and pinned framework types with no repository-owned data page. */

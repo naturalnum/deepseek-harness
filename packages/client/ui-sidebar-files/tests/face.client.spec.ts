@@ -8,6 +8,7 @@ import type { WorkspaceFilesListRemote } from '../src/client/face.ts'
 import { createFilesStore } from '../src/client/store.ts'
 import type { DirLevel } from '../src/client/store.ts'
 import { DirectoryNode } from '../src/client/directory-node.ts'
+import type { OpenDirectoryPages } from '../src/client/directory-pages.ts'
 import { scriptedList } from './scripted-list.client.ts'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 
@@ -17,10 +18,10 @@ const TAB = 'tab-1' as TabId
 
 const LEVEL: DirLevel = { entries: [{ name: 'src', type: 'directory' }], truncated: false }
 
-function mount() {
+function mount(openPages?: OpenDirectoryPages) {
   const instance = createFilesStore().create()
   const script = scriptedList()
-  const face = filesFace(script.list, script.watch)(SESSION, instance.actions)
+  const face = filesFace(script.list, script.watch, undefined, openPages)(SESSION, instance.actions)
   const controller = new AbortController()
   onTestFinished(async () => {
     controller.abort()
@@ -30,6 +31,84 @@ function mount() {
 }
 
 describe('filesFace', () => {
+  it('binds the enumeration to the original child node so collapse revokes it while the tab stays live', async () => {
+    const ended = Promise.withResolvers<undefined>()
+    const open = vi.fn<OpenDirectoryPages>(() => ({ ended: ended.promise, close: async () => {},
+      next: async () => ({ entries: [], truncated: false, directoryPaging: true, page: { number: 1, more: false } }) }))
+    const h = mount(open), child = `${ROOT}/src`
+    onTestFinished(() => { ended.resolve(undefined) })
+    h.face.start(TAB, ROOT, h.controller.signal)
+    await h.watches.ready(ROOT); await h.settle({ ok: true, value: LEVEL })
+    h.face.toggle(TAB, ROOT, child, [ROOT], h.controller.signal)
+    await h.watches.ready(child); await h.settle({ ok: true, value: { entries: [], truncated: false, directoryPaging: true } })
+    h.face.nextPage(TAB, child, h.controller.signal)
+    await vi.waitFor(() => { expect(open).toHaveBeenCalledOnce() })
+    const lifetime = open.mock.calls[0]![2]
+    expect(lifetime.aborted).toBe(false)
+    h.face.toggle(TAB, ROOT, child, [ROOT, child], h.controller.signal)
+    expect(lifetime.aborted).toBe(true)
+    expect(h.controller.signal.aborted).toBe(false)
+  })
+  it('joins the previous enumeration before opening another and retains only the current page', async () => {
+    const closed = Promise.withResolvers<undefined>(), ended = Promise.withResolvers<undefined>()
+    let number = 0
+    const next = vi.fn(async (): Promise<DirLevel> => ({ entries: [{ name: `page-${++number}`, type: 'file' }],
+      truncated: true, directoryPaging: true, page: { number, more: true } }))
+    const close = vi.fn(() => closed.promise)
+    const open = vi.fn<OpenDirectoryPages>(() => ({ ended: ended.promise, next, close }))
+    const h = mount(open)
+    onTestFinished(() => { closed.resolve(undefined); ended.resolve(undefined) })
+    h.face.start(TAB, ROOT, h.controller.signal)
+    await h.watches.ready(ROOT); await h.settle({ ok: true, value: { ...LEVEL, truncated: true, directoryPaging: true } })
+    h.face.nextPage(TAB, ROOT, h.controller.signal)
+    await vi.waitFor(() => { expect(h.snapshot()?.levels[ROOT]).toMatchObject({ kind: 'ready', level: { entries: [{ name: 'page-1' }] } }) })
+    h.face.nextPage(TAB, ROOT, h.controller.signal)
+    await vi.waitFor(() => { expect(h.snapshot()?.levels[ROOT]).toMatchObject({ kind: 'ready', level: { entries: [{ name: 'page-2' }] } }) })
+    expect(open).toHaveBeenCalledOnce()
+    const releasing = h.face.releaseDirectory()
+    h.face.nextPage(TAB, ROOT, h.controller.signal, true)
+    await vi.waitFor(() => { expect(close).toHaveBeenCalledOnce() })
+    expect(open).toHaveBeenCalledOnce()
+    closed.resolve(undefined); await releasing
+    await vi.waitFor(() => { expect(open).toHaveBeenCalledTimes(2) })
+    await vi.waitFor(() => { expect(h.snapshot()?.levels[ROOT]).toMatchObject({ kind: 'ready', level: { entries: [{ name: 'page-3' }] } }) })
+  })
+
+  it('keeps an unknown-close owner and refuses a replacement or dependent file action', async () => {
+    const ended = Promise.withResolvers<undefined>()
+    const close = vi.fn(async () => { throw new Error('Actual close unknown') })
+    const open = vi.fn<OpenDirectoryPages>(() => ({ ended: ended.promise,
+      next: async () => ({ entries: [{ name: 'last', type: 'file' }], truncated: true, directoryPaging: true, page: { number: 1, more: true } }), close }))
+    const h = mount(open)
+    onTestFinished(() => { ended.resolve(undefined) })
+    h.face.start(TAB, ROOT, h.controller.signal)
+    await h.watches.ready(ROOT); await h.settle({ ok: true, value: { ...LEVEL, directoryPaging: true } })
+    h.face.nextPage(TAB, ROOT, h.controller.signal)
+    await vi.waitFor(() => { expect(h.snapshot()?.levels[ROOT]).toMatchObject({ kind: 'ready', level: { page: { number: 1 } } }) })
+    await expect(h.face.releaseDirectory()).rejects.toThrow('Actual close unknown')
+    h.face.nextPage(TAB, ROOT, h.controller.signal, true)
+    await vi.waitFor(() => { expect(close).toHaveBeenCalledTimes(2) })
+    expect(open).toHaveBeenCalledOnce()
+    await expect(h.face.releaseDirectory()).rejects.toThrow('Actual close unknown')
+  })
+
+  it('clears the stale page and descendants before allowing an explicit restart', async () => {
+    const changed = new RemoteError('workspace-file/directory-changed', 'changed', { path: ROOT, closed: true })
+    const ended = Promise.withResolvers<undefined>()
+    const open = vi.fn<OpenDirectoryPages>(() => ({ ended: ended.promise,
+      next: async () => { throw changed }, close: async () => {} }))
+    const h = mount(open)
+    onTestFinished(() => { ended.resolve(undefined) })
+    h.face.start(TAB, ROOT, h.controller.signal)
+    await h.watches.ready(ROOT); await h.settle({ ok: true, value: { ...LEVEL, directoryPaging: true } })
+    h.actions.loaded(TAB, `${ROOT}/src`, LEVEL)
+    h.face.nextPage(TAB, ROOT, h.controller.signal)
+    await vi.waitFor(() => { expect(h.snapshot()?.levels[ROOT]).toEqual({ kind: 'failed', failure: changed }) })
+    expect(Object.keys(h.snapshot()!.levels)).toEqual([ROOT])
+    expect(open).toHaveBeenCalledOnce()
+    h.face.nextPage(TAB, ROOT, h.controller.signal, true)
+    await vi.waitFor(() => { expect(open).toHaveBeenCalledTimes(2) })
+  })
   it.each(['/', 'C:/', 'C:\\', '/work/app/'])('expands a child of the exact root key %s', async (root) => {
     const h = mount()
     const child = childPath(root, 'src')

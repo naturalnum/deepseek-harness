@@ -484,9 +484,18 @@ Host Remote file reads and workspace directory observations over the composed fi
  * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
  * @param path - workspace path, absolute or relative to the workspace root.
  * @param signal - caller cancellation.
- * @returns the directory's children in the backend's stable name order, bounded by the entry cap.
+ * @returns the backend's sorted subset, with truncation from either the provider or this service's entry cap.
  */
 @Remote async list(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceDirectoryListing>
+
+/**
+ * Enumerate direct children with one credit per page on the original selected stream.
+ * @param workspaceFileScope Header-derived original Session and workspace identity.
+ * @param path Workspace directory path; no cursor can select another path.
+ * @param signal Original physical stream cancellation.
+ * @returns Ready, bounded pages and either a closed EOF page or an explicit Host close acknowledgement.
+ */
+@Remote({ mode: 'stream' }) listPages(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal) : RemoteStream<WorkspaceDirectoryFrame, WorkspaceDirectoryControl>
 
 /**
  * Watch one file or a directory's direct entries in the Session's filesystem.
@@ -499,6 +508,8 @@ Host Remote file reads and workspace directory observations over the composed fi
  */
 @Remote({ mode: 'stream' }) changes(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): AsyncIterable<WorkspaceFileWatchFrame>
 ```
+
+Types: [RemoteStream](typert.md)
 
 Source: [`packages/api/workspace-files/src/index.ts`](../../packages/api/workspace-files/src/index.ts)
 

@@ -20,6 +20,7 @@
  */
 
 import { posix, win32 } from 'node:path'
+import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-fs'
@@ -28,13 +29,16 @@ import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { Remote, RemoteError, TypertRemoteService, type TypertLookup } from '@deepseek-ai/dsh-typert-protocol'
+import { Remote, RemoteError, TypertRemoteService, type TypertLookup, type RemoteStream } from '@deepseek-ai/dsh-typert-protocol'
 import { WorkspaceChangeFeed } from './changes.ts'
 import type {
   WorkspaceByteRange,
   WorkspaceByteReadOptions,
   WorkspaceDirectoryEntry,
   WorkspaceDirectoryListing,
+  WorkspaceDirectoryControl,
+  WorkspaceDirectoryCursor,
+  WorkspaceDirectoryFrame,
   WorkspaceFileBytes,
   WorkspaceFileRange,
   WorkspaceFileStat,
@@ -298,7 +302,7 @@ export class WorkspaceFiles extends TypertRemoteService {
    * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
    * @param path - workspace path, absolute or relative to the workspace root.
    * @param signal - caller cancellation.
-   * @returns the directory's children in the backend's stable name order, bounded by the entry cap.
+   * @returns the backend's sorted subset, with truncation from either the provider or this service's entry cap.
    */
   @Remote
   async list(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceDirectoryListing> {
@@ -320,12 +324,125 @@ export class WorkspaceFiles extends TypertRemoteService {
         throw new RemoteError('workspace-file/not-directory', `"${path}" does not resolve to a directory`, { path, kind: 'symlink' })
       }
     }
-    const children = await this.ctx.fs.listDir(target, signal)
+    const listing = await this.ctx.fs.listDirectory(target, signal)
     return {
       path: workspacePathOf(this.ctx.fs.fileUrl(root), this.ctx.fs.fileUrl(target)),
-      entries: children.slice(0, this.config.maxEntries).map(directoryEntry),
-      truncated: children.length > this.config.maxEntries,
+      entries: listing.entries.slice(0, this.config.maxEntries).map(directoryEntry),
+      truncated: listing.truncated || listing.entries.length > this.config.maxEntries,
+      ...listing.directoryPaging === true ? { directoryPaging: true as const } : {},
     }
+  }
+
+  /**
+   * Enumerate direct children with one credit per page on the original selected stream.
+   * @param workspaceFileScope Header-derived original Session and workspace identity.
+   * @param path Workspace directory path; no cursor can select another path.
+   * @param signal Original physical stream cancellation.
+   * @returns Ready, bounded pages and either a closed EOF page or an explicit Host close acknowledgement.
+   */
+  @Remote({ mode: 'stream' })
+  listPages(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal)
+    : RemoteStream<WorkspaceDirectoryFrame, WorkspaceDirectoryControl> {
+    const invocation = this.ctx.invocation
+    if (invocation === undefined) throw new RemoteError('gateway/bad-request', 'Directory pages require the original stream.', {})
+    return (async function* (this: WorkspaceFiles): AsyncIterable<WorkspaceDirectoryFrame> {
+      const caller = new AbortController(), control = AbortSignal.any([signal, invocation.signal, caller.signal])
+      const uplink = invocation.uplink<WorkspaceDirectoryControl>()[Symbol.asyncIterator]()
+      let enumeration: Awaited<ReturnType<Context['fs']['openDirectory']>> | undefined
+      let pending: Promise<IteratorResult<WorkspaceDirectoryControl>> | undefined
+      const aborted = Promise.withResolvers<never>()
+      const onAbort = (): void => { aborted.reject(new RemoteError('gateway/bad-request', 'Directory enumeration was cancelled.', {})) }
+      void aborted.promise.catch(() => {})
+      control.addEventListener('abort', onAbort, { once: true })
+      if (control.aborted) onAbort()
+      try {
+        control.throwIfAborted()
+        const { root, workspaceRoot, entry } = await this.inspect(workspaceFileScope, path, control)
+        control.throwIfAborted()
+        if (entry.type !== 'directory' && entry.type !== 'symlink') {
+          throw new RemoteError('workspace-file/not-directory', `"${path}" is not a directory`, { path, kind: entry.type })
+        }
+        const target = await this.confine(root, workspaceRoot, path, control)
+        control.throwIfAborted()
+        if (entry.type === 'symlink') {
+          const info = await this.ctx.fs.stat(target, control)
+          control.throwIfAborted()
+          if (info?.type !== 'directory') {
+            throw new RemoteError('workspace-file/not-directory', `"${path}" does not resolve to a directory`, { path, kind: 'symlink' })
+          }
+        }
+        enumeration = await this.ctx.fs.openDirectory(target, this.config.maxEntries, control)
+        enumeration.assertCurrent()
+        const directoryPath = workspacePathOf(this.ctx.fs.fileUrl(root), this.ctx.fs.fileUrl(target))
+        const bounded = <T extends WorkspaceDirectoryFrame>(frame: T): T => {
+          if (enumeration === undefined || Buffer.byteLength(JSON.stringify(frame)) > enumeration.maxReplyBytes) {
+            throw new RemoteError('workspace-file/too-large', 'The complete directory frame exceeds its original byte cap.',
+              { path, limit: enumeration?.maxReplyBytes ?? 0 })
+          }
+          return frame
+        }
+        let cursor: WorkspaceDirectoryCursor | null = randomUUID() as WorkspaceDirectoryCursor
+        const ended = enumeration.ended.then(() => {
+          throw new RemoteError('gateway/bad-request', 'Directory enumeration ended before the next credit.', {})
+        })
+        void ended.catch(() => {})
+        yield bounded({ kind: 'ready', path: directoryPath, version: enumeration.version, cursor })
+        while (cursor !== null) {
+          enumeration.assertCurrent()
+          pending = uplink.next()
+          const item = await Promise.race([pending, ended, aborted.promise])
+          pending = undefined
+          enumeration.assertCurrent()
+          if (item.done) throw new RemoteError('gateway/bad-request', 'Directory uplink ended before EOF.', {})
+          const request: unknown = item.value
+          if (typeof request !== 'object' || request === null || Object.keys(request).length !== 3
+            || !('kind' in request) || (request.kind !== 'credit' && request.kind !== 'close')
+            || !('cursor' in request) || request.cursor !== cursor || !('version' in request) || request.version !== enumeration.version
+            || Buffer.byteLength(JSON.stringify(request)) > enumeration.maxReplyBytes) {
+            throw new RemoteError('gateway/bad-request', 'Directory credit is stale, malformed or belongs to another stream.', {})
+          }
+          cursor = null
+          if (request.kind === 'close') {
+            caller.abort()
+            await enumeration.close()
+            yield bounded({ kind: 'closed', version: enumeration.version, closed: true })
+            return
+          }
+          const page = await enumeration.next()
+          enumeration.assertCurrent()
+          if (page.entries.length > this.config.maxEntries) {
+            throw new RemoteError('workspace-file/too-large', 'The directory page exceeds its entry cap.',
+              { path, limit: this.config.maxEntries })
+          }
+          const entries = page.entries.map(directoryEntry)
+          if (page.eof) {
+            yield bounded({ kind: 'page', path: directoryPath, version: page.version, entries, nextCursor: null, closed: true })
+            return
+          }
+          cursor = randomUUID() as WorkspaceDirectoryCursor
+          yield bounded({ kind: 'page', path: directoryPath, version: page.version, entries, nextCursor: cursor, closed: false })
+        }
+      } catch (error) {
+        if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'FS_STALE_VERSION') {
+          await enumeration?.close()
+          throw new RemoteError('workspace-file/directory-changed', 'The directory changed. Reopen it from the first page.', { path, closed: true }, { cause: error })
+        }
+        if (enumeration !== undefined && typeof error === 'object' && error !== null && 'code' in error
+          && (error.code === 'FS_ABORTED' || error.code === 'FS_TOO_LARGE' || error.code === 'FS_PERMISSION_DENIED')) {
+          await enumeration.close()
+          throw new RemoteError('workspace-file/directory-stopped', 'Directory enumeration stopped. Start a new enumeration to browse again.',
+            { path, closed: true, reason: error.code === 'FS_ABORTED' ? 'cancelled' : error.code === 'FS_TOO_LARGE' ? 'too-large' : 'unavailable' }, { cause: error })
+        }
+        throw error
+      } finally {
+        control.removeEventListener('abort', onAbort)
+        caller.abort()
+        try { await uplink.return?.() } finally {
+          if (pending !== undefined) await pending.catch(() => undefined)
+          await enumeration?.close()
+        }
+      }
+    }).call(this)
   }
 
   /**

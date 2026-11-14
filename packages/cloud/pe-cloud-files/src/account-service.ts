@@ -637,7 +637,7 @@ export class CloudAccountFiles extends Service {
 
   /**
    * Require the settled original Registry/FS installation and its trusted actual content-capability check.
-   * @throws FilesFailure for partial installation, replaced providers, S2 omission or unavailable ABI8 pool capability.
+   * @throws FilesFailure for partial installation, replaced providers, S2 omission or a missing content/directory capability.
    */
   assertContentAvailable(): void {
     this.assertInstalled()

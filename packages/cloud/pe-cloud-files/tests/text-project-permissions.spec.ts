@@ -62,7 +62,8 @@ async function fixture(enabled = true) {
             binding, workspace, reader, maxPathBytes: 1024, assertCurrent() {}, assertInstalled() {},
             canonicalPath: async relative => posix.join(project, relative),
             readText: async () => ({ value: 'original', release() {} }),
-            lstat: async () => ({ value: undefined, release() {} }), listDir: async () => ({ value: [], release() {} }),
+            lstat: async () => ({ value: undefined, release() {} }),
+            listDir: async () => ({ value: { entries: [], truncated: false }, release() {} }),
             readBytes: async () => ({ value: new Uint8Array(), release() {} }),
             readByteRange: async () => ({ value: new Uint8Array(), release() {} }), writeText: writes,
           }

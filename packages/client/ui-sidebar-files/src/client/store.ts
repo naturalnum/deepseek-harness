@@ -26,6 +26,12 @@ export interface DirLevel {
   readonly entries: readonly WorkspaceDirectoryEntry[]
   /** The listing hit the endpoint's entry cap, so entries are missing. */
   readonly truncated: boolean
+  /** Actual selected Provider capability; absent for old helpers and other providers. */
+  readonly directoryPaging?: true
+  /** A page gesture is waiting for the current stream or its predecessor to settle. */
+  readonly pagingPending?: boolean
+  /** Current page only; no version, cursor or prior page arrays enter the store. */
+  readonly page?: { readonly number: number; readonly more: boolean; readonly pending?: boolean; readonly stopped?: boolean }
 }
 
 /** What one directory level is doing right now. */
@@ -77,6 +83,8 @@ type FilesActions = {
   loading: (draft: FilesState, tabId: TabId, path: string) => void
   loaded: (draft: FilesState, tabId: TabId, path: string, level: DirLevel) => void
   failed: (draft: FilesState, tabId: TabId, path: string, failure: RemoteFailure) => void
+  pageState: (draft: FilesState, tabId: TabId, path: string, pending: boolean, stopped: boolean) => void
+  invalidated: (draft: FilesState, tabId: TabId, path: string, failure: RemoteFailure) => void
   toggled: (draft: FilesState, tabId: TabId, path: string) => void
   scrolled: (draft: FilesState, tabId: TabId, scrollTop: number) => void
   reset: (draft: FilesState, tabId: TabId) => void
@@ -148,6 +156,21 @@ export function createFilesStore(): EngineStoreHandle<FilesState, FilesActions> 
         bucket(d, tabId).levels[path] = level?.kind === 'ready'
           ? { ...level, failure }
           : { kind: 'failed', failure }
+      },
+      pageState: (d, tabId: TabId, path: string, pending: boolean, stopped: boolean) => {
+        const level = bucket(d, tabId).levels[path]
+        if (level?.kind === 'ready') {
+          const page = level.level.page
+          bucket(d, tabId).levels[path] = { ...level, level: { ...level.level, pagingPending: pending,
+            ...page === undefined ? {} : { page: { ...page, pending, stopped } } } }
+        }
+      },
+      invalidated: (d, tabId: TabId, path: string, failure: RemoteFailure) => {
+        const tree = bucket(d, tabId)
+        const prefix = `${path.replace(/[/\\]+$/, '')}/`
+        tree.expanded = tree.expanded.filter(value => !value.startsWith(prefix) || value === path)
+        tree.levels = Object.fromEntries(Object.entries(tree.levels).filter(([key]) => !key.startsWith(prefix) || key === path))
+        tree.levels[path] = { kind: 'failed', failure }
       },
       /**
        * Open a collapsed directory, or collapse an open one.

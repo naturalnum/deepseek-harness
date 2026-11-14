@@ -301,7 +301,12 @@ async function memoryWebsocket(
 }
 
 function openStream(socket: MemorySocket, id: string): void {
-  const body = Buffer.from(JSON.stringify({ type: 'open', streamId: id, endpoint: 'accessPeerFixture/follow', payload: { args: {} } }))
+  sendStreamFrame(socket, { type: 'open', streamId: id, endpoint: 'accessPeerFixture/follow', payload: { args: {} } })
+}
+
+/** Same original masked WS carrier for an open and a later credit. */
+function sendStreamFrame(socket: MemorySocket, frame: unknown): void {
+  const body = Buffer.from(JSON.stringify(frame))
   if (body.length >= 126) throw new Error('Small test frame required')
   const header = Buffer.from([0x81, body.length | 0x80, 1, 2, 3, 4])
   const mask = header.subarray(2)
@@ -934,6 +939,53 @@ describe.skipIf(configPath === undefined)('internal login Peer with real PG/nati
     fixture.lifetimeA.abort()
     await fixture.registry.closeBinding(fixture.bindingA, Date.now() + 2000)
     expect(handle.peer.signal.aborted).toBe(true)
+  })
+
+  it('rechecks the original existing Use on a paused actual stream without borrowing a second account', async () => {
+    let allowed = true, scans = 0
+    const fixture = await setup({}, undefined, ports => ({ ...ports, beforeStream: () => {
+      if (!allowed) throw new RemoteError('cloud/forbidden', 'Original stream exposure was revoked.', {
+        code: 'cloud/forbidden', message: 'Original stream exposure was revoked.', requestId, retry: 'never',
+      })
+    } }))
+    const handle = await acquire(fixture)
+    const originalFollow = NativeFixture.prototype.follow
+    cleanups.push(async () => { NativeFixture.prototype.follow = originalFollow })
+    NativeFixture.prototype.follow = async function* (this: NativeFixture) {
+      const invocation = this.ctx.invocation
+      if (invocation === undefined) throw new Error('Missing original invocation')
+      const current = fixture.registry.captureStreamCurrent(invocation.peer, fixture.bindingA,
+        'accessPeerFixture/follow', invocation.signal)
+      current(); scans++; yield this.identity()
+      for await (const _credit of invocation.uplink()) { current(); scans++; yield this.identity() }
+    }
+    const ws = await memoryWebsocket(fixture, handle)
+    openStream(ws.socket, 'paused')
+    await vi.waitFor(() => { expect(ws.frames).toContainEqual({ type: 'item', streamId: 'paused', value: { peer: handle.peer.id } }) })
+    allowed = false
+    sendStreamFrame(ws.socket, { type: 'item', streamId: 'paused', value: 'credit' })
+    await vi.waitFor(() => { expect(ws.frames).toContainEqual(expect.objectContaining({ type: 'error', streamId: 'paused',
+      error: expect.objectContaining({ code: 'cloud/forbidden' }) })) })
+    expect(scans).toBe(1)
+    expect(fixture.borrows.get(fixture.a.accountId)).toBe(1)
+    expect(fixture.releases.get(fixture.a.accountId) ?? 0).toBe(0)
+  })
+
+  it('binds the page check to the exact Peer, binding, original login and logical lifetime', async () => {
+    const fixture = await setup(), handle = await acquire(fixture), lifetime = new AbortController()
+    const current = fixture.registry.captureStreamCurrent(handle.peer, fixture.bindingA, 'accessPeerFixture/follow', lifetime.signal)
+    expect(() => current()).not.toThrow()
+    expect(() => fixture.registry.captureStreamCurrent(Object.create(handle.peer), fixture.bindingA,
+      'accessPeerFixture/follow', lifetime.signal)).toThrow()
+    expect(() => fixture.registry.captureStreamCurrent(handle.peer, { ...fixture.bindingA },
+      'accessPeerFixture/follow', lifetime.signal)).toThrow()
+    lifetime.abort()
+    expect(() => current()).toThrow()
+    const otherLifetime = new AbortController()
+    const original = fixture.registry.captureStreamCurrent(handle.peer, fixture.bindingA, 'accessPeerFixture/follow', otherLifetime.signal)
+    await fixture.auth.revokeLogin(handle.principal.authSessionId, requestId)
+    expect(() => original()).toThrow()
+    expect(fixture.borrows.get(fixture.a.accountId)).toBe(1)
   })
 
   // New carrier lifecycle cases use ONLY this original fixture's real Better Auth/PG-issued principals.

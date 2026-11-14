@@ -53,6 +53,12 @@ kind: "package-reference"
 
 每项操作都先通过 `lstat` 拒绝不存在的路径或错误的文件类型；读取文件的操作还拒绝末端符号链接，包括指回工作区内的链接。`list` 改为跟随末端链接——任何平台上的目录符号链接，包括 Windows 目录联接——要求它解析为工作区内的目录，因此被链接的目录与其目标一样可列举；`changes` 也以同样方式把被监听的目录限制在工作区内。文件操作随后通过组合文件系统解析和读取，不做额外的工作区包含检查。配置的分页、窗口、完整文件和目录列举上限仍然适用。文本页还拒绝无效 UTF-8 与 NUL 字节；字节读取不解码内容。读取或列举的空路径是 `gateway/bad-request`。
 
+### 目录分页
+
+`listPages(sessionId, path)` 是独立双向流，只有选中的 Provider 与 Native 暴露声明报告 `directoryPaging: true` 时才可用。`ready` 帧提供一个版本和游标；同一流的一次 `credit` 产生一页有界结果及替代游标。只有实际 EOF 才返回 `nextCursor: null` 与 `closed: true`。同一上行流接受 `close`；Host 确认 Native 清理和 slot 结算后，才发不带目录数据的 `closed` 帧。游标不能选择路径、接续另一条流或跨重启保留。
+
+目录变化在确认清理后返回 `workspace-file/directory-changed`；调用方丢弃旧页，从第一页重开。预算、取消或权限停止仅在确认清理后返回 `workspace-file/directory-stopped`。其它终端失败不提供关闭确认。Client 在预览／下载前必须同时加入关闭回执与原流自然终端；本地 dispose 不够。每次交付页面前都重复原 Session、Workspace 和 Peer／Use 检查。
+
 ### 变更流
 
 `changes` 是 `stream` 模式的 Remote，只接受目标路径。Host 从 `stat` 取得实际目标类型；只要当前类型是目录，就要求位于工作区内，目标类型变化后也执行该检查。一代流先注册观察队列、解析目标并建立 `fs.watch`，然后产出 `{ kind: 'ready' }`。随后产出 `{ kind: 'change', change }`，其中 `change` 为当前 stat 元数据 `{ absolutePath, version }` 或 `{ absolutePath, absent: true }`。本地提供方使用 Chokidar，目录仅监听直接子项。匹配目标的 `fs/observed` 也触发失效。流在初始化期间排队变化。每代流保留调用方绑定的文件系统，用于初始化及后续元数据读取。取消会独立于消费方拉取帧的进度关闭 watcher，流或插件拆除等待关闭完成。父目录保持存在时，缺失文件仍可监听同一路径的重建。
@@ -144,7 +150,7 @@ Typert 生成 `./typert` 与 `./remote` 暴露的 Host 与 Client Remote 产物�
 - **超长单行没有页**——超过 `maxBytes` 的单行在包含它的每个窗口都以 `too-large` 失败，因为页按行而非按字节切。
 - **读取不具备事务性**——结果元数据来自内容读取之前的 stat；并发写入可能使报告版本与返回内容不一致。
 - **generation 队列无界**——一个 `changes` generation 会缓冲操作观察与目标失效通知直到消费方 pull；停滞的消费方会在流的生命期内持续增长 Host 内存。
-- **`maxEntries` 限制的是答案，不是列举**——`list` 让 `ctx.fs.listDir` 列出全部子项后再截断数组，远超上限的目录仍让 Host 付出整个列举的代价（`fs-local` 上每个子项一次 stat）；要限制这份工作，需要文件系统 seam 的 `listDir` 支持上限。
+- **提供方支持时才能限制列举工作量**——`list` 使用 `ctx.fs.listDirectory`，同时保留提供方截断和自身 `maxEntries` 裁剪。默认 Local 和 SSH 实现仍先枚举全部子项再裁剪。有界提供方返回的已排序子集不保证是目录名称排序后的前若干项；`truncated` 不提供游标或遗漏项访问能力。
 - **失效流保留元数据**——Host 结束 `changes` 或流终态失败后，已打开的值保持最后已知状态，直到重新打开。
 
 <a id="dev-note"></a>

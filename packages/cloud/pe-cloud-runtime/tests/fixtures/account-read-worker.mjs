@@ -1,11 +1,11 @@
 /** TEST ONLY Node transport for the native account-read component fixture; no Linux or quota evidence. */
 import { parentPort } from 'node:worker_threads'
-import { closeSync, lstatSync, openSync, readSync, realpathSync, statSync } from 'node:fs'
+import { closeSync, lstatSync, openSync, opendirSync, readSync, realpathSync, statSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 
 const version = info => `${info.dev}:${info.ino}:${info.size}:${info.mtimeNs}:${info.ctimeNs}`
 const isOutside = path => path === '..' || path.startsWith('../')
-parentPort.postMessage({ kind: 'ready', abiVersion: 8 })
+parentPort.postMessage({ kind: 'ready', abiVersion: 8, directoryListingVersion: 1 })
 parentPort.on('message', (request) => {
   const { root, id, relativePath } = request
   const path = join(root.rootPath, relativePath)
@@ -34,6 +34,37 @@ parentPort.on('message', (request) => {
       identity: `${info.dev}:${info.ino}`, version: version(info), type: info.isDirectory() ? 'directory' : 'file',
       ...info.isDirectory() ? {} : { size: Number(info.size) },
     } })
+    return
+  }
+  if (request.kind === 'list') {
+    // Synthetic Node listing for original account composition; Linux metadata,
+    // confinement and actual closure are verified by linux-content-interop.
+    let dir
+    try {
+      if (isOutside(relative(realpathSync(root.rootPath), realpathSync(path)))) { failed('FS_PERMISSION_DENIED', 'EACCES'); return }
+      dir = opendirSync(path)
+      const entries = []
+      let truncated = false, charged = 128
+      while (entries.length < request.maxEntries) {
+        const row = dir.readSync()
+        if (row === null) break
+        const charge = 512 + 6 * Buffer.byteLength(row.name)
+        if (charged + charge > request.maxBytes) {
+          if (entries.length === 0) { failed('FS_TOO_LARGE', 'EFBIG'); return }
+          truncated = true; break
+        }
+        const info = lstatSync(join(path, row.name), { bigint: true })
+        if (info.isFile() && info.nlink !== 1n) { failed('FS_PERMISSION_DENIED', 'EPERM'); return }
+        entries.push({ name: row.name, identity: `${info.dev}:${info.ino}`, version: version(info),
+          type: info.isFile() ? 'file' : info.isDirectory() ? 'directory' : info.isSymbolicLink() ? 'symlink' : 'other',
+          ...info.isFile() || info.isSymbolicLink() ? { size: Number(info.size) } : {} })
+        charged += charge
+      }
+      if (entries.length === request.maxEntries) truncated = dir.readSync() !== null
+      entries.sort((left, right) => Buffer.compare(Buffer.from(left.name), Buffer.from(right.name)))
+      parentPort.postMessage({ kind: 'list-reply', id, listing: { entries, truncated } })
+    } catch (error) { failed(error.code === 'ENOENT' ? 'FS_NOT_FOUND' : 'FS_PERMISSION_DENIED', error.code ?? 'EACCES') }
+    finally { dir?.closeSync() }
     return
   }
   if (request.kind !== 'lstat' && request.kind !== 'read') throw new Error('Unexpected account-read fixture request')

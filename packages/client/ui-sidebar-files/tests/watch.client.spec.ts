@@ -3,11 +3,101 @@ import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SupervisedStreamOptions } from '@deepseek-ai/dsh-api-workspace-files/src/client/remote.ts'
-import { FakeRemote } from '../../../api/workspace-files/tests/fake-remote.client.ts'
+import { FakeRemote, Source } from '../../../api/workspace-files/tests/fake-remote.client.ts'
 import { createWatch } from '../src/client/face.ts'
+import { createDirectoryPages } from '../src/client/directory-pages.ts'
+import type { WorkspaceDirectoryFrame, WorkspaceDirectoryControl } from '@deepseek-ai/dsh-api-workspace-files/types'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 
 const SESSION = 'directory-watch-session' as SessionId
 const ROOT = '/work/app'
+
+/** Script only the original Remote stream; no supervisor or reconnection exists here. */
+function pageTransport() {
+  const lifetime = new AbortController(), carrier = new AbortController()
+  const source = new Source<WorkspaceDirectoryFrame>(carrier.signal)
+  const send = vi.fn<(value: WorkspaceDirectoryControl) => void>()
+  const dispose = vi.fn(() => { carrier.abort() })
+  const listPages = vi.fn(() => ({ send, dispose, end: vi.fn(), [Symbol.asyncIterator]: () => source[Symbol.asyncIterator]() }))
+  const pages = createDirectoryPages({ workspaceFiles: { listPages } })(SESSION, ROOT, lifetime.signal)
+  const version = '1:2:3:4:5:6:7' as WorkspaceDirectoryControl['version']
+  const cursor = (token: string): WorkspaceDirectoryControl['cursor'] => token as WorkspaceDirectoryControl['cursor']
+  const ready: WorkspaceDirectoryFrame = { kind: 'ready', path: '', version, cursor: cursor('first') }
+  onTestFinished(() => { carrier.abort() })
+  return { pages, source, send, dispose, lifetime, listPages, version, cursor, ready }
+}
+
+describe('the Files original page stream', () => {
+  it('sends one credit on readiness and replaces the bounded page on each explicit pull', async () => {
+    const h = pageTransport(), first = h.pages.next()
+    expect(h.listPages).toHaveBeenCalledExactlyOnceWith(SESSION, ROOT)
+    expect(h.send).not.toHaveBeenCalled()
+    await h.source.deliver(h.ready)
+    expect(h.send).toHaveBeenCalledExactlyOnceWith({ kind: 'credit', version: h.version, cursor: h.cursor('first') })
+    h.source.push({ kind: 'page', path: '', version: h.version, entries: [{ name: 'first', type: 'file' }], nextCursor: h.cursor('second'), closed: false })
+    await expect(first).resolves.toMatchObject({ entries: [{ name: 'first' }], page: { number: 1, more: true } })
+    expect(h.send).toHaveBeenCalledTimes(1)
+    const second = h.pages.next()
+    expect(h.send).toHaveBeenLastCalledWith({ kind: 'credit', version: h.version, cursor: h.cursor('second') })
+    h.source.push({ kind: 'page', path: '', version: h.version, entries: [{ name: 'last', type: 'file' }], nextCursor: null, closed: true })
+    await expect(second).resolves.toMatchObject({ entries: [{ name: 'last' }], truncated: false, page: { number: 2, more: false } })
+    let released = false
+    const closing = h.pages.close().then(() => { released = true })
+    await Promise.resolve()
+    expect(released).toBe(false)
+    h.source.end()
+    await closing
+    expect(h.send).toHaveBeenCalledTimes(2)
+    expect(h.dispose).toHaveBeenCalledOnce()
+  })
+
+  it('closes on the same uplink and joins the Host terminal after the acknowledgement', async () => {
+    const h = pageTransport()
+    await h.source.deliver(h.ready)
+    const closing = h.pages.close()
+    let released = false
+    void closing.then(() => { released = true })
+    expect(h.send).toHaveBeenCalledExactlyOnceWith({ kind: 'close', version: h.version, cursor: h.cursor('first') })
+    await h.source.deliver({ kind: 'closed', version: h.version, closed: true })
+    expect(released).toBe(false)
+    h.source.end()
+    await closing
+    expect(released).toBe(true)
+  })
+
+  it('waits for an in-flight page before closing with its new token', async () => {
+    const h = pageTransport(), first = h.pages.next()
+    await h.source.deliver(h.ready)
+    const closing = h.pages.close()
+    expect(h.send).toHaveBeenCalledTimes(1)
+    await h.source.deliver({ kind: 'page', path: '', version: h.version, entries: [{ name: 'discarded', type: 'file' }], nextCursor: h.cursor('next'), closed: false })
+    await first
+    expect(h.send).toHaveBeenLastCalledWith({ kind: 'close', version: h.version, cursor: h.cursor('next') })
+    h.source.push({ kind: 'closed', version: h.version, closed: true }); h.source.end()
+    await closing
+  })
+
+  it('node abort requests Host closure and a quiet local end cannot substitute for its acknowledgement', async () => {
+    const h = pageTransport()
+    await h.source.deliver(h.ready)
+    h.lifetime.abort()
+    expect(h.send).toHaveBeenLastCalledWith({ kind: 'close', version: h.version, cursor: h.cursor('first') })
+    const closing = expect(h.pages.close()).rejects.toThrow('not confirmed')
+    h.source.end()
+    await closing
+  })
+
+  it('preserves a changed-directory failure while accepting only its explicit confirmed cleanup', async () => {
+    const h = pageTransport(), first = h.pages.next()
+    await h.source.deliver(h.ready)
+    const changed = new RemoteError('workspace-file/directory-changed', 'changed', { path: ROOT, closed: true })
+    const failure = expect(first).rejects.toBe(changed)
+    h.source.fail(changed)
+    await failure
+    await expect(h.pages.ended).rejects.toBe(changed)
+    await expect(h.pages.close()).resolves.toBeUndefined()
+  })
+})
 
 function mount() {
   const remote = new FakeRemote()

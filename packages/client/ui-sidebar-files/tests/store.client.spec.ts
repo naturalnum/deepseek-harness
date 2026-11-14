@@ -14,6 +14,30 @@ const LEVEL: DirLevel = {
 }
 
 describe('createFilesStore', () => {
+  it('replaces the current page and drops off-page descendants without retaining wire tokens', () => {
+    const store = createFilesStore().create(), { actions } = store
+    actions.start(TAB, ROOT)
+    actions.loaded(TAB, ROOT, { ...LEVEL, directoryPaging: true, page: { number: 1, more: true } })
+    actions.toggled(TAB, `${ROOT}/src`)
+    actions.loaded(TAB, `${ROOT}/src`, LEVEL)
+    actions.loaded(TAB, ROOT, { entries: [{ name: 'last.txt', type: 'file' }], truncated: false,
+      directoryPaging: true, page: { number: 3, more: false } })
+    const tree = store.getSnapshot().byTab[TAB]!
+    expect(Object.keys(tree.levels)).toEqual([ROOT])
+    expect(tree.expanded).toEqual([ROOT])
+    expect(tree.levels[ROOT]).toEqual({ kind: 'ready', level: { entries: [{ name: 'last.txt', type: 'file' }],
+      truncated: false, directoryPaging: true, page: { number: 3, more: false } } })
+  })
+
+  it('discards stale entries and descendants when the Host requires a version restart', () => {
+    const store = createFilesStore().create(), { actions } = store
+    actions.start(TAB, ROOT); actions.loaded(TAB, ROOT, LEVEL)
+    actions.toggled(TAB, `${ROOT}/src`); actions.loaded(TAB, `${ROOT}/src`, LEVEL)
+    const failure = new RemoteError('workspace-file/directory-changed', 'changed', { path: ROOT, closed: true })
+    actions.invalidated(TAB, ROOT, failure)
+    expect(store.getSnapshot().byTab[TAB]).toMatchObject({ expanded: [ROOT], levels: { [ROOT]: { kind: 'failed', failure } } })
+    expect(Object.keys(store.getSnapshot().byTab[TAB]!.levels)).toEqual([ROOT])
+  })
   it('mints an independent instance per call', () => {
     const first = createFilesStore().create()
     const second = createFilesStore().create()
