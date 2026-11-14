@@ -154,6 +154,22 @@ function prepareReleaseGuard(directory, operation, dir, io) {
  * @returns {Promise<unknown>} Result after confirmed release; failures retain the lock or independent pending guard.
  */
 export async function withNativeOperationLock(directory, operation, action, io = fs) {
+  return nativeOperationLock(directory, operation, action, io, false)
+}
+
+/**
+ * Hold this same pre-existing lock read-only; only a verified result reaches the original release protocol.
+ * @param {string} directory Existing private controller state directory.
+ * @param {string} operation Original native operation UUID.
+ * @param {Function} action Same-operation continuation returning the authoritative verified record.
+ * @param {typeof fs} io Filesystem implementation; omitted uses the host filesystem.
+ * @returns {Promise<object>} Verified record after confirmed release; unknown outcomes retain the blocking responsibility.
+ */
+export async function withRetainedNativePublishLock(directory, operation, action, io = fs) {
+  return nativeOperationLock(directory, operation, action, io, true)
+}
+
+async function nativeOperationLock(directory, operation, action, io, retained) {
   requireNativeReleaseComplete(directory, io)
   if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(operation)) {
     throw new NativeDeliveryUnconfirmed('invalid-operation')
@@ -164,13 +180,41 @@ export async function withNativeOperationLock(directory, operation, action, io =
   catch (error) { if (error.code !== 'ENOENT') throw new NativeDeliveryUnconfirmed('release-receipt-read', error) }
   if (reused) throw new NativeDeliveryUnconfirmed('operation-already-completed')
   const dir = parent(directory, io)
-  let fd, failure, result, unlinked = false
+  let fd, failure, result, originalLock, unlinked = false
+  const checkRetained = () => {
+    const stat = io.fstatSync(fd), pathStat = io.lstatSync(join(directory, 'operation.lock'))
+    const directoryStat = io.lstatSync(directory), heldDirectory = io.fstatSync(dir)
+    const bytes = Buffer.from(JSON.stringify({ format: PROJECTION, operation }) + '\n')
+    const actual = Buffer.alloc(bytes.length)
+    const length = io.readSync(fd, actual, 0, actual.length, 0)
+    if (!stat.isFile() || pathStat.isSymbolicLink() || !pathStat.isFile() || stat.uid !== process.getuid()
+      || stat.nlink !== 1 || (stat.mode & 0o7777) !== 0o600 || stat.size !== bytes.length
+      || stat.dev !== pathStat.dev || stat.ino !== pathStat.ino
+      || directoryStat.dev !== heldDirectory.dev || directoryStat.ino !== heldDirectory.ino
+      || directoryStat.isSymbolicLink() || length !== bytes.length || !actual.equals(bytes)
+      || originalLock && (stat.dev !== originalLock.dev || stat.ino !== originalLock.ino)) {
+      throw new NativeDeliveryUnconfirmed('continuation-original-lock')
+    }
+    originalLock = stat
+  }
   try {
-    fd = io.openSync(join(directory, 'operation.lock'), 'wx', 0o600)
-    io.writeFileSync(fd, JSON.stringify({ format: PROJECTION, operation }) + '\n')
-    io.fsyncSync(fd)
-    io.fsyncSync(dir)
+    if (retained) {
+      originalLock = io.lstatSync(join(directory, 'operation.lock'))
+      fd = io.openSync(join(directory, 'operation.lock'), io.constants.O_RDONLY | io.constants.O_NOFOLLOW)
+      checkRetained()
+    } else {
+      fd = io.openSync(join(directory, 'operation.lock'), 'wx', 0o600)
+      io.writeFileSync(fd, JSON.stringify({ format: PROJECTION, operation }) + '\n')
+      io.fsyncSync(fd)
+      io.fsyncSync(dir)
+    }
     result = await action()
+    if (retained) {
+      if (result?.phase !== 'verified' || result.operation !== operation) {
+        throw new NativeDeliveryUnconfirmed('continuation-not-verified')
+      }
+      checkRetained()
+    }
   } catch (error) { failure = error }
   if (fd !== undefined) failure = close(io, fd, failure)
   if (failure === undefined) {
@@ -191,6 +235,41 @@ export async function withNativeOperationLock(directory, operation, action, io =
   try { io.renameSync(join(directory, RELEASE_PENDING), completed) }
   catch (error) { throw new NativeDeliveryUnconfirmed('release-commit-unconfirmed', error) }
   return result
+}
+
+/**
+ * Continue only a freshly confirmed phase2 publication inside its original lock, then use the normal fixed effects.
+ * @param {object} input Original pins, authority, private writer and fixed effects; omitted adapters use normal persistence/locking.
+ * @returns {Promise<object>} Same-operation verified record; any unknown stops dependent effects without recovery.
+ */
+export async function runNativePublishContinuation({ directory, pins, authority, effects, binding, persistPublication,
+  writeProjection = value => saveNativeProjection(directory, value),
+  holdOperation = action => withRetainedNativePublishLock(directory, pins.operation, action) }) {
+  requireNativePins(pins)
+  return holdOperation(async () => {
+    const expected = await authority.read()
+    stateModule.requireNativePublishIntent(pins, expected)
+    if (await effects.observeTuple() !== pins.originalTupleSha256) {
+      throw new NativeDeliveryUnconfirmed('continuation-original-group')
+    }
+    const publication = await authority.continuePublish(expected, binding.groups, binding.controller)
+    // No stop until the bridge, the original private input and the Root-derived projection all acknowledged success.
+    await persistPublication(publication)
+    const owner = await NativeDeliveryOwner.acceptPublishContinuation(pins, authority, publication, writeProjection)
+    for (const name of ['stop', 'backup', 'install', 'unbind', 'bind', 'seal', 'start', 'verify']) {
+      await owner.run(name, async () => {
+        if (name === 'start' && await effects.observeTuple() !== pins.targetTupleSha256) {
+          throw new NativeDeliveryUnconfirmed('selected-group-mismatch')
+        }
+        const value = await effects[name]()
+        if (name === 'verify' && await effects.observeTuple() !== pins.targetTupleSha256) {
+          throw new NativeDeliveryUnconfirmed('verified-group-mismatch')
+        }
+        return value
+      })
+    }
+    return owner.record
+  })
 }
 
 /**

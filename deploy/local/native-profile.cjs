@@ -2,7 +2,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { createHash } = require('node:crypto')
-const { execFileSync } = require('node:child_process')
+const { execFileSync, spawnSync } = require('node:child_process')
 const { isDeepStrictEqual } = require('node:util')
 
 const ROOT = '/run/dsh-feature-root'
@@ -270,7 +270,8 @@ function publishProfile(spec, record, io = fs) {
 }
 
 /**
- * Load the published single-line module as the normal UID with the existing capability/seccomp restrictions.
+ * Load as the normal UID with existing capability/seccomp restrictions and no inherited administrator FDs.
+ * The fixed env/setpriv argv is spawned directly; stdio slots 3 through 10 are explicitly ignored.
  * @param {object} asset Just-published immutable FD metadata, including its expected identity.
  * @param {object} current Current normal Node and seccomp paths, without Root/configuration bytes.
  * @param {object} runtime Root filesystem and original argv executor; omitted uses actual current operations.
@@ -303,20 +304,168 @@ if(addon.abiVersion!==8||versions.some(name=>addon[name]!==1)
 ||methods.some(name=>typeof addon[name]!=='function')||addon.directoryListingVersion!==undefined)throw Error('native-load-rejected');
 console.log(JSON.stringify({loaded:true,uid:2000,gid:2000,node:process.version,abiVersion:addon.abiVersion,
 inspectSkillStore:true,capabilities:'all-zero',noNewPrivileges:true,seccomp:2}));`
-  const script = `set -eu
-exec 3>&- 4>&- 5>&- 9>&- 10>&-
-exec /usr/bin/env -i PATH=/dsh-tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \\
- HOME=/tmp/dsh-feature-home XDG_CACHE_HOME=/tmp/dsh-feature-cache TMPDIR=/tmp \\
- DSH_TELEMETRY_DISABLED=1 NARB_DISABLE_NATIVE_CACHE=1 \\
- setpriv --no-new-privs --bounding-set=-all --inh-caps=-all --ambient-caps=-all \\
- --reuid 2000 --regid 2000 --clear-groups --seccomp-filter "$2" "$1" -e "$3" "$4"`
-  const result = JSON.parse(execute('/bin/sh', ['-c', script, 'pe-cloud-native-load',
-    current.nodePath, current.seccompPath, program, name], { encoding: 'utf8', maxBuffer: 131072,
-    stdio: ['ignore', 'pipe', 'pipe'], timeout: current.shutdownTimeoutMs, killSignal: 'SIGTERM' }))
+  const result = JSON.parse(execute('/usr/bin/env', ['-i',
+    'PATH=/dsh-tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+    'HOME=/tmp/dsh-feature-home', 'XDG_CACHE_HOME=/tmp/dsh-feature-cache', 'TMPDIR=/tmp',
+    'DSH_TELEMETRY_DISABLED=1', 'NARB_DISABLE_NATIVE_CACHE=1',
+    'setpriv', '--no-new-privs', '--bounding-set=-all', '--inh-caps=-all', '--ambient-caps=-all',
+    '--reuid', '2000', '--regid', '2000', '--clear-groups', '--seccomp-filter', current.seccompPath,
+    current.nodePath, '-e', program, name], { encoding: 'utf8', maxBuffer: 131072,
+    stdio: ['ignore', 'pipe', 'pipe', 'ignore', 'ignore', 'ignore', 'ignore', 'ignore', 'ignore', 'ignore', 'ignore'],
+    timeout: current.shutdownTimeoutMs, killSignal: 'SIGTERM' }))
   need(result.loaded === true && result.uid === 2000 && result.gid === 2000 && result.abiVersion === 8
     && result.inspectSkillStore === true && result.capabilities === 'all-zero'
     && result.noNewPrivileges === true && result.seccomp === 2, 'profile-load-receipt')
   return result
+}
+
+/** One new load and candidate, fenced by a permanent intent in the original FD9 journal. No asset publication. */
+function continueNativePublish(input, current, store, product, nativeState,
+  { io = fs, spawn = spawnSync, execute = execFileSync } = {}) {
+  const { expected, approved, groups, binding: controller } = input
+  nativeState.requireNativePublishIntent(expected, store.read())
+  need(isDeepStrictEqual(store.read(), expected)
+    && isDeepStrictEqual(store.identity, expected.directoryIdentity)
+    && approved.journal.path === '/opt/dsh-features/pe-cloud-delivery/' + expected.operation + '/native-record'
+    && io.readlinkSync('/proc/self/fd/9') === approved.journal.path
+    && /^[a-f0-9]{40}$/.test(controller.commit) && /^[a-f0-9]{40}$/.test(controller.tree)
+    && HASH.test(controller.inputSha256) && HASH.test(controller.programSha256)
+    && typeof controller.line === 'string' && controller.line.length > 0, 'continuation-binding')
+  const original = groups.find(group => group.role === 'original')
+  const normal = groups.find(group => group.role === 'normal'), compatible = groups.find(group => group.role === 'compatible')
+  need(groups.length === 3 && original && normal && compatible
+    && tupleSha256(original) === expected.originalTupleSha256
+    && tupleSha256(normal) === expected.targetTupleSha256
+    && tupleSha256(compatible) === expected.compatibleTupleSha256, 'continuation-groups')
+  const spec = { ...approved.profile, operation: expected.operation, descriptorSha256: expected.descriptorSha256 }
+  need(spec.target === TARGET && Array.isArray(spec.protectedInputs)
+    && isDeepStrictEqual(spec.protectedInputs.map(value => value.path).sort(), [...INPUTS].sort())
+    && spec.protectedInputs.every(value => HASH.test(value.sha256))
+    && normal.asset.path === spec.nextHelperPath && normal.asset.sha256 === approved.asset.sha256
+    && normal.asset.bytes === approved.asset.bytes && isDeepStrictEqual(normal.asset, compatible.asset)
+    && normal.profile.source === spec.candidate.source && normal.profile.sha256 === spec.candidate.sha256
+    && isDeepStrictEqual(normal.profile, compatible.profile), 'continuation-approved-pair')
+  const same = (a, b, phase) => need(isDeepStrictEqual(a, b), phase)
+  const prepared = () => {
+    const stage = '/opt/dsh-features/pe-cloud-delivery/' + expected.operation
+    const rollback = stage + '/rollback/rollback.json'
+    const bytes = read(rollback, 64 * 1024 * 1024, io), plan = JSON.parse(bytes)
+    const actualOld = product.collectManagedFiles('/opt/dsh-installed-products', normal.manifest.managedRoots, normal.manifest.files)
+    same(plan, { format: 'pe-cloud-product-rollback/v1', oldFiles: actualOld, nextFiles: normal.manifest.files,
+      plan: product.planUpdate(actualOld, normal.manifest.files) }, 'continuation-prepared-plan')
+    protect(stage + '/rollback/new', true, io)
+    same(product.collectManagedFiles(stage + '/rollback/new', normal.manifest.managedRoots, normal.manifest.files),
+      [...normal.manifest.files].sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0), 'continuation-prepared-source')
+    // Product backups are checked as product artifacts, never compared with running account/session data.
+    const oldArchive = io.lstatSync(stage + '/rollback/old.tar.gz')
+    need(oldArchive.isFile() && !oldArchive.isSymbolicLink() && oldArchive.uid === 0 && oldArchive.nlink === 1
+      && (oldArchive.mode & 0o022) === 0, 'continuation-prepared-backup')
+    return { planSha256: hash(bytes), planIdentity: identity(io.lstatSync(rollback)) }
+  }
+  const noPriorCaller = () => {
+    const allowed = new Set([String(process.pid), String(process.ppid)])
+    for (const pid of io.readdirSync('/proc').filter(name => /^[0-9]+$/.test(name) && !allowed.has(name))) {
+      let descriptors
+      try { descriptors = io.readdirSync('/proc/' + pid + '/fd') }
+      catch (error) { if (['ENOENT', 'ESRCH'].includes(error.code)) continue; throw error }
+      for (const descriptor of descriptors) {
+        try {
+          const stat = io.statSync('/proc/' + pid + '/fd/' + descriptor)
+          need(String(stat.dev) !== store.identity.device || String(stat.ino) !== store.identity.inode,
+            'continuation-other-caller')
+        } catch (error) { if (!['ENOENT', 'ESRCH', 'EBADF'].includes(error.code)) throw error }
+      }
+    }
+  }
+  const before = () => {
+    nativeState.requireNativePublishIntent(expected, store.read())
+    same(store.read(), expected, 'continuation-record-changed')
+    const app = controller.originalApp
+    need(Number.isSafeInteger(app.pid) && app.pid > 0 && /^[0-9]+$/.test(app.startTicks)
+      && /^[a-f0-9]{64}$/.test(app.execId)
+      && io.readlinkSync('/proc/' + app.pid + '/ns/mnt') === current.namespaceId
+      && io.readlinkSync('/proc/' + app.pid + '/exe') === current.nodePath, 'continuation-app-identity')
+    const appStat = io.readFileSync('/proc/' + app.pid + '/stat', 'utf8')
+    need(appStat.slice(appStat.lastIndexOf(')') + 2).trim().split(/\s+/)[19] === app.startTicks,
+      'continuation-app-start')
+    const appStatus = io.readFileSync('/proc/' + app.pid + '/status', 'utf8')
+    need(/^Uid:\s+2000\s+2000\s+2000\s+2000$/m.test(appStatus)
+      && /^Gid:\s+2000\s+2000\s+2000\s+2000$/m.test(appStatus)
+      && io.readFileSync('/proc/' + app.pid + '/cmdline', 'utf8').split('\0')
+        .includes('/opt/dsh-installed-products/apps/cli/lib/bin.js'), 'continuation-app-process')
+    const productIdentity = controller.originalProduct
+    need(/^\/dev\/[A-Za-z0-9/_-]+$/.test(productIdentity.device), 'continuation-product-device')
+    const mounted = JSON.parse(execute('findmnt', ['--json', '--target', '/opt/dsh-installed-products',
+      '--output', 'TARGET,SOURCE,FSTYPE,OPTIONS'], { encoding: 'utf8', maxBuffer: 131072,
+      stdio: ['ignore', 'pipe', 'pipe'] })).filesystems
+    need(mounted.length === 1 && mounted[0].target === '/opt/dsh-installed-products'
+      && mounted[0].source === productIdentity.device && mounted[0].fstype === productIdentity.filesystem
+      && mounted[0].options.split(',').includes('ro') && !mounted[0].options.split(',').includes('rw')
+      && execute('blockdev', ['--getro', productIdentity.device], { encoding: 'utf8', maxBuffer: 131072,
+        stdio: ['ignore', 'pipe', 'pipe'] }).trim() === '1', 'continuation-product-readonly')
+    same(observeTuple(groups, product.collectManagedFiles, io), expected.originalTupleSha256, 'continuation-original-group')
+    otherInputs(spec, io)
+    const preview = previewProfile(spec, io)
+    need(preview.source === spec.candidate.source && preview.sha256 === spec.candidate.sha256, 'continuation-candidate-pin')
+    let absent = false
+    try { io.lstatSync(preview.source) }
+    catch (error) { if (error.code !== 'ENOENT') throw error; absent = true }
+    need(absent, 'continuation-candidate-exists')
+    const asset = nativeState.inspectPublishedFdAsset(10, approved.asset, io)
+    return { asset, prepared: prepared() }
+  }
+  noPriorCaller()
+  const initial = before()
+  const intent = store.publishContinuationFile('intent', expected, {
+    format: 'pe-cloud-native-publish-continuation-intent/v1', operation: expected.operation,
+    previousLoad: 'unknown', recordSha256: hash(JSON.stringify(expected)), controller,
+    originalTupleSha256: expected.originalTupleSha256, targetTupleSha256: expected.targetTupleSha256,
+    compatibleTupleSha256: expected.compatibleTupleSha256, ...initial,
+  })
+  let targetLoad, profile, rawLoad, failure
+  try {
+    same(before(), initial, 'continuation-input-changed-after-intent')
+    targetLoad = loadPublishedAsset(initial.asset, current, { io, execute: (command, args, options) => {
+      let result
+      try { result = spawn(command, args, { ...options, encoding: undefined }) }
+      catch (error) {
+        rawLoad = { status: null, signal: null, error: { code: error.code ?? null },
+          statusMissing: true, signalMissing: true, timedOut: error.code === 'ETIMEDOUT',
+          stdoutBase64: null, stderrBase64: null, outputMissing: true, truncated: false }
+        throw error
+      }
+      rawLoad = { status: result.status ?? null, signal: result.signal ?? null,
+        statusMissing: result.status === undefined, signalMissing: result.signal === undefined,
+        timedOut: result.error?.code === 'ETIMEDOUT',
+        error: result.error === undefined ? null : { code: result.error.code ?? null },
+        stdoutBase64: Buffer.isBuffer(result.stdout) ? result.stdout.toString('base64') : null,
+        stderrBase64: Buffer.isBuffer(result.stderr) ? result.stderr.toString('base64') : null,
+        outputMissing: !Buffer.isBuffer(result.stdout) || !Buffer.isBuffer(result.stderr),
+        truncated: result.error?.code === 'ENOBUFS' }
+      need(result.error === undefined && result.status === 0 && result.signal === null
+        && !rawLoad.outputMissing && !rawLoad.truncated, 'continuation-load-result')
+      return result.stdout.toString('utf8')
+    } })
+    same(before(), initial, 'continuation-input-changed-after-load')
+    profile = publishProfile(spec, expected, io)
+    same(nativeState.inspectPublishedFdAsset(10, approved.asset, io), initial.asset, 'continuation-asset-changed')
+    otherInputs(spec, io)
+    same(prepared(), initial.prepared, 'continuation-prepared-changed')
+  } catch (error) { failure = error }
+  const receipt = store.publishContinuationFile('receipt', expected, {
+    format: 'pe-cloud-native-publish-continuation-receipt/v1', operation: expected.operation,
+    previousLoad: 'unknown', intent, confirmed: failure === undefined,
+    rawLoad: rawLoad ?? { status: null, signal: null, error: null, stdoutBase64: null,
+      stderrBase64: null, statusMissing: true, signalMissing: true, timedOut: false, outputMissing: true, truncated: false },
+    targetLoad: targetLoad ?? null, profile: profile ?? null,
+    candidateOutcome: profile === undefined ? 'unconfirmed' : 'confirmed',
+    failurePhase: failure === undefined ? null : failure.phase ?? 'unknown',
+  })
+  if (failure !== undefined) throw new NativeProfileUnconfirmed('continuation-attempt-unconfirmed', failure)
+  const next = { ...expected, phase: 'published', sequence: 3, history: [...expected.history, 'published'] }
+  const record = store.advance(expected, next)
+  same(record, next, 'continuation-advance-receipt')
+  return { ...initial.asset, targetLoad, profile, intent, receipt, record }
 }
 
 /**
@@ -409,4 +558,4 @@ function observeTuple(groups, managedFiles, io = fs) {
 }
 
 module.exports = { selectProfile, tupleSha256, observeTuple, previewProfile, publishProfile, readProtectedInputs,
-  loadPublishedAsset, NativeProfileUnconfirmed }
+  loadPublishedAsset, continueNativePublish, NativeProfileUnconfirmed }

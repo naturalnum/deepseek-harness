@@ -30,7 +30,19 @@
 
 首次成功后，普通 `update` 和 `rollback` 自动读取该操作的私有匹配记录，实际检查安装的产品字节、原生文件和只读 profile 绑定，仅允许记录中的普通包或兼容包。回滚安装匹配的兼容读取方，保留同一 FD/profile，不恢复旧的、不兼容的备份。原生状态下的 `start` 拒绝自动重启，由原操作负责人核对持久阶段；缺失启动回执或当前进程不能作为首次启动未提交的依据。
 
-发布新模块后，控制器先使用现行 Node、UID 2000、零能力、no-new-privileges 和原 seccomp 条件加载模块，确认本单线导出，再正常停止原应用。此步骤不调用账号或文件操作；当前应用不因加载失败而停止。新模块、候选 profile 和责任记录独立保留，现有文件不覆盖、不删除。
+发布新模块后，控制器先使用现行 Node、UID 2000、零能力、no-new-privileges 和原 seccomp 条件加载模块，确认本单线导出，再正常停止原应用。加载子进程由Node显式禁止继承管理员FD，按固定argv直接启动，不依赖shell解释多位FD关闭语法。此步骤不调用账号或文件操作；当前应用不因加载失败而停止。新模块、候选 profile 和责任记录独立保留，现有文件不覆盖、不删除。
+
+## 同一未确认发布的一次接续
+
+专用入口为 `node deploy/local/update.mjs continue-native-publish <原operation> --line <原调用线>`，只接受原责任，不接受包、资产、profile、私有输入或其它阶段参数。默认 update、rollback 和 start 对未知状态的拒绝继续生效。现场执行仍由原主线负责人在准确正常源、必要测试和同案结论齐备后完成。
+
+入口只读持有原 operation.lock，核原候选持有者、私有 prepared 输入、原 app exec/PID/start、keeper/ns、产品只读条件、完整原组和 prepared 产品计划及源文件；不会重新 prepare、reserve 或发布资产，不比较服务运行中正常变化的用户数据。已存在模块及来源从固定 FD10 只读核实，候选须尚不存在。
+
+原 FD9 内固定 `native-publish-continuation.intent.json` 以独占创建、同步、关闭、目录同步及读回关闭确认一次新尝试；任何已有或部分文件永久拒绝再次尝试。意图分别绑定原记录、原组/资产来源与新控制器正常保存点和实际程序摘要，明确前次加载未知。随后只做一次新的受限只读加载和原函数的独占候选创建，新退出、信号、原始 stdout/stderr、缺失/超限事实及候选结果保存在同目录私有 receipt，不补造旧调用日志。
+
+只有新 receipt 确认后才按准确 expected-record 追加 published（保原三项 history 前缀），再正常保存原私有输入并由 Root 事实投影 latest；上述动作及桥关闭任何未知均不停止原应用，不自动回退、不重新加载、不倒退实际 Root 阶段。只有本次成功调用能继续原 stop/backup/install/profile/start/ready/smoke，已有 published 不能作为另一次恢复入口。最终 verified 后才沿原释放护栏处理同一个操作锁，候选锁仍由主线完成原额外验收后交还。
+
+控制器源在原产品两包之外：新正常保存点/程序摘要与原包 manifest/sourceCommit、原 prepared 输入及原生产模块分别绑定；原两包不重打、不改名或改来源标签。本入口不包含后继新 JavaScript 读者对或目录协议扩展。
 
 ## 只启动当前版本
 

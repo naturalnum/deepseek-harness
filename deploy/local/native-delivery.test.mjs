@@ -6,12 +6,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { Script } from 'node:vm'
+import { spawn, spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import stateModule from './native-delivery-state.cjs'
-import { runNativeDelivery, saveNativeProjection, withNativeOperationLock, requireNativeReleaseComplete } from './native-delivery.mjs'
+import { runNativeDelivery, runNativePublishContinuation, saveNativeProjection, withNativeOperationLock,
+  withRetainedNativePublishLock, requireNativeReleaseComplete } from './native-delivery.mjs'
 import { requireOrdinaryUpdateState, requireOrdinaryRollbackState, startSavedApplication, nativeArguments } from './update.mjs'
 import { createNativeAuthority, nativeAuthorityCommand } from './native-authority.mjs'
 import profileModule from './native-profile.cjs'
-import { nativeUpdate } from './native-update.mjs'
+import { nativeUpdate, continueNativePublish } from './native-update.mjs'
 
 const { NativeRecordStore, NativeDeliveryOwner, requireNativeContinuation, legacyBarrier, publishFdAsset } = stateModule
 const pins = { kind: 'fd-profile', operation: '00000000-0000-4000-8000-000000000001',
@@ -306,6 +309,53 @@ test('the namespace bridge pins current directory and keeper facts and sends onl
   assert.deepEqual(received.context.holder, current.holder)
 })
 
+test('the actual Node spawn boundary drops inherited directory capabilities at FD9 and FD10 without a shell',
+  { skip: process.platform !== 'linux' }, t => {
+    const directory = fs.mkdtempSync(join(tmpdir(), 'pe-native-load-fd-'))
+    const journal = join(directory, 'journal'), asset = join(directory, 'asset')
+    fs.mkdirSync(journal); fs.mkdirSync(asset)
+    const fds = [journal, asset].map(name => fs.openSync(name, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY))
+    t.after(() => { for (const fd of fds) fs.closeSync(fd); fs.rmSync(directory, { recursive: true, force: true }) })
+    const outer = String.raw`
+const assert=require('node:assert/strict'),fs=require('node:fs'),{spawnSync}=require('node:child_process');
+const profile=require(process.argv[1]),{createHash}=require('node:crypto');
+const inherited=[9,10].map(fd=>{const s=fs.fstatSync(fd);assert.equal(s.isDirectory(),true);return {dev:String(s.dev),ino:String(s.ino)}});
+const bytes=Buffer.from('public-fixture-bytes'),sha=createHash('sha256').update(bytes).digest('hex');
+const stat={dev:1,ino:2,uid:0,gid:0,mode:0o444,nlink:1,size:bytes.length,mtimeMs:1,ctimeMs:1,
+ isFile:()=>true,isSymbolicLink:()=>false};
+const io={constants:fs.constants,lstatSync:name=>name.endsWith('.node')?stat:
+ {uid:0,mode:0o555,isSymbolicLink:()=>false,isDirectory:()=>true},openSync:()=>99,fstatSync:()=>stat,closeSync:()=>{},
+ readFileSync:name=>typeof name==='number'?bytes:'1 0 1:1 / / ro - overlay overlay rw\n'};
+let calls=0;
+const value=profile.loadPublishedAsset({name:'fd-skill-store-v1-'+sha+'.node',sha256:sha,
+ identity:{device:'1',inode:'2',bytes:bytes.length}},
+ {nodePath:'/dsh-tools/node24',seccompPath:'/opt/dsh-feature-assets/app-seccomp.bpf',shutdownTimeoutMs:120000},
+ {io,execute:(command,args,options)=>{
+  calls++;assert.equal(command,'/usr/bin/env');assert.equal(args.includes('/bin/sh'),false);
+  assert.deepEqual(options.stdio,['ignore','pipe','pipe','ignore','ignore','ignore','ignore','ignore','ignore','ignore','ignore']);
+  const at=args.indexOf('setpriv');assert.ok(at>0);
+  assert.deepEqual(args.slice(at,at+11),['setpriv','--no-new-privs','--bounding-set=-all','--inh-caps=-all',
+   '--ambient-caps=-all','--reuid','2000','--regid','2000','--clear-groups','--seccomp-filter']);
+  // Exercise the real stdio boundary; target ARM loading and privilege checks remain outside this amd64 fixture.
+  const audit="const fs=require('node:fs'),assert=require('node:assert/strict'),blocked=JSON.parse(process.argv[1]);for(const name of fs.readdirSync('/proc/self/fd')){try{const s=fs.fstatSync(Number(name));assert.equal(blocked.some(x=>x.dev===String(s.dev)&&x.ino===String(s.ino)),false)}catch(error){if(!['EBADF','ENOENT'].includes(error.code))throw error}}console.log(JSON.stringify({capabilitiesInherited:false}));";
+  const child=spawnSync(command,[...args.slice(0,at),process.execPath,'-e',audit,JSON.stringify(inherited)],options);
+  assert.equal(child.error,undefined);assert.equal(child.signal,null);assert.equal(child.status,0,child.stderr);
+  assert.deepEqual(JSON.parse(child.stdout),{capabilitiesInherited:false});
+  return JSON.stringify({loaded:true,uid:2000,gid:2000,abiVersion:8,inspectSkillStore:true,
+   capabilities:'all-zero',noNewPrivileges:true,seccomp:2});
+ }});
+assert.equal(value.loaded,true);assert.equal(calls,1);console.log('fixed-stdio-boundary-confirmed');`
+    const result = spawnSync(process.execPath, ['-e', outer,
+      fileURLToPath(new URL('./native-profile.cjs', import.meta.url))], {
+      encoding: 'utf8', env: { PATH: process.env.PATH },
+      stdio: ['ignore', 'pipe', 'pipe', 'ignore', 'ignore', 'ignore', 'ignore', 'ignore', 'ignore', ...fds],
+    })
+    assert.equal(result.error, undefined)
+    assert.equal(result.signal, null)
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, /fixed-stdio-boundary-confirmed/)
+  })
+
 test('single-profile actions require their own persisted intent before reading or executing anything', () => {
   let touched = false
   const runtime = { io: new Proxy({}, { get() { touched = true; throw new Error('must not read') } }),
@@ -497,3 +547,378 @@ test('confirmed lock cleanup publishes completion last and permits the next norm
     const next = '00000000-0000-4000-8000-000000000002'
     assert.equal(await withNativeOperationLock(directory, next, async () => 'next'), 'next')
   })
+
+
+// Real private temporary files with simulated Root ownership and fixed product observations; no target namespace is used.
+async function publishContinuationFixture(t) {
+  const directory = fs.mkdtempSync(join(tmpdir(), 'pe-publish-continuation-'))
+  fs.chmodSync(directory, 0o700)
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }))
+  const stage = '/opt/dsh-features/pe-cloud-delivery/' + pins.operation
+  const journal = stage + '/native-record', assetParent = '/opt/dsh-feature-assets'
+  const source = '/opt/dsh-features/original-profile.yml'
+  const target = '/run/dsh-feature-root/profiles/cloud/cordis.patch.yml'
+  const missing = name => Object.assign(new Error('fixture missing'), { code: 'ENOENT', path: name })
+  const local = name => join(directory, name.slice(1))
+  const put = (name, bytes, mode = 0o444) => {
+    fs.mkdirSync(join(local(name), '..'), { recursive: true, mode: 0o700 })
+    fs.writeFileSync(local(name), bytes, { mode, flag: 'wx' })
+  }
+  fs.mkdirSync(local(journal), { recursive: true, mode: 0o700 })
+  fs.mkdirSync(local(assetParent), { recursive: true, mode: 0o755 })
+  fs.mkdirSync(local(stage + '/rollback/new'), { recursive: true, mode: 0o700 })
+  const handles = new Map(), events = [], counts = new Map()
+  let next = 100, fault, faultAt = 1, loads = 0, spawnResult, advanceReadbackFault = false
+  const normalize = name => {
+    const match = name.match(/^\/proc\/self\/fd\/(\d+)(.*)$/)
+    if (!match) return name
+    const parent = Number(match[1]) === 9 ? journal : Number(match[1]) === 10 ? assetParent : handles.get(Number(match[1])).name
+    return join(parent, match[2] || '.')
+  }
+  const rootStat = (stat, name) => Object.assign(stat, { uid: name.endsWith('/credentials.json') ? 2000 : 0,
+    gid: name.endsWith('/credentials.json') ? 2000 : 0 })
+  const trigger = event => {
+    events.push(event); counts.set(event, (counts.get(event) ?? 0) + 1)
+    if (fault === event && --faultAt === 0) { fault = undefined; throw new Error('injected-' + event) }
+  }
+  let mountinfo = ''
+  const io = {
+    constants: fs.constants,
+    lstatSync(name) { return rootStat(fs.lstatSync(local(normalize(name))), normalize(name)) },
+    statSync(name) { return rootStat(fs.statSync(local(normalize(name))), normalize(name)) },
+    fstatSync(fd) {
+      if (fd === 9 || fd === 10) return rootStat(fs.statSync(local(fd === 9 ? journal : assetParent)), fd === 9 ? journal : assetParent)
+      const handle = handles.get(fd); return rootStat(fs.fstatSync(handle.fd), handle.name)
+    },
+    openSync(name, flags, mode) {
+      name = normalize(name); trigger('open:' + name.split('/').at(-1))
+      const fd = fs.openSync(local(name), flags, mode), virtual = next++
+      handles.set(virtual, { fd, name }); return virtual
+    },
+    readFileSync(value, encoding) {
+      if (value === '/proc/self/mountinfo') return mountinfo
+      if (value === '/proc/111/stat') return '111 (fixture) S ' + Array(18).fill('0').join(' ') + ' 12345'
+      if (value === '/proc/111/status') return 'Uid:\t2000\t2000\t2000\t2000\nGid:\t2000\t2000\t2000\t2000\n'
+      if (value === '/proc/111/cmdline') return '/dsh-tools/node24\0/opt/dsh-installed-products/apps/cli/lib/bin.js\0'
+      if (typeof value === 'number') {
+        const handle = handles.get(value); trigger('read:' + handle.name.split('/').at(-1))
+        return fs.readFileSync(handle.fd, encoding)
+      }
+      return fs.readFileSync(local(normalize(value)), encoding)
+    },
+    readlinkSync(name) {
+      if (name === '/proc/self/fd/9') return journal
+      if (name === '/proc/111/ns/mnt') return 'mnt:[123]'
+      if (name === '/proc/111/exe') return '/dsh-tools/node24'
+      throw missing(name)
+    },
+    readdirSync: name => name === '/proc' ? [] : fs.readdirSync(local(normalize(name))),
+    writeFileSync(fd, bytes) { const handle = handles.get(fd); trigger('write:' + handle.name.split('/').at(-1)); fs.writeFileSync(handle.fd, bytes) },
+    fchownSync() { /* Only ownership metadata is simulated; tests never chown the host. */ },
+    fchmodSync(fd, mode) { fs.fchmodSync(handles.get(fd).fd, mode) },
+    fsyncSync(fd) {
+      const name = fd === 9 ? 'journal' : handles.get(fd).name.split('/').at(-1)
+      trigger('sync:' + name)
+      if (fd !== 9) fs.fsyncSync(handles.get(fd).fd)
+    },
+    closeSync(fd) { const handle = handles.get(fd); fs.closeSync(handle.fd); handles.delete(fd); trigger('close:' + handle.name.split('/').at(-1)) },
+    renameSync(from, to) {
+      trigger('rename:record'); fs.renameSync(local(normalize(from)), local(normalize(to)))
+      if (advanceReadbackFault && from.endsWith('/native-fd-3.pending')) { fault = 'read:native-fd.json'; faultAt = 1 }
+    },
+  }
+  const id = name => {
+    const stat = io.lstatSync(name)
+    return { device: String(stat.dev), inode: String(stat.ino), uid: stat.uid, gid: stat.gid, mode: stat.mode & 0o7777, nlink: stat.nlink }
+  }
+  const sha = bytes => createHash('sha256').update(bytes).digest('hex')
+  const oldHelper = assetParent + '/fd-abi8.node', oldBytes = Buffer.from('old helper')
+  const bytes = Buffer.from('new immutable fixture module'), assetSha = sha(bytes)
+  const name = 'fd-skill-store-v1-' + assetSha + '.node'
+  put(oldHelper, oldBytes); put(assetParent + '/' + name, bytes)
+  const profileBytes = Buffer.from(JSON.stringify([{ insert: [{ id: 'files-root', config: { helperPath: oldHelper } }] }]) + '\n')
+  put(source, profileBytes)
+  fs.mkdirSync(join(local(target), '..'), { recursive: true, mode: 0o700 })
+  fs.linkSync(local(source), local(target))
+  // bind mounts share an inode without increasing nlink. The fixture projects that metadata only.
+  const originalLstat = io.lstatSync, originalFstat = io.fstatSync
+  io.lstatSync = name => Object.assign(originalLstat(name), { nlink: 1 })
+  io.fstatSync = fd => Object.assign(originalFstat(fd), { nlink: 1 })
+  const original = { source, sha256: sha(profileBytes), identity: id(source) }
+  const protectedInputs = ['/run/dsh-feature-root/storage-plan.json', '/run/dsh-feature-root/rootDeployment.json',
+    '/run/dsh-feature-root/credentials.json', '/run/dsh-feature-root/profiles/cloud/package.json', '/opt/dsh-features/account-base.yml']
+    .map(path => { const content = Buffer.from('fixed public fixture'); put(path, content, path.endsWith('/credentials.json') ? 0o600 : 0o444)
+      return { path, sha256: sha(content), identity: id(path) } })
+  mountinfo = [[source, target], ...protectedInputs.filter(row => !row.path.endsWith('account-base.yml')).map(row => [row.path, row.path])]
+    .map(([from, to], index) => `${index + 1} 0 1:1 ${from} ${to} ro,nosuid,nodev,noexec - fixture fixture rw`).join('\n') + '\n'
+  const spec = { operation: pins.operation, target, original, maxProfileBytes: 1048576, protectedInputs,
+    originalHelperPath: oldHelper, nextHelperPath: assetParent + '/' + name }
+  spec.candidate = profileModule.previewProfile(spec, io)
+  const parentStat = io.fstatSync(10), moduleStat = io.lstatSync(assetParent + '/' + name)
+  const asset = { sha256: assetSha, sourceSha256: 'a'.repeat(64), bytes: bytes.length, maxAssetBytes: bytes.length,
+    maxPathBytes: 256, parentDevice: String(parentStat.dev), parentInode: String(parentStat.ino) }
+  const moduleIdentity = { device: String(moduleStat.dev), inode: String(moduleStat.ino), bytes: bytes.length, mode: 0o444 }
+  put(assetParent + '/' + name + '.source.json', JSON.stringify({ format: 'pe-cloud-skill-fd-asset/v1', name,
+    sha256: assetSha, bytes: bytes.length, sourceSha256: asset.sourceSha256,
+    parent: { device: asset.parentDevice, inode: asset.parentInode }, identity: moduleIdentity }) + '\n', 0o600)
+  const oldFiles = [{ path: 'apps/cli/lib/bin.js', size: 3, mode: 0o444, sha256: sha('old') }]
+  const nextFiles = [{ path: 'apps/cli/lib/bin.js', size: 3, mode: 0o444, sha256: sha('new') }]
+  const manifest = files => ({ files, managedRoots: ['apps/cli/lib'] })
+  const groups = [
+    { role: 'original', productRoot: '/opt/dsh-installed-products', manifest: manifest(oldFiles),
+      asset: { path: oldHelper, sha256: sha(oldBytes), bytes: oldBytes.length, mode: 0o444, maxAssetBytes: 100, maxPathBytes: 256 }, profile: original },
+    ...['normal', 'compatible'].map(role => ({ role, productRoot: '/opt/dsh-installed-products', manifest: manifest(nextFiles),
+      asset: { path: spec.nextHelperPath, sha256: assetSha, bytes: bytes.length, mode: 0o444, maxAssetBytes: 100, maxPathBytes: 256 }, profile: spec.candidate })),
+  ]
+  const product = { collectManagedFiles: root => root === '/opt/dsh-installed-products' ? structuredClone(oldFiles) : structuredClone(nextFiles),
+    planUpdate: () => ({ changed: ['apps/cli/lib/bin.js'], added: [], removed: [] }) }
+  put(stage + '/rollback/rollback.json', JSON.stringify({ format: 'pe-cloud-product-rollback/v1', oldFiles, nextFiles,
+    plan: product.planUpdate() }) + '\n', 0o600)
+  put(stage + '/rollback/old.tar.gz', 'fixture backup', 0o600)
+  const actualPins = { ...pins, originalTupleSha256: profileModule.tupleSha256(groups[0]),
+    targetTupleSha256: profileModule.tupleSha256(groups[1]), compatibleTupleSha256: profileModule.tupleSha256(groups[2]) }
+  const store = new NativeRecordStore(9, io)
+  const owner = await NativeDeliveryOwner.reserve(actualPins, store)
+  await owner.guard(async value => value)
+  await assert.rejects(owner.run('publish', async () => { throw new Error('original output unknown') }), unconfirmed)
+  const expected = store.read()
+  const input = { expected, groups, approved: { journal: { path: journal, ...store.identity }, asset,
+    assetParent: { path: assetParent, device: asset.parentDevice, inode: asset.parentInode }, profile: spec },
+  binding: { commit: 'a'.repeat(40), tree: 'b'.repeat(40), inputSha256: 'c'.repeat(64), programSha256: 'd'.repeat(64),
+    line: 'original-line', originalApp: { pid: 111, startTicks: '12345', execId: 'e'.repeat(64) },
+    originalProduct: { device: '/dev/fixture', filesystem: 'ext4' } } }
+  const current = { namespaceId: 'mnt:[123]', nodePath: '/dsh-tools/node24', seccompPath: '/opt/dsh-feature-assets/app-seccomp.bpf', shutdownTimeoutMs: 120000 }
+  const success = { loaded: true, uid: 2000, gid: 2000, abiVersion: 8, inspectSkillStore: true,
+    capabilities: 'all-zero', noNewPrivileges: true, seccomp: 2 }
+  const run = () => profileModule.continueNativePublish(input, current, store, product, stateModule, { io,
+    execute: command => command === 'blockdev' ? '1\n' : JSON.stringify({ filesystems: [{ target: '/opt/dsh-installed-products',
+      source: '/dev/fixture', fstype: 'ext4', options: 'ro' }] }),
+    spawn: (command, args, options) => {
+      loads++; assert.equal(command, '/usr/bin/env'); assert.equal(args.includes('/bin/sh'), false)
+      assert.equal(options.stdio[9], 'ignore'); assert.equal(options.stdio[10], 'ignore')
+      return spawnResult ?? { status: 0, signal: null, stdout: Buffer.from(JSON.stringify(success)), stderr: Buffer.alloc(0) }
+    } })
+  return { directory, io, store, input, pins: actualPins, run, local, journal, events, counts,
+    loads: () => loads, setSpawn: value => { spawnResult = value },
+    fail: (name, at = 1) => { fault = name; faultAt = at },
+    failAdvanceReadback: () => { advanceReadbackFault = true },
+    receipt: () => JSON.parse(fs.readFileSync(local(journal + '/native-publish-continuation.receipt.json'))),
+    candidateExists: () => fs.existsSync(local(spec.candidate.source)),
+  }
+}
+
+test('the exact original phase2 continues once without reserving, preparing or publishing another asset', async t => {
+  const fixture = await publishContinuationFixture(t)
+  const source = fixture.input.approved.asset.sha256
+  const moduleFile = '/opt/dsh-feature-assets/fd-skill-store-v1-' + source + '.node'
+  const before = fs.statSync(fixture.local(moduleFile)), bytes = fs.readFileSync(fixture.local(moduleFile))
+  const result = fixture.run()
+  assert.equal(result.record.operation, fixture.pins.operation)
+  assert.deepEqual(result.record.history, ['reserved', 'guarded', 'publish-intent', 'published'])
+  assert.equal(result.record.sequence, 3)
+  assert.equal(result.record.firstLaunchMayHaveRun, false)
+  assert.equal(fixture.loads(), 1)
+  assert.equal(fixture.receipt().previousLoad, 'unknown')
+  assert.equal(fixture.receipt().confirmed, true)
+  assert.deepEqual(fs.readFileSync(fixture.local(moduleFile)), bytes)
+  assert.equal(fs.statSync(fixture.local(moduleFile)).ino, before.ino)
+  assert.equal(fixture.events.includes('write:' + moduleFile.split('/').at(-1)), false)
+  assert.equal(fixture.events.includes('write:' + moduleFile.split('/').at(-1) + '.source.json'), false)
+  assert.throws(fixture.run)
+  assert.equal(fixture.loads(), 1)
+})
+
+test('every original-record mismatch and an existing candidate refuse before the new load', async t => {
+  for (const change of [record => { record.sequence = 3 }, record => { record.history.push('published') },
+    record => { record.kind = 'matching-js' }, record => { record.firstLaunchMayHaveRun = true },
+    record => { record.descriptorSha256 = 'f'.repeat(64) }, record => { record.directoryIdentity.inode = '999' }]) {
+    const fixture = await publishContinuationFixture(t)
+    change(fixture.input.expected)
+    assert.throws(fixture.run); assert.equal(fixture.loads(), 0); assert.equal(fixture.candidateExists(), false)
+  }
+  const fixture = await publishContinuationFixture(t)
+  fs.writeFileSync(fixture.local(fixture.input.approved.profile.candidate.source), 'already exists')
+  assert.throws(fixture.run); assert.equal(fixture.loads(), 0)
+})
+
+test('every durable attempt acknowledgement is required and a residual attempt permanently blocks another load', async t => {
+  const name = 'native-publish-continuation.intent.json'
+  for (const event of ['write:' + name, 'sync:' + name, 'close:' + name, 'sync:journal', 'read:' + name]) {
+    const fixture = await publishContinuationFixture(t)
+    fixture.fail(event)
+    assert.throws(fixture.run, undefined, event); assert.equal(fixture.loads(), 0, event)
+    assert.throws(fixture.run); assert.equal(fixture.loads(), 0)
+    assert.equal(fixture.store.read().phase, 'publish-intent')
+  }
+  const fixture = await publishContinuationFixture(t)
+  fixture.fail('close:' + name, 2) // Separate read-close acknowledgement after a successful write-close.
+  assert.throws(fixture.run); assert.throws(fixture.run); assert.equal(fixture.loads(), 0)
+})
+
+test('load exit, signal, missing output, truncation and bad JSON preserve new raw evidence and never advance', async t => {
+  for (const result of [
+    { status: 7, signal: null, stdout: Buffer.from('partial'), stderr: Buffer.from('actual stderr') },
+    { status: null, signal: 'SIGTERM', stdout: Buffer.alloc(0), stderr: Buffer.from('signalled') },
+    { status: null, signal: 'SIGTERM', error: { code: 'ETIMEDOUT' }, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) },
+    { status: 0, signal: null, stdout: null, stderr: null },
+    { status: null, signal: 'SIGTERM', error: { code: 'ENOBUFS' }, stdout: Buffer.from('cut'), stderr: Buffer.alloc(0) },
+    { status: 0, signal: null, stdout: Buffer.from('invalid json'), stderr: Buffer.alloc(0) },
+  ]) {
+    const fixture = await publishContinuationFixture(t); fixture.setSpawn(result)
+    assert.throws(fixture.run); assert.equal(fixture.loads(), 1)
+    const receipt = fixture.receipt()
+    assert.equal(receipt.confirmed, false); assert.equal(receipt.previousLoad, 'unknown')
+    assert.equal(receipt.rawLoad.status, result.status); assert.equal(receipt.rawLoad.signal, result.signal)
+    assert.equal(receipt.rawLoad.stderrBase64, result.stderr?.toString('base64') ?? null)
+    assert.equal(fixture.store.read().phase, 'publish-intent'); assert.equal(fixture.candidateExists(), false)
+    assert.throws(fixture.run); assert.equal(fixture.loads(), 1)
+  }
+})
+
+test('candidate, receipt and Root advance unknowns do not repeat the successful new load or erase the intent', async t => {
+  for (const phase of ['candidate-sync', 'receipt-close', 'advance-close', 'advance-readback']) {
+    const fixture = await publishContinuationFixture(t)
+    if (phase === 'candidate-sync') fixture.fail('sync:' + fixture.input.approved.profile.candidate.source.split('/').at(-1))
+    if (phase === 'receipt-close') fixture.fail('close:native-publish-continuation.receipt.json')
+    if (phase === 'advance-close') fixture.fail('close:native-fd-3.pending')
+    if (phase === 'advance-readback') fixture.failAdvanceReadback()
+    assert.throws(fixture.run, undefined, phase)
+    assert.equal(fixture.loads(), 1, phase)
+    assert.throws(fixture.run); assert.equal(fixture.loads(), 1)
+    assert.equal(fs.existsSync(fixture.local(fixture.journal + '/native-publish-continuation.intent.json')), true)
+  }
+})
+
+test('a private-state, projection or bridge acknowledgement loss after published never stops or opens phase3 for retry', async t => {
+  for (const phase of ['private-input', 'latest', 'bridge-close']) {
+    const fixture = await publishContinuationFixture(t), calls = []
+    const authority = { read: () => fixture.store.read(), advance: (...args) => fixture.store.advance(...args),
+      continuePublish: () => { const value = fixture.run(); if (phase === 'bridge-close') throw new Error('bridge close unknown'); return value } }
+    const effects = Object.fromEntries(names.map(name => [name, async () => { calls.push(name) }]))
+    effects.observeTuple = async () => fixture.pins.originalTupleSha256
+    const request = { pins: fixture.pins, authority, effects, binding: { groups: fixture.input.groups, controller: fixture.input.binding },
+      holdOperation: action => action(), persistPublication: async () => { if (phase === 'private-input') throw new Error('private write unknown') },
+      writeProjection: async value => { if (phase === 'latest') throw new Error('latest close unknown'); return value } }
+    await assert.rejects(runNativePublishContinuation(request))
+    assert.deepEqual(calls, []); assert.equal(fixture.store.read().phase, 'published')
+    await assert.rejects(runNativePublishContinuation(request), unconfirmed)
+    assert.equal(fixture.loads(), 1)
+  }
+})
+
+test('the continuation uses the original fixed downstream sequence and preserves first-launch responsibility', async t => {
+  const fixture = await publishContinuationFixture(t), calls = [], projections = []
+  let installed = false, persisted = false
+  const authority = { read: () => fixture.store.read(), advance: (...args) => fixture.store.advance(...args), continuePublish: fixture.run }
+  const effects = Object.fromEntries(names.map(name => [name, async () => {
+    assert.equal(persisted, true); calls.push(name)
+    if (name === 'install') installed = true
+    if (name === 'start') assert.equal(fixture.store.read().firstLaunchMayHaveRun, true)
+  }]))
+  effects.observeTuple = async () => installed ? fixture.pins.targetTupleSha256 : fixture.pins.originalTupleSha256
+  const result = await runNativePublishContinuation({ pins: fixture.pins, authority, effects,
+    binding: { groups: fixture.input.groups, controller: fixture.input.binding }, holdOperation: action => action(),
+    persistPublication: async () => { persisted = true }, writeProjection: async value => { projections.push(value); return value } })
+  assert.equal(result.phase, 'verified'); assert.deepEqual(calls, names.slice(1)); assert.equal(fixture.loads(), 1)
+  assert.equal(projections[0].nativePhase, 'published'); assert.equal(projections.at(-1).nativePhase, 'verified')
+})
+
+test('the retained ordinary lock keeps its bytes and inode on unknown and uses the existing release only after verified',
+  { skip: typeof process.getuid !== 'function' }, async t => {
+    const directory = fs.mkdtempSync(join(tmpdir(), 'pe-retained-native-lock-')); fs.chmodSync(directory, 0o700)
+    t.after(() => fs.rmSync(directory, { recursive: true, force: true }))
+    const name = join(directory, 'operation.lock'), bytes = Buffer.from(JSON.stringify({ format: stateModule.PROJECTION, operation: pins.operation }) + '\n')
+    fs.writeFileSync(name, bytes, { flag: 'wx', mode: 0o600 }); const inode = fs.statSync(name).ino
+    await assert.rejects(withRetainedNativePublishLock(directory, pins.operation, async () => { throw new Error('unknown') }), unconfirmed)
+    assert.equal(fs.statSync(name).ino, inode); assert.deepEqual(fs.readFileSync(name), bytes)
+    fs.chmodSync(name, 0o644)
+    let calls = 0
+    await assert.rejects(withRetainedNativePublishLock(directory, pins.operation, async () => { calls++ }), unconfirmed)
+    assert.equal(calls, 0); fs.chmodSync(name, 0o600)
+    const result = { phase: 'verified', operation: pins.operation }
+    assert.deepEqual(await withRetainedNativePublishLock(directory, pins.operation, async () => result), result)
+    assert.equal(fs.existsSync(name), false)
+    assert.doesNotThrow(() => requireNativeReleaseComplete(directory, undefined, pins.operation))
+  })
+
+test('the explicit continuation refuses another operation or a non-phase2 projection before candidate access', async () => {
+  for (const latest of [undefined, { format: stateModule.PROJECTION, operation: pins.operation, nativePhase: 'published' },
+    { format: stateModule.PROJECTION, operation: '00000000-0000-4000-8000-000000000002', nativePhase: 'publish-intent' }]) {
+    await assert.rejects(continueNativePublish({ operation: pins.operation, line: 'original-line', latest }), unconfirmed)
+  }
+})
+
+
+test('changed asset source, permissions, prepared bytes or original application refuse with no new load', async t => {
+  for (const change of ['asset-bytes', 'asset-source', 'asset-mode', 'prepared-plan', 'app-start', 'old-caller']) {
+    const fixture = await publishContinuationFixture(t), approved = fixture.input.approved
+    const asset = '/opt/dsh-feature-assets/fd-skill-store-v1-' + approved.asset.sha256 + '.node'
+    if (change === 'asset-bytes') fs.writeFileSync(fixture.local(asset), 'changed')
+    if (change === 'asset-source') fs.appendFileSync(fixture.local(asset + '.source.json'), 'corrupt')
+    if (change === 'asset-mode') fs.chmodSync(fixture.local(asset), 0o640)
+    if (change === 'prepared-plan') fs.writeFileSync(fixture.local(fixture.journal + '/../rollback/rollback.json'), '{}')
+    if (change === 'app-start') fixture.input.binding.originalApp.startTicks = '54321'
+    if (change === 'old-caller') {
+      fixture.io.readdirSync = name => name === '/proc' ? ['222'] : ['9']
+      fixture.io.statSync = () => fixture.io.fstatSync(9)
+    }
+    assert.throws(fixture.run, undefined, change); assert.equal(fixture.loads(), 0, change)
+    assert.equal(fixture.store.read().phase, 'publish-intent')
+  }
+})
+
+test('a real exclusive journal file permits only one of two simultaneous intent creators',
+  { skip: process.platform !== 'linux' }, async t => {
+    const directory = fs.mkdtempSync(join(tmpdir(), 'pe-native-intent-race-')); fs.chmodSync(directory, 0o700)
+    t.after(() => fs.rmSync(directory, { recursive: true, force: true }))
+    const io = { ...fs, fstatSync: fd => Object.assign(fs.fstatSync(fd), { uid: 0, gid: 0 }) }
+    const fd = fs.openSync(directory, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY)
+    const store = new NativeRecordStore(fd, io), owner = await NativeDeliveryOwner.reserve(pins, store)
+    await owner.guard(async value => value)
+    await assert.rejects(owner.run('publish', async () => { throw new Error('previous output unknown') }), unconfirmed)
+    const expected = store.read(); fs.closeSync(fd)
+    const program = String.raw`const fs=require('node:fs'),{NativeRecordStore}=require(process.argv[1]);
+const directory=process.argv[2],expected=JSON.parse(process.argv[3]);
+const io={...fs,fstatSync:fd=>Object.assign(fs.fstatSync(fd),{uid:0,gid:0})};
+const fd=fs.openSync(directory,fs.constants.O_RDONLY|fs.constants.O_DIRECTORY);let accepted=false;
+try{new NativeRecordStore(fd,io).publishContinuationFile('intent',expected,{operation:expected.operation});
+fs.appendFileSync(directory+'/new-load-marker','one\n');accepted=true}catch(error){if(error.code!=='EEXIST')throw error}
+fs.closeSync(fd);console.log(JSON.stringify({accepted}));`
+    const launch = () => new Promise((resolveRun, reject) => {
+      const child = spawn(process.execPath, ['-e', program, fileURLToPath(new URL('./native-delivery-state.cjs', import.meta.url)),
+        directory, JSON.stringify(expected)], { stdio: ['ignore', 'pipe', 'pipe'], env: { PATH: process.env.PATH } })
+      let stdout = '', stderr = ''
+      child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8')
+      child.stdout.on('data', chunk => { stdout += chunk }); child.stderr.on('data', chunk => { stderr += chunk })
+      child.once('error', reject)
+      child.once('close', (code, signal) => {
+        try { assert.equal(code, 0, stderr); assert.equal(signal, null); resolveRun(JSON.parse(stdout)) }
+        catch (error) { reject(error) }
+      })
+    })
+    const results = await Promise.all([launch(), launch()])
+    assert.equal(results.filter(value => value.accepted).length, 1)
+    assert.equal(fs.readFileSync(join(directory, 'new-load-marker'), 'utf8'), 'one\n')
+  })
+
+
+test('every downstream continuation unknown retains its actual intent and never performs a dependent action', async t => {
+  for (const failed of names.slice(1)) {
+    const fixture = await publishContinuationFixture(t), calls = []
+    let installed = false
+    const authority = { read: () => fixture.store.read(), advance: (...args) => fixture.store.advance(...args), continuePublish: fixture.run }
+    const effects = Object.fromEntries(names.map(name => [name, async () => {
+      calls.push(name); if (name === 'install') installed = true
+      if (name === failed) throw new Error('actual outcome unknown')
+    }]))
+    effects.observeTuple = async () => installed ? fixture.pins.targetTupleSha256 : fixture.pins.originalTupleSha256
+    const request = { pins: fixture.pins, authority, effects,
+      binding: { groups: fixture.input.groups, controller: fixture.input.binding }, holdOperation: action => action(),
+      persistPublication: async () => {}, writeProjection: async value => value }
+    await assert.rejects(runNativePublishContinuation(request), unconfirmed)
+    assert.deepEqual(calls, names.slice(1, names.indexOf(failed) + 1))
+    assert.match(fixture.store.read().phase, /-intent$/)
+    if (['start', 'verify'].includes(failed)) assert.equal(fixture.store.read().firstLaunchMayHaveRun, true)
+    await assert.rejects(runNativePublishContinuation(request), unconfirmed); assert.equal(fixture.loads(), 1)
+  }
+})
