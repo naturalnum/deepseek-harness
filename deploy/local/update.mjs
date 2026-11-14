@@ -390,16 +390,25 @@ async function main(argv) {
   const { line, args: lineArgs } = readLineArguments(rawArguments)
   const { inputFile, args } = nativeArguments(mode, lineArgs)
   if (mode === '--help' || !mode || args.includes('--help')) {
-    console.log('用法：deploy/local/update <产品包目录> [--line 线名] [私密账号参数] [已有对话参数]\n      首次原生交付可追加 --native-input <私有固定输入>\n      deploy/local/rollback [--line 线名] [相同检查参数]\n      deploy/local/start [--line 线名]\n仅操作本机候选环境；正常停止不确认时停止更新，保留进程始终继续运行。')
+    console.log('用法：deploy/local/update <产品包目录> [--line 线名] [私密账号参数] [已有对话参数]\n      首次原生交付可追加 --native-input <私有固定输入>\n      node deploy/local/update.mjs continue-native-publish <原operation> --line <原调用线>\n      deploy/local/rollback [--line 线名] [相同检查参数]\n      deploy/local/start [--line 线名]\n仅操作本机候选环境；正常停止不确认时停止更新，保留进程始终继续运行。')
     return
   }
   if (mode === 'start' && args.length) throw new CandidateError('start 只接受 --line 线名。')
   await assertCandidateLock(dirname(ROOT), line)
-  await mkdir(STATE, { recursive: true, mode: 0o700 })
+  if (mode !== 'continue-native-publish') await mkdir(STATE, { recursive: true, mode: 0o700 })
   requireNativeReleaseComplete(STATE)
   let latest
   try { latest = JSON.parse(await readFile(LATEST, 'utf8')) }
   catch (error) { if (error.code !== 'ENOENT') throw error }
+  if (mode === 'continue-native-publish') {
+    if (args.length !== 1 || inputFile !== undefined || !line) {
+      throw new CandidateError('发布接续只接受原operation与原调用线。')
+    }
+    const { continueNativePublish } = await import('./native-update.mjs')
+    await continueNativePublish({ operation: args[0], line, latest })
+    console.log('同一原生发布接续完成，冒烟检查通过')
+    return
+  }
   if (latest?.format === nativeDeliveryState.PROJECTION) requireNativeReleaseComplete(STATE, undefined, latest.operation)
   if (inputFile !== undefined || latest?.format === nativeDeliveryState.PROJECTION) {
     if (mode === 'update' && !args[0]) throw new CandidateError('缺少产品包目录。')

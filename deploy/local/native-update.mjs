@@ -1,5 +1,6 @@
 /** Fixed native single-line delivery and matching JS continuation through the normal update lifecycle. */
 import fs from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { randomUUID, createHash } from 'node:crypto'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -7,7 +8,11 @@ import { isDeepStrictEqual } from 'node:util'
 import { verifyBundle } from '../bundle.mjs'
 import { nativeUpdateEffects, prepareNativeProductUpdate, requireProductOnlyRollback } from './update.mjs'
 import { createNativeAuthority } from './native-authority.mjs'
-import { runNativeDelivery, saveNativeInput, withNativeOperationLock, requireNativeReleaseComplete } from './native-delivery.mjs'
+import { runNativeDelivery, runNativePublishContinuation, saveNativeInput, withNativeOperationLock,
+  withRetainedNativePublishLock, requireNativeReleaseComplete } from './native-delivery.mjs'
+import { assertCandidateLock } from './candidate-lock.mjs'
+import { inspectCandidate, inspectExec } from './inspect.mjs'
+import { preflight } from './dependencies.mjs'
 import stateModule from './native-delivery-state.cjs'
 import profileModule from './native-profile.cjs'
 
@@ -38,7 +43,7 @@ function requireAssetPlan(plan) {
     || plan.asset.maxPathBytes !== plan.originalAsset.maxPathBytes) throw new NativeDeliveryUnconfirmed('native-asset-input')
 }
 
-function privateInput(filename) {
+function privateInput(filename, withMetadata = false) {
   const fd = fs.openSync(filename, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW)
   let value, failure
   try {
@@ -48,12 +53,199 @@ function privateInput(filename) {
     const bytes = fs.readFileSync(fd)
     if (bytes.length !== stat.size) throw new NativeDeliveryUnconfirmed('private-input-read')
     value = JSON.parse(bytes)
+    if (withMetadata) {
+      const after = fs.fstatSync(fd), pathStat = fs.lstatSync(filename)
+      if (after.dev !== stat.dev || after.ino !== stat.ino || after.size !== stat.size
+        || after.mtimeMs !== stat.mtimeMs || after.ctimeMs !== stat.ctimeMs
+        || pathStat.isSymbolicLink() || pathStat.dev !== stat.dev || pathStat.ino !== stat.ino) {
+        throw new NativeDeliveryUnconfirmed('private-input-changed')
+      }
+      value = { value, sha256: digest(bytes), device: String(stat.dev), inode: String(stat.ino) }
+    }
   } catch (error) { failure = error }
   try { fs.closeSync(fd) } catch (error) {
     failure = failure === undefined ? error : new AggregateError([failure, error], 'native input and close failed')
   }
   if (failure !== undefined) throw new NativeDeliveryUnconfirmed('private-input', failure)
   return value
+}
+
+function controllerSource() {
+  const git = args => execFileSync('git', ['-C', ROOT, ...args], {
+    encoding: 'utf8', maxBuffer: 1048576, stdio: ['ignore', 'pipe', 'pipe'],
+    env: { PATH: process.env.PATH, GIT_TERMINAL_PROMPT: '0' },
+  }).trim()
+  const commit = git(['rev-parse', '--verify', 'HEAD']), tree = git(['rev-parse', 'HEAD^{tree}'])
+  if (!/^[a-f0-9]{40}$/.test(commit) || !/^[a-f0-9]{40}$/.test(tree)
+    || git(['status', '--porcelain=v1', '--untracked-files=no']) !== '') {
+    throw new NativeDeliveryUnconfirmed('continuation-unsaved-controller')
+  }
+  const paths = git(['ls-files', '--', 'deploy/local', 'deploy/smoke', 'deploy/bundle.mjs']).split('\n')
+  const files = paths.map(path => {
+    const bytes = fs.readFileSync(join(ROOT, path))
+    const saved = execFileSync('git', ['-C', ROOT, 'show', commit + ':' + path], { maxBuffer: 1048576 })
+    if (!bytes.equals(saved)) throw new NativeDeliveryUnconfirmed('continuation-controller-source')
+    return { path, sha256: digest(bytes) }
+  })
+  const sources = ['native-delivery-state.cjs', 'native-profile.cjs', 'product-files.cjs']
+    .map(path => fs.readFileSync(join(ROOT, 'deploy/local', path), 'utf8'))
+  return { commit, tree, files, programSha256: digest(sources.join('\0')) }
+}
+
+function retainedCandidateLine(line) {
+  const directory = join(dirname(ROOT), 'locks', 'candidate'), filename = join(directory, 'owner')
+  const parent = fs.lstatSync(directory), before = fs.lstatSync(filename)
+  if (!parent.isDirectory() || parent.isSymbolicLink() || parent.uid !== process.getuid()
+    || (parent.mode & 0o022) !== 0 || before.isSymbolicLink()) {
+    throw new NativeDeliveryUnconfirmed('continuation-candidate-lock')
+  }
+  const fd = fs.openSync(filename, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW)
+  let failure, value
+  try {
+    const stat = fs.fstatSync(fd)
+    if (!stat.isFile() || stat.uid !== process.getuid() || stat.nlink !== 1 || (stat.mode & 0o022) !== 0
+      || stat.size < 1 || stat.size > 32768 || stat.dev !== before.dev || stat.ino !== before.ino) {
+      throw new NativeDeliveryUnconfirmed('continuation-candidate-owner')
+    }
+    const bytes = fs.readFileSync(fd), owner = bytes.toString('utf8').split('\n')[0]
+    const after = fs.lstatSync(filename), afterParent = fs.lstatSync(directory)
+    if (bytes.length !== stat.size || !owner.includes(' | ') || owner.split(' | ')[0] !== line
+      || after.dev !== stat.dev || after.ino !== stat.ino || after.size !== stat.size
+      || after.mtimeMs !== stat.mtimeMs || after.ctimeMs !== stat.ctimeMs
+      || afterParent.dev !== parent.dev || afterParent.ino !== parent.ino) {
+      throw new NativeDeliveryUnconfirmed('continuation-candidate-changed')
+    }
+    value = { directory: { device: String(parent.dev), inode: String(parent.ino) },
+      owner: { device: String(stat.dev), inode: String(stat.ino), sha256: digest(bytes) } }
+  } catch (error) { failure = error }
+  try { fs.closeSync(fd) } catch (error) {
+    failure = failure === undefined ? error : new AggregateError([failure, error], 'candidate lock read and close failed')
+  }
+  if (failure !== undefined) throw new NativeDeliveryUnconfirmed('continuation-candidate-lock', failure)
+  return value
+}
+
+function requireNoOtherUpdateCaller() {
+  const output = execFileSync('/bin/ps', ['-axo', 'pid=,ppid=,command='], {
+    encoding: 'utf8', maxBuffer: 8 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  const rows = output.trim().split('\n').map(row => row.trim().match(/^([0-9]+)\s+([0-9]+)\s+(.*)$/))
+    .filter(Boolean).map(row => ({ pid: Number(row[1]), parent: Number(row[2]), command: row[3] }))
+  const ancestors = new Set([process.pid])
+  for (let pid = process.ppid; pid > 0 && !ancestors.has(pid); pid = rows.find(row => row.pid === pid)?.parent ?? 0) {
+    ancestors.add(pid)
+  }
+  if (rows.some(row => !ancestors.has(row.pid) && /(?:^|[\s/])deploy\/local\/update(?:\.mjs)?(?:\s|$)/.test(row.command))) {
+    throw new NativeDeliveryUnconfirmed('continuation-another-update-caller')
+  }
+}
+
+/**
+ * Reuse only the original prepared operation and candidate line, never a new bundle or another durable phase.
+ * @param {object} request Original operation/line and unchanged blocking projection from the normal command.
+ * @returns {Promise<object>} Same-operation verified record; failures retain actual Root state and the original responsibility.
+ */
+export async function continueNativePublish({ operation, line, latest }) {
+  if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(operation)
+    || !line || latest?.operation !== operation || latest.format !== PROJECTION
+    || latest.nativePhase !== 'publish-intent') throw new NativeDeliveryUnconfirmed('continuation-entry')
+  await assertCandidateLock(dirname(ROOT), line)
+  const candidateLock = retainedCandidateLine(line)
+  const source = controllerSource()
+  return withRetainedNativePublishLock(STATE, operation, async () => {
+    if (!isDeepStrictEqual(privateInput(join(STATE, 'latest.json')), latest)) {
+      throw new NativeDeliveryUnconfirmed('continuation-latest-changed')
+    }
+    const filename = join(STATE, operation + '.native.json')
+    const saved = privateInput(filename, true), input = saved.value, state = input.state
+    if (input.format !== 'pe-cloud-local-native-input/v1' || input.operation !== operation
+      || input.descriptorSha256 !== latest.nativeAuthority?.descriptorSha256
+      || state?.operation !== operation || state.phase !== 'native-prepared'
+      || state.launch !== undefined || state.stopAttempted || input.publication !== undefined
+      || state.stageGlobal !== '/opt/dsh-features/pe-cloud-delivery/' + operation
+      || state.stageView !== '/proc/1/root' + state.stageGlobal
+      || state.backupDirectory !== join(STATE, operation)
+      || !isDeepStrictEqual(state.nativeJournal, input.approved?.journal)) {
+      throw new NativeDeliveryUnconfirmed('continuation-private-state')
+    }
+    requireAssetPlan(input.plan)
+    const groups = input.groups
+    if (!Array.isArray(groups) || groups.length !== 3) throw new NativeDeliveryUnconfirmed('continuation-groups')
+    const original = groups.find(group => group.role === 'original'), normal = groups.find(group => group.role === 'normal')
+    const compatible = groups.find(group => group.role === 'compatible')
+    if (!original || !normal || !compatible || !isDeepStrictEqual(normal.manifest, state.manifest)
+      || state.nativeOriginalTupleSha256 !== tupleSha256(original)
+      || !isDeepStrictEqual(input.context.holder, { pid: state.holder.pid, startTicks: state.holder.startTicks,
+        namespaceId: state.holder.namespaceId }) || input.context.namespaceId !== state.snapshot.namespaceId) {
+      throw new NativeDeliveryUnconfirmed('continuation-prepared-group')
+    }
+    const pins = { kind: 'fd-profile', operation, descriptorSha256: input.descriptorSha256,
+      originalTupleSha256: tupleSha256(original), targetTupleSha256: tupleSha256(normal),
+      compatibleTupleSha256: tupleSha256(compatible) }
+    if (digest(JSON.stringify({ groups: groups.map(tupleSha256), assetSource: input.plan.asset.sourceSha256,
+      namespaceId: input.context.namespaceId, holder: input.context.holder })) !== pins.descriptorSha256) {
+      throw new NativeDeliveryUnconfirmed('continuation-descriptor')
+    }
+    const fresh = async () => {
+      requireNoOtherUpdateCaller()
+      await assertCandidateLock(dirname(ROOT), line)
+      if (!isDeepStrictEqual(retainedCandidateLine(line), candidateLock)) {
+        throw new NativeDeliveryUnconfirmed('continuation-candidate-changed')
+      }
+      const observed = await inspectCandidate()
+      const fields = ['container', 'appPid', 'appStartTicks', 'appUid', 'appGid', 'appExecId', 'shutdownTimeoutMs',
+        'namespaceId', 'namespaceKeeperPid', 'namespaceKeeperStartTicks', 'productRoot', 'productDevice',
+        'productFilesystem', 'nodePath', 'appCheckPath', 'seccompPath', 'profileHome', 'appCwd']
+      if (!observed.canStopSafely || observed.productReadOnly !== true || observed.productBlockReadOnly !== true
+        || fields.some(key => observed[key] !== state.snapshot[key])
+        || observed.namespaceKeeperPid !== state.holder.pid || observed.namespaceKeeperStartTicks !== state.holder.startTicks) {
+        throw new NativeDeliveryUnconfirmed('continuation-original-application')
+      }
+      const execution = await inspectExec(state.snapshot.appExecId)
+      if (!execution.running || execution.missing || execution.execId !== state.snapshot.appExecId) {
+        throw new NativeDeliveryUnconfirmed('continuation-original-exec')
+      }
+      await preflight(observed, normal.manifest)
+      return observed
+    }
+    const observed = await fresh()
+    const authority = await createNativeAuthority({ ...observed, holder: input.context.holder }, input.approved)
+    const record = await authority.read()
+    stateModule.requireNativePublishIntent(pins, record)
+    if (!isDeepStrictEqual(latest, stateModule.legacyBarrier(record))) {
+      throw new NativeDeliveryUnconfirmed('continuation-original-authority')
+    }
+    const persist = () => saveNativeInput(STATE, operation, input)
+    const effects = nativeUpdateEffects(state, { observeTuple: () => authority.observeTuple(groups),
+      unbind: () => authority.unbind(pins), bind: () => authority.bind(pins), seal: () => authority.seal(pins) })
+    const stop = effects.stop
+    effects.stop = async () => { await fresh(); return stop() }
+    const start = effects.start
+    effects.start = async () => {
+      let failure, value
+      try { value = await start() } catch (error) { failure = error }
+      try { await persist() } catch (error) {
+        failure = failure === undefined ? error : new AggregateError([failure, error], 'native launch and receipt failed')
+      }
+      if (failure !== undefined) throw failure
+      return value
+    }
+    const unchangedInput = privateInput(filename, true)
+    if (!isDeepStrictEqual(unchangedInput, saved) || !isDeepStrictEqual(controllerSource(), source)) {
+      throw new NativeDeliveryUnconfirmed('continuation-input-changed')
+    }
+    return runNativePublishContinuation({ directory: STATE, pins, authority, effects,
+      binding: { groups, controller: { ...source, line, candidateLock, inputSha256: saved.sha256,
+        inputIdentity: { device: saved.device, inode: saved.inode }, originalApp: {
+          pid: state.snapshot.appPid, startTicks: state.snapshot.appStartTicks, execId: state.snapshot.appExecId },
+        originalProduct: { device: state.snapshot.productDevice, filesystem: state.snapshot.productFilesystem } } },
+      holdOperation: action => action(), persistPublication: async publication => {
+        for (const group of groups) if (group.role !== 'original') group.profile = structuredClone(publication.profile)
+        input.publication = publication
+        input.approved = authority.snapshotApproved()
+        await persist()
+      } })
+  })
 }
 
 /**

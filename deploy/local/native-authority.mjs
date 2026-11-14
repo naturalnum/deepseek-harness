@@ -1,5 +1,6 @@
 /** Fixed Root record and single-FD publication bridge through the existing candidate namespace entry. */
 import { readFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { execInCandidate } from './inspect.mjs'
 import stateModule from './native-delivery-state.cjs'
@@ -7,6 +8,7 @@ import stateModule from './native-delivery-state.cjs'
 const { NativeDeliveryUnconfirmed } = stateModule
 const DECIMAL = /^[0-9]{1,32}$/
 const HASH = /^[a-f0-9]{64}$/
+const programDigest = sources => createHash('sha256').update(sources.join('\0')).digest('hex')
 
 function protectedDirectory(value, asset = false) {
   return value && typeof value.path === 'string'
@@ -84,6 +86,15 @@ case 'publish':{
   if(nativeRequest.approved.profile)nativeValue.profile=nativeProfileModule.exports.publishProfile(
     {...nativeRequest.approved.profile,operation:nativeRequest.value.operation,
       descriptorSha256:nativeRequest.value.descriptorSha256},nativeRecord);
+  break;
+}
+case 'continue-publish':{
+  if(!nativeRequest.approved.profile)throw new NativeDeliveryUnconfirmed('profile-input-missing');
+  if(nativeRequest.value.binding.programSha256!==${JSON.stringify(programDigest([moduleSource, profileSource, productSource]))})
+    throw new NativeDeliveryUnconfirmed('continuation-program-source');
+  nativeValue=nativeProfileModule.exports.continueNativePublish(
+    {...nativeRequest.value,approved:nativeRequest.approved},nativeContext,nativeStore,nativeProductModule.exports,
+    {requireNativePublishIntent,inspectPublishedFdAsset});
   break;
 }
 case 'unbind':case 'bind':case 'seal':{
@@ -219,6 +230,14 @@ export async function createNativeAuthority(current, approved, execute = execInC
         }
         pinned.approved.profile.candidate = structuredClone(result.profile)
       }
+      return result
+    },
+    continuePublish: async (expected, groups, binding) => {
+      const result = await request('continue-publish', { expected, groups, binding })
+      if (result.profile?.source !== pinned.approved.profile?.candidate?.source
+        || result.profile?.sha256 !== pinned.approved.profile?.candidate?.sha256
+        || result.profile?.identity === undefined) throw new NativeDeliveryUnconfirmed('continuation-profile-receipt')
+      pinned.approved.profile.candidate = structuredClone(result.profile)
       return result
     },
   }

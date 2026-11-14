@@ -74,6 +74,15 @@ function requireRecord(record) {
   }
 }
 
+/** Only this original, not-yet-mutating publish intent may make one new read-only loading attempt. */
+function requireNativePublishIntent(pins, record) {
+  requirePins(pins)
+  requireRecord(record)
+  if (pins.kind !== 'fd-profile' || record.phase !== 'publish-intent' || record.sequence !== 2
+    || ['kind', 'operation', 'descriptorSha256', 'originalTupleSha256', 'targetTupleSha256', 'compatibleTupleSha256']
+      .some(key => record[key] !== pins[key])) throw new NativeDeliveryUnconfirmed('continuation-original-intent')
+}
+
 /** Block all previously shipped ordinary entry predicates without claiming a stop actually ran. */
 function legacyBarrier(record) {
   requireRecord(record)
@@ -177,6 +186,84 @@ class NativeRecordStore {
   }
 
   advance(expected, next) { return this.write(expected, next) }
+
+  /** Persist the fixed one-use evidence files; a partial file permanently fences another attempt. */
+  publishContinuationFile(kind, expected, value) {
+    requireNativePublishIntent(expected, this.read())
+    if (!isDeepStrictEqual(this.read(), expected) || !['intent', 'receipt'].includes(kind)) {
+      throw new NativeDeliveryUnconfirmed('continuation-record-changed')
+    }
+    const name = 'native-publish-continuation.' + kind + '.json'
+    const bytes = Buffer.from(JSON.stringify(value) + '\n')
+    // The bounded load output is private evidence, not part of the small authoritative phase record.
+    if (bytes.length > 1048576) throw new NativeDeliveryUnconfirmed('continuation-evidence-size')
+    const fd = this.io.openSync(this.directory + '/' + name, 'wx', 0o600)
+    closeAfter(this.io, fd, () => {
+      this.io.writeFileSync(fd, bytes)
+      this.io.fsyncSync(fd)
+    })
+    this.io.fsyncSync(this.fd)
+    const read = this.io.openSync(this.directory + '/' + name, this.io.constants.O_RDONLY | this.io.constants.O_NOFOLLOW)
+    const identity = closeAfter(this.io, read, () => {
+      const stat = this.io.fstatSync(read)
+      if (!stat.isFile() || stat.uid !== 0 || stat.gid !== 0 || stat.nlink !== 1
+        || (stat.mode & 0o7777) !== 0o600 || stat.size !== bytes.length
+        || !this.io.readFileSync(read).equals(bytes)) throw new NativeDeliveryUnconfirmed('continuation-evidence-readback')
+      return { device: String(stat.dev), inode: String(stat.ino), bytes: stat.size }
+    })
+    this.parent()
+    return { name, sha256: createHash('sha256').update(bytes).digest('hex'), identity }
+  }
+}
+
+/** Read the already-created fixed module and its exact original source record through FD10, without publishing. */
+function inspectPublishedFdAsset(directoryFd, expected, io = fs) {
+  if (!HASH.test(expected.sha256) || !HASH.test(expected.sourceSha256)
+    || !Number.isSafeInteger(expected.bytes) || expected.bytes < 1 || expected.bytes > expected.maxAssetBytes
+    || !Number.isSafeInteger(expected.maxAssetBytes) || !Number.isSafeInteger(expected.maxPathBytes)) {
+    throw new NativeDeliveryUnconfirmed('continuation-asset-input')
+  }
+  const parent = () => {
+    const stat = io.fstatSync(directoryFd)
+    if (!stat.isDirectory() || stat.uid !== 0 || (stat.mode & 0o022) !== 0
+      || String(stat.dev) !== expected.parentDevice || String(stat.ino) !== expected.parentInode) {
+      throw new NativeDeliveryUnconfirmed('continuation-asset-parent')
+    }
+    return { device: String(stat.dev), inode: String(stat.ino) }
+  }
+  const name = 'fd-skill-store-v1-' + expected.sha256 + '.node'
+  if (Buffer.byteLength('/opt/dsh-feature-assets/' + name + '.source.json') > expected.maxPathBytes) {
+    throw new NativeDeliveryUnconfirmed('continuation-asset-path')
+  }
+  const read = (suffix, mode, maximum) => {
+    parent()
+    const fd = io.openSync('/proc/self/fd/' + directoryFd + '/' + name + suffix,
+      io.constants.O_RDONLY | io.constants.O_NOFOLLOW)
+    return closeAfter(io, fd, () => {
+      const before = io.fstatSync(fd)
+      if (!before.isFile() || before.uid !== 0 || before.gid !== 0 || before.nlink !== 1
+        || (before.mode & 0o7777) !== mode || before.size < 1 || before.size > maximum) {
+        throw new NativeDeliveryUnconfirmed('continuation-asset-file')
+      }
+      const bytes = io.readFileSync(fd), after = io.fstatSync(fd)
+      if (bytes.length !== before.size || before.dev !== after.dev || before.ino !== after.ino
+        || before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs
+        || before.mode !== after.mode || before.nlink !== after.nlink || before.uid !== after.uid || before.gid !== after.gid) {
+        throw new NativeDeliveryUnconfirmed('continuation-asset-file')
+      }
+      return { bytes, sha256: createHash('sha256').update(bytes).digest('hex'),
+        identity: { device: String(before.dev), inode: String(before.ino), bytes: before.size, mode } }
+    })
+  }
+  const asset = read('', 0o444, expected.maxAssetBytes), source = read('.source.json', 0o600, MAX_RECORD_BYTES)
+  const value = { format: 'pe-cloud-skill-fd-asset/v1', name, sha256: expected.sha256, bytes: expected.bytes,
+    sourceSha256: expected.sourceSha256, parent: parent(), identity: asset.identity }
+  if (asset.identity.bytes !== expected.bytes || asset.sha256 !== expected.sha256
+    || !source.bytes.equals(Buffer.from(JSON.stringify(value) + '\n'))) {
+    throw new NativeDeliveryUnconfirmed('continuation-asset-source')
+  }
+  return { name, sha256: expected.sha256, sourceSha256: expected.sourceSha256, parent: value.parent,
+    identity: asset.identity, source: { sha256: source.sha256, identity: source.identity } }
 }
 
 /**
@@ -272,6 +359,29 @@ class NativeDeliveryOwner {
     } catch (error) { throw new NativeDeliveryUnconfirmed('reserve', error) }
   }
 
+  /** Attach only within the call that just received the confirmed new publication, never an entry accepting phase3. */
+  static async acceptPublishContinuation(pins, authority, publication, writeProjection) {
+    requirePins(pins)
+    const record = publication.record
+    requireRecord(record)
+    if (pins.kind !== 'fd-profile' || record.phase !== 'published' || record.sequence !== 3
+      || publication.receipt?.name !== 'native-publish-continuation.receipt.json'
+      || !HASH.test(publication.receipt.sha256)
+      || ['kind', 'operation', 'descriptorSha256', 'originalTupleSha256', 'targetTupleSha256', 'compatibleTupleSha256']
+        .some(key => record[key] !== pins[key]) || !isDeepStrictEqual(await authority.read(), record)) {
+      throw new NativeDeliveryUnconfirmed('continuation-published-receipt')
+    }
+    const owner = new NativeDeliveryOwner()
+    owner.#authority = authority
+    owner.#record = record
+    owner.#projection = writeProjection
+    const projection = legacyBarrier(record)
+    if (!isDeepStrictEqual(await writeProjection(projection), projection)) {
+      throw new NativeDeliveryUnconfirmed('continuation-projection')
+    }
+    return owner
+  }
+
   get record() { return structuredClone(this.#record) }
   get unknown() { return this.#unknown }
 
@@ -338,4 +448,5 @@ function requireNativeContinuation(record, observedTupleSha256, requestedTupleSh
 }
 
 module.exports = { FORMAT, PROJECTION, NativeDeliveryOwner, NativeRecordStore, NativeDeliveryUnconfirmed,
-  legacyBarrier, requireOrdinaryUpdateState, requireNativeContinuation, requireNativePins: requirePins, publishFdAsset }
+  legacyBarrier, requireOrdinaryUpdateState, requireNativeContinuation, requireNativePins: requirePins,
+  requireNativePublishIntent, inspectPublishedFdAsset, publishFdAsset }
