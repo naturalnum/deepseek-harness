@@ -444,6 +444,7 @@ function actualNative(
       page.nativeOptions.prepareContext(ctx)
       expect(Object.isFrozen(ctx.get('fileUploadHooks'))).toBe(true)
       expect(ctx.get('fileUploadHooks')?.fetch).toBe(captured.fetch)
+      expect(ctx.get('fileUploadHooks')?.promptImageUploads).toBe(false)
       expect(ctx.get('fileUpload')).toBeUndefined()
       expect(ctx.get('connection')).toBeUndefined()
       options.afterBind?.(ctx)
@@ -590,7 +591,7 @@ it('binds upload fetch before native Loader startup and keeps A/B original carri
   expect(legacy).not.toHaveBeenCalled()
 })
 
-it.each(['existing service', 'foreign hooks', 'mutable matching hooks'] as const)(
+it.each(['existing service', 'foreign hooks', 'mutable matching hooks', 'image policy enabled', 'image policy absent'] as const)(
   'rejects upload preparation with %s before native consumers start', async (conflict) => {
     const f = fixture(), preparation = PreparedCloudPage.prepare(f.input, new AbortController().signal)
     const page = await preparation.ready
@@ -600,7 +601,9 @@ it.each(['existing service', 'foreign hooks', 'mutable matching hooks'] as const
         const fetch = page.lifetime.transport.hooks.fetch
         if (fetch === undefined) throw new Error('Fixture has no captured fetch')
         ctx.provide('fileUploadHooks', conflict === 'foreign hooks'
-          ? Object.freeze({ fetch: () => Promise.reject(new Error('foreign carrier')) }) : { fetch })
+          ? Object.freeze({ fetch: () => Promise.reject(new Error('foreign carrier')), promptImageUploads: false })
+          : conflict === 'image policy enabled' ? Object.freeze({ fetch, promptImageUploads: true })
+            : conflict === 'image policy absent' ? Object.freeze({ fetch }) : { fetch, promptImageUploads: false })
       }
     })
     const reports = vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -614,13 +617,13 @@ it.each(['existing service', 'foreign hooks', 'mutable matching hooks'] as const
   },
 )
 
-it('reuses only an already frozen upload hook with the exact captured fetch', async () => {
+it('reuses only a frozen upload hook with the exact captured fetch and file-only draft policy', async () => {
   const f = fixture(), preparation = PreparedCloudPage.prepare(f.input, new AbortController().signal)
   onTestFinished(() => preparation.dispose())
   const page = await preparation.ready
   const fetch = page.lifetime.transport.hooks.fetch
   if (fetch === undefined) throw new Error('Fixture has no captured fetch')
-  const hooks = Object.freeze({ fetch })
+  const hooks = Object.freeze({ fetch, promptImageUploads: false })
   const app = actualNative(page, undefined, ctx => ctx.provide('fileUploadHooks', hooks), { upload: true })
   await page.start(app.entry)
   expect(app.root()?.get('fileUploadHooks')).toBe(hooks)
@@ -635,7 +638,7 @@ it.each(['duplicate bind', 'provider replacement'] as const)('rejects upload %s 
     else {
       const hooks = ctx.get('fileUploadHooks')
       if (hooks === undefined) throw new Error('Prepared hook is missing')
-      ctx.set('fileUploadHooks', Object.freeze({ fetch: hooks.fetch }))
+      ctx.set('fileUploadHooks', Object.freeze({ fetch: hooks.fetch, promptImageUploads: false }))
     }
   } })
   const reports = vi.spyOn(console, 'error').mockImplementation(() => {})

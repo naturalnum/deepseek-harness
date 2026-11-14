@@ -25,6 +25,8 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
+The optional `system-prompt/prepare` waterfall completes before sections, runtime contexts, variables or tool providers are read. It receives the original assembly context through the same scope-filtered dispatcher as presentation listeners. Rejection prevents a partial provider snapshot; completing preparation does not grant tool or account authority. Without preparation listeners, existing provider collection, tool ordering and complete-prompt enforcement remain. `refreshContext` refreshes accepted context facts without repeating preparation.
+
 Mount `dsh-system-prompt` wherever agents run: it provides `ctx.systemPrompt`, the registry every prompt contribution lands in. Contributions are scoped — registering through `agent.ctx` affects that agent alone and shadows a same-named global.
 
 <a id="configure-the-prompt"></a>

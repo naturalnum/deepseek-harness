@@ -138,6 +138,8 @@ ABI 6 增加自持 FD 的单 leaf 准备及 exact empty-directory 清理，创�
 
 显式配置 ABI8 `content` 且真实 worker 握手通过后，同一 router 授予路径级不跟随最终链接的 `lstat`、`listDir`、完整 `readBytes` 及定位窗口 `readByteRange`。选择 scope 先于解释 lstat 路径。目录项取得同 provider、同捕获项目 backend 签发的有效 target；链接和特殊项映射为 `other`，其 target 永久仅授予元数据观测，不能据此读取、写入或列目录。完整字节读取复用既有 worker read 的上限加一字节探测，返回精确 backing buffer；实际 cap 取调用者 cap、`maxReadBytes`、`maxReplyBytes` 减 128 字节封装三者的最小值。range 长度须满足两项配置字节限额，完整文件可以更大。派发前，同 lane 的一份正数预留覆盖 native/path 临时空间、回复与名称／元数据副本、展开后的目录 target 和字节结果，持续到交付。算术溢出或单 lane 容量不足会拒绝；取消后原操作继续持有到 worker 实际回复或退出，不新增池或 backend 缓存。`editText` 仍不可用，提供方声明 `supportsTextEdit: false`，因此兼容的工具注册会省略它。`watch` 明确以 unsupported 拒绝。
 
+元数据专用和文本项目提供方均未授予原生 FS 的 `patchText`、`deleteFile` 与 `moveFile`。这些方法在 worker 派发前以 `FS_PERMISSION_DENIED` 拒绝，目录准备期间也一样；不会尝试补丁、删除或目标发布。既有受保护的 `writeText` 行为以及另行批准的工作区管理能力仍由各自原所有者负责。
+
 helper 默认构建仍为 ABI6。使用 `-DDSH_FD_TEXT_ABI` 构建并独立命名的资产报告 ABI7，增加有界文本发布能力；它不得覆盖正在运行的 ABI6 资产。worker 接受两者，但 ABI6 文本写入在派发前拒绝。现有 `maxReadBytes` 限制完整原始文本读取、UTF-8 写入输入及可选旧内容上下文；上下文达到上限或包含二进制／非法 UTF-8 时返回 `before: null`。结果上下文规范化换行，存储和读取的文本保留输入字节。本切片不新增文本限额配置。
 
 独立命名的 ABI8 资产要求同时使用 `-DDSH_FD_TEXT_ABI` 与 `-DDSH_FD_CONTENT_ABI`；默认 ABI6 及 ABI7 的导出保持不变。ABI8 worker 要求显式 `content` 限额：`maxEntries`、`maxNameBytes`、`maxReplyBytes` 及 `operationTimeoutMs`。传输层增加 `lstat(root, path, signal)`、`list(root, path, maxEntries, maxBytes, signal)` 及 `readRange(root, path, offset, length, maxBytes, signal)`；ABI6/7 在派发前拒绝这些命令。这些私有方法不安装或授予原生 FileSystem 能力。

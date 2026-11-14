@@ -180,6 +180,10 @@ async function fixture(peerCloseTimeoutMs = 1000, testRead = false) {
       if (this.ctx.invocation === undefined) throw new Error('Gateway invocation absent')
       return read(this.ctx.invocation.peer, 'stat')
     }
+    @Remote async list(): Promise<unknown> {
+      if (this.ctx.invocation === undefined) throw new Error('Gateway invocation absent')
+      return read(this.ctx.invocation.peer, 'list')
+    }
     @Remote async write(): Promise<unknown> {
       if (this.ctx.invocation === undefined) throw new Error('Gateway invocation absent')
       return read(this.ctx.invocation.peer, 'write')
@@ -258,7 +262,7 @@ async function fixture(peerCloseTimeoutMs = 1000, testRead = false) {
   // Loopback transports exercise Node's actual HTTP/WS sockets and close events.
   const http = async (handle: LoginPeer, releaseRequestUse: () => void,
     mode: 'if-idle' | 'stop-and-apply' = 'if-idle', requestActual?: Promise<void>, method = 'operate') => {
-    const fileMethod = method === 'read' || method === 'stat' || method === 'write' ? method : undefined
+    const fileMethod = method === 'read' || method === 'stat' || method === 'list' || method === 'write' ? method : undefined
     const bridged = Promise.withResolvers<undefined>()
     void bridged.promise.catch((_cause: unknown) => {})
     const server = createServer((request, response) => {
@@ -1499,7 +1503,7 @@ it('offline response cleanup failure retains the original Peer use and blocks cl
   expect(f.registry.reservedPeers).toBe(1)
 })
 
-it('read carrier remains local to its real HTTP request, peer, endpoint and settlement', async () => {
+it.each(['read', 'list'])('%s carrier remains local to its real HTTP request, peer, endpoint and settlement', async (fileMethod) => {
   const f = await fixture(1000, true), a = await f.acquire('login=a'), b = await f.acquire('login=b')
   const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
   const tailRelease = Promise.withResolvers<undefined>()
@@ -1516,13 +1520,19 @@ it('read carrier remains local to its real HTTP request, peer, endpoint and sett
     expect(f.registry.readOperationCurrent(peer, f.binding, selected, () => {})).toBe(true)
     return 'original-read'
   })
-  const aCall = await f.http(a, () => {}, 'if-idle', undefined, 'read')
-  await entered.promise
-  expect(f.registry.readOperationCurrent(a.peer, f.binding, 'workspaceFiles/read', () => {})).toBe(false)
-  release.resolve(undefined); await aCall.body
-  expect(f.readCounts().retainedChecks).toBeGreaterThanOrEqual(2)
-  expect(f.readCounts().rootChecks).toBeGreaterThanOrEqual(2)
-  tailRelease.resolve(undefined); expect(await tail.promise).toBe(false)
+  const aCall = await f.http(a, () => {}, 'if-idle', undefined, fileMethod)
+  try {
+    expect(await Promise.race([entered.promise.then(() => true), aCall.actual.then(() => false)])).toBe(true)
+    expect(f.registry.readOperationCurrent(a.peer, f.binding, `workspaceFiles/${fileMethod}`, () => {})).toBe(false)
+    release.resolve(undefined); await aCall.body
+    expect(aCall.result()).toMatchObject({ result: { ok: true, value: 'original-read' } })
+    expect(f.readCounts().retainedChecks).toBeGreaterThanOrEqual(2)
+    expect(f.readCounts().rootChecks).toBeGreaterThanOrEqual(2)
+    tailRelease.resolve(undefined); expect(await tail.promise).toBe(false)
+  } finally {
+    release.resolve(undefined); tailRelease.resolve(undefined)
+    await Promise.allSettled([aCall.actual, aCall.body])
+  }
 })
 
 it('read carrier does not authorize a write endpoint', async () => {
@@ -1536,7 +1546,7 @@ it('read carrier does not authorize a write endpoint', async () => {
   expect(f.readCounts().retainedChecks).toBe(0)
 })
 
-it('read carrier rejects explicit Root revocation after an await', async () => {
+it.each(['read', 'list'])('%s carrier rejects explicit Root revocation after an await', async (fileMethod) => {
   const f = await fixture(1000, true), a = await f.acquire('login=a')
   const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
   f.setRead(async (peer, method) => {
@@ -1545,13 +1555,19 @@ it('read carrier rejects explicit Root revocation after an await', async () => {
     f.registry.readOperationCurrent(peer, f.binding, `workspaceFiles/${method}`, () => {})
     return 'must-not-be-returned'
   })
-  const call = await f.http(a, () => {}, 'if-idle', undefined, 'read')
-  await entered.promise; f.revokeReadRoot(); release.resolve(undefined)
-  await expect(call.actual).rejects.toThrow()
-  await expect(call.body).rejects.toThrow()
+  const call = await f.http(a, () => {}, 'if-idle', undefined, fileMethod)
+  try {
+    expect(await Promise.race([entered.promise.then(() => true), call.actual.then(() => false)])).toBe(true)
+    f.revokeReadRoot(); release.resolve(undefined)
+    await expect(call.actual).rejects.toThrow()
+    await expect(call.body).rejects.toThrow()
+  } finally {
+    release.resolve(undefined)
+    await Promise.allSettled([call.actual, call.body])
+  }
 })
 
-it('keeps concurrent read and stat requests on one Peer in their own carriers', async () => {
+it.each(['read', 'list'])('keeps concurrent %s and stat requests on one Peer in their own carriers', async (fileMethod) => {
   const f = await fixture(1000, true), a = await f.acquire('login=a')
   const readEntered = Promise.withResolvers<undefined>(), statEntered = Promise.withResolvers<undefined>()
   const finishRead = Promise.withResolvers<undefined>(), finishStat = Promise.withResolvers<undefined>()
@@ -1559,22 +1575,30 @@ it('keeps concurrent read and stat requests on one Peer in their own carriers', 
     const endpoint = `workspaceFiles/${method}`
     expect(f.registry.readOperationCurrent(peer, f.binding, endpoint, () => {})).toBe(true)
     expect(f.registry.readOperationCurrent(peer, f.binding,
-      method === 'read' ? 'workspaceFiles/stat' : 'workspaceFiles/read', () => {})).toBe(false)
-    if (method === 'read') { readEntered.resolve(undefined); await finishRead.promise }
+      method === fileMethod ? 'workspaceFiles/stat' : `workspaceFiles/${fileMethod}`, () => {})).toBe(false)
+    if (method === fileMethod) { readEntered.resolve(undefined); await finishRead.promise }
     else { statEntered.resolve(undefined); await finishStat.promise }
     expect(f.registry.readOperationCurrent(peer, f.binding, endpoint, () => {})).toBe(true)
     return method
   })
-  const read = await f.http(a, () => {}, 'if-idle', undefined, 'read')
-  await readEntered.promise
-  const stat = await f.http(a, () => {}, 'if-idle', undefined, 'stat')
-  await statEntered.promise
-  finishStat.resolve(undefined); await stat.body
-  finishRead.resolve(undefined); await read.body
-  expect(f.readCounts().retainedChecks).toBeGreaterThanOrEqual(4)
+  const read = await f.http(a, () => {}, 'if-idle', undefined, fileMethod)
+  let stat: Awaited<ReturnType<typeof f.http>> | undefined
+  try {
+    expect(await Promise.race([readEntered.promise.then(() => true), read.actual.then(() => false)])).toBe(true)
+    stat = await f.http(a, () => {}, 'if-idle', undefined, 'stat')
+    expect(await Promise.race([statEntered.promise.then(() => true), stat.actual.then(() => false)])).toBe(true)
+    finishStat.resolve(undefined); await stat.body
+    expect(stat.result()).toMatchObject({ result: { ok: true, value: 'stat' } })
+    finishRead.resolve(undefined); await read.body
+    expect(read.result()).toMatchObject({ result: { ok: true, value: fileMethod } })
+    expect(f.readCounts().retainedChecks).toBeGreaterThanOrEqual(4)
+  } finally {
+    finishRead.resolve(undefined); finishStat.resolve(undefined)
+    await Promise.allSettled([read.actual, read.body, ...stat === undefined ? [] : [stat.actual, stat.body]])
+  }
 })
 
-it('silent Loader drift is delayed within the read but blocked before the HTTP response', async () => {
+it.each(['read', 'list'])('silent Loader drift within %s is blocked before the HTTP response', async (fileMethod) => {
   const f = await fixture(1000, true), a = await f.acquire('login=a')
   const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
   f.setRead(async (peer, method) => {
@@ -1583,11 +1607,17 @@ it('silent Loader drift is delayed within the read but blocked before the HTTP r
     expect(f.registry.readOperationCurrent(peer, f.binding, `workspaceFiles/${method}`, () => {})).toBe(true)
     return 'private-after-drift'
   })
-  const call = await f.http(a, () => {}, 'if-idle', undefined, 'read')
-  await entered.promise; f.driftReadRoot(); release.resolve(undefined)
-  await expect(call.actual).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
-  await expect(call.body).rejects.toThrow()
-  expect(call.result()).toBeUndefined()
+  const call = await f.http(a, () => {}, 'if-idle', undefined, fileMethod)
+  try {
+    expect(await Promise.race([entered.promise.then(() => true), call.actual.then(() => false)])).toBe(true)
+    f.driftReadRoot(); release.resolve(undefined)
+    await expect(call.actual).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+    await expect(call.body).rejects.toThrow()
+    expect(call.result()).toBeUndefined()
+  } finally {
+    release.resolve(undefined)
+    await Promise.allSettled([call.actual, call.body])
+  }
 })
 
 it('real account exposure invalidated after a native read prevents any HTTP result', async () => {

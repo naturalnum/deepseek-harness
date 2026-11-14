@@ -17,6 +17,14 @@ declare module '@deepseek-ai/cordis' {
 
   interface Events {
     /**
+     * Await scoped provider preparation before reading any provider for this assembly.
+     * A failed preparation rejects the assembly without collecting a partial snapshot.
+     * The supplied context and signal belong only to this assembly request.
+     * @param context - the original per-assembly context.
+     * @mode waterfall
+     */
+    'system-prompt/prepare'(this: Scoped<SystemPrompt>, context: AssembleContext, next: () => Promise<void>): Promise<void>
+    /**
      * Presentation waterfall over assembled sections, contexts, and variables.
      * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): scoped listeners
      * receive only that scope's assemblies. The returned text is authoritative; tool declarations remain provider-owned.
@@ -609,7 +617,7 @@ export class SystemPrompt extends Service {
   }
 
   /**
-   * Assemble global and scoped providers, detach tool parameters, apply
+   * Await scoped provider preparation, then assemble global and scoped providers, detach tool parameters, apply
    * canonical ordering, then run the presentation waterfall. Scoped sections
    * and variables shadow globals. The waterfall's text is authoritative except
    * that an effective complete section is restored afterwards as the sole
@@ -620,6 +628,9 @@ export class SystemPrompt extends Service {
   // Keep configuration failures on the declared asynchronous error path.
   async assemble(context: AssembleContext = {}): Promise<PromptAssembly> {
     const scope = context.scope
+    await this.ctx.waterfall(
+      scopeTarget(this, scope), 'system-prompt/prepare', context, () => Promise.resolve(),
+    )
     const scopeLayers = this.layers.chainLayers(scope)
     const runtimeContextSuppressed = !this.layers.global.runtimeContextSuppressors.isEmpty()
       || scopeLayers.some(layer => !layer.runtimeContextSuppressors.isEmpty())

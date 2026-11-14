@@ -25,6 +25,8 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
+可选 `system-prompt/prepare` waterfall 在读取 section、运行时 context、variable 或 tool 提供方之前结束。它通过与呈现监听器相同的作用域过滤分发器接收原始组装 context。拒绝会阻止部分提供方快照；准备完成不授予工具或账号权限。没有准备监听器时，原提供方收集、工具排序和完整提示约束保留。`refreshContext` 刷新已接受的 context 事实，不重复准备。
+
 在任何运行 agent 的地方挂载 `dsh-system-prompt`：它提供 `ctx.systemPrompt`，即每个提示词贡献所落入的注册表。贡献带作用域——通过 `agent.ctx` 注册只影响该 agent，并遮蔽同名全局项。
 
 <a id="configure-the-prompt"></a>

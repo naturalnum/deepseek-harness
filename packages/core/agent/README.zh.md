@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 创建或恢复 agent
 
-`ctx.agents.create()` 在一个身份下构建全新 agent 与会话；`ctx.agents.resume()` 加载持久化会话并在此基础上重建 agent。两者都委托给已注册工厂，并返回 `AgentHandle`——唯一能拆除该 agent 的对象。发布和失败清理的时序见 [`AgentFactory`](src/index.ts)。`get(id)` 与 `list()` 用于查找实时 agent。[subagent 服务](../../subagent/subagent/README.zh.md) 拥有委派执行和运行时树成员关系。
+`ctx.agents.create()` 在一个身份下构建全新 agent 与会话；`ctx.agents.resume()` 加载持久化会话并在此基础上重建 agent。两者都委托给已注册工厂，并返回 `AgentHandle`——唯一能拆除该 agent 的对象。发布和失败清理的时序见 [`AgentFactory`](src/index.ts)。`get(id)` 与 `list()` 用于查找实时 agent。[subagent 服务](../../subagent/subagent/README.zh.md) 拥有委派执行和运行时树成员关系。 create/resume 的可选 `parentAgent` 在 Agent 发布时记录确切运行时创建者。`isOwnedBy(id, parent)` 比较当前条目中的原对象，不从 Session 血缘或环境中的发起方归因推断归属。只要子 Agent 仍在注册表中，即使创建者已离开，该引用仍可观察；调用方仍须分别验证父级存活与授权。省略该字段时，包括恢复持久化的子级历史，均记录为运行时根。该观察不授予释放能力，也不改变结构生命周期。 可选的同步 `observeDisposal` 回调报告一次已准备 Agent 的实际驱动、作用域、写句柄和注册表清理结果。只有每个清理阶段成功且原 setup 已结算，才报告 confirmed；清理失败或被放弃但仍在运行的 setup 报告 unknown。setup 晚到结束不能修改该观察。Agent 准备前失败不产生回执，调用方继续持有相应预留责任。回调不得抛错，也不授予清理能力。
 
 ```text
 const handle = await ctx.agents.create({

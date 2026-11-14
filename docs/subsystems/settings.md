@@ -52,23 +52,28 @@ describe(options?: SettingsDescribeOptions): SettingsDescriptor[]
  * @param ns Profile entry id.
  * @param patch Fields to merge.
  * @param expectedRevision Revision returned by describe.
+ * @param control Optional caller recheck at the actual native edit and replacement points.
  */
-async update(ns: string, patch: object, expectedRevision?: number): Promise<void>
+async update(ns: string, patch: object, expectedRevision?: number, control?: ConfigEditControl): Promise<void>
 
 /** Reset all live fields, then set the supplied fields; ordinary config is preserved.
  * @param ns Profile entry id.
  * @param section Complete form values.
  * @param expectedRevision Revision returned by describe.
+ * @param control Optional caller recheck at the actual native edit and replacement points.
  */
-async replace(ns: string, section: object, expectedRevision?: number): Promise<void>
+async replace(ns: string, section: object, expectedRevision?: number, control?: ConfigEditControl): Promise<void>
 
 /** Apply field edits without restating redacted secrets; unsetting an array index removes its element.
  * @param ns Profile entry id.
  * @param ops Ordered form edits.
  * @param expectedRevision Revision returned by describe.
+ * @param control Optional caller recheck at the actual native edit and replacement points.
  */
-async mutate(ns: string, ops: readonly SettingsPathOp[], expectedRevision?: number): Promise<void>
+async mutate(ns: string, ops: readonly SettingsPathOp[], expectedRevision?: number, control?: ConfigEditControl): Promise<void>
 ```
+
+Types: [ConfigEditControl](boot.md#native-edit-controls)
 
 Source: [`packages/settings/settings/src/index.ts`](../../packages/settings/settings/src/index.ts)
 

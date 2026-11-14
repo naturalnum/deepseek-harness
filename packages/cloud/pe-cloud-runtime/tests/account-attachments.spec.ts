@@ -172,6 +172,22 @@ async function fixture(limitOverrides: Partial<AccountAttachmentLimits> = {}, al
     insideStage: () => insideStage, fail: (error: Error) => { failure = error }, revoke: () => { lifetime.abort() } }
 }
 
+it('initializes a cold attachment directory and keeps subsequent native uploads available', async () => {
+  const f = await fixture({}, true, true), agent = await f.create('first-native-upload')
+  await expect(stat(f.store.root)).rejects.toMatchObject({ code: 'ENOENT' })
+  for (const name of ['first.txt', 'second.txt']) {
+    const bytes = Uint8Array.of(1, 2, 3)
+    const upload = await f.uploads.uploadStream({ sessionId: agent.id, name,
+      data: (async function* () { yield bytes })() })
+    expect(f.uploads.resolve(agent, upload.receiptId)).toEqual(upload.file)
+    const stored: number[] = []
+    for await (const chunk of f.store.readFileStream(upload.file)) stored.push(...chunk)
+    expect(stored).toEqual([...bytes])
+    expect(upload.file.name).toBe(name)
+  }
+  expect(await readdir(join(f.store.root, 'tmp'))).toEqual([])
+})
+
 it('persists exactly the configured upload limit and rejects one extra byte as not published', async () => {
   const maximum = 1024 * 1024
   const f = await fixture({ maxFileBytes: maximum, maxUploadChunkBytes: maximum, intakeReservationBytes: 4 * maximum }, true)
@@ -289,7 +305,8 @@ it('does not call next or retire a native upload receipt when copy preparation f
   await expect(f.preStep(agent, [message(uploaded.file)], next)).rejects.toBe(failure)
   expect(next).not.toHaveBeenCalled()
   await expect(f.feature.preparePromptFiles(agent, [uploaded.receiptId])).rejects.toBe(failure)
-  expect(f.uploads.resolve(agent, uploaded.receiptId)).toBe(uploaded.file)
+  expect(f.uploads.resolve(agent, uploaded.receiptId)).toMatchObject({ type: 'file' })
+  expect(f.uploads.resolve(agent, uploaded.receiptId)?.attachment).toBe(uploaded.file)
   expect(retire).not.toHaveBeenCalled()
   expect(f.adapter.calls).toBe(0)
 })
@@ -471,8 +488,8 @@ it('returns a complete capacity receipt through the original TCP Peer and permit
   if (typeof value !== 'object' || value === null || !('value' in value) || typeof value.value !== 'object'
     || value.value === null || !('receiptId' in value.value) || typeof value.value.receiptId !== 'string') throw Error('Invalid Native receipt')
   const ref = f.uploads.resolve(agent, brandString<FileUploadReceiptId>(value.value.receiptId))
-  if (ref === undefined) throw Error('Actual staged Native receipt missing')
-  const hash = createHash('sha256'); for await (const part of f.store.readFileStream(ref)) hash.update(part)
+  if (ref === undefined || ref.type !== 'file') throw Error('Actual staged Native file receipt missing')
+  const hash = createHash('sha256'); for await (const part of f.store.readFileStream(ref.attachment)) hash.update(part)
   expect(hash.digest('hex')).toBe(createHash('sha256').update(bytes).digest('hex'))
   await Promise.all(requests); expect(new Set(peerIds).size).toBe(1)
   expect(peers.reservedCarriers).toBe(0); expect(uses).toBe(1)

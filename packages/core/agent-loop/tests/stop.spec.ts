@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setImmediate } from 'node:timers/promises'
 import { Context, FiberState, symbols } from '@deepseek-ai/cordis'
+import type { AgentDisposalStatus } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { SessionId, SessionSeq, type SessionEvent } from '@deepseek-ai/dsh-session'
@@ -56,7 +57,16 @@ it('drains an idle live Agent through its actual asynchronous write-handle close
     return handle
   })
   const id = SessionId('idle-stop')
-  const handle = await f.ctx.agents.create({ sessionId: id, seed })
+  const observations: AgentDisposalStatus[] = []
+  const handle = await f.ctx.agents.create({
+    sessionId: id,
+    seed,
+    observeDisposal(status) {
+      expect(f.ctx.agents.get(id)).toBeUndefined()
+      expect(f.ctx.sessions.get(id)).toBeUndefined()
+      observations.push(status)
+    },
+  })
   const agents = f.ctx.agents, sessions = f.ctx.sessions
   expect(handle.agent.status).toBe('idle')
   expect(agents.get(id)).toBe(handle.agent)
@@ -64,6 +74,7 @@ it('drains an idle live Agent through its actual asynchronous write-handle close
   const stopped = f.ctx.agentLoop.stop()
   expect(f.ctx.agentLoop.stop()).toBe(stopped)
   await entered.promise
+  expect(observations).toEqual([])
   expect(f.fiber.state).toBe(FiberState.ACTIVE)
   expect(agents.get(id)).toBe(handle.agent)
   let settled = false
@@ -75,6 +86,7 @@ it('drains an idle live Agent through its actual asynchronous write-handle close
   await f.ctx.fiber.dispose()
   expect(f.loop.stop()).toBe(stopped)
   expect(closeCalls).toBe(1)
+  expect(observations).toEqual(['confirmed'])
   expect(agents.get(id)).toBeUndefined()
   expect(sessions.get(id)).toBeUndefined()
   const verify = new Context()
@@ -84,6 +96,56 @@ it('drains an idle live Agent through its actual asynchronous write-handle close
     expect(reader.id).toBe(id)
     await reader.close()
   } finally { await verify.fiber.dispose() }
+})
+
+it.each([false, true])('keeps individual Agent cleanup and its retained failure out of active quiescence (fails: %s)', async (failed) => {
+  const f = await harness(), entered = f.gate(), closing = f.gate()
+  const failure = new Error('original individual handle close failed')
+  const create = f.ctx.sessionPersistence.create.bind(f.ctx.sessionPersistence)
+  let closeCalls = 0
+  vi.spyOn(f.ctx.sessionPersistence, 'create').mockImplementation(async (header, options) => {
+    const handle = await create(header, options), close = handle.close.bind(handle)
+    vi.spyOn(handle, 'close').mockImplementation(async () => {
+      closeCalls++
+      entered.release()
+      await closing.promise
+      await close()
+      if (failed) throw failure
+    })
+    return handle
+  })
+  const observations: AgentDisposalStatus[] = []
+  const handle = await f.ctx.agents.create({
+    sessionId: SessionId('individual-close-idle'), seed,
+    observeDisposal(status) {
+      expect(f.ctx.agents.get(SessionId('individual-close-idle'))).toBeUndefined()
+      expect(f.ctx.sessions.get(SessionId('individual-close-idle'))).toBeUndefined()
+      observations.push(status)
+    },
+  })
+  await vi.waitFor(() => { expect(f.loop.isQuiescent(1)).toBe(true) })
+  const disposed = handle.dispose().catch((error: unknown) => error)
+  await entered.promise
+  expect(observations).toEqual([])
+  expect(f.fiber.state).toBe(FiberState.ACTIVE)
+  expect(handle.agent.status).toBe('idle')
+  expect(f.loop.isQuiescent(1)).toBe(false)
+  closing.release()
+  const outcome = await disposed
+  expect(observations).toEqual([failed ? 'unknown' : 'confirmed'])
+  if (failed) {
+    expect(outcome).toBe(failure)
+    expect(f.loop.isQuiescent(1)).toBe(false)
+    await expect(f.loop.stop()).rejects.toBe(failure)
+  } else {
+    expect(outcome).toBeUndefined()
+    await vi.waitFor(() => { expect(f.loop.isQuiescent(1)).toBe(true) })
+    await expect(f.loop.stop()).resolves.toBeUndefined()
+  }
+  expect(f.loop.isQuiescent(1)).toBe(false)
+  expect(closeCalls).toBe(1)
+  await handle.dispose().catch(() => undefined)
+  expect(observations).toEqual([failed ? 'unknown' : 'confirmed'])
 })
 
 it.each(['stop', 'context'] as const)('publishes the same stop Promise before abort reentry when %s closes first', async (first) => {
@@ -232,11 +294,43 @@ it.each(['create', 'createAgent', 'configured'] as const)('retains a late %s han
 
 it('leaves ordinary create and resume failures with their callers without poisoning stop', async () => {
   const f = await harness()
+  const observed = vi.fn()
   const failure = new Error('backend create refused')
   vi.spyOn(f.ctx.sessionPersistence, 'create').mockRejectedValueOnce(failure)
-  await expect(f.ctx.agents.create({ sessionId: SessionId('refused-create') })).rejects.toBe(failure)
-  await expect(f.ctx.agents.resume({ resumeSessionId: SessionId('missing-resume') })).rejects.toThrow('not found')
+  await expect(f.ctx.agents.create({ sessionId: SessionId('refused-create'), observeDisposal: observed })).rejects.toBe(failure)
+  await expect(f.ctx.agents.resume({
+    resumeSessionId: SessionId('missing-resume'), observeDisposal: observed,
+  })).rejects.toThrow('not found')
   await expect(f.loop.stop()).resolves.toBeUndefined()
   expect(f.ctx.agents.list()).toEqual([])
   expect(f.ctx.sessions.list()).toEqual([])
+  expect(observed).not.toHaveBeenCalled()
+})
+
+it.each([false, true])('retains unknown when setup aborts before returning its late Promise (rejects: %s)', async (rejects) => {
+  const f = await harness()
+  const late: PromiseWithResolvers<void> = Promise.withResolvers()
+  onTestFinished(() => { late.resolve() })
+  const caller = new AbortController()
+  const reason = new Error('setup observer cancelled')
+  const observations: AgentDisposalStatus[] = []
+  const id = SessionId('abandoned-observed-setup')
+  await expect(f.ctx.agents.create({
+    sessionId: id,
+    signal: caller.signal,
+    observeDisposal(status) { observations.push(status) },
+    setup() {
+      caller.abort(reason)
+      return late.promise
+    },
+  })).rejects.toBe(reason)
+  expect(observations).toEqual(['unknown'])
+  expect(f.ctx.agents.get(id)).toBeUndefined()
+  expect(f.ctx.sessions.get(id)).toBeUndefined()
+  if (rejects) late.reject(new Error('late setup rejection'))
+  else late.resolve()
+  await setImmediate()
+  expect(observations).toEqual(['unknown'])
+  await f.loop.stop()
+  expect(observations).toEqual(['unknown'])
 })

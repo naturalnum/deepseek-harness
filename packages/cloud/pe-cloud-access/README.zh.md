@@ -154,7 +154,7 @@ Bootstrap 经同一原清单检查，将每个获批原生字段投影为 `{name
 
 同步 Peer 检查由原 Peer Use 对精确 binding 执行业务和 Root 准入；Ingress 核验自身认证及已签发的 generation，不重复执行同一完整审核。请求检查保留 generation owner 的完整准入。分派和响应检查在异步工作前后分别执行。
 
-只有已准入的 `workspaceFiles/read`、`stat` 和 `readBytes` HTTP 请求可以使用请求局部 read carrier；它绑定原 Peer、binding、endpoint 和 Peer 持有的 `AccountUse`，不匹配时使用普通检查。Ingress 在分派前执行完整准入，并在响应头发送前复核原请求、Peer、exposure 和文件清单。carrier 保持有效直至 HTTP 响应结算。响应清理无法确认时，保留原 ingress 操作、Peer Use 和容量；参见 [Connection](../../client/connection/README.zh.md#browser-authentication-and-request-trust)。
+只有已准入的 `workspaceFiles/read`、`stat`、`readBytes` 和 `list` HTTP 请求可以使用请求局部 read carrier；它绑定原 Peer、binding、endpoint 和 Peer 持有的 `AccountUse`，不匹配时使用普通检查。Ingress 在分派前执行完整准入，并在响应头发送前复核原请求、Peer、exposure 和文件清单。carrier 保持有效直至 HTTP 响应结算。响应清理无法确认时，保留原 ingress 操作、Peer Use 和容量；参见 [Connection](../../client/connection/README.zh.md#browser-authentication-and-request-trust)。
 
 可信 `PeAuthService.withModelKeyPeerUse` 经当前 ingress 委派给 `LoginPeerRegistry.withOriginalUse`。精确原 Peer 身份选择已有 Entry 和 AccountUse；复制 id 及其他图的 Peer 均拒绝。Entry 在可重入 callback 前登记实际 task，在原生保存回合内重复原登录/代际/Use 检查，失效后仍保留 Use 到实际结算。不增加借用、释放 owner、账户表或保存队列。
 

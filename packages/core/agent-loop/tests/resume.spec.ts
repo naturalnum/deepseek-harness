@@ -52,6 +52,62 @@ async function mountPersistentHarness(root: string, adapter: MockAdapter, compre
   return ctx
 }
 
+it('records explicit runtime creators at actual publication without deriving them from persisted lineage', async () => {
+  const { ctx } = await persistentHarness(new MockAdapter([]))
+  try {
+    const first = await ctx.agents.create({ sessionId: SessionId('runtime-creator') })
+    const durable = await ctx.agents.create({ sessionId: SessionId('durable-ancestor') })
+    const childId = SessionId('runtime-owned-child')
+    let announcedOwnership = false
+    ctx.on('agent/created', ({ agent }) => {
+      if (agent.id === childId) announcedOwnership = ctx.agents.isOwnedBy(childId, first.agent)
+    })
+    const child = await ctx.agents.create({
+      sessionId: childId,
+      parentAgent: first.agent,
+      meta: { parentSession: durable.agent.id },
+      setup(_scope, prepared) {
+        expect(ctx.agents.get(prepared.id)).toBeUndefined()
+        expect(ctx.agents.isOwnedBy(prepared.id, first.agent)).toBe(false)
+      },
+    })
+    expect(announcedOwnership).toBe(true)
+    expect(child.agent.session.header.parentSession).toBe(durable.agent.id)
+    expect(ctx.agents.isOwnedBy(childId, first.agent)).toBe(true)
+    expect(ctx.agents.isOwnedBy(childId, durable.agent)).toBe(false)
+    await first.dispose()
+    const replacement = await ctx.agents.resume({ resumeSessionId: first.agent.id })
+    expect(ctx.agents.get(childId)).toBe(child.agent)
+    expect(ctx.agents.isOwnedBy(childId, first.agent)).toBe(true)
+    expect(ctx.agents.isOwnedBy(childId, replacement.agent)).toBe(false)
+    await child.dispose()
+    expect(ctx.agents.isOwnedBy(childId, first.agent)).toBe(false)
+
+    const rootResume = await ctx.agents.resume({ resumeSessionId: childId })
+    expect(rootResume.agent.session.header.parentSession).toBe(durable.agent.id)
+    expect(ctx.agents.isOwnedBy(childId, first.agent)).toBe(false)
+    expect(ctx.agents.isOwnedBy(childId, durable.agent)).toBe(false)
+    await rootResume.dispose()
+    const ownedResume = await ctx.agents.resume({ resumeSessionId: childId, parentAgent: replacement.agent })
+    expect(ctx.agents.isOwnedBy(childId, replacement.agent)).toBe(true)
+    expect(ctx.agents.isOwnedBy(childId, first.agent)).toBe(false)
+    await ownedResume.dispose()
+    expect(ctx.agents.isOwnedBy(childId, replacement.agent)).toBe(false)
+
+    const rejectedId = SessionId('unpublished-owned-child')
+    const failure = new Error('creation setup rejected')
+    await expect(ctx.agents.create({
+      sessionId: rejectedId,
+      parentAgent: replacement.agent,
+      setup() { throw failure },
+    })).rejects.toBe(failure)
+    expect(ctx.agents.get(rejectedId)).toBeUndefined()
+    expect(ctx.agents.isOwnedBy(rejectedId, replacement.agent)).toBe(false)
+  } finally {
+    await ctx.fiber.dispose()
+  }
+})
+
 /** Remove every `session.lock` under the root: the POSIX forfeit-by-unlink escape hatch, without importing backend internals. */
 async function removeSessionLocks(dir: string): Promise<void> {
   for (const entry of await readdir(dir, { withFileTypes: true })) {

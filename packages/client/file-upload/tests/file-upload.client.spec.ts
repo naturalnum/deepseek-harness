@@ -452,6 +452,7 @@ describe('Session-addressed file upload', () => {
 
   async function scopedService(options: {
     readonly remote?: ReturnType<typeof vi.fn>
+    readonly hooks?: ClientFileUploadHooks
   } = {}) {
     const ctx = new Context()
     const remote = options.remote ?? vi.fn(() => Promise.resolve({
@@ -462,10 +463,31 @@ describe('Session-addressed file upload', () => {
       },
     }))
     ctx.provide('remote', { fileUploads: { upload: remote } } as never)
+    if (options.hooks !== undefined) ctx.provide('fileUploadHooks', options.hooks)
     const fiber = ctx.plugin(FileUploadRuntime)
     await fiber
     return { ctx, fiber, remote, service: ctx.fileUpload }
   }
+
+  it('uses the actual page hook before the legacy global carrier and projects its file-only image policy', async () => {
+    const legacy = vi.fn(() => Promise.reject(new Error('legacy carrier must not run')))
+    ;(globalThis as UploadGlobal).__DSH_FILE_UPLOAD__ = { fetch: legacy }
+    const fetch = vi.fn(() => Promise.resolve(new Response(JSON.stringify({
+      ok: true, value: { receiptId: 'page-receipt', file: { attachmentId: 'page-file', name: 'pixel.png', bytes: 4 } },
+    }), { status: 200 })))
+    const { ctx, fiber, service } = await scopedService({ hooks: Object.freeze({ fetch, promptImageUploads: false }) })
+    try {
+      const body = new Blob(['data'], { type: 'image/png' })
+      expect(service.supportsImageUploads).toBe(false)
+      await expect(service.upload(SESSION_ID, body, 'pixel.png')).resolves.toMatchObject({
+        ok: true, value: { receiptId: 'page-receipt', file: { name: 'pixel.png', bytes: 4 } },
+      })
+      expect(fetch).toHaveBeenCalledWith('api/session/uploadFileBinary?sessionId=s1&name=pixel.png',
+        expect.objectContaining({ method: 'POST', body }))
+      expect(legacy).not.toHaveBeenCalled()
+      expect(ctx.get('fileUploadHooks')?.fetch).toBe(fetch)
+    } finally { await fiber.dispose() }
+  })
 
   it('assembles the scoped streaming request and parses progress and receipt fields', async () => {
     const progress = vi.fn()

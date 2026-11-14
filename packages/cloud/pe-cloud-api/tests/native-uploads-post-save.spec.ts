@@ -197,3 +197,22 @@ it('releases workspace-only intake capacity after each closed upload without ret
   }
   expect(destinations).toEqual(['folder', 'folder', 'folder'])
 })
+
+it('refuses ungranted prompt-image intake before source pull while the original HTTP owner cancels its body', async () => {
+  let preparations = 0, pulls = 0, cancels = 0
+  const f = await fixture(async (_agent, input, save) => { preparations++; return save(input) })
+  const body = new ReadableStream<Uint8Array>({
+    pull() { pulls++ },
+    cancel() { cancels++ },
+  }, { highWaterMark: 0 })
+  const request = new Request(`http://fixture/api/session/uploadFileBinary?sessionId=${f.agent.id}&mediaType=image%2Fpng`, {
+    method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body, duplex: 'half',
+  } as RequestInit)
+  const response = await handleFileUploadHttp(f.uploads, request)
+  expect(await response.json()).toMatchObject({ ok: false, error: { code: 'cloud/forbidden' } })
+  expect(preparations).toBe(0)
+  expect(pulls).toBe(0)
+  expect(cancels).toBe(1)
+  expect(body.locked).toBe(false)
+  expect(f.state()).toMatchObject({ occupied: 0, closed: false })
+})

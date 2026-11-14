@@ -31,7 +31,8 @@ it('currently retains three distinct receipts while all three zero-byte uploads 
     for (const value of receipts) {
       expect(value.file.bytes).toBe(0)
       expect((await stat(store.fileHostPath(value.file))).size).toBe(0)
-      expect(uploads.resolve(agent, value.receiptId)).toBe(value.file)
+      expect(uploads.resolve(agent, value.receiptId)).toMatchObject({ type: 'file' })
+      expect(uploads.resolve(agent, value.receiptId)?.attachment).toBe(value.file)
     }
     console.info('zero-byte-receipts', JSON.stringify({ retainedReceipts: 3, storedPaths: 1, bytesPerFile: 0 }))
   } finally {

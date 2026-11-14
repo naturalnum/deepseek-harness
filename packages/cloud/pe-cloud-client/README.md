@@ -27,7 +27,9 @@ The Cloud Loader also mounts the generated API project-creation contribution and
 <a id="use-this-package"></a>
 ## Use this package
 
-The Cloud browser fills the native sidebar brand positions with PowerEvolve and a black lightning mark; those registrations leave with the original plugin. Its empty welcome-header occupant removes the headline, old mark and preview badge above the composer. The Web entry and unconfigured local browser title use PowerEvolve, while an explicit build title keeps its existing precedence.
+The prepared page supplies its exact frozen upload fetch through the Native Client context hook and pins `promptImageUploads: false`. An inherited hook must carry that same explicit file-only policy, exact fetch and frozen identity. Native Conversation therefore keeps selected image MIME files on the original generic-file upload/receipt path; it does not claim a prompt-image capability. The Host independently refuses that ungranted image route. Native pages outside this Cloud composition keep their default image behavior.
+
+The Cloud browser fills the native sidebar brand positions with PowerEvolve and a black lightning mark, using its own bilingual brand dictionary; the dictionary and slots leave with the original plugin. Native brand dictionaries retain their defaults. Its empty welcome-header occupant removes the headline, old mark and preview badge above the composer. `deploy/bundle` defaults the public `DSH_CLIENT_TITLE` build value to PowerEvolve while preserving an explicit title; ordinary native builds keep their default title.
 
 The prepared Cloud page disables the native Workspace delete action for the lifetime of its page root because this composition does not expose the delete RPC. The menu and any open confirmation show a localized reason; this display restriction does not replace Host authorization.
 

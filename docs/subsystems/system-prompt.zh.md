@@ -107,6 +107,8 @@ interface AssembledContext {
 }
 ```
 
+`SystemPrompt.assemble` 在读取任何提示或工具提供方之前，以原始 `AssembleContext` 等待可选的作用域 `system-prompt/prepare` waterfall。准备失败会拒绝本次组装；`refreshContext` 不运行准备。[提供方包](../../packages/core/system-prompt/README.zh.md) 负责收集、工具排序和完整提示约束。
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -194,7 +196,7 @@ variable(name: string, provider: (context: AssembleContext) => string | undefine
 refreshContext(assembly: PromptAssembly, context: AssembleContext = {}): PromptAssembly
 
 /**
- * Assemble global and scoped providers, detach tool parameters, apply
+ * Await scoped provider preparation, then assemble global and scoped providers, detach tool parameters, apply
  * canonical ordering, then run the presentation waterfall. Scoped sections
  * and variables shadow globals. The waterfall's text is authoritative except
  * that an effective complete section is restored afterwards as the sole
@@ -251,6 +253,27 @@ Emitted when any prompt provider changes. This registry notification is unfilter
  */
 'system-prompt/change'(): void
 ```
+
+Source: [`packages/core/system-prompt/src/index.ts`](../../packages/core/system-prompt/src/index.ts)
+
+<a id="system-promptprepare--waterfall"></a>
+
+#### `system-prompt/prepare` — waterfall
+
+Await scoped provider preparation before reading any provider for this assembly. A failed preparation rejects the assembly without collecting a partial snapshot. The supplied context and signal belong only to this assembly request.
+
+```ts cordis-catalog
+/**
+ * Await scoped provider preparation before reading any provider for this assembly.
+ * A failed preparation rejects the assembly without collecting a partial snapshot.
+ * The supplied context and signal belong only to this assembly request.
+ * @param context - the original per-assembly context.
+ * @mode waterfall
+ */
+'system-prompt/prepare'(this: Scoped<SystemPrompt>, context: AssembleContext, next: () => Promise<void>): Promise<void>
+```
+
+Types: [Scoped](scope.zh.md)
 
 Source: [`packages/core/system-prompt/src/index.ts`](../../packages/core/system-prompt/src/index.ts)
 <!-- END GENERATED cordis-surface -->

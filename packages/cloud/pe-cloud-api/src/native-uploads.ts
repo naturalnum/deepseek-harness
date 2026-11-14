@@ -105,6 +105,10 @@ export function createNativeUploads(
     override upload(): ReturnType<FileUploads['upload']> {
       return Promise.reject(new CloudApiError('cloud/forbidden', 'Encoded file upload is unavailable.'))
     }
+
+    override uploadImageStream(): ReturnType<FileUploads['uploadImageStream']> {
+      return Promise.reject(new CloudApiError('cloud/forbidden', 'Prompt image upload is unavailable.'))
+    }
   }
   const value = new AccountFileUploads(ctx, { maxPendingReceipts: preparation.maxPendingReceipts })
   const check = (): void => {

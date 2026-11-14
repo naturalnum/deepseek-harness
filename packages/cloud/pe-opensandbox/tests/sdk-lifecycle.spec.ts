@@ -1035,3 +1035,28 @@ test('application close retains expired deletion uncertainty without running exp
   assert.equal(transport.calls.length, requests)
   assert.equal(transport.phases.includes('physical-stop-ack'), false)
 })
+
+for (const [status, lookup, expected] of [
+  [204, 200, 'deleted'], [404, 200, 'missing'], [500, 404, 'missing'],
+  [500, 200, 'unknown'], [500, 500, 'unknown'], [200, 404, 'missing'],
+] as const) test(`startup deletion ${status} with lookup ${lookup} is ${expected} without a live handle`, async () => {
+  const transport = new FakeTransport()
+  transport.deleteStatus = status; transport.getStatus = lookup
+  const backend = new SdkAllocationBackend(config, agent(transport), transport)
+  assert.equal(await backend.deleteOriginal('previous-process-sandbox'), expected)
+  assert.deepEqual(transport.calls.map(call => call.method), status === 204 || status === 404 ? ['DELETE'] : ['DELETE', 'GET'])
+  assert.equal(transport.phases.includes('physical-stop-ack'), false)
+  assert.equal(transport.calls.some(call => call.method === 'POST'), false)
+  await backend.closeRootActual()
+})
+
+test('startup deletion queries once after a lost reply and retains a failed lookup as unknown', async () => {
+  const transport = new FakeTransport()
+  transport.deleteFailure = true; transport.getFailure = new TypeError('synthetic unavailable lookup')
+  const backend = new SdkAllocationBackend(config, agent(transport), transport)
+  assert.equal(await backend.deleteOriginal('previous-process-sandbox'), 'unknown')
+  assert.deepEqual(transport.calls.map(call => call.method), ['DELETE', 'GET'])
+  assert.equal(transport.phases.includes('physical-stop-ack'), false)
+  await backend.closeRootActual()
+  assert.throws(() => backend.isMissing('previous-process-sandbox', Date.now() + 1000), { code: 'sdk/closed' })
+})

@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto'
 import { isAbsolute, resolve } from 'node:path'
 import type {} from '@deepseek-ai/dsh-working-directory'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
-import type { Agent, AgentOptions, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
+import type { Agent, AgentOptions, AgentSetupCommit, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { ReasoningEffortId, contentHasImage, createUserMessage, errorChain } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-llm'
@@ -41,6 +41,7 @@ import type {
   ContinuableCreateRequest, ContinuableCreateSpec, SubagentInterruptAuthority,
   SubagentActivationSpec, SubagentActivation, SubagentMemberNames, SubagentStartRequest, SubagentRun,
   SubagentSendMessageOptions, SubagentResult, SubagentRunInfo, ResolvedSubagentStartRequest,
+  SubagentAdmissionRequest,
 } from './types.ts'
 import { attachStructuredRuntime } from './structured.ts'
 import type { StructuredAttachment } from './structured.ts'
@@ -67,6 +68,16 @@ interface SubagentHost {
   catalogOf(session: Session): readonly SubagentCatalogEntry[]
   /** Publish lifecycle events through the owning service's scoped dispatcher. */
   readonly emitLifecycle: LifecycleEmitter
+  /** Capture admission before native provider preparation starts. */
+  start?(owner: Context, spec: SubagentActivationSpec, current: () => void): {
+    assertCurrent(this: void): void
+    check(this: void, cwd: string, signal: AbortSignal): void | Promise<void>
+  }
+  /** Check actual observed history before a new cold residency acquires its Agent. */
+  resume?(
+    request: Omit<Extract<SubagentAdmissionRequest, { kind: 'resume' }>, 'kind' | 'provider'>,
+    current: () => void,
+  ): { assertCurrent(this: void): void; check(this: void): void | Promise<void> }
 }
 
 /** Inputs shared by fresh and resumed Activation materialization. */
@@ -77,6 +88,8 @@ interface MaterializeBase {
   /** Slash-separated names from the root, undefined when any link is unnamed. */
   path: string | undefined
   signal: AbortSignal
+  /** Original contribution/provider checks retained through Agent and Activation publication. */
+  assertCurrent?: (() => void) | undefined
   delivery?: 'parent' | 'caller' | undefined
 }
 
@@ -330,6 +343,7 @@ export class SubagentManager {
     path: string | undefined,
   ): Promise<SubagentActivation & { messageId: MessageId }> {
     const parent = spec.parent
+    const admission = this.host.start?.(this.ownerCtx, spec, () => { this.assertAdmitting(parent) })
     return this.trackStartup(ancestry.root, spec.signal, async (signal) => {
       const persistence = spec.delivery === 'caller' ? this.ctx.get('sessionPersistence') : this.requirePersistence()
       const childId = spec.childId ?? brandString<SessionId>(randomUUID())
@@ -354,6 +368,10 @@ export class SubagentManager {
       const delegatedPolicies = captureDelegatedPolicyOverrides(parent)
 
       const cwd = await this.resolveDirectory(spec, signal)
+      const checked = admission?.check(cwd, signal)
+      if (checked !== undefined) await checked
+      signal.throwIfAborted()
+      admission?.assertCurrent()
       const prepared = await prepare({
         sessionId: childId,
         cwd,
@@ -362,6 +380,7 @@ export class SubagentManager {
       })
       signal.throwIfAborted()
       this.assertAdmitting(parent)
+      admission?.assertCurrent()
 
       const inheritedEventCount = SessionLogOffset(prepared.seed?.length ?? 0)
       const seed = prepared.seed
@@ -369,6 +388,7 @@ export class SubagentManager {
       const messageId = await this.locks.run(childId, async () => {
         signal.throwIfAborted()
         this.assertAdmitting(parent)
+        admission?.assertCurrent()
         this.assertChildIdAvailable(childId)
         if (spec.childId !== undefined) {
           const persisted = await persistence?.stat(childId, { signal: signal })
@@ -397,6 +417,7 @@ export class SubagentManager {
           agentOptions,
           composition: { agentPreset: spec.agentPreset },
           signal,
+          assertCurrent: admission?.assertCurrent,
           delivery: spec.delivery,
           outputSchema: spec.outputSchema,
         })
@@ -456,10 +477,15 @@ export class SubagentManager {
   ): Promise<SubagentActivation> {
     const { provider, delivery, childId: _childId, name: _name, ...request } = spec
     const parent = request.parent
+    const admission = this.host.start?.(this.ownerCtx, spec, () => { this.assertAdmitting(parent) })
     return this.trackStartup(ancestry.root, spec.signal, async (signal) => {
       let activation: Activation | undefined
       try {
         const cwd = await this.resolveDirectory(spec, signal)
+        const checked = admission?.check(cwd, signal)
+        if (checked !== undefined) await checked
+        signal.throwIfAborted()
+        admission?.assertCurrent()
         activation = await this.materialize({
           kind: 'external',
           provider,
@@ -467,6 +493,7 @@ export class SubagentManager {
           path,
           signal,
           delivery,
+          assertCurrent: admission?.assertCurrent,
           start: signal => start({
             ...request, cwd, signal,
           }),
@@ -714,6 +741,7 @@ export class SubagentManager {
   private materialize(inputs: MaterializeInputs): Promise<Activation> {
     this.assertAdmitting(inputs.root)
     inputs.signal.throwIfAborted()
+    inputs.assertCurrent?.()
     const pool = this.rootPool(inputs.root)
     const releaseSlot = pool.reserve(this.maxActiveSubagents())
     return this.materializeTracked(inputs, releaseSlot).catch((error: unknown) => {
@@ -823,11 +851,13 @@ export class SubagentManager {
     } else {
       const { create, childId } = inputs
       let structured: StructuredAttachment | undefined
-      const setup = async (childCtx: Context, child: Agent): Promise<void> => {
+      const setup = async (childCtx: Context, child: Agent): Promise<AgentSetupCommit | void> => {
+        inputs.assertCurrent?.()
         // Only fresh creation appends the descriptor and delegated policy after
         // the inherited marker; a cold resume replays those persisted events.
         if (inputs.composition.agentPreset !== undefined) {
           await applyChildComposition(childCtx, create?.parent, inputs.composition)
+          inputs.assertCurrent?.()
         }
         if (create !== undefined) {
           if (inputs.composition.agentPreset !== undefined) {
@@ -838,6 +868,7 @@ export class SubagentManager {
           const workingDirectory = childCtx.get('workingDirectory')
           if (workingDirectory === undefined) throw new Error('local subagents require the working-directory service')
           await workingDirectory.set(child, create.cwd, inputs.signal)
+          inputs.assertCurrent?.()
         }
         if (inputs.composition.agentPreset === undefined) await applyChildComposition(childCtx, create?.parent, inputs.composition)
         if (inputs.outputSchema !== undefined) {
@@ -846,16 +877,22 @@ export class SubagentManager {
             && child.inbox.nextTurn.length === 0,
           )
         }
+        inputs.assertCurrent?.()
+        if (inputs.assertCurrent !== undefined) return { commit: inputs.assertCurrent, assertCurrent: inputs.assertCurrent }
       }
       const handle = create === undefined
         ? await this.ownerCtx.agents.resume({
           resumeSessionId: childId,
+          // A restored residency is created by the original live tree root;
+          // its durable immediate creator may no longer be resident.
+          parentAgent: root,
           agentOptions: inputs.agentOptions,
           signal: inputs.signal,
           setup,
         })
         : await this.ownerCtx.agents.create({
           sessionId: childId,
+          parentAgent: create.parent,
           meta: create.meta,
           ...(create.seed === undefined ? {} : { seed: create.seed }),
           inheritedEventCount: create.inheritedEventCount,
@@ -894,6 +931,7 @@ export class SubagentManager {
     try {
       this.assertAdmitting(root)
       inputs.signal.throwIfAborted()
+      inputs.assertCurrent?.()
       const wakeSettlement = (): void => { this.wake(activation) }
       if (activation.kind === 'local') {
         observeLocalFailure(activation, wakeSettlement)
@@ -1231,6 +1269,27 @@ export class SubagentManager {
           throw new SubagentError(`subagent "${childId}" has no agent preset projection for restoration`, 'NOT_RESUMABLE')
         }
         const agentPreset = projectedPreset ?? source.header.agentPreset
+        const agentOptions: AgentOptions = {
+          ...descriptor.agentProvider !== undefined ? { provider: descriptor.agentProvider } : {},
+          ...descriptor.agentModel !== undefined ? { model: descriptor.agentModel } : {},
+          ...descriptor.agentReasoningEffort !== undefined
+            ? { reasoningEffort: ReasoningEffortId(descriptor.agentReasoningEffort) }
+            : {},
+        }
+        const admission = this.host.resume?.({
+          owner: this.ownerCtx,
+          parent: root,
+          childId,
+          providerName: descriptor.provider,
+          header: source.header,
+          agentOptions,
+          agentPreset: agentPreset ?? undefined,
+          signal,
+        }, () => { this.assertAdmitting(root) })
+        const checked = admission?.check()
+        if (checked !== undefined) await checked
+        signal.throwIfAborted()
+        admission?.assertCurrent()
         activation = await this.materialize({
           kind: 'local',
           childId,
@@ -1238,19 +1297,14 @@ export class SubagentManager {
           root,
           ancestors,
           path,
-          agentOptions: {
-            ...descriptor.agentProvider !== undefined ? { provider: descriptor.agentProvider } : {},
-            ...descriptor.agentModel !== undefined ? { model: descriptor.agentModel } : {},
-            ...descriptor.agentReasoningEffort !== undefined
-              ? { reasoningEffort: ReasoningEffortId(descriptor.agentReasoningEffort) }
-              : {},
-          },
+          agentOptions,
           composition: {
             agentPreset: agentPreset ?? undefined,
             persona: descriptor.persona,
             toolFilter: descriptor.toolFilter,
           },
           signal,
+          assertCurrent: admission?.assertCurrent,
         })
       } catch (error: unknown) {
         signal.throwIfAborted()

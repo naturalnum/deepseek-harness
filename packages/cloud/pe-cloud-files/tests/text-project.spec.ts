@@ -107,10 +107,20 @@ async function fixture(mode = 'normal', abiVersion = 7, waitTimeoutMs = 3000, co
   }
 }
 
-it('declares unsupported native text edit without removing write support', async () => {
+it('rejects ungranted native patch/delete/move before dispatch while retaining ordinary write support', async () => {
   const test = await fixture()
   expect(test.fs.supportsTextEdit).toBe(false)
   expect(typeof test.fs.writeText).toBe('function')
+  writeFileSync(join(test.project, 'kept.txt'), 'kept')
+  const target = await test.fs.resolve('kept.txt'), destination = await test.fs.resolve('destination.txt')
+  const before = [...test.counters]
+  for (const call of [() => test.fs.patchText(target, []), () => test.fs.deleteFile(target),
+    () => test.fs.moveFile(target, destination, {})]) {
+    await expect(call()).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  }
+  expect(readFileSync(join(test.project, 'kept.txt'), 'utf8')).toBe('kept')
+  expect(() => statSync(join(test.project, 'destination.txt'))).toThrow()
+  expect([...test.counters]).toEqual(before)
 })
 
 it('bounds Native discovery at the original Workspace root and rejects stale selection', async () => {
@@ -662,7 +672,8 @@ it('requires the original target and same preparation identity from a fresh sele
   expect(count()).toBe(0)
 })
 
-it.each(['readText', 'streamText', 'writeText', 'readBytes', 'readByteRange', 'listDir', 'lstat', 'editText', 'watch', 'fileUrl', 'contains', 'early-processPath'])
+it.each(['readText', 'streamText', 'writeText', 'readBytes', 'readByteRange', 'listDir', 'lstat', 'editText',
+  'patchText', 'deleteFile', 'moveFile', 'watch', 'fileUrl', 'contains', 'early-processPath'])
 ('denies preparation %s without worker I/O', async (method) => {
   const test = await fixture('normal', 8, 3000, contentLimits), { scope } = directoryPreparation(test)
   const target = await test.selected(scope, () => test.fs.resolve(test.project, { cwd: test.project }))
@@ -676,6 +687,9 @@ it.each(['readText', 'streamText', 'writeText', 'readBytes', 'readByteRange', 'l
     if (method === 'listDir') return test.fs.listDir(target)
     if (method === 'lstat') return test.fs.lstat(test.project, { cwd: test.project })
     if (method === 'editText') return test.fs.editText(target, { oldString: 'old', newString: 'new', replaceAll: false })
+    if (method === 'patchText') return test.fs.patchText(target, [])
+    if (method === 'deleteFile') return test.fs.deleteFile(target)
+    if (method === 'moveFile') return test.fs.moveFile(target, target, {})
     if (method === 'watch') return test.fs.watch(target, () => {}, new AbortController().signal)
     if (method === 'fileUrl') return test.fs.fileUrl(target)
     if (method === 'contains') return test.fs.contains(target, target)

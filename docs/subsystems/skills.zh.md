@@ -318,6 +318,16 @@ async list(options: SkillViewOptions = {}): Promise<SkillSummary[]>
 async snapshot(options: SkillViewOptions = {}): Promise<SkillCatalogSnapshot>
 
 /**
+ * Inspect every contributed candidate and its actual winner in the same observation used by list/get.
+ * Candidate values and locators remain borrowed readonly provider objects; inspection loads no bodies
+ * and grants no resource authority. Incomplete results describe only the observed candidates and are
+ * not cached. Scope, invalidation and cancellation use the original catalog collection.
+ * @param options - original scope/cwd lookup context and optional discovery cancellation signal.
+ * @returns name-sorted candidates with selected/overridden relationships and discovery completeness.
+ */
+async inspect(options: SkillViewOptions = {}): Promise<SkillCatalogInspection>
+
+/**
  * Load and validate the winning candidate, passing its opaque discovery locator back to the
  * provider. Cancellation is rechecked after selection, including cache hits, and raced against
  * loading so an uncooperative provider cannot hang the caller.
@@ -352,5 +362,5 @@ A skill provider, runtime contribution, or provider-backed catalog may have chan
 'skills/change'(): void
 ```
 
-Source: [`packages/skill/skill/src/index.ts`](../../packages/skill/skill/src/index.ts)
+Source: [`packages/skill/skill/src/types.ts`](../../packages/skill/skill/src/types.ts)
 <!-- END GENERATED cordis-surface -->

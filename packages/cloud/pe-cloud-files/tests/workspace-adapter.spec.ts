@@ -614,6 +614,7 @@ it('rejects every ungranted native content/mutation method before any files disp
     () => fs.readBytes(target, undefined, 4), () => fs.readByteRange(target, { offset: 0, length: 1 }),
     () => fs.listDir(target), () => fs.writeText(target, 'data'),
     () => fs.editText(target, { oldString: 'a', newString: 'b', replaceAll: false }),
+    () => fs.patchText(target, []), () => fs.deleteFile(target), () => fs.moveFile(target, target, {}),
     () => fs.watch(target, () => {}, new AbortController().signal),
   ]
   for (const call of denied) await expect(call()).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })

@@ -527,10 +527,10 @@ export class PreparedCloudPage {
     const fetch = this.lifetime.transport.hooks.fetch
     if (fetch === undefined) throw new Error('Cloud page requires its captured upload fetch')
     const existing = ctx.get('fileUploadHooks', false)
-    if (existing !== undefined && (existing.fetch !== fetch || !Object.isFrozen(existing))) {
+    if (existing !== undefined && (existing.fetch !== fetch || existing.promptImageUploads !== false || !Object.isFrozen(existing))) {
       throw new Error('Cloud page upload carrier is incompatible with its prepared owner')
     }
-    this.uploadHooks = existing ?? Object.freeze({ fetch })
+    this.uploadHooks = existing ?? Object.freeze({ fetch, promptImageUploads: false })
     if (existing === undefined) ctx.provide('fileUploadHooks', this.uploadHooks)
     if (this.config.maxDownloadBytes !== undefined && this.bootstrap.capabilities.filePreview.state === 'available') prepareWorkspaceManagement(ctx, fetch,
       path => this.lifetime.transport.navigationUrl(path), this.lifetime.transport.signal,

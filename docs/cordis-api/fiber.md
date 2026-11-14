@@ -34,7 +34,7 @@ Register a cleanup-aware effect on this fiber.
 
 **Returns** a disposer that tears the effect down and settles once done.
 
-[Source](../../vendor/cordis/src/fiber.ts#L421)
+[Source](../../vendor/cordis/src/fiber.ts#L422)
 
 ### ctx.fiber
 
@@ -152,7 +152,7 @@ get name()
 
 The plugin's display name, inherited from the nearest named ancestor, else `'root'`.
 
-[Source](../../vendor/cordis/src/fiber.ts#L342)
+[Source](../../vendor/cordis/src/fiber.ts#L343)
 
 ### fiber.assertActive()
 
@@ -170,7 +170,7 @@ Throw if the fiber has already been disposed.
 
 **Returns** nothing when the fiber is still active.
 
-[Source](../../vendor/cordis/src/fiber.ts#L357)
+[Source](../../vendor/cordis/src/fiber.ts#L358)
 
 ### fiber.effect(execute, label?)
 
@@ -201,7 +201,7 @@ Register a cleanup-aware effect on this fiber.
 
 **Returns** a disposer that tears the effect down and settles once done.
 
-[Source](../../vendor/cordis/src/fiber.ts#L421)
+[Source](../../vendor/cordis/src/fiber.ts#L422)
 
 ### fiber.getEffects()
 
@@ -218,7 +218,29 @@ Return metadata for currently registered effects.
 
 **Returns** one `EffectMeta` tree per labeled live effect.
 
-[Source](../../vendor/cordis/src/fiber.ts#L574)
+[Source](../../vendor/cordis/src/fiber.ts#L575)
+
+### fiber.configMutationRevision
+
+```ts cordis-catalog
+/** Attempted raw/config mutations, including candidates rejected before the update waterfall. */
+get configMutationRevision(): number
+```
+
+Attempted raw/config mutations, including candidates rejected before the update waterfall.
+
+[Source](../../vendor/cordis/src/fiber.ts#L650)
+
+### fiber.dependencies
+
+```ts cordis-catalog
+/** Current resolved service dependencies; the returned array is detached from the internal store. */
+get dependencies(): readonly Impl[]
+```
+
+Current resolved service dependencies; the returned array is detached from the internal store.
+
+[Source](../../vendor/cordis/src/fiber.ts#L653)
 
 ### fiber.rawConfig
 
@@ -229,7 +251,7 @@ get rawConfig(): unknown
 
 Raw input retained for the next activation, without evaluating expressions or validating it.
 
-[Source](../../vendor/cordis/src/fiber.ts#L649)
+[Source](../../vendor/cordis/src/fiber.ts#L656)
 
 ### fiber.effectiveConfig
 
@@ -244,7 +266,7 @@ get effectiveConfig(): unknown
 
 The object passed to plugin activation or the latest successful update that retained the instance. Candidate resolution does not publish it; volatile updates retain its references. Undefined before activation and readable after unload; callers requiring a live instance check `state`.
 
-[Source](../../vendor/cordis/src/fiber.ts#L664)
+[Source](../../vendor/cordis/src/fiber.ts#L672)
 
 ### fiber.resolveConfig(config)
 
@@ -266,7 +288,7 @@ Evaluate and validate a candidate using this fiber's `internal/config` hooks and
 
 **Returns** The candidate's resolved config, retaining the schema's result identity.
 
-[Source](../../vendor/cordis/src/fiber.ts#L676)
+[Source](../../vendor/cordis/src/fiber.ts#L684)
 
 ### fiber.await()
 
@@ -284,7 +306,7 @@ Wait for current lifecycle work and rethrow startup errors.
 
 **Returns** this fiber, once it has settled into a stable state.
 
-[Source](../../vendor/cordis/src/fiber.ts#L754)
+[Source](../../vendor/cordis/src/fiber.ts#L762)
 
 ### fiber.restart()
 
@@ -302,7 +324,7 @@ Dispose and immediately reload this plugin with its current config.
 
 **Returns** a promise resolving once the reload settled.
 
-[Source](../../vendor/cordis/src/fiber.ts#L768)
+[Source](../../vendor/cordis/src/fiber.ts#L776)
 
 ### fiber.update(config, noSave?)
 
@@ -324,7 +346,7 @@ Resolve a candidate, retain its raw config and apply it through the update water
 
 **Returns** The awaited update/restart result, or undefined when a synchronous listener handles it.
 
-[Source](../../vendor/cordis/src/fiber.ts#L783)
+[Source](../../vendor/cordis/src/fiber.ts#L791)
 
 ## Effect
 

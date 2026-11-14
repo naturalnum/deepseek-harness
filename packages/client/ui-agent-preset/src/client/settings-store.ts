@@ -12,7 +12,6 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { AgentPresetRoster } from '@deepseek-ai/dsh-agent-preset-registry/types'
 import { isBuiltInPreset } from './locales.ts'
-import { presetIntegrationOf } from './integration.ts'
 
 /** The agent-preset settings namespace on the host wire. */
 export const AGENT_PRESET_SETTINGS_NS = 'agent-preset-registry'
@@ -33,7 +32,6 @@ export async function writeDefaultPreset(
   id: string,
   expectedRevision?: number,
 ): Promise<string | undefined> {
-  if (presetIntegrationOf(ctx) !== undefined) return 'Preset selection is unavailable for this account.'
   const response = await ctx.remote.settings.update(AGENT_PRESET_SETTINGS_NS, { selectedDefault: id }, expectedRevision)
   return response.ok ? undefined : response.error.message
 }
@@ -70,11 +68,6 @@ const EMPTY_ROSTER: AgentPresetRoster = { presets: [] }
  * @returns the roster, or the message to show in its place.
  */
 export async function readRoster(ctx: ClientContext): Promise<RosterRead> {
-  const integration = presetIntegrationOf(ctx)
-  if (integration !== undefined) {
-    try { return { ok: true, value: await integration.list() } }
-    catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
-  }
   let result
   try { result = await ctx.remote.agentPresets.list() }
   catch (error) {
@@ -183,7 +176,7 @@ export class AgentPresetSettingsController {
     this.set({
       status: 'ready',
       error: null,
-      options: presetOptions(presetIntegrationOf(this.ctx) === undefined ? presets : presets.filter(row => row.isDefault)),
+      options: presetOptions(presets),
     })
   }
 

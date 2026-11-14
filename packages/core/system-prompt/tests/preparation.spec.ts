@@ -10,6 +10,9 @@ it('awaits preparation before reading any registered providers and includes newl
   onTestFinished(() => ctx.fiber.dispose())
   await ctx.plugin(SystemPrompt)
   const variable = vi.fn(() => 'prepared variable'), tools = vi.fn(() => ({ schemas: [] }))
+  const section = vi.fn(() => 'prepared section'), runtimeContext = vi.fn(() => 'prepared context')
+  ctx.systemPrompt.section({ name: 'prepared-section', order: 0, text: section })
+  ctx.systemPrompt.context({ name: 'prepared-context', order: 0, text: runtimeContext })
   ctx.systemPrompt.variable('prepared', variable); ctx.systemPrompt.tools(tools)
   ctx.on('system-prompt/prepare', async (_context, next) => {
     entered.resolve(); await ready.promise
@@ -19,9 +22,11 @@ it('awaits preparation before reading any registered providers and includes newl
   const assembly = ctx.systemPrompt.assemble()
   await entered.promise
   expect(variable).not.toHaveBeenCalled(); expect(tools).not.toHaveBeenCalled()
+  expect(section).not.toHaveBeenCalled(); expect(runtimeContext).not.toHaveBeenCalled()
   ready.resolve()
   expect((await assembly).tools.map(tool => tool.name)).toEqual(['prepared_tool'])
   expect(variable).toHaveBeenCalledOnce(); expect(tools).toHaveBeenCalledOnce()
+  expect(section).toHaveBeenCalledOnce(); expect(runtimeContext).toHaveBeenCalledOnce()
 })
 
 it('filters preparation by original scope, delegates to later listeners and retires it with the registering scope', async () => {

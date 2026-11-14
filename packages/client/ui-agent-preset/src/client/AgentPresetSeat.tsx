@@ -192,8 +192,8 @@ export function AgentPresetSeat({
             className={css.seat}
             aria-haspopup="menu"
             aria-expanded={open && options.length > 0}
-            title={(typeof state.error === 'object' ? state.error?.reason : state.error) ?? t(state.readOnly ? 'readOnly' : 'seatHint')}
-            disabled={state.readOnly || state.busy || options.length === 0}
+            title={(typeof state.error === 'object' ? state.error?.reason : state.error) ?? t('seatHint')}
+            disabled={state.busy || options.length === 0}
             onClick={() => { setOpen(value => !value) }}
           >
             <IconAgentPresetOutlineRegular className={introducing ? `${css.seatIcon} ${css.introIcon}` : css.seatIcon} />

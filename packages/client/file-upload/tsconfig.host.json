@@ -8,7 +8,9 @@
   "files": ["src/http-route.ts", "src/index.ts", "src/protocol.ts", "src/types.ts"],
   "references": [
     { "path": "../../../vendor/cordis" },
+    { "path": "../../../vendor/schemastery" },
     { "path": "../../util/brand" },
+    { "path": "../../util/error" },
     { "path": "../../core/agent" },
     { "path": "../../core/session" },
     { "path": "../../attachment/attachment" },

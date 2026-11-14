@@ -152,10 +152,10 @@ it.each([
 })
 
 it('defaults to 128 finite slots and rejects invalid capacities', () => {
-  expect(FileUploads.Config.parse(undefined)).toEqual({ maxPendingReceipts: 128 })
-  expect(FileUploads.Config.parse({})).toEqual({ maxPendingReceipts: 128 })
-  for (const maxPendingReceipts of [0, 1.5, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
-    expect(() => FileUploads.Config.parse({ maxPendingReceipts })).toThrow()
+  expect(FileUploads.Config(undefined)).toEqual({ maxPendingReceipts: 128 })
+  expect(FileUploads.Config({})).toEqual({ maxPendingReceipts: 128 })
+  for (const maxPendingReceipts of [-1, 0, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+    expect(() => FileUploads.Config({ maxPendingReceipts })).toThrow()
   }
 })
 
@@ -175,8 +175,10 @@ it('bounds zero-byte receipts and releases only entries actually retired or disp
   f.uploads.retirePrompt(f.handle.agent, 'accepted')
   const replacement = await f.track(f.empty())
   expect(f.uploads.resolve(f.handle.agent, first.receiptId)).toBeUndefined()
-  expect(f.uploads.resolve(f.handle.agent, second.receiptId)).toBe(second.file)
-  expect(f.uploads.resolve(f.handle.agent, replacement.receiptId)).toBe(replacement.file)
+  expect(f.uploads.resolve(f.handle.agent, second.receiptId)).toMatchObject({ type: 'file' })
+  expect(f.uploads.resolve(f.handle.agent, second.receiptId)?.attachment).toBe(second.file)
+  expect(f.uploads.resolve(f.handle.agent, replacement.receiptId)).toMatchObject({ type: 'file' })
+  expect(f.uploads.resolve(f.handle.agent, replacement.receiptId)?.attachment).toBe(replacement.file)
   await expect(f.track(f.empty())).rejects.toMatchObject(full)
   await f.handle.dispose()
   const next = await f.ctx.agents.create({ sessionId: SessionId('capacity-next') })
@@ -394,8 +396,9 @@ for (const mode of ['before-insert', 'after-insert', 'after-retain'] as const) {
     f.cleanup.unconfirmed = true
     let receiptId: unknown
     const patch = vi.spyOn(Map.prototype, 'set').mockImplementation(function (this: Map<unknown, unknown>, key, value) {
+      const attachment: unknown = value !== null && typeof value === 'object' ? Reflect.get(value, 'attachment') : undefined
       if (value !== null && typeof value === 'object' && Reflect.get(value, 'unconfirmed') === true
-        && Reflect.get(value, 'file') !== undefined) {
+        && attachment !== null && typeof attachment === 'object' && Reflect.get(attachment, 'type') === 'file') {
         receiptId = key
         if (mode === 'before-insert') throw injected
         const result = original.call(this, key, value)
@@ -424,3 +427,30 @@ for (const mode of ['before-insert', 'after-insert', 'after-retain'] as const) {
     await expect(f.track(f.empty())).rejects.toMatchObject(full)
   })
 }
+
+it('keeps the target image engine and discriminated receipt under the same actual native capacity', async () => {
+  const f = await fixture(1)
+  const bytes = Uint8Array.from(Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADElEQVQImWNgZGIGAAAOAAeCcsnOAAAAAElFTkSuQmCC',
+    'base64',
+  ))
+  const uploaded = await f.track(f.uploads.uploadImageStream({
+    sessionId: f.handle.agent.id, mediaType: 'image/png', name: 'pixel.png',
+    data: (async function* () { yield bytes })(),
+  }))
+  const staged = f.uploads.resolve(f.handle.agent, uploaded.receiptId)
+  if (staged?.type !== 'image') throw new Error('Actual native image receipt is missing')
+  expect(staged.attachment).toBe(uploaded.image)
+  expect(staged.encodedBytes).toBe(bytes.byteLength)
+  expect(uploaded.image).toMatchObject({ mediaType: 'image/png', width: 1, height: 1 })
+  const stored = await f.store.readImage(uploaded.image)
+  expect(stored.ref).toEqual(uploaded.image)
+  expect(stored.data.byteLength).toBe(uploaded.image.bytes)
+  expect(f.uploads.calls).toBe(0)
+  await expect(f.track(f.empty())).rejects.toMatchObject(full)
+  const binding = f.uploads.bindPrompt(f.handle.agent, [uploaded.receiptId], 'image-prompt')
+  binding.commit(); binding[Symbol.dispose]()
+  f.uploads.retirePrompt(f.handle.agent, 'image-prompt')
+  expect(f.uploads.resolve(f.handle.agent, uploaded.receiptId)).toBeUndefined()
+  await expect(f.track(f.empty())).resolves.toMatchObject({ file: { name: 'empty.bin' } })
+})

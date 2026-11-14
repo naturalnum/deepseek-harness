@@ -25,6 +25,8 @@ Attach images and generic files to prompts and commands, then reuse them after r
 <a id="use-this-package"></a>
 ## Use this package
 
+A concrete attachment producer may declare `settlement: 'unknown'` when its actual cleanup or publication cannot be confirmed. The optional base declaration creates no runtime default and never reports settled work. Consumers retain the original responsibility on that marker; absence alone is not a rollback or resource-release proof. Capacity and input failures still require their original producer to finish the relevant cleanup before classifying the result.
+
 Image attachments work end to end: attach an image to a prompt or a command, and it is saved, shown in history, and sent to the model without any further action from you. In the default `dsh` composition everything is already wired; when you compose your own setup, one plugin enables the capability.
 
 ### Attach images to a prompt

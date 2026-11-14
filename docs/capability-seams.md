@@ -7,6 +7,28 @@ A service can be a core spine service, a swappable capability seam, a bundle/com
 
 ```mermaid
 flowchart LR
+  pkg_pe_cloud_api["pe-cloud-api"]
+  svc_cloudModelKey["ctx.cloudModelKey<br/>Account model-key editing"]
+  svc_cloudPlugins["ctx.cloudPlugins<br/>Approved account plugin controls"]
+  pkg_pe_cloud_client["pe-cloud-client"]
+  pkg_pe_cloud_runtime["pe-cloud-runtime"]
+  svc_cloudProjects["ctx.cloudProjects<br/>Account project metadata"]
+  svc_cloudRemoteServers["ctx.cloudRemoteServers<br/>Account remote-server management"]
+  svc_cloudMcpConnections["ctx.cloudMcpConnections<br/>Account HTTP MCP management"]
+  svc_cloudSkills["ctx.cloudSkills<br/>Account skill installation management"]
+  svc_peAccount["ctx.peAccount<br/>Installed account generation"]
+  pkg_pe_cloud_files["pe-cloud-files"]
+  pkg_pe_opensandbox["pe-opensandbox"]
+  pkg_pe_account_instructions["pe-account-instructions"]
+  svc_peAccountExecution["ctx.peAccountExecution<br/>Account execution port"]
+  svc_peAccountInstructions["ctx.peAccountInstructions<br/>Account instruction sources"]
+  svc_peAccountRuntime["ctx.peAccountRuntime<br/>Account Context lifecycle"]
+  pkg_pe_cloud_access["pe-cloud-access"]
+  svc_peAuth["ctx.peAuth<br/>Cloud account authentication"]
+  svc_peCloudApi["ctx.peCloudApi<br/>Account native API assembly"]
+  svc_peCloudFiles["ctx.peCloudFiles<br/>Account file operations"]
+  svc_peExposure["ctx.peExposure<br/>Cloud endpoint exposure policy"]
+  svc_peSandboxCoordinator["ctx.peSandboxCoordinator<br/>Cloud session execution ownership"]
   pkg_action_cards["action-cards"]
   svc_actionCards["ctx.actionCards<br/>Optional action cards"]
   pkg_creation_recommendations["creation-recommendations"]
@@ -409,6 +431,21 @@ flowchart LR
   pkg_message_feedback --> svc_messageFeedback
   pkg_office_kit --> svc_officeKit
   pkg_otel --> svc_otel
+  pkg_pe_account_instructions --> svc_peAccountInstructions
+  pkg_pe_cloud_access --> svc_peAuth
+  pkg_pe_cloud_api --> svc_cloudMcpConnections
+  pkg_pe_cloud_api --> svc_cloudModelKey
+  pkg_pe_cloud_api --> svc_cloudPlugins
+  pkg_pe_cloud_api --> svc_cloudProjects
+  pkg_pe_cloud_api --> svc_cloudRemoteServers
+  pkg_pe_cloud_api --> svc_cloudSkills
+  pkg_pe_cloud_api --> svc_peCloudApi
+  pkg_pe_cloud_api --> svc_peExposure
+  pkg_pe_cloud_files --> svc_peCloudFiles
+  pkg_pe_cloud_runtime --> svc_peAccount
+  pkg_pe_cloud_runtime --> svc_peAccountRuntime
+  pkg_pe_opensandbox --> svc_peAccountExecution
+  pkg_pe_opensandbox --> svc_peSandboxCoordinator
   pkg_permission_presets --> svc_permissionPresets
   pkg_plan_mode --> svc_planMode
   pkg_plugin_manager --> svc_pluginManager
@@ -506,6 +543,18 @@ flowchart LR
   svc_browserUse --> pkg_experimental_browser_use_playwright_mcp
   svc_browserUse --> pkg_experimental_browser_use_stagehand_native
   svc_clientModules --> pkg_client_hmr
+  svc_cloudMcpConnections --> pkg_pe_cloud_client
+  svc_cloudMcpConnections --> pkg_pe_cloud_runtime
+  svc_cloudModelKey --> pkg_pe_cloud_api
+  svc_cloudPlugins --> pkg_pe_cloud_client
+  svc_cloudPlugins --> pkg_pe_cloud_runtime
+  svc_cloudProjects --> pkg_pe_cloud_api
+  svc_cloudProjects --> pkg_pe_cloud_runtime
+  svc_cloudRemoteServers --> pkg_pe_cloud_client
+  svc_cloudRemoteServers --> pkg_pe_cloud_runtime
+  svc_cloudSkills --> pkg_pe_cloud_api
+  svc_cloudSkills --> pkg_pe_cloud_client
+  svc_cloudSkills --> pkg_pe_cloud_runtime
   svc_compaction --> pkg_compaction_basic
   svc_computerUse --> pkg_experimental_computer_use_cua_driver_mcp
   svc_computerUse --> pkg_experimental_computer_use_cua_driver_native
@@ -543,6 +592,27 @@ flowchart LR
   svc_officeKit --> pkg_tool_office
   svc_otel --> pkg_host_product_telemetry_otel
   svc_otel --> pkg_session_telemetry_otel
+  svc_peAccount --> pkg_pe_account_instructions
+  svc_peAccount --> pkg_pe_cloud_api
+  svc_peAccount --> pkg_pe_cloud_files
+  svc_peAccount --> pkg_pe_opensandbox
+  svc_peAccountExecution --> pkg_pe_cloud_api
+  svc_peAccountExecution --> pkg_pe_cloud_runtime
+  svc_peAccountInstructions --> pkg_pe_account_instructions
+  svc_peAccountRuntime --> pkg_pe_cloud_access
+  svc_peAccountRuntime --> pkg_pe_cloud_api
+  svc_peAuth --> pkg_pe_cloud_access
+  svc_peAuth --> pkg_pe_cloud_runtime
+  svc_peCloudApi --> pkg_pe_cloud_access
+  svc_peCloudApi --> pkg_pe_cloud_runtime
+  svc_peCloudFiles --> pkg_pe_account_instructions
+  svc_peCloudFiles --> pkg_pe_cloud_api
+  svc_peCloudFiles --> pkg_pe_cloud_runtime
+  svc_peCloudFiles --> pkg_pe_opensandbox
+  svc_peExposure --> pkg_pe_cloud_access
+  svc_peExposure --> pkg_pe_cloud_runtime
+  svc_peSandboxCoordinator --> pkg_pe_cloud_api
+  svc_peSandboxCoordinator --> pkg_pe_cloud_runtime
   svc_pluginManager --> pkg_plugin_manager
   svc_pluginManager --> pkg_ui_settings_plugin_inventory
   svc_pluginMarket --> pkg_client_ui_plugin_market
@@ -654,6 +724,21 @@ flowchart LR
 
 | ctx key | Role | Owner | Implementations | Direct consumers | Companion plugins | Note |
 | --- | --- | --- | --- | --- | --- | --- |
+| `ctx.cloudModelKey` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | Exposes the approved account model-key RPCs through the original Peer Use and native configuration save owner. |
+| `ctx.cloudPlugins` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-client`](../packages/cloud/pe-cloud-client), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | Adapts fixed plugin edits to original Peer admission, account saves and native profile application. |
+| `ctx.cloudProjects` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | Adapts native Workspace operations to the installed account files owner and approved project roots. |
+| `ctx.cloudRemoteServers` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-client`](../packages/cloud/pe-cloud-client), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | Uses the original authenticated Peer, private files/credentials and save owner; execution remains with native Session tools. |
+| `ctx.cloudMcpConnections` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-client`](../packages/cloud/pe-cloud-client), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | Uses the original account Peer, private credentials and official native MCP client with explicit HTTP and discovery limits. |
+| `ctx.cloudSkills` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api), [`pe-cloud-client`](../packages/cloud/pe-cloud-client), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | Manages account skill installations and complete packages through original Peer admission, account saves and files-owned catalog/version CAS. |
+| `ctx.peAccount` | `core` | [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api), [`pe-cloud-files`](../packages/cloud/pe-cloud-files), [`pe-opensandbox`](../packages/cloud/pe-opensandbox), [`pe-account-instructions`](../packages/cloud/pe-account-instructions) | - | Carries the immutable account binding and lifetime for one independent account Context. |
+| `ctx.peAccountExecution` | `service` | [`pe-opensandbox`](../packages/cloud/pe-opensandbox) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | Exposes only the original Root-issued account capability; closed mode refuses native execution. |
+| `ctx.peAccountInstructions` | `service` | [`pe-account-instructions`](../packages/cloud/pe-account-instructions) | - | [`pe-account-instructions`](../packages/cloud/pe-account-instructions) | - | Reads bounded private and project instruction snapshots through the original account files owner. |
+| `ctx.peAccountRuntime` | `core` | [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | [`pe-cloud-access`](../packages/cloud/pe-cloud-access), [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | Owns account mounting, current-generation admission and retained participant cleanup. |
+| `ctx.peAuth` | `service` | [`pe-cloud-access`](../packages/cloud/pe-cloud-access) | - | [`pe-cloud-access`](../packages/cloud/pe-cloud-access), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | Resolves authenticated requests through the Root-owned BetterAuth and account-owner selection. |
+| `ctx.peCloudApi` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-access`](../packages/cloud/pe-cloud-access), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | Audits and invokes native endpoints on the exact installed account graph under the exposure manifest. |
+| `ctx.peCloudFiles` | `service` | [`pe-cloud-files`](../packages/cloud/pe-cloud-files) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime), [`pe-opensandbox`](../packages/cloud/pe-opensandbox), [`pe-account-instructions`](../packages/cloud/pe-account-instructions) | - | Owns scoped project and private-file access, bounded worker requests and session environment banks. |
+| `ctx.peExposure` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-access`](../packages/cloud/pe-cloud-access), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | Validates the explicit native endpoint manifest and exact HTTP route declarations before account publication. |
+| `ctx.peSandboxCoordinator` | `seam` | [`pe-opensandbox`](../packages/cloud/pe-opensandbox) | [`pe-opensandbox`](../packages/cloud/pe-opensandbox) | [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime), [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | Owns allocation metadata, issued account ports, process ranges and actual stop evidence; providers retain unknown work. |
 | `ctx.actionCards` | `service` | [`action-cards`](../packages/experimental/action-cards) | - | [`creation-recommendations`](../packages/experimental/creation-recommendations), [`client-ui-action-cards`](../packages/experimental/client-ui-action-cards) | - | Owns the card tool, card state, user actions and status notices; card kinds register their actions and handlers. |
 | `ctx.pluginRecommendations` | `service` | [`plugin-recommendations`](../packages/experimental/plugin-recommendations) | - | [`client-ui-plugin-recommendations`](../packages/experimental/client-ui-plugin-recommendations) | - | Reads the current catalog text of an official plugin card and enables the plugin through the profile plugin manager after a click. |
 | `ctx.deepseekChatImport` | `service` | [`deepseek-chat-import`](../packages/experimental/deepseek-chat-import) | - | - | - | Serves the owner-only upload route that imports each conversation of a DeepSeek chat export as a Session, and the upload limits the browser checks first. |

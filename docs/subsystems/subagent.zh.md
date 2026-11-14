@@ -6,6 +6,8 @@
 
 ## 能力与 activation 请求
 
+`SubagentAdmission` 接收启动或冷恢复的原始 `SubagentAdmissionRequest`。启动请求保留原激活 spec 和实际管理器取消信号；恢复请求保留已观察的历史子项和路由。原管理器在提供方工作前以及 setup 与 activation 发布时，检查所捕获的提供方登记和作用域准入贡献。撤回会拒绝已保留的工作，不授予新所有权，也不释放未知清理；[包 README](../../packages/subagent/subagent/README.zh.md) 定义生命周期和回滚要求。
+
 所有后端都使用 startActivation。能力标记校验请求选项；prepareContinuable 选择本地 Agent 创建，start 选择一次外部执行。面向模型的工具采用 parent 回传。Workflow 与 code mode 消费者可以等待 caller 结果，不额外向父代理注入消息。历史子会话的 descriptor 不可用时，以 `mode: 'unknown'` 保持可发现性，但不授予继续执行能力；[包 README](../../packages/subagent/subagent/README.zh.md) 定义目录持久化语义。
 
 可选的 `cwd` 指定子级的初始目录；相对路径以父级当前有效目录为基准解析。省略时，在准入阶段捕获该目录。本地子 Session 保留父级的原始项目，冷恢复保留其日志中的目录状态。
@@ -615,6 +617,14 @@ registerProvider(provider: SubagentProvider): () => void
  * @returns the provider, or undefined when absent.
  */
 getProvider(name: string): SubagentProvider | undefined
+
+/**
+ * Contribute a trusted check before provider dispatch or cold Agent restoration.
+ * Withdrawal prevents pending operations from publishing; started resources stay with the original manager.
+ * @param check - actual native start/history facts; rejection denies this operation without granting authority.
+ * @returns the original effect disposer; callers await it through normal owner cleanup.
+ */
+registerAdmission(check: SubagentAdmission): () => void | Promise<void>
 ```
 
 Types: [Agent](core.zh.md) · [ContentBlock](llm-streaming.zh.md) · [MessageId](llm-streaming.zh.md) · [SessionId](core.zh.md)

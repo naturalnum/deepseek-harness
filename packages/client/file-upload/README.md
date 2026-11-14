@@ -25,6 +25,12 @@ This package lets browser features store a `Blob`, exact bytes, or a `ReadableSt
 <a id="use-this-package"></a>
 ## Use this package
 
+The Host `Config.maxPendingReceipts` uses the target Schemastery schema and defaults to the original 128 combined active-intake and staged-receipt slots, including zero-byte files and images. It accepts positive safe integers. An intake reserves before source work, and only a confirmed receipt handoff transfers that slot to the original Session record. Retirement or Session disposal releases known receipts; unknown storage, cleanup or handoff keeps its charge, closes admission and makes owner cleanup report uncertainty. `AttachmentError.settlement` carries only an explicit unknown marker; absence is not independent proof of cleanup.
+
+The protected `storeFileStream(agent, input, workspaceDirectory?)` hook retains the exact file source, signal and native storage owner. Its caller awaits admission and actual publication; uncertain work must throw `FileUploadIntakeUnconfirmedError`. The default Native hook grants no workspace publication. `uploadWorkspaceStream` uses that same hook and retains no conversation receipt. The raw route accepts file directory/workspace-only requests and preserves the target image route; it never combines image staging with workspace publication. Original reader return joins actual cancel, terminal state and pending reads, preserves a failed source cancel even after the lock releases, and leaves actual wire closure to Connection.
+
+Before activation a page may provide `ctx.fileUploadHooks`, which takes precedence over the legacy global carrier. Its optional `promptImageUploads: false` projects file-only drafts through `FileUploadService.supportsImageUploads`; Native Conversation then sends image MIME files as ordinary files without an image preview or vision claim. Omission preserves Native image drafts and normalization. This page flag grants no Host permission: a deployment must enforce its own upload policy.
+
 Mount the package before a consumer that injects `fileUpload`, then call `ctx.fileUpload.upload(sessionId, body, name, signal, onProgress)`, or `ctx.fileUpload.uploadImage(sessionId, blob, mediaType, name, signal, onProgress)` for a prompt image. The Session identity addresses both the raw route and generated Remote fallback; callers do not assemble either request.
 
 ```yaml

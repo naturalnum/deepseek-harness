@@ -25,6 +25,12 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
+Host 的 `Config.maxPendingReceipts` 使用目标 Schemastery schema，保留原默认 128 个活动 intake 与暂存回执合计名额，零字节文件和图片同样计入；只接受正安全整数。intake 在源工作前预留，只有确认回执交接后才转交原 Session 记录。回执退休或 Session 释放只归还已知名额；存储、清理或交接未知时保留计费、关闭准入，并在所有者清理时报告不确定性。`AttachmentError.settlement` 只携带显式 unknown 标记，缺失标记不能独立证明清理完成。
+
+受保护 `storeFileStream(agent, input, workspaceDirectory?)` 钩子保留确切文件源、信号和原生存储所有者；调用方等待准入及实际发布，未知工作必须抛出 `FileUploadIntakeUnconfirmedError`。默认 Native 钩子不授予工作区发布能力。`uploadWorkspaceStream` 沿同一钩子执行，不保留对话回执。原始路由接收文件目录/仅工作区请求，保留目标图片路由，不把图片暂存与工作区发布组合。原读取器 return 等待实际 cancel、终态和已开始读取；即使锁释放，源取消失败仍保留，实际 wire 关闭继续由 Connection 持有。
+
+页面可在激活前提供 `ctx.fileUploadHooks`，优先于旧全局 carrier。其可选 `promptImageUploads: false` 经 `FileUploadService.supportsImageUploads` 投影为仅文件草稿；Native Conversation 此时将图片 MIME 文件作为普通文件发送，不创建图片预览或宣称视觉能力。省略时保留 Native 图片草稿与归一化。页面标记不授予 Host 权限，部署必须执行自己的上传策略。
+
 在注入 `fileUpload` 的消费方之前挂载本包，再调用 `ctx.fileUpload.upload(sessionId, body, name, signal, onProgress)`；prompt 图片则调用 `ctx.fileUpload.uploadImage(sessionId, blob, mediaType, name, signal, onProgress)`。Session 标识同时用于寻址原始路由和生成的 Remote 兜底；调用方不组装这两种请求。
 
 ```yaml

@@ -199,3 +199,53 @@ describe('background file upload Fetch route', () => {
   })
 
 })
+
+it('joins one real rejected cancel, releases the reader, and retains its cached unknown cause', async () => {
+  const cause = new Error('private request cancellation failed')
+  let cancels = 0
+  const body = new ReadableStream<Uint8Array>({ cancel() { cancels++; throw cause } }, { highWaterMark: 0 })
+  const receipt = { receiptId: 'unpublished-receipt', file: { attachmentId: 'id', name: 'f', bytes: 1 } }
+  const observations: FileUploadIntakeUnconfirmedError[] = []
+  const service = {
+    async uploadStream(input: Parameters<FileUploads['uploadStream']>[0]) {
+      const iterator = input.data[Symbol.asyncIterator]()
+      if (iterator.return === undefined) throw new Error('Original HTTP iterator has no close operation')
+      const first = iterator.return()
+      expect(iterator.return()).toBe(first)
+      const error: unknown = await first.catch((failure: unknown) => failure)
+      if (!(error instanceof FileUploadIntakeUnconfirmedError)) throw new Error('Actual cancel failure was not retained')
+      observations.push(error)
+      expect(error.cause).toBe(cause)
+      expect(iterator.return()).toBe(first)
+      return receipt
+    },
+  } as unknown as FileUploads
+  const request = new Request('http://fixture/upload?sessionId=s1', {
+    method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body, duplex: 'half',
+  } as RequestInit)
+  const result: unknown = await (await handleFileUploadHttp(service, request)).json()
+  expect(result).toEqual({ ok: false, error: { code: 'gateway/internal',
+    message: 'File upload intake settlement is unconfirmed.', details: { reason: 'FILE_UPLOAD_INTAKE_UNCONFIRMED' } } })
+  expect(observations).toHaveLength(1)
+  expect(observations[0]?.cause).toBe(cause)
+  expect(cancels).toBe(1)
+  expect(body.locked).toBe(false)
+  expect(JSON.stringify(result)).not.toContain(cause.message)
+})
+
+it('releases an already errored request reader without inventing an underlying cancel failure', async () => {
+  const failure = new Error('original body failure'), cancel = vi.fn()
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) { controller.error(failure) },
+    cancel,
+  }, { highWaterMark: 0 })
+  const request = new Request('http://fixture/upload?sessionId=s1', {
+    method: 'PUT', headers: { 'content-type': 'application/octet-stream' }, body, duplex: 'half',
+  } as RequestInit)
+  const service = uploads(Promise.resolve({}))
+  const response = await handleFileUploadHttp(service, request)
+  expect(response.status).toBe(405)
+  expect(service.uploadStream).not.toHaveBeenCalled()
+  expect(cancel).not.toHaveBeenCalled()
+  expect(body.locked).toBe(false)
+})

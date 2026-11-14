@@ -695,7 +695,7 @@ describe('image admission failures', () => {
   it.each([
     'ATTACHMENT_WRITE_FAILED', 'TOO_MANY_IMAGES', 'INVALID_IMAGE_BASE64', 'INVALID_FILE_BASE64', 'INVALID_ATTACHMENT_REF',
     'ATTACHMENT_CORRUPT', 'ATTACHMENT_NOT_FOUND', 'ATTACHMENT_READ_FAILED', 'ATTACHMENT_PROJECTION_UNSUPPORTED',
-    'ATTACHMENT_FILES_UNSUPPORTED',
+    'ATTACHMENT_FILES_UNSUPPORTED', 'ATTACHMENT_STORAGE_CAPACITY',
   ] as const)('passes AttachmentError %s without a read remedy through unchanged', async (code) => {
     const result = await failingSave(() => new AttachmentError('Stored attachment failed.', code))
     expect(result.isError).toBe(true)

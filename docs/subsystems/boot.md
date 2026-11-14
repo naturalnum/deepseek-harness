@@ -61,6 +61,11 @@ interface PendingModule {
 }
 ```
 
+<a id="native-edit-controls"></a>
+## Native edit controls
+
+[`ConfigEditControl`](../../packages/boot/config-editor/src/index.ts) retains the original caller recheck, optional native plan approval and explicit bounded remount-registry selection; omission retains live-only edits. `ConfigImpactGuard` checks the prepared native plan before persistence without granting unsupported impact. `ConfigSaveSubmissionHook` admits actual writer submission synchronously and retains its result through required application; the [editor package](../../packages/boot/config-editor/README.md) owns registration and serialization.
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -123,6 +128,43 @@ Source: [`packages/experimental/action-cards/src/index.ts`](../../packages/exper
 Persist complete raw configs and apply them through the normal Loader path.
 
 ```ts cordis-catalog
+/**
+ * Install one live-only impact policy for actual edits through this editor.
+ * Without a guard the original reconciliation and rollback path is unchanged.
+ * @param guard - policy for the native plan, without a cloud field allowlist.
+ * @returns awaitable disposer; caller unload removes the guard.
+ * @throws If another impact guard is installed.
+ */
+registerImpactGuard(guard: ConfigImpactGuard): () => Promise<void>
+
+/**
+ * Install the sole hook for explicit save submissions through this editor.
+ * The caller must stop and settle protected writers before withdrawing the hook.
+ * Nested submissions in one admitted operation share its hook and completion.
+ * @param hook - synchronous admission and Promise observation owned by the caller.
+ * @returns awaitable disposer; caller unload also removes the hook.
+ * @throws If a hook is already installed.
+ */
+registerSaveHook(hook: ConfigSaveSubmissionHook): () => Promise<void>
+
+/**
+ * Submit one instrumented save before its writer enters any private queue.
+ * Without a hook, invoke submit directly and return its original Promise.
+ * Nested submissions through the same editor share the admitted operation;
+ * callers must await all nested work. A continuation after settlement submits anew.
+ * @param writer - native writer identifier, without config values or secrets.
+ * @param submit - actual queue submission and all required write/application work.
+ * @returns the original operation Promise, or the hook's admitted operation Promise.
+ * @throws If synchronous admission rejects the submission.
+ */
+submitSave<T>(writer: string, submit: () => Promise<T>): Promise<T>
+
+/** Read this editor's actual guarded replacement disposition without changing the original rejection.
+ * @param error Exact object rejected by a guarded edit; copied or unrelated errors have no receipt.
+ * @returns Not-published before atomic replacement, unknown after it was entered, or undefined for unobserved errors.
+ */
+editFailureOutcome(error: unknown): 'not-published' | 'unknown' | undefined
+
 /** Addressable profile rows; nested Includes have independent configuration ownership.
  * @returns Active entries with unique profile patch ids.
  */
@@ -134,12 +176,19 @@ entries(): Entry[]
 configuration(): Array<{ entry: Entry; inherited: Record<string, unknown>; override: Record<string, unknown> }>
 
 /** Validate, persist, and reconcile a plugin's next config; ordinary fields keep normal lifecycle rules.
+ * An impact guard selects the live path; an explicit trusted Host control may select the bounded optional-leaf planner.
+ * Unsupported native plans reject before writing.
+ * A required post-replacement failure remains failed with its committed state for caller diagnosis;
+ * that path never falls back to an unguarded rollback or remount.
  * @param entry Current Loader entry, also used to detect replacement during the write.
  * @param change Derive a raw config from the current entry and its inherited layer.
+ * @param control Optional original caller recheck; omission preserves ordinary native edits.
  * @returns Fulfillment after Loader reconciliation completes.
  */
-async edit( entry: Entry, change: (current: Record<string, unknown>, inherited: Record<string, unknown>) => Record<string, unknown>, ): Promise<void>
+async edit( entry: Entry, change: (current: Record<string, unknown>, inherited: Record<string, unknown>) => Record<string, unknown>, control?: ConfigEditControl, ): Promise<void>
 ```
+
+Types: [ConfigEditControl](boot.md#native-edit-controls) · [ConfigImpactGuard](../../packages/boot/config-editor/README.md) · [ConfigSaveSubmissionHook](../../packages/boot/config-editor/README.md)
 
 Source: [`packages/boot/config-editor/src/index.ts`](../../packages/boot/config-editor/src/index.ts)
 
@@ -451,7 +500,7 @@ Source: [`packages/client/ui-plugin-manager/src/index.ts`](../../packages/client
 
 ### `ctx.profileContext` — `ProfileContext`
 
-Current profile facts; scheduling and mutation belong to their callers.
+Current profile facts and optional trusted entry aliases; callers own scheduling and explicit writes.
 
 Source: [`packages/boot/app-boot/src/profile-context.ts`](../../packages/boot/app-boot/src/profile-context.ts)
 

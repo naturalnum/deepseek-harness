@@ -28,6 +28,8 @@ kind: "package-reference"
 <a id="conversation-assembly"></a>
 ## Conversation 组装
 
+上传服务可为仅文件页面投影 `supportsImageUploads: false`。此时图片 MIME 选择生成普通文件草稿，沿原文件上传和回执流程处理，不生成图片预览或内联图片输入。字段缺失或为 true 时，Native 图片草稿、上传以及子 Agent 的内联图片行为保持不变。该 Client 投影不是 Host 授权。
+
 `UiConversation.events` 是 event Definition 的唯一 registry，`UiConversation.views` 是 target snapshot builder 的唯一 registry。两者都拒绝重复 key、保持注册顺序、返回幂等 disposer，并在 contribution roster 变化时重建现有 binding。`UiConversation.binding(bindingOrSessionId)` 为当前 Session Controller binding 返回 identity 稳定的 Conversation binding，不会另开事件源。 View Definition 可以声明 `toolCallFocus`，将工具调用 id 转换为自身的焦点标识。仅当此目标拥有可见的 View 条目时，Conversation 才提供 Inspect 回调；Chat 直接使用回调，不选择目标。
 
 `ConversationBinding.openTurn` 是对象标识稳定的只读来源：最新轮次的开始事件已加载且尚未结束时提供其编号，否则为 `undefined`。观察到的轮次变化同步发布，即使没有活动视图也是如此。固定停止输入同时读取这个来源、会话运行状态和待处理交互状态。卸载会话绑定会解除其事件源订阅。

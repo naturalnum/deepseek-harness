@@ -267,6 +267,7 @@ function saveFailureDetail(error: AttachmentError, attachments: AttachmentStore,
     case 'ATTACHMENT_READ_FAILED':
     case 'ATTACHMENT_PROJECTION_UNSUPPORTED':
     case 'ATTACHMENT_FILES_UNSUPPORTED':
+    case 'ATTACHMENT_STORAGE_CAPACITY':
       return undefined
     /* v8 ignore next -- Closed AttachmentErrorCode union; assertNever checks exhaustiveness at compile time. */
     default:

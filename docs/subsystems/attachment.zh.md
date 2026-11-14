@@ -336,7 +336,14 @@ registerAgentResolver(resolve: AgentResolver): () => void
  * @param request - Session identity, ordered bytes, cancellation, and optional display name.
  * @returns the staged receipt and durable file reference.
  */
-async uploadStream(request: { readonly sessionId: SessionId readonly data: AsyncIterable<Uint8Array> readonly signal?: AbortSignal readonly name?: string }): Promise<FileUploadValue>
+async uploadStream(request: { readonly sessionId: SessionId readonly workspaceDirectory?: string readonly data: AsyncIterable<Uint8Array> readonly signal?: AbortSignal readonly name?: string }): Promise<FileUploadValue>
+
+/**
+ * Store through the same admitted file hook without retaining a conversation receipt.
+ * @param request - original Session, ordered bytes and explicit workspace destination.
+ * @returns the durable file after the hook's actual publication settles; late ownership failure remains unknown.
+ */
+uploadWorkspaceStream(request: { readonly sessionId: SessionId readonly workspaceDirectory: string readonly data: AsyncIterable<Uint8Array> readonly signal?: AbortSignal readonly name?: string }): Promise<FileAttachmentRef>
 
 /**
  * Persist one prompt image for a Session: read at most the smaller of the

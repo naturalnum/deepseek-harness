@@ -187,7 +187,7 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
     const record = this.record(created)
     check(prepared === undefined || prepared === record.prepared, 'sdk/selection')
     if (this.admission && record.phase === 'stop-unknown' && record.deletionRetry !== undefined
-      && Date.now() >= Date.parse(record.intent.createDeadlineAt) + this.config.ttlSeconds * 1000 + 30000) {
+      && Date.now() >= this.deletionExpiresAt(record.intent.createDeadlineAt)) {
       return record.expiryCheck ??= this.confirmExpiredStop(record).finally(() => { delete record.expiryCheck })
     }
     return this.stopRecord(record)
@@ -255,6 +255,30 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
   isMissing(sandboxId: string, deadlineAtMs: number): Promise<boolean> {
     this.assertAdmission(); this.checkFields([sandboxId])
     return this.own(() => this.queryMissing(sandboxId, deadlineAtMs))
+  }
+
+  /** Delete an old process's original sandbox once, without constructing a live allocation handle.
+   * @param sandboxId Original durable sandbox id selected by single-instance startup reconciliation.
+   * @returns Deleted for204, missing for404 or one confirming GET404, otherwise unknown.
+   */
+  async deleteOriginal(sandboxId: string): Promise<'deleted' | 'missing' | 'unknown'> {
+    this.assertAdmission(); this.checkFields([sandboxId])
+    try {
+      await this.own(() => this.connection.run(this.budget(Date.now() + this.config.stopBudgetMs),
+        'DELETE', this.path(sandboxId), 204, () => this.sandboxes.deleteSandbox(sandboxId)))
+      return 'deleted'
+    } catch (cause) {
+      if (cause instanceof SandboxApiException && cause.statusCode === 404) return 'missing'
+      return await this.isMissing(sandboxId, Date.now() + this.config.requestTimeoutMs) ? 'missing' : 'unknown'
+    }
+  }
+
+  /** Compute the shared sandbox expiry deadline from its original creation deadline.
+   * @param createDeadlineAt Original persisted creation deadline.
+   * @returns Expiry deadline in milliseconds, including the existing 30 second allowance.
+   */
+  deletionExpiresAt(createDeadlineAt: string): number {
+    return Date.parse(createDeadlineAt) + this.config.ttlSeconds * 1000 + 30000
   }
 
   /** Fence module admission, join retained real operations/stops, then actual dispatcher close.
@@ -500,7 +524,6 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
       const result = this.closeResult
       if (result !== undefined) {
         if (result.ok) resolve()
-        // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- Preserve the original retained close failure.
         else reject(result.cause)
         return
       }
@@ -513,7 +536,6 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
       const observer = (value: CloseResult): void => {
         if (!done()) return
         if (value.ok) resolve()
-        // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- Preserve the original retained close failure.
         else reject(value.cause)
       }
       const timer = setTimeout(aborted, ms)

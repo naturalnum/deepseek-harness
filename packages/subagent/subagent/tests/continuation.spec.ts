@@ -25,7 +25,7 @@ import SubagentRuntime, {
   SubagentError,
   SUBAGENT_DESCRIPTOR_VERSION,
 } from '../src/index.ts'
-import type { SubagentRunEndInfo, SubagentRunInfo } from '../src/index.ts'
+import type { SubagentAdmissionRequest, SubagentProvider, SubagentRunEndInfo, SubagentRunInfo } from '../src/index.ts'
 import type { SubagentPromptRequestId } from '../src/control-types.ts'
 import * as activationResults from '../src/activation.ts'
 import { requireLocalActivation } from '../src/activation.ts'
@@ -1288,13 +1288,26 @@ describe('continuable child ownership', () => {
     const creator = await ctx.subagents.startActivation({ ...startSpec(parent), delivery: 'parent' })
     const creatorAgent = ctx.agents.get(creator.childId)!
     const leaf = await ctx.subagents.startActivation({ ...startSpec(creatorAgent), delivery: 'parent' })
+    expect(ctx.agents.isOwnedBy(creator.childId, parent)).toBe(true)
+    expect(ctx.agents.isOwnedBy(leaf.childId, creatorAgent)).toBe(true)
+    expect(ctx.agents.isOwnedBy(leaf.childId, parent)).toBe(false)
+    let coldOwnershipObserved = false
+    ctx.on('subagent/start', (info) => {
+      if (info.id !== leaf.childId) return
+      coldOwnershipObserved = true
+      expect(ctx.agents.isOwnedBy(info.id, parent)).toBe(true)
+      expect(ctx.agents.isOwnedBy(info.id, creatorAgent)).toBe(false)
+      expect(ctx.agents.get(info.id)?.session.header.parentSession).toBe(creator.childId)
+    })
     try {
       releaseCreator.resolve(undefined)
       await waitNoActivation(ctx, creator.childId)
+      expect(ctx.agents.isOwnedBy(leaf.childId, creatorAgent)).toBe(true)
       await humanPrompt(ctx, leaf.childId, 'resident follow-up', delivery)
       releaseLeaf.resolve(undefined)
       await waitNoActivation(ctx, leaf.childId)
       await humanPrompt(ctx, leaf.childId, 'cold follow-up', delivery)
+      expect(coldOwnershipObserved).toBe(true)
       await waitNoActivation(ctx, leaf.childId)
       expect(ctx.agents.get(creator.childId)).toBeUndefined()
       const loaded = await loadStoredSession(ctx.sessionPersistence, leaf.childId)
@@ -4187,5 +4200,182 @@ describe('SubagentRuntime.interrupt', () => {
 
     hold.resolve(undefined)
     await drained
+  })
+})
+
+describe('native activation admission', () => {
+  it.each(['local', 'external'] as const)('checks actual %s dispatch facts before provider work', async (kind) => {
+    const { ctx, parent } = await setup([])
+    cleanups.unshift(() => ctx.fiber.dispose())
+    const invoked = vi.fn(async () => { throw new Error('denied provider must not start') })
+    const provider: SubagentProvider = {
+      name: 'admitted-provider', capabilities: {}, inheritsParentContext: false,
+      ...kind === 'local' ? { prepareContinuable: invoked } : { start: invoked },
+    }
+    ctx.subagents.registerProvider(provider)
+    const seen: SubagentAdmissionRequest[] = []
+    const failure = new SubagentError('original admission refused', 'ADMISSION_TEST')
+    ctx.subagents.registerAdmission((request) => { seen.push(request); throw failure })
+    const spec = { ...startSpec(parent, provider.name), delivery: 'caller' as const }
+    await expect(ctx.subagents.startActivation(spec)).rejects.toBe(failure)
+    expect(invoked).not.toHaveBeenCalled()
+    expect(seen).toHaveLength(1)
+    const request = seen[0]
+    if (request?.kind !== 'start') throw new Error('actual start facts were not delivered')
+    expect(request.spec).toBe(spec)
+    expect(request.spec.parent).toBe(parent)
+    expect(request.provider).toBe(provider)
+    expect(request.cwd).toBe(ctx.workingDirectory.get(parent.session))
+    expect(request.owner.root).toBe(ctx.root)
+    expect(ctx.agents.list()).toEqual([parent])
+    expect(ctx.sessions.list()).toEqual([parent.session])
+  })
+
+  it.each(['admission', 'provider'] as const)('rejects %s withdrawal during actual provider preparation', async (withdrawn) => {
+    const { ctx, parent, adapter } = await setup([])
+    const entered: PromiseWithResolvers<void> = Promise.withResolvers(), release: PromiseWithResolvers<void> = Promise.withResolvers()
+    cleanups.unshift(async () => { release.resolve(); await ctx.fiber.dispose() })
+    const provider: SubagentProvider = {
+      name: 'awaited-admission', capabilities: {}, inheritsParentContext: false,
+      async prepareContinuable() { entered.resolve(); await release.promise; return {} },
+    }
+    const retireProvider = ctx.subagents.registerProvider(provider)
+    const retireAdmission = ctx.subagents.registerAdmission(() => undefined)
+    const created = vi.fn()
+    ctx.on('agent/created', created)
+    const starting = ctx.subagents.startActivation({ ...startSpec(parent, provider.name), delivery: 'caller' })
+    const rejected = expect(starting).rejects.toMatchObject({ code: 'ADMISSION_REVOKED' })
+    await entered.promise
+    if (withdrawn === 'admission') await retireAdmission()
+    else {
+      retireProvider()
+      // The same provider object is a different registration after withdrawal.
+      ctx.subagents.registerProvider(provider)
+    }
+    release.resolve()
+    await rejected
+    expect(created).not.toHaveBeenCalled()
+    expect(adapter.requests).toEqual([])
+    expect(ctx.agents.list()).toEqual([parent])
+    expect(ctx.sessions.list()).toEqual([parent.session])
+  })
+
+  it('passes actual manager shutdown to pending admission while the caller signal stays active', async () => {
+    const { ctx, parent } = await setup([])
+    cleanups.unshift(() => ctx.fiber.dispose())
+    const caller = new AbortController(), entered: PromiseWithResolvers<void> = Promise.withResolvers()
+    const actualSignals: AbortSignal[] = []
+    ctx.subagents.registerAdmission((request) => {
+      actualSignals.push(request.signal)
+      entered.resolve()
+      return new Promise<void>((_resolve, reject) => {
+        request.signal.addEventListener('abort', () => { reject(request.signal.reason) }, { once: true })
+      })
+    })
+    const pending = ctx.subagents.startActivation({ ...startSpec(parent, 'spawn', caller.signal), delivery: 'caller' })
+      .catch((error: unknown) => error)
+    await entered.promise
+    const stopped = drainManager(ctx)
+    expect(await pending).toBeInstanceOf(Error)
+    await stopped
+    expect(actualSignals[0]?.aborted).toBe(true)
+    expect(caller.signal.aborted).toBe(false)
+    expect(ctx.agents.list()).toEqual([parent])
+  })
+
+  it('rechecks the retained contribution at the original factory publication commit', async () => {
+    const { ctx, parent } = await setup([])
+    const entered: PromiseWithResolvers<void> = Promise.withResolvers(), release: PromiseWithResolvers<void> = Promise.withResolvers()
+    const agents = managerState(ctx).ownerCtx.agents
+    const originalCreate = agents.create.bind(agents)
+    // Hold after the real manager composition but before the factory consumes its commit.
+    const create = vi.spyOn(agents, 'create').mockImplementation(options => originalCreate({
+      ...options,
+      async setup(scope, agent) {
+        const commit = await options.setup?.(scope, agent)
+        entered.resolve()
+        await release.promise
+        return commit
+      },
+    }))
+    cleanups.unshift(async () => { release.resolve(); create.mockRestore(); await ctx.fiber.dispose() })
+    const retire = ctx.subagents.registerAdmission(() => undefined)
+    const created = vi.fn()
+    ctx.on('agent/created', created)
+    const starting = ctx.subagents.startActivation({ ...startSpec(parent), delivery: 'caller' })
+    const rejected = expect(starting).rejects.toMatchObject({ code: 'ADMISSION_REVOKED' })
+    await entered.promise
+    await retire()
+    release.resolve()
+    await rejected
+    expect(created).not.toHaveBeenCalled()
+    expect(ctx.agents.list()).toEqual([parent])
+    expect(ctx.sessions.list()).toEqual([parent.session])
+  })
+
+  it('rolls back the announced Agent if admission is withdrawn during an original creation listener', async () => {
+    const { ctx, parent } = await setup([])
+    const entered: PromiseWithResolvers<void> = Promise.withResolvers(), release: PromiseWithResolvers<void> = Promise.withResolvers()
+    cleanups.unshift(async () => { release.resolve(); await ctx.fiber.dispose() })
+    const retire = ctx.subagents.registerAdmission(() => undefined)
+    const created: Agent[] = [], disposed: Agent[] = []
+    const activated = vi.fn()
+    ctx.on('subagent/start', activated)
+    ctx.on('agent/created', async ({ agent }) => {
+      created.push(agent)
+      entered.resolve()
+      await release.promise
+    })
+    ctx.on('agent/disposed', ({ agent }) => { disposed.push(agent) })
+    const starting = ctx.subagents.startActivation({ ...startSpec(parent), delivery: 'caller' })
+    const rejected = expect(starting).rejects.toMatchObject({ code: 'ADMISSION_REVOKED' })
+    await entered.promise
+    await retire()
+    release.resolve()
+    await rejected
+    expect(created).toHaveLength(1)
+    expect(disposed).toEqual(created)
+    expect(activated).not.toHaveBeenCalled()
+    expect(ctx.agents.list()).toEqual([parent])
+    expect(ctx.sessions.list()).toEqual([parent.session])
+  })
+
+  it.each(['denied', 'withdrawn'] as const)('checks %s cold reconstruction before its Agent factory starts', async (kind) => {
+    const { ctx, parent } = await setup([textResponse('initial child')])
+    const entered: PromiseWithResolvers<void> = Promise.withResolvers(), release: PromiseWithResolvers<void> = Promise.withResolvers()
+    cleanups.unshift(async () => { release.resolve(); await ctx.fiber.dispose() })
+    parkParent(ctx, parent)
+    const first = await ctx.subagents.startActivation({ ...startSpec(parent), delivery: 'parent' })
+    await waitNoActivation(ctx, first.childId)
+    const provider = ctx.subagents.getProvider('spawn')
+    const seen: SubagentAdmissionRequest[] = []
+    const failure = new SubagentError('original cold admission refused', 'ADMISSION_TEST')
+    const retire = ctx.subagents.registerAdmission(async (request) => {
+      seen.push(request)
+      entered.resolve()
+      if (kind === 'denied') throw failure
+      await release.promise
+    })
+    const resume = vi.spyOn(managerState(ctx).ownerCtx.agents, 'resume')
+    cleanups.unshift(async () => { resume.mockRestore() })
+    const restoring = queuePrompt(ctx, first.childId, message('denied follow-up'))
+    const rejected = kind === 'denied'
+      ? expect(restoring).rejects.toBe(failure)
+      : expect(restoring).rejects.toMatchObject({ code: 'ADMISSION_REVOKED' })
+    await entered.promise
+    if (kind === 'withdrawn') { await retire(); release.resolve() }
+    await rejected
+    expect(seen).toHaveLength(1)
+    const request = seen[0]
+    if (request?.kind !== 'resume') throw new Error('actual observed history was not delivered')
+    expect(request.parent).toBe(parent)
+    expect(request.childId).toBe(first.childId)
+    expect(request.header.id).toBe(first.childId)
+    expect(request.header.parentSession).toBe(parent.id)
+    expect(request.provider).toBe(provider)
+    expect(request.agentOptions).toMatchObject({ provider: 'mock', model: 'mock' })
+    expect(resume).not.toHaveBeenCalled()
+    expect(ctx.agents.get(first.childId)).toBeUndefined()
+    expect(ctx.sessions.get(first.childId)).toBeUndefined()
   })
 })

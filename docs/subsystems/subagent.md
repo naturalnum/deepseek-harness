@@ -6,6 +6,8 @@ The unified activation API manages local conversations and external executions. 
 
 ## Capabilities and activation requests
 
+`SubagentAdmission` receives the original `SubagentAdmissionRequest` for start or cold resume. A start request retains its original activation spec and actual manager cancellation signal; a resume request retains the observed historical child and route. The original manager checks its captured provider registration and scoped admission contributions before provider work and again at setup and activation publication. Withdrawal rejects retained work without granting new ownership or releasing unknown cleanup; the [package README](../../packages/subagent/subagent/README.md) defines lifecycle and rollback requirements.
+
 Every backend uses startActivation. Capability flags validate request options; prepareContinuable selects local Agent creation, while start selects one external execution. The model-facing tool uses parent delivery. Workflow and code mode consumers can await caller results without injecting another parent message. Historical children with unavailable descriptors remain discoverable as `mode: 'unknown'` without granting continuation capabilities; the [package README](../../packages/subagent/subagent/README.md) defines catalog persistence.
 
 Optional `cwd` selects the child's initial directory; relative paths resolve against the parent's current effective directory. Omitting it captures that directory at admission. Local child Sessions retain the parent's original project, and cold resume retains their logged directory state.
@@ -613,6 +615,14 @@ registerProvider(provider: SubagentProvider): () => void
  * @returns the provider, or undefined when absent.
  */
 getProvider(name: string): SubagentProvider | undefined
+
+/**
+ * Contribute a trusted check before provider dispatch or cold Agent restoration.
+ * Withdrawal prevents pending operations from publishing; started resources stay with the original manager.
+ * @param check - actual native start/history facts; rejection denies this operation without granting authority.
+ * @returns the original effect disposer; callers await it through normal owner cleanup.
+ */
+registerAdmission(check: SubagentAdmission): () => void | Promise<void>
 ```
 
 Types: [Agent](core.md) · [ContentBlock](llm-streaming.md) · [MessageId](llm-streaming.md) · [SessionId](core.md)

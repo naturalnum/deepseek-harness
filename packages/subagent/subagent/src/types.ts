@@ -50,7 +50,7 @@ export interface SubagentActivationSpec extends Omit<SubagentStartRequest, 'labe
 export type SubagentAdmissionRequest =
   | {
     readonly kind: 'start'
-    /** Original activation owner; also supplies the native factory caller. */
+    /** Original manager owner; also supplies the actual native factory caller. */
     readonly owner: Context
     /** Actual registered provider, not a name-derived approval. */
     readonly provider: SubagentProvider
@@ -58,6 +58,8 @@ export type SubagentAdmissionRequest =
     readonly cwd: string
     /** Original borrowed start specification, including the exact live parent. */
     readonly spec: SubagentActivationSpec
+    /** Actual manager operation signal, including tree shutdown, also passed to provider preparation. */
+    readonly signal: AbortSignal
   }
   | {
     readonly kind: 'resume'

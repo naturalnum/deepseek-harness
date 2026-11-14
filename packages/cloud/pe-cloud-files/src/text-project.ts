@@ -497,6 +497,9 @@ export function createTextProjectFileSystem(account: AccountTextBackend): Native
       } catch (error) { throw nativeReadFailure(error) }
     }
     override editText(target: FsTarget): Promise<FsEditOutcome> { return this.denied(target) }
+    override patchText(...args: Parameters<FileSystem['patchText']>): ReturnType<FileSystem['patchText']> { return this.denied(args[0]) }
+    override deleteFile(...args: Parameters<FileSystem['deleteFile']>): ReturnType<FileSystem['deleteFile']> { return this.denied(args[0]) }
+    override moveFile(...args: Parameters<FileSystem['moveFile']>): ReturnType<FileSystem['moveFile']> { return this.denied(args[0]) }
     override watch(target: FsTarget): Promise<() => Promise<void>> {
       return new Promise((_resolve, reject) => {
         this.current()

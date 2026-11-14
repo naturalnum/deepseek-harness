@@ -75,6 +75,34 @@ async function bench(maxConcurrentFileUploads = 2) {
 }
 
 describe('ConversationController', () => {
+  it('uploads an image MIME as an ordinary file when the actual page service disables prompt-image drafts', async () => {
+    const b = await bench()
+    const preview = vi.spyOn(URL, 'createObjectURL')
+    try {
+      Object.assign(b.runtime.fileUpload, { supportsImageUploads: false })
+      const session = b.runtime.sessions.binding('s1')!.session
+      const uploadFile = vi.fn((_data: Blob | Uint8Array) => Promise.resolve({
+        ok: true as const,
+        value: { receiptId: 'generic-image-file', file: { attachmentId: 'stored-file', name: 'pixel.png', bytes: 1 } },
+      }))
+      const uploadImage = vi.fn(() => Promise.reject(new Error('prompt-image upload must not run')))
+      Object.assign(session, { uploadFile, uploadImage })
+      const file = new File([Uint8Array.of(1)], 'pixel.png', { type: 'image/png' })
+      const [draft] = b.root.createDrafts(session.sessionId, [file], UPLOAD_IMAGES)
+      if (draft === undefined) throw new Error('Ordinary file draft was not created')
+      expect(draft.kind).toBe('file')
+      expect(draft.file).toBe(file)
+      expect(preview).not.toHaveBeenCalled()
+      await vi.waitFor(() => { expect(b.root.fileUploads.getSnapshot()[draft.id]?.status).toBe('ready') })
+      expect(uploadFile.mock.calls[0]?.[0]).toBe(file)
+      expect(uploadImage).not.toHaveBeenCalled()
+      await expect(b.root.sendSession(session, 'read', [draft.id], 'queue')).resolves.toEqual({ kind: 'success' })
+      expect(b.prompt).toHaveBeenCalledWith([
+        { type: 'file', receiptId: 'generic-image-file' }, { type: 'text', text: 'read' },
+      ], 'queue', undefined, expect.any(String))
+    } finally { preview.mockRestore(); await b.runtime.dispose() }
+  })
+
   it('does not revive a withdrawn generation when an old input submits before scoped cleanup', async () => {
     const b = await bench()
     try {

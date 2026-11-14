@@ -28,6 +28,8 @@ Desktop product events use the optional [product analytics service](../product-a
 <a id="conversation-assembly"></a>
 ## Conversation assembly
 
+The upload service may project `supportsImageUploads: false` for a file-only page. In that mode, image MIME selections become ordinary file drafts, use the original file upload and receipt flow, and do not create image previews or inline-image input. When the field is absent or true, Native image draft, upload and subagent inline-image behavior stays unchanged. This Client projection is not Host authorization.
+
 `UiConversation.events` is the single registry for event Definitions, and `UiConversation.views` is the single registry for target snapshot builders. Both registries reject duplicate keys, preserve registration order, return idempotent disposers, and rebuild existing bindings when their contribution roster changes. `UiConversation.binding(bindingOrSessionId)` returns one identity-stable Conversation binding for the current Session Controller binding. It does not open another event source. A View Definition may declare `toolCallFocus` to translate a tool-call id into its focus identity. Conversation supplies an Inspect callback only while such a target has a visible View entry; Chat consumes this callback without selecting a target.
 
 `ConversationBinding.openTurn` is an identity-stable, read-only source of the latest turn number when its start is loaded and it remains open, or `undefined` otherwise. Observed turn changes publish synchronously even when no View is active. Fixed stop input reads this source alongside Session running and pending-interaction state. Unloading the Session binding detaches its event-source subscription.

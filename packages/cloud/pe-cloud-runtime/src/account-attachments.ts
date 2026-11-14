@@ -176,8 +176,8 @@ export class AccountAttachments {
       check()
       const refs = ids.map((id) => {
         const ref = uploads.resolve(agent, id)
-        if (ref === undefined) denied()
-        return ref
+        if (ref === undefined || ref.type !== 'file') denied()
+        return ref.attachment
       })
       const collector = createAttachmentRefCollector(this.limits)
       collector.addSessionSurface(agent.session)

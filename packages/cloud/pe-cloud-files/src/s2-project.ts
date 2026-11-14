@@ -92,6 +92,9 @@ export function createS2ProjectPort(backend: S2ProjectBackend): S2ProjectPort {
     override listDir(..._args: Parameters<FileSystem['listDir']>): ReturnType<FileSystem['listDir']> { return refused() }
     override writeText(..._args: Parameters<FileSystem['writeText']>): ReturnType<FileSystem['writeText']> { return refused() }
     override editText(..._args: Parameters<FileSystem['editText']>): ReturnType<FileSystem['editText']> { return refused() }
+    override patchText(..._args: Parameters<FileSystem['patchText']>): ReturnType<FileSystem['patchText']> { return refused() }
+    override deleteFile(..._args: Parameters<FileSystem['deleteFile']>): ReturnType<FileSystem['deleteFile']> { return refused() }
+    override moveFile(..._args: Parameters<FileSystem['moveFile']>): ReturnType<FileSystem['moveFile']> { return refused() }
     override watch(..._args: Parameters<FileSystem['watch']>): ReturnType<FileSystem['watch']> { return refused() }
     override processPathFromHostPath(..._args: Parameters<FileSystem['processPathFromHostPath']>): undefined {
       backend.assertCurrent()

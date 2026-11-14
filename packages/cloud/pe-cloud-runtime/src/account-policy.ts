@@ -970,8 +970,8 @@ class AccountPolicy {
   }
 
   async admitSubagent(request: SubagentAdmissionRequest): Promise<void> {
-    const parent = request.kind === 'start' ? request.spec.request.parent : request.parent
-    const signal = request.kind === 'start' ? request.spec.signal : request.signal
+    const parent = request.kind === 'start' ? request.spec.parent : request.parent
+    const signal = request.signal
     const workspace = this.parentCurrentForChild(request.owner, parent)
     this.prepared(parent, true)
     this.spawn(request.provider)
@@ -980,14 +980,14 @@ class AccountPolicy {
       || request.cwd !== workspace.path)) refuse()
     await this.directory(workspace, signal)
     this.parentCurrentForChild(request.owner, parent, workspace)
-    const requested = request.kind === 'start' ? request.spec.request.agentPreset : request.agentPreset
+    const requested = request.kind === 'start' ? request.spec.agentPreset : request.agentPreset
     await this.preset(requested ?? this.sessionPreset(parent.session), signal, request.kind === 'start')
     this.parentCurrentForChild(request.owner, parent, workspace)
     await this.auditGeneration(parent, signal)
     this.parentCurrentForChild(request.owner, parent, workspace)
     if (request.kind === 'start') {
       const route = resolveChildAgentOptions(
-        parent, request.spec.request.agentOptions, resolveChildDepth(parent, request.spec.request.maxDepth),
+        parent, request.spec.agentOptions, resolveChildDepth(parent, request.spec.maxDepth),
       )
       await this.model(route, signal)
     } else {

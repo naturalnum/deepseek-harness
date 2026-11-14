@@ -4,6 +4,8 @@
 
 本参考说明七个 Cloud 包与其消费的原生代码之间的职责，不增加运行组件。比较基线为 `master`，即本分支审查时采用的本地原生基线；这不代表它是最新上游版本。升级前须另外选定目标上游修订。
 
+
+上传适配保留目标文件/图片引擎和暂存回执判别项。原有限 Native intake/回执所有者及受保护文件/工作区钩子通过目标 Schemastery 配置接回；实际 body return 等待源取消、终态、已开始读取和锁释放，不代替 Connection 的 wire 关闭。Cloud 只把确切 file 分支交给原 collector/存储/发布所有者，在源工作前拒绝未授予的图片提示 intake。准备好的 Client 提供原 context carrier 和显式仅文件草稿投影，图片 MIME 选择保留普通文件路径，Native 默认图片行为不变。附件可选 unknown 标记不创建已结算默认值，未知清理/交接责任继续保留。
 ## 职责归属
 
 Cloud 包负责账号身份、owner 路由、租户策略、存储准入、执行绑定和浏览器撤销。原生 DSH 负责 Agent/Session 状态、分发、配置应用、文件系统原语、Shell 消费接口和通用界面。原生回调在实际提交或释放点检查；HTTP 前置检查不能替代 await 之后的检查。
@@ -11,12 +13,12 @@ Cloud 包负责账号身份、owner 路由、租户策略、存储准入、执�
 | 原生位置 | Cloud 消费者与保留的原生责任 |
 |---|---|
 | [Session Controller](../api/session-controller/src/index.ts)、[commands](../api/session-controller/src/commands.ts) | [pe-cloud-api/native](pe-cloud-api/src/native.ts) 提供项目、目录、prompt 文件和模型准入。创建、收据绑定和模型选择仍由原生负责。 |
-| [AgentLoop](../core/agent-loop/src/index.ts)、[Subagent](../subagent/subagent/src/index.ts) | [pe-cloud-runtime integration](pe-cloud-runtime/src/account-native-integration.ts) 提供实际 graph、父 Agent 和项目准入。复用原生 Agent、回合执行和子 Agent 释放。 |
+| [AgentLoop](../core/agent-loop/src/index.ts)、[Subagent](../subagent/subagent/src/index.ts) | [pe-cloud-runtime integration](pe-cloud-runtime/src/account-native-integration.ts) 提供实际 graph、父 Agent 和项目准入。复用原生 Agent、回合执行和子 Agent 释放。 原工厂同时为账号排空提供有界的活跃空闲观察和同一个缓存 stop 结果；晚到句柄与个体清理失败继续归其持有，Context 卸载等待同一结果。 |
 | [Settings Controller](../api/settings-controller/src/index.ts)、[Credentials](../credentials/credentials/src/index.ts) | [Native first screen](pe-cloud-api/src/native-first-screen.ts)、[save hook](pe-cloud-api/src/native-save-hook.ts) 和模型密钥策略，将授权保持到原写入及其真实失败。 |
 | [Config impact](../boot/app-boot/src/config-impact.ts)、[ConfigEditor](../boot/config-editor/src/index.ts)、[PluginManager](../boot/plugin-manager/src/index.ts) | [Plugin control](pe-cloud-api/src/plugin-control.ts) 提供策略。原组合、预先判定的影响、持久化和 Loader 应用仍属原生；计划私有持有自己的准备状态。 |
 | [Loader entries](../../vendor/loader/src/config/entry.ts)、[Loader](../../vendor/loader/src/index.ts)、[groups](../../vendor/loader/src/config/group.ts) | 原生编辑器与 Cloud 保存共用精确变更检查、条目版本和真实子更新结算。不变的声明条目对类型化表达式源码取快照，不执行求值；普通运行表达式及表达式编辑仍为 unknown。未安装 guard 的默认行为仍属原生。Vendor 修改记录见 [vendor/README](../../vendor/README.md)。 |
 | [Gateway](../api/gateway/src/index.ts)、[Connection](../client/connection/src/rpc-host.ts) | [pe-cloud-access Peers](pe-cloud-access/src/peers.ts) 绑定认证和转发。既有 HTTP bridge 提供可选同步响应检查，供 Cloud 在响应头前复核并保留响应体清理未知的责任；省略时保留原生行为。共用原 mux、iterator/Peer 完成及可选完整帧预算，不复制流引擎。 |
-| [Workspace metadata](../workspace/workspace/src/metadata.ts)、[Attachment store](../attachment/attachment-local/src/file-store.ts) | [pe-cloud-files](pe-cloud-files/README.zh.md) 与 [account attachments](pe-cloud-runtime/src/account-attachments.ts) 提供实际项目、存储授权。原存储及关闭、发布结果仍为权威。原容量错误码可跨 attachment 安装识别；本地清理与发布子类保留自己的未知结算标记，不增加通用的“已结算”断言。 |
+| [Workspace metadata](../workspace/workspace/src/metadata.ts)、[Attachment store](../attachment/attachment-local/src/file-store.ts) | [pe-cloud-files](pe-cloud-files/README.zh.md) 与 [account attachments](pe-cloud-runtime/src/account-attachments.ts) 提供实际项目、存储授权。原存储及关闭、发布结果仍为权威。原容量错误码可跨 attachment 安装识别，并经 Native 图片读取器原样传递而不附转换建议；本地清理与发布子类保留自己的未知结算标记，不增加通用的“已结算”断言。 |
 | [Shell](../shell/shell/src/index.ts)、[Fs](../fs/fs/src/index.ts)、[Subprocess](../subprocess/subprocess/src/index.ts) | [pe-opensandbox providers](pe-opensandbox/src/native-providers.ts) 将原 Shell/Fs/Subprocess 消费接口接到同一 Session 环境，并拥有执行槽位。单有路径不能授权访问；释放未知不能归还槽位。 |
 | [技能来源](../skill/skill-filesystem/src/source.ts)、[原生提供方](../skill/skill-filesystem/src/index.ts) | [旧样例](pe-cloud-api/src/skill-source.ts)与[完整包](pe-cloud-api/src/managed-skill-source.ts)技能来源借用文件所有者的不可变快照，供 Native 发现与解析。原账号、Agent、项目检查和完整资源物化仍归 Cloud。可选只读来源要求隔离根目录且没有宿主监视或回退，私有来源路径不成为公开指引。加载在完整物化期间保持同一个借用，保留取消、原始失败及未解决的释放责任。 |
 | [Instruction injection](pe-account-instructions/src/session.ts) | pe-account-instructions 预留 files 拥有的有界读取，提供原生回合快照，不建立另一套 prompt 或 Session 历史。 |
@@ -32,7 +34,7 @@ Cloud 包负责账号身份、owner 路由、租户策略、存储准入、执�
 | [Web bootstrap](../../apps/web/src/cloud-web.ts) | 该模块加载前入口归 pe-cloud-client 集成负责，但保留为明确的应用补丁。迁入动态 client 入口需要另一条静态、动态构建路径；在原生提供等价 pre-boot 集成前保留当前启动方式。 |
 | [Frontend](pe-cloud-access/src/frontend.ts)、[field policy](pe-cloud-api/src/ordinary-config-policy.ts) | Cloud 公开页路由和普通字段可编辑策略位于现有 Cloud 包。 工作区检查在该包 Root 入口之外允许精确的 `pe-cloud-access/frontend` 入口。原生 frontend 与 ConfigField 实现已恢复。Models 使用原生 onboarding；受保护的 Cloud 密钥使用独立手动集成。 |
 
-Root 配方封印执行完整的原生计划校验。准入时，原计划以常量时间检查 Entry 和 Fiber 的变更版本及原有身份，并保留 provider 与健康状态审查；直接更新原生 Fiber 时，更新 waterfall 继续之前会撤销封印。Fiber 版本还会检测在 waterfall 前被拒绝的更新尝试。现有 `/account` 入口向 API 和执行插件提供两个提供记录读取函数。集中模块归属低层 account 编译面，沿其现有声明与打包产物发布，避免通过 runtime Host 编译面形成反向引用。Cloud 对规范 Fiber 身份、有效配置、提供方与隔离记录的读取集中于 [native-state](pe-cloud-runtime/src/native-state.ts)。API 和执行所有权检查使用目标原生提供记录，保留隔离重复项与等待卸载的记录，维持当前性、身份检查和有限访问上限。版本检查本身不能证明配置或 ready 状态；它跟踪原生更新 API，不检测对可信 Host 内部对象的直接修改。
+Root 配方封印执行完整的原生计划校验。准入时，原计划以常量时间检查 Entry 和 Fiber 的变更版本及原有身份，并保留 provider 与健康状态审查；直接更新原生 Fiber 时，更新 waterfall 继续之前会撤销封印。Fiber 版本还会检测在 waterfall 前被拒绝的更新尝试。现有 `/account` 入口向 API 和执行插件提供两个提供记录读取函数。集中模块归属低层 account 编译面，沿其现有声明与打包产物发布，避免通过 runtime Host 编译面形成反向引用。Cloud 对规范 Fiber 身份、有效配置、提供方与隔离记录的读取集中于 [native-state](pe-cloud-runtime/src/native-state.ts)。API 和执行所有权检查使用目标原生提供记录，保留隔离重复项与等待卸载的记录，维持当前性、身份检查和有限访问上限。原 AgentRegistry 条目保留 create/resume 显式提供的可选创建者原对象，`isOwnedBy` 只观察该对象，不推断持久血缘或授予当前父级权限。目标工厂在原发布点记录该关系；SubagentManager 提供新建创建者或冷恢复实时根，仍持有原祖先关系和资源生命周期。同一原缓存 Agent teardown 在驱动、作用域、写句柄和注册表清理后消费既有清理观察接口。被放弃且未结算的 setup 或清理失败只报告一次 unknown，晚到 setup 不升级该结果；准备前失败没有回执。原 Cloud 容量预留仍由原所有者持有。原 SubagentRuntime 在提供方派发、冷重建和实际工厂/activation 发布点，通过 effect 作用域检查消费已有准入类型。Cloud 读取目标扁平 start 规格及实际管理器停止信号，保留原账户、Workspace、模型、preset 检查和容量。提供方登记身份区分同一对象撤回后重新登记。无贡献时不改变原生默认行为或驻留消息行为。版本检查本身不能证明配置或 ready 状态；它跟踪原生更新 API，不检测对可信 Host 内部对象的直接修改。
 
 通用修复保留为原生补丁：UTF-8 与完整帧上限、取消和关闭结果、有界分段字节预览、[回答完成后的文件链接](../client/ui-primitives/README.zh.md#rendering-agent-output)、上传收据、配置脱敏、宽度几何和激活判定。把这些引擎移到 Cloud 会重复原生功能。保留原归属测试，作为可单独向上游提交的修改评估。
 

@@ -46,6 +46,8 @@ const ATTACHMENT_ERROR_CODE_SET: ReadonlySet<string> = new Set(ATTACHMENT_ERROR_
 export class AttachmentError extends HarnessError {
   /** Stable machine-routing failure code. */
   override readonly code: AttachmentErrorCode
+  /** Explicit unresolved cleanup/publication from a concrete producer; absence alone proves no settlement. */
+  declare readonly settlement?: 'unknown'
 
   /**
    * @param message - human-readable failure description without raw bytes or host paths.

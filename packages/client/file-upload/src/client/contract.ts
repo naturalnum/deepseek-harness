@@ -14,6 +14,8 @@ export interface FileUploadProgress {
 
 /** Browser upload service addressed by one Session identity. */
 export interface FileUploadService {
+  /** Page image-draft policy, without Host authority; absence preserves native image draft behavior. */
+  readonly supportsImageUploads?: boolean
   /**
    * Store one file for a Session. Blob and stream bodies use
    * the background carrier; exact bytes use Remote.

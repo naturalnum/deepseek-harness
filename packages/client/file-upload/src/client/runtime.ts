@@ -163,11 +163,14 @@ interface FileUploadTransport {
 /** Cordis service that owns one background carrier per upload operation. */
 export class FileUploadRuntime extends Service implements FileUploadService {
   private readonly transport: FileUploadTransport
+  /** Captured page draft policy; Host authorization remains with the upload owner. */
+  readonly supportsImageUploads: boolean
 
   /** @param ctx - providing Client context. */
   constructor(ctx: Context) {
     super(ctx, 'fileUpload')
-    const hook = (globalThis as ClientFileUploadGlobal).__DSH_FILE_UPLOAD__
+    const hook = ctx.get('fileUploadHooks') ?? (globalThis as ClientFileUploadGlobal).__DSH_FILE_UPLOAD__
+    this.supportsImageUploads = hook?.promptImageUploads !== false
     this.transport = hook === undefined ? workerTransport() : customTransport(hook.fetch)
   }
 

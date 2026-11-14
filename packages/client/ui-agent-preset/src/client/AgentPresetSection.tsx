@@ -80,10 +80,9 @@ export function AgentPresetSection({
   const viewed = state.view
   const viewedRow = viewed === null ? undefined : state.rows.find(row => row.id === viewed.id)
   const viewedTitle = viewed === null ? '' : viewedRow === undefined ? viewed.title : presetDisplayText(viewedRow, t).name
-  const viewLabel = t(state.readOnly ? 'viewComposition' : 'view')
   // Creator mode authors presets in conversation; it needs the flow to land a
   // session in and the self-referential preset on the roster.
-  const creator = !state.readOnly && startCreatorDraft !== undefined && state.rows.some(row => row.id === 'cordis') ? startCreatorDraft : undefined
+  const creator = startCreatorDraft !== undefined && state.rows.some(row => row.id === 'cordis') ? startCreatorDraft : undefined
   /* The custom group is where a preset of one's own appears, so its entry
      stays on screen even while the group is empty. */
   const creatorButton = creator === undefined
@@ -102,7 +101,6 @@ export function AgentPresetSection({
   return <section className={css.section}>
     <h2 className={css.title}>{t('nav')}</h2>
     <p className={css.intro}>{t('sectionIntro')}</p>
-    {state.readOnly ? <p>{t('readOnly')}</p> : null}
     {state.error === null ? null : <p className={css.error} role="alert">{state.error}</p>}
     {([true, false] as const).map((builtIn) => {
       const rows = state.rows.filter(row => isBuiltInPreset(row) === builtIn
@@ -122,7 +120,7 @@ export function AgentPresetSection({
               row.isDefault ? css.cardActive : undefined,
             ].filter(Boolean).join(' ')}>
               <button type="button" className={css.cardMain} aria-pressed={row.isDefault}
-                disabled={state.readOnly || row.isDefault || (row.broken === undefined && state.saving)}
+                disabled={row.isDefault || (row.broken === undefined && state.saving)}
                 aria-disabled={row.broken !== undefined} aria-label={`${selectionAction}: ${display.name}`} title={selectionAction}
                 onClick={() => { if (row.broken === undefined) void makeDefault(row.id) }}>
                 <span className={css.cardHead}>
@@ -150,7 +148,7 @@ export function AgentPresetSection({
                 {/* Reading the declaration is the one thing this page offers
                   beyond choosing: a broken preset's YAML is also where its
                   diagnostic points, so the viewer stays available for it. */}
-                <button type="button" className={css.iconButton} data-tip={viewLabel} aria-label={`${viewLabel}: ${display.name}`}
+                <button type="button" className={css.iconButton} data-tip={t('view')} aria-label={`${t('view')}: ${display.name}`}
                   onClick={(event) => { viewTrigger.current = event.currentTarget; void view(row.id) }}>
                   <IconBrowseOutlineRegular />
                 </button>
@@ -170,7 +168,7 @@ export function AgentPresetSection({
           closeViewer()
         } else trapPresetReaderTab(event)
       }}
-      title={viewed === null ? '' : `${viewLabel} · ${viewedTitle}`} className={css.dialog as string}
+      title={viewed === null ? '' : `${t('view')} · ${viewedTitle}`} className={css.dialog as string}
       footer={<Button variant="outline" autoFocus onClick={closeViewer}>{t('close')}</Button>}>
       {viewed === null ? null : <pre className={css.viewerCode}>{viewed.content}</pre>}
     </Modal>

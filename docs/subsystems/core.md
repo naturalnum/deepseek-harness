@@ -524,8 +524,9 @@ currentSelection(): ModelSelection
  * Save the complete default model selection. A deployment without a configuration
  * editor keeps its composition entry. Saves commit in submission order; a failed
  * save rejects its caller without blocking later saves.
+ * Admission runs through ConfigEditor's save hook before entering this service's queue.
  * @param next - resolved selection accepted by an entry point.
- * @returns fulfillment after the optional profile write settles.
+ * @returns fulfillment after the optional profile write and reconciliation settle.
  */
 async saveSelection(next: ModelSelection): Promise<void>
 ```
@@ -539,6 +540,20 @@ Source: [`packages/core/agent-default-model/src/index.ts`](../../packages/core/a
 Concrete agent factory and driver service.
 
 ```ts cordis-catalog
+/**
+ * Stop accepting Agent creation and join this factory's original lifecycle and persistence work.
+ * Call from an external owner; setup, publication and cleanup callbacks must not await their own stop.
+ * @returns the same Promise on every call, retaining cleanup failure; Context disposal joins it too.
+ */
+stop(): Promise<void>
+
+/**
+ * Inspect actual driver, inbox, startup, publication and cleanup work without stopping the factory.
+ * @param maximum - explicit positive safe-integer bound on retained Agent lifecycles.
+ * @returns true only for an active factory with every original owned activity quiescent and within the bound.
+ */
+isQuiescent(maximum: number): boolean
+
 /**
  * Create an agent and session under one caller-supplied identity, owned by
  * the accessing fiber. Constructor-driven config calls mint a fresh combined
@@ -806,12 +821,14 @@ register(agent: Agent): ReturnType<Context['effect']>
  * returned detach closure into its pre-installed composite teardown before
  * calling {@link announce}. Ordinary callers use {@link register}.
  * @param agent - the prepared, unpublished agent.
+ * @param owner - explicit runtime creator, independent of durable lineage and ambient initiator;
+ *   omission records a runtime root. The caller owns any required current-parent authorization.
  * @returns an idempotent closure that removes this exact entry and emits
  *   `agent/disposed` with listener failures contained. When called from a
  *   `agent/created` listener, removal and disposal wait until the serial
  *   creation dispatch settles.
  */
-enter(agent: Agent): () => void
+enter(agent: Agent, owner?: Agent): () => void
 
 /**
  * Announce an agent previously inserted with {@link enter}.
@@ -831,6 +848,15 @@ async announce(agent: Agent, source: SessionStartSource, signal?: AbortSignal): 
  * @returns the agent, or undefined when no live agent has that id.
  */
 get(id: SessionId): Agent | undefined
+
+/**
+ * Observe the exact creator recorded for a currently entered Agent.
+ * Retained creator identity survives its own removal; this grants no authorization or parent-liveness proof.
+ * @param id - live child identity in this registry.
+ * @param owner - exact runtime creator object, never a durable id or structural lookalike.
+ * @returns Whether the current child entry records this creator; false for roots and detached children.
+ */
+isOwnedBy(id: SessionId, owner: Agent): boolean
 
 /**
  * All live agents, in registration order.

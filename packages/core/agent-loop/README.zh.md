@@ -107,9 +107,13 @@ const handle = await ctx.agents.create({
 
 ### 创建与拆除
 
-新建和恢复共用一个受回滚保护的初始化流程：围绕已取得的 Session 构造具象 agent 与带作用域上下文；存储构造历史、进入 SessionStore 并完成 `session/created`；等待可选 setup 及其 commit；进入 AgentRegistry；等待串行 `agent/created` 监听器；随后释放已排队输入。调用方 Context 拥有事务和存活句柄；委派服务在 setup 期间绑定自己的运行时关系。Setup、commit、监听器失败或所有者 dispose 都会回滚已准备的资源。setup 期间 Session 可写；每次移除都会发出 `session/disposed`，包括 Agent 创建宣告前的 setup 失败。初始化失败保留恢复出的收件箱输入及已存储事件，并在释放自身作用域及已取得的写句柄后才拒绝。持久化层仍在创建写句柄时发生取消，可以更早拒绝；该句柄在创建完成后关闭。已送达的宣告仍可被观察，并有配对的销毁通知。Teardown 停止并排空驱动器、撤销作用域、关闭会话写路径、detach agent，再 detach 会话。每次 detach 都绑定到确切进入的对象，因此陈旧 disposer 无法移除之后出现的同 id 替代项。
+新建和恢复共用一个受回滚保护的初始化流程：围绕已取得的 Session 构造具象 agent 与带作用域上下文；存储构造历史、进入 SessionStore 并完成 `session/created`；等待可选 setup 及其 commit；进入 AgentRegistry；等待串行 `agent/created` 监听器；随后释放已排队输入。调用方 Context 拥有事务和存活句柄；委派服务在 setup 期间绑定自己的运行时关系。Setup、commit、监听器失败或所有者 dispose 都会回滚已准备的资源。setup 期间 Session 可写；每次移除都会发出 `session/disposed`，包括 Agent 创建宣告前的 setup 失败。初始化失败保留恢复出的收件箱输入及已存储事件，并在释放自身作用域及已取得的写句柄后才拒绝。持久化层仍在创建写句柄时发生取消，可以更早拒绝；该句柄在创建完成后关闭。已送达的宣告仍可被观察，并有配对的销毁通知。Teardown 停止并排空驱动器、撤销作用域、关闭会话写路径、detach agent，再 detach 会话。每次 detach 都绑定到确切进入的对象，因此陈旧 disposer 无法移除之后出现的同 id 替代项。 调用方/工厂继续持有原结构清理责任。显式 `parentAgent` 只在 Agent 发布时记入原注册表条目；setup 失败不发布该关系。创建与恢复沿同一路径传入，持久化父级元数据不产生运行时创建者。 setup commit 原有的 `assertCurrent` 回调在串行 `agent/created` 监听器完成后、句柄可见之前再次检查；拒绝时回滚已进入的 Agent，并为已投递的创建事件配对释放事件。 原 `observeDisposal` 记账回调在缓存 teardown 完成上述四个实际清理阶段后仅调用一次；任一清理失败，或取消创建后 setup 仍在运行，均报告 unknown。setup 晚到结算不再次调用。具体 Agent 尚未构造时失败没有观察回执，调用方保留相应未明预留。省略回调时保持原生取消行为，包括取消永不结束的 setup 回调。
 
 loop 在发布工厂前等待必需的注册完成。它对模型选择和 inbox 句柄调用 `readerFor(session)`，将读取回调放入一个类型化对象传给驱动器；模型和 inbox 小组件接收各自的回调。工厂卸载时，全局注册可以先于 teardown 完成而消失；保留句柄在整个作用域清理期间仍可读取，包括作用域内 abort 监听器发起取消的时刻。调用方卸载、工厂卸载和句柄释放等待同一次 teardown。清队列错误不会跳过取消或等待已接纳工作，资源会保留到该工作结束。
+
+`stop()` 在取消前关闭工厂准入，然后返回同一个缓存 Promise，等待原 Agent、启动、发布和写句柄清理；Context 卸载也等待同一结果。个体 Agent 离开注册表后，关闭失败仍由原工厂持有，包括在 caller、owner 或工厂取消后才取得的句柄。停止后不能获取新的 Session 资源。原 setup、发布与清理回调不能等待自己的工厂 stop。
+
+`isQuiescent(maximum)` 是对活跃工厂的有界观察，不是停止操作，也不能替代清理结果。它要求没有待完成的启动、发布、获取或清理，且每个保留的驱动器都在 idle 阶段、两个 inbox 均为空；个体关闭未完或失败时仍返回 false。显式 maximum 限制原活跃 Agent 生命周期数；无效或超出上限时返回 false。
 
 ### 持久化集成
 

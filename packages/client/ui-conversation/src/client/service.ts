@@ -316,8 +316,9 @@ export class ConversationController extends Service implements IConversation {
 
   /**
    * Create runtime-only draft attachments. Files whose browser MIME is an
-   * accepted image type become image drafts with an object URL preview; every
-   * other file becomes a file draft. A file draft's background upload starts
+   * accepted image type become image drafts with an object URL preview when
+   * the page's upload service enables them; otherwise they remain ordinary file drafts.
+   * Every other file also becomes a file draft. A file draft's background upload starts
    * immediately, and so does an image draft's when `uploadImages` is set; the
    * upload remains owned by this service across Session navigation until
    * completion or explicit removal. An image draft without an upload sends its
@@ -329,7 +330,7 @@ export class ConversationController extends Service implements IConversation {
    */
   createDrafts(sessionId: SessionId, files: readonly File[], uploadImages: boolean): readonly ComposerAttachment[] {
     return files.map((file) => {
-      if (isImageMediaType(file.type)) {
+      if (isImageMediaType(file.type) && this.ctx.fileUpload.supportsImageUploads !== false) {
         const attachment = browserDraftAttachment(file)
         this.draftAttachments.set(attachment.id, attachment)
         probeDimensions(attachment)

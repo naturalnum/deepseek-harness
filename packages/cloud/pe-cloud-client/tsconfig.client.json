@@ -11,6 +11,7 @@
     "src/schema.ts",
     "src/client/index.ts",
     "src/client/branding.tsx",
+    "src/client/branding-locales.ts",
     "src/client/subagent-settings.ts",
     "src/client/sidebar-account.ts",
     "src/client/CloudAccountMenu.tsx",

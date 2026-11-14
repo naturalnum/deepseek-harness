@@ -86,6 +86,11 @@ export interface CreateAgentOptions {
   /** The live agent/session identity. */
   readonly sessionId: SessionId
   /**
+   * Exact runtime creator recorded at publication; omission creates a runtime root,
+   * independently of durable Session lineage.
+   */
+  readonly parentAgent?: Agent
+  /**
    * Session creation metadata: validated absolute `cwd`, `parentSession`
    * fork lineage, the `isSeeded` fork marker, the coarse `origin`
    * classification, and the `delegationDepth` recursion budget. Mirrors the
@@ -154,6 +159,8 @@ export interface CreateAgentOptions {
 export interface ResumeAgentOptions {
   /** The persisted session id to load and use as the live agent/session identity. */
   readonly resumeSessionId: SessionId
+  /** Current runtime creator; resuming durable child history without it creates a runtime root. */
+  readonly parentAgent?: Agent
   /** Route fallback and output controls; see {@link AgentOptions} for live accessor semantics. */
   readonly agentOptions?: AgentOptions
   /** Optional creation-only cancellation signal for persistence load/setup; detached before return. */
@@ -249,6 +256,8 @@ const DISPOSED_INITIATOR_MESSAGE = 'agent initiator scope is disposed'
 interface AgentEntry {
   readonly id: SessionId
   readonly agent: Agent
+  /** Explicit creator identity; does not own resources or establish current parent liveness. */
+  readonly owner: Agent | undefined
   readonly carrier: Scoped<Agent>
   announced: boolean
   announcing: boolean
@@ -501,12 +510,14 @@ export class AgentRegistry extends Service {
    * returned detach closure into its pre-installed composite teardown before
    * calling {@link announce}. Ordinary callers use {@link register}.
    * @param agent - the prepared, unpublished agent.
+   * @param owner - explicit runtime creator, independent of durable lineage and ambient initiator;
+   *   omission records a runtime root. The caller owns any required current-parent authorization.
    * @returns an idempotent closure that removes this exact entry and emits
    *   `agent/disposed` with listener failures contained. When called from a
    *   `agent/created` listener, removal and disposal wait until the serial
    *   creation dispatch settles.
    */
-  enter(agent: Agent): () => void {
+  enter(agent: Agent, owner?: Agent): () => void {
     const id = agent.id
     if (id !== agent.session.id) {
       throw new Error(`agent id "${id}" does not match session id "${agent.session.id}"`)
@@ -518,6 +529,7 @@ export class AgentRegistry extends Service {
     const entry: AgentEntry = {
       id,
       agent,
+      owner,
       carrier,
       announced: false,
       announcing: false,
@@ -614,6 +626,17 @@ export class AgentRegistry extends Service {
    */
   get(id: SessionId): Agent | undefined {
     return this.store.get(id)?.agent
+  }
+
+  /**
+   * Observe the exact creator recorded for a currently entered Agent.
+   * Retained creator identity survives its own removal; this grants no authorization or parent-liveness proof.
+   * @param id - live child identity in this registry.
+   * @param owner - exact runtime creator object, never a durable id or structural lookalike.
+   * @returns Whether the current child entry records this creator; false for roots and detached children.
+   */
+  isOwnedBy(id: SessionId, owner: Agent): boolean {
+    return this.store.get(id)?.owner === owner
   }
 
   /**

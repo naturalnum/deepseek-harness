@@ -96,7 +96,8 @@ it('awaits admission with the exact resolved Agent and original input, then wait
   const value = await pending
   expect(body.closed).toBe(true)
   expect(value.file).toBe(f.uploads.saved)
-  expect(f.uploads.resolve(f.agent, value.receiptId)).toBe(value.file)
+  expect(f.uploads.resolve(f.agent, value.receiptId)).toMatchObject({ type: 'file' })
+  expect(f.uploads.resolve(f.agent, value.receiptId)?.attachment).toBe(value.file)
   const path = f.store.fileHostPath(value.file)
   expect(await readFile(path)).toEqual(Buffer.from([0, 255, 1, 2]))
   const binding = f.uploads.bindPrompt(f.agent, [value.receiptId], 'native-prompt')
@@ -153,6 +154,7 @@ it('defaults to the original native store and returns its exact durable referenc
   if (result?.type !== 'return') throw new Error('Native storage did not return its promise')
   expect(value.file).toBe(await result.value)
   expect(value.file.bytes).toBe(3)
-  expect(f.uploads.resolve(f.agent, value.receiptId)).toBe(value.file)
+  expect(f.uploads.resolve(f.agent, value.receiptId)).toMatchObject({ type: 'file' })
+  expect(f.uploads.resolve(f.agent, value.receiptId)?.attachment).toBe(value.file)
   expect(await readFile(f.store.fileHostPath(value.file))).toEqual(Buffer.from([9, 0, 255]))
 })

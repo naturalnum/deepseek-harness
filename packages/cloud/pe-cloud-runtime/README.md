@@ -256,6 +256,8 @@ The private `scheduleConfigurationRebuild` acceptance also retains one `completi
 
 ## Workspace upload publication
 
+Prompt-file preparation consumes the target Native staged-receipt discriminant and takes only its exact file reference into the original bounded collector/copy owner. Image receipts are rejected rather than wrapped as files. Cloud streamed uploads keep the original native protected file hook, finite receipt capacity and actual storage/publication settlement; new inherited prompt-image intake remains explicitly denied. The prepared Client uses ordinary file drafts for image MIME selections, preserving the existing generic-file path without granting vision input.
+
 Account attachment intake publishes each newly uploaded file into the exact Agent workspace before the native upload owner reports completion. The original private attachment object remains available for conversation history, and old attachment records are unchanged. The original intake reservation is released before the same mutation lane admits the workspace copy, preventing nested-lane deadlock. A failure after private persistence is reported as unconfirmed rather than safe rollback. Workspace-only file-tree uploads retain no prompt receipt after settlement. `native.workspaceTransfers` enables the optional HTTP response and directory routes; its finite limits never replace kernel quota, account membership or the original files worker capacities.
 
 <a id="model-experience"></a>

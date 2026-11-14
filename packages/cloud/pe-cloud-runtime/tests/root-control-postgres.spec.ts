@@ -121,10 +121,15 @@ describe.skipIf(privateConfig === undefined)('actual root Loader on the controll
       expect(seal).toHaveBeenCalledTimes(1)
       expect(seal).toHaveBeenCalledWith(fixture.config.recipeVersion, fixture.config.native.maxEntries)
       expect(observationsBeforeSealReturn).toBe(0)
-      expect(stderr).toHaveBeenCalledExactlyOnceWith('Cloud Root recipe audit: %j', {
-        event: 'root-recipe-seal-returned', pid: process.pid, status: 'unsealed',
-        rootEntries: 0, providers: 0, participants: 0, issues: [],
-      })
+      // Audit and bounded service output share stderr; any additional warning is still a failure.
+      expect(stderr.mock.calls).toEqual([
+        ['Cloud Root recipe audit: %j', {
+          event: 'root-recipe-seal-returned', pid: process.pid, status: 'unsealed',
+          rootEntries: 0, providers: 0, participants: 0, issues: [],
+        }],
+        ['Cloud service log: ' + JSON.stringify({ level: 'info', name: 'cloud-root',
+          content: 'Cloud runtime observation.', event: 'ordinary-profile-ready' })],
+      ])
       expect(observation.messages).toHaveLength(1)
       const fields: unknown = observation.messages[0]?.args[1]
       if (typeof fields !== 'object' || fields === null) throw new Error('The ready logger must receive its structured record')
@@ -151,9 +156,13 @@ describe.skipIf(privateConfig === undefined)('actual root Loader on the controll
       expect(observation.messages).toHaveLength(0)
       expect(fixture.runtime.inspectRecipe()).toMatchObject({ status: 'blocked' })
       const { status, rootEntries, providers, participants, issues } = fixture.runtime.inspectRecipe()
-      expect(stderr).toHaveBeenCalledExactlyOnceWith('Cloud Root recipe audit: %j', {
-        event: 'root-recipe-seal-rejected', pid: process.pid, status, rootEntries, providers, participants, issues,
-      })
+      expect(stderr.mock.calls).toEqual([
+        ['Cloud Root recipe audit: %j', {
+          event: 'root-recipe-seal-rejected', pid: process.pid, status, rootEntries, providers, participants, issues,
+        }],
+        ['Cloud service log: ' + JSON.stringify({ level: 'error', name: 'cloud-root',
+          content: 'Cloud Root recipe audit did not seal; account admission remains closed. Inspect the retained audit.' })],
+      ])
       expect(() => { fixture.runtime.assertRecipeSealed(fixture.config.recipeVersion) }).toThrow('not sealed')
       expect(fixture.runtime.inspectControl()).toMatchObject({ phase: 'active', accounts: 0, hasFailure: false })
     } finally { seal.mockRestore(); stderr.mockRestore() }
