@@ -25,8 +25,8 @@ const fileRpcEndpoints: readonly string[] = [
 const fileStreamEndpoint = 'workspaceFiles/changes'
 
 const nativeRpc: Readonly<Record<string, Pick<EndpointExposure, 'handlerId' | 'guard'>>> = {
-  'officeToPdf/render': { handlerId: 'native:officeToPdf', guard: 'account-session' },
-  'officeToPdf/generation': { handlerId: 'native:officeToPdf', guard: 'authenticated-account' },
+  'officeKit/render': { handlerId: 'native:officeKit', guard: 'account-session' },
+  'officeKit/generation': { handlerId: 'native:officeKit', guard: 'authenticated-account' },
   ...Object.fromEntries(SESSION_CONTROLLER_ENDPOINTS.filter(row => row.mode === 'rpc').map(row => [row.endpoint, row])),
   'workspace/initializeDefault': { handlerId: 'native:workspaceController', guard: 'account-project' },
   'workspace/create': { handlerId: 'native:workspaceController', guard: 'account-project' },

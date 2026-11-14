@@ -37,12 +37,14 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-http-proxy": "workspace:*",
-    "@deepseek-ai/dsh-error": "workspace:*"
+    "@deepseek-ai/dsh-error": "workspace:*",
+    "@deepseek-ai/dsh-sandbox": "workspace:*"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-http-proxy": "workspace:*",
     "@deepseek-ai/dsh-launch-environment": "workspace:*",
-    "@deepseek-ai/dsh-error": "workspace:*"
+    "@deepseek-ai/dsh-error": "workspace:*",
+    "@deepseek-ai/dsh-sandbox": "workspace:*"
   }
 }

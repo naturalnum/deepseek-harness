@@ -56,7 +56,7 @@ kind: "package-reference"
 
 `CloudAccountApi.prepareCloudProjects(owner, { createProject })` 在清单审核前安装唯一、增量的 `cloudProjects/create` Remote。请求只有可选显示标题；显式空白或超过 256 UTF-8 字节的标题在分配前拒绝。可信回调捕获账户能力，经 files 分配并返回原生 `WorkspaceValue`。原生 `workspace/create(path)` 保留既有目录登记与幂等含义。取消仍等待实际回调结算，不承诺回滚；未知结果不得重放。精确开放行为 `cloudProjects/create`、`native:cloudProjects`、`authenticated-account`。
 
-可信账户装配可在 API 构造时保留私有 Office 生命周期能力。它安装原生 Office-to-PDF provider，并通过云端 `convert` 适配器接线，保留两个原生 Remote 方法、授权和版本复核。有界清单检查唯一的渲染器、账户文件系统和 WorkspaceFiles 注册；manifest 对 `officeToPdf/render` 选择 Session 准入，对 `officeToPdf/generation` 选择已认证账户准入。调用方取消只结束自身观察：适配器继续持有原生 reader，直至转换及临时目录清理结算，并继续占用原 reader 容量。清理结果未知时关闭转换准入并保留责任。部署必须提供匹配的引擎和字体，并将 Office 输入保持在云文件系统实际读取上限以内。
+可信账户装配可在 API 构造时保留私有 Office 生命周期能力。它安装原生 OfficeKit 提供方，并通过云端 `convert` 适配器接线，保留两个原生 Remote 方法、授权和版本复核。有界清单检查唯一的渲染器、账户文件系统和 WorkspaceFiles 注册；manifest 对 `officeKit/render` 选择 Session 准入，对 `officeKit/generation` 选择已认证账户准入。调用方取消只结束自身观察：适配器继续持有原生 reader，直至转换及临时目录清理结算，并继续占用原 reader 容量。清理结果未知时关闭转换准入并保留责任。Cloud OfficeKit 仅开放 PDF 预览：图片渲染、保存文件转换和重算在读取源字节前明确拒绝。原生输出存储根位于配置目录下按账号与代际隔离的子目录，过期检查不得遍历其他账号的输出。原有账号身份、WorkspaceFiles 授权、输入限额与未知收尾责任保留。部署必须提供匹配的引擎和字体，并将 Office 输入保持在云文件系统实际读取上限以内。
 
 Office 清理失败仅向 stderr 输出固定的内部阶段和 provider/root 状态数值，不依赖 graph 日志链的存活。此诊断不能授权释放或恢复准入。 Provider 仍由原账户 Context 统一移除。私有 Office stop 只确认所保留的转换已结算；factory 必须另行确认原 Context 销毁及 files/execution 参与者清理，才能释放账户所有权。
 

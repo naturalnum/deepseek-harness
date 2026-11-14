@@ -1,5 +1,5 @@
 /** Account-owned observation and drain of unchanged native Office work. */
-import { OfficeToPdfError } from '@deepseek-ai/dsh-office-to-pdf'
+import { OfficeKitError } from '@deepseek-ai/dsh-office-kit'
 
 type FailurePhase = 'conversion' | 'classification' | 'owner-unloaded' | 'provider-close' | 'deadline' | 'close-observer' | 'provider-log'
 
@@ -48,7 +48,7 @@ export class OfficeWork {
       signal?.throwIfAborted()
       if (!this.accepting || this.fault !== undefined) throw this.unavailable()
       this.admit()
-      if (this.tasks.size >= this.maximum) throw new OfficeToPdfError('busy', 'The document converter has reached its admission limit.')
+      if (this.tasks.size >= this.maximum) throw new OfficeKitError('busy', 'The document converter has reached its admission limit.')
     } catch (cause) {
       // Preserve the original native admission failure or arbitrary AbortSignal reason.
       // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
@@ -146,7 +146,7 @@ export class OfficeWork {
     return this.closeObservation
   }
 
-  private unavailable(): OfficeToPdfError {
-    return new OfficeToPdfError('unavailable', 'The account Office converter is unavailable.')
+  private unavailable(): OfficeKitError {
+    return new OfficeKitError('unavailable', 'The account Office converter is unavailable.')
   }
 }

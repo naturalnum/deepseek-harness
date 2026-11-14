@@ -288,6 +288,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * portal to the document body because the docked composer contains them.
      */
     'conversation.composer': { kind: 'chain'; scope: 'session'; owner: ComposerChainProps }
+    /** Optional blank-session header; absence retains the native welcome. */
+    'conversation.hero.header': { kind: 'single'; scope: 'root' }
     /** Workspace picker shown by the blank-session Hero. */
     'conversation.hero.workspace': { kind: 'single'; scope: 'root'; owner: EmptyWorkspaceOwnerProps }
     /** Layers wrapping the Conversation scroll body; `hero` reports a blank, standalone home. */
@@ -372,6 +374,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
         'conversation.composer': { kind: 'chain'; scope: 'session' }
         'conversation.composer.bar': { kind: 'single'; scope: 'session-maybe' }
         'conversation.input.dock': { kind: 'list'; scope: 'session' }
+        'conversation.hero.header': { kind: 'single'; scope: 'root' }
         'conversation.hero.frame': { kind: 'hoc'; scope: 'root' }
         'conversation.hero.brand.mark': { kind: 'single'; scope: 'root' }
         'conversation.hero.workspace': { kind: 'single'; scope: 'root' }

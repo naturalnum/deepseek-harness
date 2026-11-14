@@ -1,6 +1,12 @@
 /** Native Office provider identity and bounded Remote declaration audit. */
+import { createHash } from 'node:crypto'
+import { join } from 'node:path'
 import { FiberState, symbols, type Context, type Fiber } from '@deepseek-ai/cordis'
-import OfficeToPdf, { OfficeToPdfError, type Config as NativeOfficeConfig, type OfficeToPdfRequest, type OfficeToPdfResult } from '@deepseek-ai/dsh-office-to-pdf'
+import OfficeKit, {
+  OfficeKitError, type Config as NativeOfficeConfig, type OfficeKitRequest, type OfficeKitResult,
+  type OfficeImagesRequest, type OfficeImagesResult, type OfficeConversionRequest,
+  type OfficeRecalculationRequest, type OfficeFileResult,
+} from '@deepseek-ai/dsh-office-kit'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { CloudApiError } from './errors.ts'
@@ -9,7 +15,7 @@ import { OfficeWork } from './office-work.ts'
 
 /** Private installation and drain capability handed to the account factory. */
 export interface AccountOfficeLifecycle {
-  /** Install the unchanged native renderer with account-owned call observation.
+  /** Install the native PDF renderer with account-owned call observation.
    * @param owner Original account Loader scope.
    * @param config Resolved native conversion limits.
    */
@@ -26,7 +32,7 @@ export interface AccountOfficeLifecycle {
 /** Exact native provider and its original account-graph admission. */
 export interface NativeOffice {
   /** The original provider registered by its Loader fiber. */
-  readonly value: OfficeToPdf
+  readonly value: OfficeKit
   /** Recheck the retained provider and its file dependencies. */
   assertCurrent(): void
   /** Audit the original Remote methods and admission declarations. */
@@ -38,7 +44,7 @@ export interface NativeOffice {
 }
 
 function knownConversionFailure(cause: unknown): boolean {
-  return cause instanceof OfficeToPdfError && cause.code !== 'failed' && cause.code !== 'unavailable'
+  return cause instanceof OfficeKitError && cause.code !== 'failed' && cause.code !== 'unavailable'
 }
 
 function original(value: object | undefined): object | undefined {
@@ -65,7 +71,7 @@ export function createNativeOffice(ctx: Context, binding: AccountBinding, curren
   current()
   if (!Number.isSafeInteger(maximum) || maximum < 1) unavailable()
   if (ctx.get('peAccount') !== binding || ctx.root.get('peAccount') !== binding || binding.lifetime.aborted
-    || ctx.get('officeToPdf') !== undefined || ctx.root.get('officeToPdf') !== undefined) unavailable()
+    || ctx.get('officeKit') !== undefined || ctx.root.get('officeKit') !== undefined) unavailable()
   const fs = ctx.get('fs'), files = ctx.get('workspaceFiles')
   if (fs === undefined || files === undefined || ctx.root.get('fs') === undefined || ctx.root.get('workspaceFiles') === undefined
     || original(fs) !== original(ctx.root.get('fs')) || original(files) !== original(ctx.root.get('workspaceFiles'))) unavailable()
@@ -88,8 +94,17 @@ export function createNativeOffice(ctx: Context, binding: AccountBinding, curren
     if (message.type === 'error' && message.fiber?.deref() === fiber) work.cleanupFailed(message)
   } })
   // Keep the real native reader until conversion and its finally cleanup settle.
-  class AccountOffice extends OfficeToPdf {
-    override convert(request: OfficeToPdfRequest, signal?: AbortSignal): Promise<OfficeToPdfResult> {
+  class AccountOffice extends OfficeKit {
+    override async renderImages(_request: OfficeImagesRequest, _signal?: AbortSignal): Promise<OfficeImagesResult> {
+      throw new CloudApiError('cloud/forbidden', 'The account Office provider supports PDF preview only.')
+    }
+    override async convertTo(_request: OfficeConversionRequest, _signal?: AbortSignal): Promise<OfficeFileResult> {
+      throw new CloudApiError('cloud/forbidden', 'The account Office provider supports PDF preview only.')
+    }
+    override async recalculate(_request: OfficeRecalculationRequest, _signal?: AbortSignal): Promise<OfficeFileResult> {
+      throw new CloudApiError('cloud/forbidden', 'The account Office provider supports PDF preview only.')
+    }
+    override convert(request: OfficeKitRequest, signal?: AbortSignal): Promise<OfficeKitResult> {
       let sourceFailure: { readonly cause: unknown } | undefined
       const retained = { ...request, source: { ...request.source,
         read: async (upstream: AbortSignal, bytes: number) => {
@@ -107,8 +122,10 @@ export function createNativeOffice(ctx: Context, binding: AccountBinding, curren
       cause => sourceFailure !== undefined && cause === sourceFailure.cause || knownConversionFailure(cause))
     }
   }
-  let value: OfficeToPdf
-  try { value = new AccountOffice(ctx, config) }
+  let value: OfficeKit
+  const outputOwner = createHash('sha256').update(JSON.stringify([binding.accountId, binding.epoch])).digest('hex')
+  const providerConfig = { ...config, outputDirectory: join(config.outputDirectory, `cloud-${outputOwner}`) }
+  try { value = new AccountOffice(ctx, providerConfig) }
   catch (cause) {
     void Promise.resolve(removeObserver()).catch((failure: unknown) => { work.cleanupFailed(failure) })
     throw cause
@@ -123,9 +140,10 @@ export function createNativeOffice(ctx: Context, binding: AccountBinding, curren
       for (const fiber of runtime.fibers) {
         if (--remaining < 0) unavailable()
         if (fiber.ctx.root !== ctx.root || fiber.state !== FiberState.ACTIVE) continue
-        for (const key of ['fs', 'workspaceFiles', 'officeToPdf'] as const) {
-          const entry = fiber.store?.[key], installed: unknown = entry?.value
-          if (entry?.fiber !== fiber) continue
+        for (const entry of fiber.provisions) {
+          if (--remaining < 0) unavailable()
+          const key = entry.name, installed: unknown = entry.value
+          if (entry.ctx.fiber !== fiber || (key !== 'fs' && key !== 'workspaceFiles' && key !== 'officeKit')) continue
           if (installed === null || typeof installed !== 'object' || found.has(key)) unavailable()
           const unwrapped = original(installed)
           if (unwrapped === undefined) unavailable()
@@ -133,7 +151,7 @@ export function createNativeOffice(ctx: Context, binding: AccountBinding, curren
         }
       }
     }
-    for (const [key, expected] of [['fs', fs], ['workspaceFiles', files], ['officeToPdf', value]] as const) {
+    for (const [key, expected] of [['fs', fs], ['workspaceFiles', files], ['officeKit', value]] as const) {
       const actual = found.get(key), retained = registrations.get(key)
       if (actual === undefined || actual.value !== original(expected)
         || retained !== undefined && (retained.value !== actual.value || retained.fiber !== actual.fiber)) unavailable()
@@ -143,8 +161,8 @@ export function createNativeOffice(ctx: Context, binding: AccountBinding, curren
   const assertCurrent = (): void => {
     current()
     if (ctx.fiber.state !== FiberState.ACTIVE || binding.lifetime.aborted || ctx.get('peAccount') !== binding
-      || ctx.root.get('peAccount') !== binding || ctx.get('officeToPdf') === undefined || ctx.root.get('officeToPdf') === undefined
-      || original(ctx.get('officeToPdf')) !== original(value) || original(ctx.root.get('officeToPdf')) !== original(value)
+      || ctx.root.get('peAccount') !== binding || ctx.get('officeKit') === undefined || ctx.root.get('officeKit') === undefined
+      || original(ctx.get('officeKit')) !== original(value) || original(ctx.root.get('officeKit')) !== original(value)
       || ctx.get('fs') === undefined || ctx.root.get('fs') === undefined || original(ctx.get('fs')) !== original(fs)
       || original(ctx.root.get('fs')) !== original(fs) || ctx.get('workspaceFiles') === undefined
       || ctx.root.get('workspaceFiles') === undefined || original(ctx.get('workspaceFiles')) !== original(files)
@@ -155,14 +173,14 @@ export function createNativeOffice(ctx: Context, binding: AccountBinding, curren
   return { value, assertCurrent, stop: deadline => work.stop(deadline), isIdle: () => work.isIdle(), inspect(): ExposureInventory {
     assertCurrent()
     const remote = value.typertRemote, markers = remoteMethods(value)
-    if (remote.service !== value || remote.serviceKey !== 'officeToPdf' || remote.namespace !== 'officeToPdf'
+    if (remote.service !== value || remote.serviceKey !== 'officeKit' || remote.namespace !== 'officeKit'
       || markers.length > maximum) unavailable()
     const entries = ([['render', 'render'], ['getGeneration', 'generation']] as const).map(([member, method]) => {
       const matches = markers.filter(marker => marker.method === member), marker = matches[0]
       if (matches.length !== 1 || marker === undefined || (marker.exportName ?? member) !== method
         || markers.filter(row => (row.exportName ?? row.method) === method).length !== 1 || (marker.mode ?? 'rpc') !== 'rpc'
-        || Reflect.get(value, member) !== Reflect.get(OfficeToPdf.prototype, member)) unavailable()
-      return { endpoint: `officeToPdf/${method}`, handlerId: 'native:officeToPdf',
+        || Reflect.get(value, member) !== Reflect.get(OfficeKit.prototype, member)) unavailable()
+      return { endpoint: `officeKit/${method}`, handlerId: 'native:officeKit',
         guard: method === 'render' ? 'account-session' as const : 'authenticated-account' as const }
     })
     if (new Set(entries.map(row => row.endpoint)).size !== 2) unavailable()

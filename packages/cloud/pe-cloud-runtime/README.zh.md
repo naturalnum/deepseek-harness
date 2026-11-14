@@ -113,7 +113,7 @@ AppReady 缺失、封口尝试正常返回或拒绝时，Root 还向 stderr 写�
 
 账户关闭结果为 unknown 时，仅向 stderr 输出一次有界诊断，内容限于批准的错误 code 和名称。启动结算后仍可观察原生错误；原生销毁未知时附带其原有的有界错误/警告计数。不输出 message、参数、路径或凭据，诊断失败不改变所有权。
 
-显式选中的原生 `officeToPdf/render` invocation 使用与 `workspaceFiles` 相同的 Session 成员及项目选择，不授予原始绝对路径权限。账户 Office provider 和两个原生 Remote 方法必须在发布前通过 API 清单审核。
+显式选中的原生 `officeKit/render` invocation 使用与 `workspaceFiles` 相同的 Session 成员及项目选择，不授予原始绝对路径权限。账户 Office provider 和两个原生 Remote 方法必须在发布前通过 API 清单审核。
 
 账户持有的 `workspaceFileScope` lookup 在读取冷持久化 header 前检查原 Session 成员关系；未知、外账户及未挂载的 ID 不触发该元数据读取。lookup 使用账户生命周期，并在观察后复核原 provider。准入文件读取的完整账户和精确 Workspace 审核由策略 selection 持有，涵盖冷、live、Agent 和子代理准备阶段的选择；公开选择入口和异步工作后的检查仍核验原账户、Workspace 及 Session 或 Agent 权限。首次 pin 和 subagent 检查保留额外审核。
 
@@ -121,7 +121,7 @@ AppReady 缺失、封口尝试正常返回或拒绝时，Root 还向 stderr 写�
 
 唯一账户 FS 接收惰性的共享选择回调。 原 `workspaceFiles` invocation 先按所选 RPC/stream 类别经原 API owner 准入，包含当前唯一的原生注册检查；未选中或已撤销的注册在共享项目选择前拒绝。原生工具调用要求精确已发布的 Agent、Session 和成员关系，带 scope 标记的调用方，其不透明 scope key 必须属于该 Agent 保留的原生 scope 链；共享账户服务可以没有标记，仅继承因果父 Agent 不授予带独立标记的子 Agent 文件访问。原生 `workspaceFiles` 调用使用原 invocation 的 SessionId。冷文件选择先核验成员关系，再只读取实际持久化 header，检查固定 Preset 及当前 owner，不加载完整 Session 消息，也不以目标路径授予项目权限。返回的 selection 继续核验同一原始 Workspace、owner 和成员关系。文件调用没有可变 active project 或默认回退。
 
-同一策略通过惰性闭包提供 API 的只读 bootstrap 断言。 若选中任何 `workspaceFiles` 端点或 `officeToPdf/render`，它还会在异步检查前后要求原 Files owner 的 `assertContentAvailable()`；仅具元数据能力的 S2 无法通过启用文件端点的 ready 检查。未选择文件端点的配方保留原先前提。Root 将既有 `native.maxEntries` 作为选中开放清单条目及实际遍历的原生 runtime/fiber 的共享上界，不新增部署值或默认值。它核验原 Workspace、固定原生 Preset/default/composition、当前默认模型元数据和实际 native handler，并在 await 后复核 provider 与选择。它不准备目录、不创建或恢复 Session/Agent、不解析凭据，也不请求模型推理。构造不读取未完成的 files 项目，不捕获请求级 `AccountUse`。该断言不替代生产存储交接或 Root seal。
+同一策略通过惰性闭包提供 API 的只读 bootstrap 断言。 若选中任何 `workspaceFiles` 端点或 `officeKit/render`，它还会在异步检查前后要求原 Files owner 的 `assertContentAvailable()`；仅具元数据能力的 S2 无法通过启用文件端点的 ready 检查。未选择文件端点的配方保留原先前提。Root 将既有 `native.maxEntries` 作为选中开放清单条目及实际遍历的原生 runtime/fiber 的共享上界，不新增部署值或默认值。它核验原 Workspace、固定原生 Preset/default/composition、当前默认模型元数据和实际 native handler，并在 await 后复核 provider 与选择。它不准备目录、不创建或恢复 Session/Agent、不解析凭据，也不请求模型推理。构造不读取未完成的 files 项目，不捕获请求级 `AccountUse`。该断言不替代生产存储交接或 Root seal。
 
 可选 `native.firstScreen` 选择固定只读首屏切片。提供时，`maxHomeBytes`、`maxCollectionItems`、`maxFrameBytes`、`maxQueuedEvents`、`maxQueuedBytes` 均须显式为正数、有限安全整数；省略时保持关闭，不补默认值。Root 通过配方传递原始预算，并从同一账户的规范 Profile 得到预期 home，在原生 boot 前核对一致。既有 `native.maxEntries` 继续限制原生 owner/marker 清单。元数据或配置条目名称不能满足实际 prepared 审核。
 

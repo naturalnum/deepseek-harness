@@ -1,8 +1,9 @@
 /** Real native Office provider, account adapter, Cordis fibers and logger; only the external kit is substituted. */
-import { chmod, rm, stat, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { chmod, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { Context, FiberState } from '@deepseek-ai/cordis'
-import OfficeToPdf, { Config, OfficeSourceKey, type OfficeToPdfRequest } from '@deepseek-ai/dsh-office-to-pdf'
+import OfficeKit, { Config, OfficeSourceKey, type OfficeKitRequest } from '@deepseek-ai/dsh-office-kit'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { AccountBinding, AccountId, OwnerEpoch } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
@@ -24,15 +25,22 @@ type ConverterFixture = {
   recalculate: () => Promise<never>
 }
 const kit = vi.hoisted(() => ({ create: vi.fn<(options?: unknown) => Promise<ConverterFixture>>() }))
-vi.mock('../../../document/office-to-pdf/node_modules/@deepseek-ai/libreoffice-kit', () => ({ createConverter: kit.create }))
+vi.mock('../../../document/office-kit/node_modules/@deepseek-ai/libreoffice-kit', () => ({ createConverter: kit.create }))
 const pdf = Buffer.from('%PDF-1.7\npreview\n%%EOF\n')
 const bytes = new Uint8Array([80, 75, 3, 4])
-const request: OfficeToPdfRequest = { extension: 'docx', priority: 'foreground', source: {
+const request: OfficeKitRequest = { extension: 'docx', priority: 'foreground', source: {
   key: OfficeSourceKey('original'), version: '1', bytes: bytes.length,
   read: async () => ({ bytes, version: '1' }),
 } }
 
-async function fixture(render: Render, dispose: () => Promise<void> = async () => {}, files: object = {}): Promise<{
+async function fixture(
+  render: Render, dispose: () => Promise<void> = async () => {}, files: object = {},
+  options: {
+    accountId?: string
+    outputDirectory?: string
+    onOwnerCreated?: (close: () => Promise<void>) => void
+  } = {},
+): Promise<{
   ctx: Context
   native: NativeOffice
   close: () => Promise<void>
@@ -42,7 +50,16 @@ async function fixture(render: Render, dispose: () => Promise<void> = async () =
   kit.create.mockReset().mockResolvedValue({ backend: 'wasm', render, dispose,
     renderImages: vi.fn<() => Promise<never>>(), convert: vi.fn<() => Promise<never>>(), recalculate: vi.fn<() => Promise<never>>() })
   const ctx = new Context(), lifetime = new AbortController()
-  const binding: AccountBinding = Object.freeze({ accountId: brandString<AccountId>('office-lifecycle-fixture'),
+  const outputDirectory = options.outputDirectory ?? await mkdtemp(join(tmpdir(), 'cloud-office-outputs-'))
+  let closing: Promise<void> | undefined
+  const close = (): Promise<void> => closing ??= (async () => {
+    lifetime.abort()
+    await ctx.fiber.dispose()
+    if (options.outputDirectory === undefined) await rm(outputDirectory, { recursive: true, force: true })
+  })()
+  onTestFinished(close)
+  options.onOwnerCreated?.(close)
+  const binding: AccountBinding = Object.freeze({ accountId: brandString<AccountId>(options.accountId ?? 'office-lifecycle-fixture'),
     epoch: brandString<OwnerEpoch>('1'), recipeVersion: 'office-lifecycle', lifetime: lifetime.signal })
   await ctx.plugin(TypertRegistry)
   ctx.provide('peAccount', binding)
@@ -55,15 +72,13 @@ async function fixture(render: Render, dispose: () => Promise<void> = async () =
   await ctx.plugin({ inject: ['fs', 'workspaceFiles', 'typert', 'peAccount'], apply(owner: Context) {
     officeOwner = owner
     native = createNativeOffice(owner, binding, () => { if (lifetime.signal.aborted) throw new Error('closed binding') },
-      512, Config({ maxConcurrentConversions: 1, maxReaders: 1 }), () => {})
+      512, Config({ maxConcurrentConversions: 1, maxReaders: 1, outputDirectory }), () => {})
   } })
   if (native === undefined || officeOwner === undefined) throw new Error('Native Office fixture did not mount')
-  const close = async (): Promise<void> => { lifetime.abort(); await ctx.fiber.dispose() }
-  onTestFinished(close)
   return { ctx, native, close, abortBinding: () => { lifetime.abort() }, officeOwner }
 }
 
-nativeMethodInventoryTests('officeToPdf', [['render', 'render'], ['getGeneration', 'generation']], async () => {
+nativeMethodInventoryTests('officeKit', [['render', 'render'], ['getGeneration', 'generation']], async () => {
   const f = await fixture(async () => ({ backend: 'wasm', missingFonts: [] }))
   await f.ctx.plugin(RemoteAccess)
   await f.ctx.plugin(Gateway)
@@ -72,9 +87,9 @@ nativeMethodInventoryTests('officeToPdf', [['render', 'render'], ['getGeneration
   policy.audit(inventory)
   const peer: PeerScope = { id: brandString<PeerScope['id']>('office-inventory-peer'), ctx: f.ctx,
     principal: { kind: 'owner' }, interactions: 'answer', signal: new AbortController().signal, dispose: async () => {} }
-  return { native: f.native, upstreamPrototype: OfficeToPdf.prototype, policy, maximum: 512,
+  return { native: f.native, upstreamPrototype: OfficeKit.prototype, policy, maximum: 512,
     async invokeOriginal() {
-      await expect(f.ctx.typertGateway.invoke({ namespace: 'officeToPdf', method: 'generation', args: {}, peer }))
+      await expect(f.ctx.typertGateway.invoke({ namespace: 'officeKit', method: 'generation', args: {}, peer }))
         .resolves.toBe(f.native.value.generation)
     } }
 })
@@ -168,11 +183,11 @@ it('retains original Office Remote implementations and exact account guards', as
     await writeFile(outputPath, pdf)
     return { backend: 'wasm', missingFonts: [] }
   })
-  expect(Reflect.get(f.native.value, 'render')).toBe(Reflect.get(OfficeToPdf.prototype, 'render'))
-  expect(Reflect.get(f.native.value, 'getGeneration')).toBe(Reflect.get(OfficeToPdf.prototype, 'getGeneration'))
+  expect(Reflect.get(f.native.value, 'render')).toBe(Reflect.get(OfficeKit.prototype, 'render'))
+  expect(Reflect.get(f.native.value, 'getGeneration')).toBe(Reflect.get(OfficeKit.prototype, 'getGeneration'))
   expect(f.native.inspect().rpcEndpoints).toEqual(expect.arrayContaining([
-    { endpoint: 'officeToPdf/render', handlerId: 'native:officeToPdf', guard: 'account-session' },
-    { endpoint: 'officeToPdf/generation', handlerId: 'native:officeToPdf', guard: 'authenticated-account' },
+    { endpoint: 'officeKit/render', handlerId: 'native:officeKit', guard: 'account-session' },
+    { endpoint: 'officeKit/generation', handlerId: 'native:officeKit', guard: 'authenticated-account' },
   ]))
   await expect(f.native.stop(Date.now() + 2_000)).resolves.toBeUndefined()
 })
@@ -289,4 +304,34 @@ it('retains a pre-conversion native render read in account disposal after Office
     expect(disposed).toBe(true)
     expect(kit.create).not.toHaveBeenCalled()
   } finally { release.resolve(undefined); await accountDispose?.catch(() => {}) }
+})
+
+it('does not admit new Office operations outside the selected PDF capability', async () => {
+  const f = await fixture(async () => ({ backend: 'wasm', missingFonts: [] }))
+  const read = vi.fn(request.source.read), source = { ...request.source, read }
+  await expect(f.native.value.renderImages({ extension: request.extension, source,
+    maxImages: 1, maxPixels: 100, maxDimension: 10, maxBytes: 1024 })).rejects.toMatchObject({ code: 'cloud/forbidden' })
+  await expect(f.native.value.convertTo({ extension: 'docx', source, format: 'docx',
+    output: { owner: 'foreign-owner', name: 'converted.docx' } })).rejects.toMatchObject({ code: 'cloud/forbidden' })
+  await expect(f.native.value.recalculate({ extension: 'xlsx', source, format: 'xlsx',
+    output: { owner: 'foreign-owner', name: 'recalculated.xlsx' } })).rejects.toMatchObject({ code: 'cloud/forbidden' })
+  expect(read).not.toHaveBeenCalled()
+  expect(kit.create).not.toHaveBeenCalled()
+})
+
+it('keeps different account providers out of a shared configured output directory', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'cloud-office-shared-'))
+  const owners: Array<() => Promise<void>> = []
+  onTestFinished(async () => {
+    await Promise.all(owners.map(close => close()))
+    await rm(directory, { recursive: true, force: true })
+  })
+  const onOwnerCreated = (close: () => Promise<void>): void => { owners.push(close) }
+  const a = await fixture(async () => ({ backend: 'wasm', missingFonts: [] }), undefined, {},
+    { accountId: 'account-a', outputDirectory: directory, onOwnerCreated })
+  const b = await fixture(async () => ({ backend: 'wasm', missingFonts: [] }), undefined, {},
+    { accountId: 'account-b', outputDirectory: directory, onOwnerCreated })
+  expect(dirname(a.native.value.outputDirectory)).toBe(directory)
+  expect(dirname(b.native.value.outputDirectory)).toBe(directory)
+  expect(a.native.value.outputDirectory).not.toBe(b.native.value.outputDirectory)
 })

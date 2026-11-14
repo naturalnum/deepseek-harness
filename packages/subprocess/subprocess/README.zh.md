@@ -162,3 +162,5 @@ spawn 会立即返回活动句柄，而不公开目标身份。`done` 独立报�
 未来：非 shell 运行器。该 seam 拆分的目的就是让直接 argv 执行器或 worker supervisor 无需深入 bash 内部即可消费它；目前尚无任何实现交付，终端原语也把就绪策略留在其消费方。
 
 </details>
+
+可选的逐调用 `sandboxPolicy` 使用原生 sandbox 定义；包声明该依赖并引用对应编译项目，使策略类型在所属项目内检查。

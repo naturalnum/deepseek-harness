@@ -3,8 +3,8 @@ import { MODEL_KEY_FIXTURE as APPROVED_MODEL_KEY, modelKeyBinding } from '../../
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-subprocess'
 import type {} from '@deepseek-ai/dsh-pe-account-instructions/types'
-import type { OfficeToPdfKey } from '@deepseek-ai/dsh-office-to-pdf/types'
-import { OfficeSourceKey, type OfficeToPdfRequest } from '@deepseek-ai/dsh-office-to-pdf'
+import type { OfficeKitKey } from '@deepseek-ai/dsh-office-kit/types'
+import { OfficeSourceKey, type OfficeKitRequest } from '@deepseek-ai/dsh-office-kit'
 import * as fs from 'node:fs/promises'
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, readFileSync, statSync, symlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -103,7 +103,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   return { ...actual, rename: vi.fn(actual.rename) }
 })
 const officeKit = vi.hoisted(() => ({ create: vi.fn() }))
-vi.mock('../../../document/office-to-pdf/node_modules/@deepseek-ai/libreoffice-kit', () => ({ createConverter: officeKit.create }))
+vi.mock('../../../document/office-kit/node_modules/@deepseek-ai/libreoffice-kit', () => ({ createConverter: officeKit.create }))
 beforeEach(async () => { vi.mocked(fs.rename).mockImplementation((await vi.importActual<typeof fs>('node:fs/promises')).rename) })
 
 class ExactQuery extends SessionQuery {
@@ -166,8 +166,8 @@ async function fixture(options: {
         endpoint: 'session/' + method, handlerId: 'native:sessionController', guard: method === 'create' ? 'account-project' : 'account-session',
       })).concat(options.auditedFileCalls ? ['read', 'stat', ...options.auditedFileBytes ? ['readBytes'] : []].map(method => ({ endpoint: `workspaceFiles/${method}`,
         handlerId: 'native:workspaceFiles', guard: 'account-session' })) : []).concat(options.office && !options.officeUnselected ? [
-        { endpoint: 'officeToPdf/render', handlerId: 'native:officeToPdf', guard: 'account-session' },
-        { endpoint: 'officeToPdf/generation', handlerId: 'native:officeToPdf', guard: 'authenticated-account' },
+        { endpoint: 'officeKit/render', handlerId: 'native:officeKit', guard: 'account-session' },
+        { endpoint: 'officeKit/generation', handlerId: 'native:officeKit', guard: 'authenticated-account' },
       ] : []).concat(options.goals ? ['get', 'create', 'edit', 'pause', 'resume', 'complete', 'clear'].map(method => ({
         endpoint: 'goals/' + method, handlerId: 'native:goals', guard: 'account-session',
       })) : []),
@@ -1306,15 +1306,15 @@ it('retains the original account Session file authority for the native Office Re
   writeFileSync(join(f.project, 'report.docx'), 'owned office document')
   await ctx.sessionPersistence.flush()
   await ctx.agentLoop.stop()
-  const converter = vi.spyOn(ctx.officeToPdf, 'convert').mockImplementation(async (request) => {
+  const converter = vi.spyOn(ctx.officeKit, 'convert').mockImplementation(async (request) => {
     const data = await request.source.read(new AbortController().signal, 4096)
     expect(Buffer.from(data.bytes).toString()).toBe('owned office document')
     return { pdf: new Uint8Array([37, 80, 68, 70]), missingFonts: [],
-      cacheKey: brandString<OfficeToPdfKey>('fixture-key'), generation: ctx.officeToPdf.generation }
+      cacheKey: brandString<OfficeKitKey>('fixture-key'), generation: ctx.officeKit.generation }
   })
   const peer = { id: brandString<PeerId>('office-session-scope'), ctx, principal: { kind: 'owner' as const },
     interactions: 'answer' as const, signal: outcome.binding.lifetime, dispose: async () => {} }
-  const render = (sessionId: SessionId, path: string) => ctx.typertGateway.invoke({ namespace: 'officeToPdf', method: 'render',
+  const render = (sessionId: SessionId, path: string) => ctx.typertGateway.invoke({ namespace: 'officeKit', method: 'render',
     args: { workspaceFileScopeId: sessionId, path, priority: 'foreground' }, peer, signal: outcome.binding.lifetime })
   await expect(render(created.sessionId, 'report.docx')).resolves.toMatchObject({ data: new Uint8Array([37, 80, 68, 70]) })
   expect(converter).toHaveBeenCalledTimes(1)
@@ -1335,7 +1335,7 @@ it('retains the original account Session file authority for the native Office Re
   for (const error of observed) expect(error).toMatchObject({ code: 'cloud/forbidden' })
   expect(stat).not.toHaveBeenCalled()
 
-  await expect(ctx.typertGateway.invoke({ namespace: 'officeToPdf', method: 'render',
+  await expect(ctx.typertGateway.invoke({ namespace: 'officeKit', method: 'render',
     args: { workspaceFileScopeId: created.sessionId, path: 'report.docx', priority: 'foreground' }, peer,
     signal: AbortSignal.abort() })).rejects.toBeInstanceOf(Error)
   expect(converter).toHaveBeenCalledTimes(1)
@@ -1350,13 +1350,14 @@ it('retains the original account Session file authority for the native Office Re
   await expect(render(created.sessionId, 'report.docx')).rejects.toMatchObject({ code: 'document-render/failed',
     details: { reason: 'input-too-large' } })
   const fibers = [...ctx.registry.values()].flatMap(runtime => [...runtime.fibers])
-    .filter(fiber => fiber.ctx.root === ctx.root && fiber.store?.officeToPdf?.fiber === fiber)
+    .filter(fiber => fiber.ctx.root === ctx.root
+      && [...fiber.provisions].some(entry => entry.name === 'officeKit' && entry.ctx.fiber === fiber))
   expect(fibers).toHaveLength(1)
   const provider = fibers[0]
   if (provider === undefined) throw new Error('Original Office provider absent')
   f.expectOfficeUnconfirmed()
   await provider.dispose()
-  expect(() => ctx.peCloudApi.requireRpc('officeToPdf/render')).toThrow()
+  expect(() => ctx.peCloudApi.requireRpc('officeKit/render')).toThrow()
 })
 
 it('rejects unselected Office calls before reading the original project', async () => {
@@ -1369,8 +1370,8 @@ it('rejects unselected Office calls before reading the original project', async 
   writeFileSync(join(f.project, 'report.docx'), 'unselected document')
   await ctx.sessionPersistence.flush()
   await ctx.agentLoop.stop()
-  const read = vi.spyOn(ctx.fs, 'readByteRange'), convert = vi.spyOn(ctx.officeToPdf, 'convert')
-  await expect(ctx.typertGateway.invoke({ namespace: 'officeToPdf', method: 'render',
+  const read = vi.spyOn(ctx.fs, 'readByteRange'), convert = vi.spyOn(ctx.officeKit, 'convert')
+  await expect(ctx.typertGateway.invoke({ namespace: 'officeKit', method: 'render',
     args: { workspaceFileScopeId: created.sessionId, path: 'report.docx', priority: 'foreground' },
     peer: { id: brandString<PeerId>('office-unselected'), ctx, principal: { kind: 'owner' }, interactions: 'answer',
       signal: outcome.binding.lifetime, dispose: async () => {} } })).rejects.toBeInstanceOf(Error)
@@ -1404,12 +1405,12 @@ it.each([false, true])('joins the cached native Office converter during factory 
   vi.spyOn(f.factory, 'assertBusinessCurrent').mockImplementation(() => {})
   vi.spyOn(f.root.peAccountRuntime, 'assertRecipeSealed').mockImplementation(() => {})
   const bytes = new Uint8Array([80, 75, 3, 4])
-  const request: OfficeToPdfRequest = { extension: 'docx', priority: 'foreground', source: {
+  const request: OfficeKitRequest = { extension: 'docx', priority: 'foreground', source: {
     key: OfficeSourceKey('factory-close'), version: '1', bytes: bytes.length,
     read: async () => ({ bytes, version: '1' }),
   } }
-  expect((await outcome.context.officeToPdf.convert(request)).pdf).toBeInstanceOf(Uint8Array)
-  expect((await outcome.context.officeToPdf.convert(request)).pdf).toBeInstanceOf(Uint8Array)
+  expect((await outcome.context.officeKit.convert(request)).pdf).toBeInstanceOf(Uint8Array)
+  expect((await outcome.context.officeKit.convert(request)).pdf).toBeInstanceOf(Uint8Array)
   expect(render).toHaveBeenCalledOnce()
   const [closed] = await f.factory.close()
   expect(disposed).toHaveBeenCalledOnce()
@@ -1428,7 +1429,8 @@ it('retains the factory account slot if the original Office owner cannot confirm
   if (outcome.status === 'failed') throw outcome.cause
   const ctx = outcome.context, failure = new Error('Unconfirmed original scratch')
   const fibers = [...ctx.registry.values()].flatMap(runtime => [...runtime.fibers])
-    .filter(fiber => fiber.ctx.root === ctx.root && fiber.store?.officeToPdf?.fiber === fiber)
+    .filter(fiber => fiber.ctx.root === ctx.root
+      && [...fiber.provisions].some(entry => entry.name === 'officeKit' && entry.ctx.fiber === fiber))
   expect(fibers).toHaveLength(1)
   const provider = fibers[0]
   if (provider === undefined) throw new Error('Original Office provider absent')

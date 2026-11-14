@@ -162,3 +162,5 @@ This Dev Note is working context for maintainers: open design questions and dire
 Future: non-shell runners. The seam was split so a direct-argv executor or worker supervisor could consume it without reaching into bash internals; none is shipped yet, and the terminal primitive keeps readiness policy in its consumer.
 
 </details>
+
+The optional per-call `sandboxPolicy` uses the native sandbox definition; the package declares that dependency and references its compiler project so the policy is checked within its owning project.

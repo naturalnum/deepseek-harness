@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.2-rc.3/cloud-office-kit/guide.md
+/:
+  en: e9dc54b53d87fcc4
+  zh: 55be46d8a4bd0a88
+/cloud-office-preview-uses-officekit:
+  en: ec57dd89b41e526f
+  zh: a11ac0607a09b9c9
+/cloud-office-preview-uses-officekit/change:
+  en: d67d72a827ad384c
+  zh: 6c0eb903a44ddca9
+/cloud-office-preview-uses-officekit/migration:
+  en: dd37b2d2de2368db
+  zh: 2a0a5f154901cfb0

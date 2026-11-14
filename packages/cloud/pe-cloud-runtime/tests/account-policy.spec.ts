@@ -15,8 +15,8 @@ import { policyFixture } from './account-policy-fixture.ts'
 
 it.each(['rpc', 'stream', 'office'] as const)('rejects %s file exposure during Runtime bootstrap when the original Node files owner has no content grant', async (mode) => {
   const f = policyFixture(), graph = await f.start(), manifest = f.exposureOwner.policy.manifest
-  const row = { endpoint: mode === 'office' ? 'officeToPdf/render' : mode === 'rpc' ? 'workspaceFiles/read' : 'workspaceFiles/changes',
-    handlerId: mode === 'office' ? 'native:officeToPdf' : 'native:workspaceFiles', guard: 'account-session' as const }
+  const row = { endpoint: mode === 'office' ? 'officeKit/render' : mode === 'rpc' ? 'workspaceFiles/read' : 'workspaceFiles/changes',
+    handlerId: mode === 'office' ? 'native:officeKit' : 'native:workspaceFiles', guard: 'account-session' as const }
   const root = new Context()
   onTestFinished(async () => { await root.fiber.dispose() })
   const exposure = new ExposureService(root, { ...manifest,

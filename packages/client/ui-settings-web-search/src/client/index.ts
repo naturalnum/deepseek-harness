@@ -23,6 +23,7 @@ import { WebSearchCard } from './WebSearchCard.tsx'
 import { WEB_API_NS, WEB_NS, WEB_SEARCH_NS, WebSearchCardController } from './web-search-card-controller.ts'
 import { en, ja, es, fr, de, ru, pt, zh, type WebSearchSettingsLocaleKey } from './locales.ts'
 
+export type { PreparedWebSearchCredential, WebSearchSettingsIntegration } from './integration.ts'
 export type { WebSearchCardProps } from './WebSearchCard.tsx'
 export type {
   WebApiSettings, WebLegacySettings, WebProviderSelection, WebSearchCardFace, WebSearchCardScopes, WebSearchCardState,

@@ -470,7 +470,7 @@ export class CloudAccountApi extends Service {
       this.messageFeedback.native.inspect()
     }
     if (endpoint.startsWith('workspaceFiles/')) this.assertWorkspaceFilesCurrent()
-    if (endpoint.startsWith('officeToPdf/')) {
+    if (endpoint.startsWith('officeKit/')) {
       this.assertWorkspaceFilesCurrent()
       if (this.office.native === undefined) this.nativeUnavailable()
       this.office.native.inspect()

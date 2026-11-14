@@ -8,7 +8,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import SessionPersistence from '@deepseek-ai/dsh-session-persistence'
 import SessionController from '@deepseek-ai/dsh-api-session-controller'
 import WorkspaceFiles from '@deepseek-ai/dsh-api-workspace-files'
-import OfficeToPdf from '@deepseek-ai/dsh-office-to-pdf'
+import OfficeKit from '@deepseek-ai/dsh-office-kit'
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/types'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import { CloudAccountApi, CloudApiError, type ConfigSaveBarrier, type ConfigSaveCoordinator, type ConfigSaveReceipt,
@@ -279,19 +279,19 @@ export class AccountNativeIntegration {
           const method = invocation?.request.method
           const endpoint = `workspaceFiles/${method}`
           const workspaceCall = invocation?.service === 'workspaceFiles' && invocation.request.namespace === 'workspaceFiles'
-          const officeCall = invocation?.service === 'officeToPdf' && invocation.request.namespace === 'officeToPdf'
+          const officeCall = invocation?.service === 'officeKit' && invocation.request.namespace === 'officeKit'
             && method === 'render'
           const fileRead = workspaceCall
             && (method === 'read' || method === 'stat' || method === 'readBytes')
             && this.input.readCurrent?.(caller, binding, endpoint) === true
           // Selected native endpoints perform their full business admission in the API owner below.
           if (!fileRead && !workspaceCall && !officeCall) rootBusinessCurrent(binding)
-          if (invocation?.service === 'officeToPdf' || invocation?.request.namespace === 'officeToPdf') {
-            if (invocation.service !== 'officeToPdf' || invocation.request.namespace !== 'officeToPdf'
+          if (invocation?.service === 'officeKit' || invocation?.request.namespace === 'officeKit') {
+            if (invocation.service !== 'officeKit' || invocation.request.namespace !== 'officeKit'
               || invocation.request.method !== 'render') {
               throw new CloudApiError('cloud/forbidden', 'The native Office file invocation is not selected.')
             }
-            api.requireRpc('officeToPdf/render')
+            api.requireRpc('officeKit/render')
           }
           if (invocation?.service === 'workspaceFiles' || invocation?.request.namespace === 'workspaceFiles') {
             if (invocation.service !== 'workspaceFiles' || invocation.request.namespace !== 'workspaceFiles') {
@@ -740,8 +740,8 @@ export class AccountNativeIntegration {
         },
       },
       [ACCOUNT_NATIVE_ENTRIES.officeToPdf]: {
-        inject: ['peCloudApi', 'workspaceFiles', 'fs', 'typert'], Config: OfficeToPdf.Config,
-        apply: (owner: Context, nativeConfig: ConstructorParameters<typeof OfficeToPdf>[1]) => {
+        inject: ['peCloudApi', 'workspaceFiles', 'fs', 'typert'], Config: OfficeKit.Config,
+        apply: (owner: Context, nativeConfig: ConstructorParameters<typeof OfficeKit>[1]) => {
           if (this.office === undefined) throw new AccountRuntimeError('cloud/account-unavailable', 'Office lifecycle is unavailable')
           this.office.install(owner, nativeConfig)
         },

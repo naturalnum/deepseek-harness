@@ -93,7 +93,7 @@
       "path": "../../api/workspace-files/tsconfig.host.json"
     },
     {
-      "path": "../../document/office-to-pdf"
+      "path": "../../document/office-kit"
     },
     {
       "path": "../../client/file-upload/tsconfig.host.json"
