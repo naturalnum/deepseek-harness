@@ -59,6 +59,8 @@ describe('sidebar shell snapshots', () => {
     const slot = runtime.renderSlot('sidebar', { collapsed: false, width: 300 })
     // Wordmark + capsule both start a session in the expanded state.
     expect(slot.view.getAllByRole('button', { name: '新建会话' })).toHaveLength(2)
+    expect(slot.view.getByText('DSH 本地构建')).toBeTruthy()
+    expect(slot.view.getByText('1.2.3-rc.4-abc1234-dirty')).toBeTruthy()
     expect(slot.container).toMatchSnapshot()
     await runtime.dispose()
   })
@@ -68,6 +70,8 @@ describe('sidebar shell snapshots', () => {
     const slot = runtime.renderSlot('sidebar', { collapsed: false, width: 300 })
     // Wordmark + capsule both start a session in the expanded state.
     expect(slot.view.getAllByRole('button', { name: 'New session' })).toHaveLength(2)
+    expect(slot.view.getByText('DSH Local Build')).toBeTruthy()
+    expect(slot.view.getByText('1.2.3-rc.4-abc1234-dirty')).toBeTruthy()
     expect(slot.container).toMatchSnapshot()
     await runtime.dispose()
   })
@@ -104,6 +108,8 @@ describe('sidebar shell snapshots', () => {
     const { runtime } = await bench({ locale: 'en' })
     try {
       const slot = runtime.renderSlot('sidebar', { collapsed: false, width: 300 })
+      expect(slot.view.getByText('DSH Local Build')).toBeTruthy()
+      expect(slot.view.getByText('1.2.3-rc.4-abc1234-dirty')).toBeTruthy()
       expect(slot.container).toMatchSnapshot('windows expanded')
       slot.update({ collapsed: true, width: 0 })
       expect(slot.view.getAllByRole('button', { name: 'New session' })).toHaveLength(1)

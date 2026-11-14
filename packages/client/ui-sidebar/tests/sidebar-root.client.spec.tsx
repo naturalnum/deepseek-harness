@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ShortcutCatalogEntry, ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { allowAllAccess, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
@@ -20,6 +20,13 @@ const useResource = (() => ({ status: 'none' as const, value: undefined, failure
 const usePanelInfo: GlobalStandardProps['usePanelInfo'] = selector => selector({ activePanelId: null })
 
 const t: SidebarRootComponentProps['t'] = makeTranslate({ ...commonEn, ...en })
+
+beforeEach(() => {
+  // Each case supplies its own build metadata, including the intentional missing-field cases.
+  vi.stubEnv('DSH_CLIENT_COMMIT_HASH', undefined)
+  vi.stubEnv('DSH_CLIENT_GIT_DIRTY', undefined)
+  vi.stubEnv('DSH_CLIENT_VERSION', undefined)
+})
 
 afterEach(() => {
   cleanup()
@@ -151,7 +158,7 @@ describe('SidebarRoot shell', () => {
         options?.fallback ?? null) as SidebarRootComponentProps['renderSlot']}
     />)
 
-    expect(screen.getByText('PowerEvolve')).toBeTruthy()
+    expect(screen.getByText('DSH Local Build')).toBeTruthy()
     expect(screen.getByText('1.2.3-rc.4-0123456-dirty')).toBeTruthy()
     expect(container.querySelector('svg')).not.toBeNull()
   })
@@ -172,7 +179,7 @@ describe('SidebarRoot shell', () => {
         options?.fallback ?? null) as SidebarRootComponentProps['renderSlot']}
     />)
 
-    expect(screen.getByText('PowerEvolve')).toBeTruthy()
+    expect(screen.getByText('DSH Local Build')).toBeTruthy()
     expect(screen.getByText(expected)).toBeTruthy()
   })
 
@@ -188,7 +195,7 @@ describe('SidebarRoot shell', () => {
         options?.fallback ?? null) as SidebarRootComponentProps['renderSlot']}
     />)
 
-    expect(screen.getByText('PowerEvolve')).toBeTruthy()
+    expect(screen.getByText('DSH Local Build')).toBeTruthy()
   })
 
   it('hands the region its wide flag and clamps expandSidebar to the collapsed state', () => {

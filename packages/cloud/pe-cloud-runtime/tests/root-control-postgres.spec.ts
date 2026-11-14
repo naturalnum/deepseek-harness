@@ -104,7 +104,10 @@ describe.skipIf(privateConfig === undefined)('actual root Loader on the controll
 
   it('emits the bounded ordinary Root observation only after AppReady and a successful seal return', async () => {
     const observation = readyObservation()
-    const stderr = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const stderr = vi.fn<typeof console.warn>()
+    const warn = vi.spyOn(console, 'warn').mockImplementation((...args) => {
+      if (args[0] === 'Cloud Root recipe audit: %j') stderr(...args)
+    })
     let observationsBeforeSealReturn = -1
     // Isolate only this notification boundary; the original audit remains unsealed and grants no account authority.
     const seal = vi.spyOn(RootRecipeAudit.prototype, 'sealCurrent').mockImplementation(() => {
@@ -117,6 +120,7 @@ describe.skipIf(privateConfig === undefined)('actual root Loader on the controll
       expect(seal).not.toHaveBeenCalled()
       expect(observation.messages).toHaveLength(0)
       expect(stderr).not.toHaveBeenCalled()
+      expect(warn).not.toHaveBeenCalled()
       expect(() => { observation.commit() }).not.toThrow()
       expect(seal).toHaveBeenCalledTimes(1)
       expect(seal).toHaveBeenCalledWith(fixture.config.recipeVersion, fixture.config.native.maxEntries)
@@ -125,6 +129,10 @@ describe.skipIf(privateConfig === undefined)('actual root Loader on the controll
         event: 'root-recipe-seal-returned', pid: process.pid, status: 'unsealed',
         rootEntries: 0, providers: 0, participants: 0, issues: [],
       })
+      expect(warn).toHaveBeenCalledTimes(2)
+      expect(warn).toHaveBeenCalledWith('Cloud service log: ' + JSON.stringify({
+        level: 'info', name: 'cloud-root', content: 'Cloud runtime observation.', event: 'ordinary-profile-ready',
+      }))
       expect(observation.messages).toHaveLength(1)
       const fields: unknown = observation.messages[0]?.args[1]
       if (typeof fields !== 'object' || fields === null) throw new Error('The ready logger must receive its structured record')
@@ -135,12 +143,15 @@ describe.skipIf(privateConfig === undefined)('actual root Loader on the controll
         rootFiberUid: fixture.ctx.root.fiber.uid, monotonicNs,
         appReadyObserved: true, recipeStatus: 'sealed' })
       expect(() => { fixture.runtime.assertRecipeSealed(fixture.config.recipeVersion) }).toThrow('not sealed')
-    } finally { seal.mockRestore(); stderr.mockRestore() }
+    } finally { seal.mockRestore(); stderr.mockRestore(); warn.mockRestore() }
   })
 
   it('emits no successful Root observation when the original native recipe seal rejects', async () => {
     const observation = readyObservation()
-    const stderr = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const stderr = vi.fn<typeof console.warn>()
+    const warn = vi.spyOn(console, 'warn').mockImplementation((...args) => {
+      if (args[0] === 'Cloud Root recipe audit: %j') stderr(...args)
+    })
     const seal = vi.spyOn(RootRecipeAudit.prototype, 'sealCurrent')
     try {
       const fixture = await root({}, observation.setup)
@@ -154,9 +165,14 @@ describe.skipIf(privateConfig === undefined)('actual root Loader on the controll
       expect(stderr).toHaveBeenCalledExactlyOnceWith('Cloud Root recipe audit: %j', {
         event: 'root-recipe-seal-rejected', pid: process.pid, status, rootEntries, providers, participants, issues,
       })
+      expect(warn).toHaveBeenCalledTimes(2)
+      expect(warn).toHaveBeenCalledWith('Cloud service log: ' + JSON.stringify({
+        level: 'error', name: 'cloud-root',
+        content: 'Cloud Root recipe audit did not seal; account admission remains closed. Inspect the retained audit.',
+      }))
       expect(() => { fixture.runtime.assertRecipeSealed(fixture.config.recipeVersion) }).toThrow('not sealed')
       expect(fixture.runtime.inspectControl()).toMatchObject({ phase: 'active', accounts: 0, hasFailure: false })
-    } finally { seal.mockRestore(); stderr.mockRestore() }
+    } finally { seal.mockRestore(); stderr.mockRestore(); warn.mockRestore() }
   })
 
   it('observes missing AppReady without changing the unsealed guard or Root lifecycle', async () => {
