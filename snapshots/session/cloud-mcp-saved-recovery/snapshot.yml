@@ -6,7 +6,6 @@ recording: authored
 header:
   class: cloud-mcp-saved-recovery
   pin: true
-  systemPromptSource: cloud-remote-facts-budget
 permission: read-only
 workspace:
   final: true
