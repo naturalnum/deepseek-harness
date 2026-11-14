@@ -47,7 +47,7 @@ Object.defineProperty(ValidationError.prototype, kValidationError, {
  * @returns the validated config, or `config` unchanged if the runtime has no schema.
  * @throws {ValidationError} when validation reports issues.
  */
-export function resolveConfig(runtime: Plugin.Runtime, config: any) {
+export function resolveConfig(runtime: Pick<Plugin.Runtime, 'Config'>, config: any) {
   if (!runtime.Config) return config
   // TODO: async validation
   const result = runtime.Config['~standard'].validate(config)
@@ -208,6 +208,7 @@ export class Fiber {
   private _error: any
   private _revision = 0
   private _configRevision = 0
+  private _configMutationRevision = 0
   private _effectiveConfig: unknown
   private _runner: EffectRunner<string>
   private _store: Dict<Impl> = Object.create(null)
@@ -645,6 +646,12 @@ export class Fiber {
     })
   }
 
+  /** Attempted raw/config mutations, including candidates rejected before the update waterfall. */
+  get configMutationRevision(): number { return this.ctx.fiber._configMutationRevision }
+
+  /** Current resolved service dependencies; the returned array is detached from the internal store. */
+  get dependencies(): readonly Impl[] { return Object.values(this.ctx.fiber._store) }
+
   /** Raw input retained for the next activation, without evaluating expressions or validating it. */
   get rawConfig(): unknown {
     return this.ctx.fiber.config
@@ -652,6 +659,7 @@ export class Fiber {
 
   /** Retain raw input without changing the running config or triggering an update. */
   set rawConfig(config: unknown) {
+    this.ctx.fiber._configMutationRevision++
     this.ctx.fiber.config = config
     this.ctx.fiber._configRevision++
   }
@@ -782,6 +790,7 @@ export class Fiber {
    */
   update(config: any, noSave = false): Awaitable<void> {
     const fiber = this.ctx.fiber
+    fiber._configMutationRevision++
     fiber.assertActive()
     const loaded = fiber._runner.epoch !== INACTIVE
     const resolved = loaded ? fiber.resolveConfig(config) : undefined

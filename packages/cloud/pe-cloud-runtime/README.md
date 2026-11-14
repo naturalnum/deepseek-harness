@@ -199,6 +199,8 @@ An explicit approved Settings field policy requires `native.firstScreen` and the
 
 Remote-server activation requires the approved catalog's `remoteServers` policy, the audited `cloudRemoteServers/action` endpoint, an account recipe entry using `cordis:pe-cloud-remote-servers`, and the original managed execution opt-in. Runtime prepares the original files, saves, approval and Session guards before publishing the account; a missing entry fails the existing inventory audit. Remote execution requires both the original composed preset and its committed Session selection to be `standard`; a header alone cannot authorize it. The original account/project admission and this Standard check run again after approval and credential waits.
 
+Native Entry/Fiber implementation reads used by account policy and Root recipe auditing are centralized in [native-state](src/native-state.ts): canonical fibers, effective configuration, owned provisions and isolation records. They retain original object identities; authorization, readiness, cancellation and unknown cleanup remain with their existing account and Root owners. Update and context-patch observers return the original awaited result, including its rejection.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

@@ -18,6 +18,7 @@ export class EntryGroup {
   }
 
   async create(options: Omit<EntryOptions, 'id'>) {
+    this.ctx.loader.updateGuard?.create(this, options)
     const id = this.tree.ensureId(options)
     const entry: Entry = this.tree.store[id] ??= new Entry(this.ctx.loader)
     // Entry may be moved from another group,
@@ -37,6 +38,7 @@ export class EntryGroup {
   remove(id: string, isDispose = false) {
     const entry = this.tree.store[id]
     if (!entry || entry.parent !== this) return
+    this.ctx.loader.updateGuard?.remove(entry)
     // Unregister before disposal so Loader can distinguish removal from self-disposal.
     delete this.tree.store[id]
     entry.fiber?.dispose()
@@ -46,7 +48,10 @@ export class EntryGroup {
     this.context.emit('loader/partial-dispose', entry, entry.options, false)
   }
 
+  /** Reconcile children; guarded updates settle every child before propagating their rejections. */
   async update(config: EntryOptions[]) {
+    const guard = this.ctx.loader.updateGuard
+    guard?.group(this, config)
     const oldConfig = this.data as EntryOptions[]
     this.data = config
     const oldMap = Object.fromEntries(oldConfig.map(options => [options.id, options]))
@@ -54,15 +59,22 @@ export class EntryGroup {
 
     // update inner plugins
     const ids = Reflect.ownKeys({ ...oldMap, ...newMap }) as string[]
-    await Promise.all(ids.map(async (id) => {
+    const tasks = ids.map(async (id) => {
       if (newMap[id]) {
-        await this.create(newMap[id]).catch((error) => {
-          this.ctx.logger.error(error)
-        })
+        if (guard !== undefined) await this.create(newMap[id])
+        else await this.create(newMap[id]).catch((error) => { this.ctx.logger.error(error) })
       } else {
         this.remove(id)
       }
-    }))
+    })
+    if (guard === undefined) {
+      await Promise.all(tasks)
+      return
+    }
+    const results = await Promise.allSettled(tasks)
+    const failures: unknown[] = results.flatMap(result => result.status === 'rejected' ? [result.reason] : [])
+    if (failures.length === 1) throw failures[0]
+    if (failures.length > 1) throw new AggregateError(failures, 'Guarded Loader child updates failed')
   }
 
   stop() {

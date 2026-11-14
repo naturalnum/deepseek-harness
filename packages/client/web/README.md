@@ -37,6 +37,8 @@ Web and Desktop mathematical rendering requires WOFF2 support. The [Web build](.
 
 Boot runs in two stages: the module stage adopts the parser-loaded bootstrap batch, builds the module system from the Host-provided boot graph, and prefetches the `immediately` tier through the shared application-batch URL, which executes once. The plugin stage then activates every graph entry and waits for all of them before handing the marked boot DOM to the UI renderer, which hydrates it and switches to the complete UI.
 
+A prepared page may supply its original module system, explicit `ClientPersistence`, a pre-activation `prepareContext`, and synchronous `beforeDispose`. The kernel reuses that system and its native `entries.start` registration; it does not create another module table. Required persistence is installed before preparation and plugin activation. Disposal revokes first and joins startup and native cleanup; a cleanup failure remains a failure. Omitting these inputs preserves ordinary browser boot.
+
 ### The boot page
 
 The boot page uses plain DOM and local CSS, so bundle and plugin-activation failures remain visible: it shows one spinner node whose CSS arc grows as entries activate. The spinner and its animation phase persist until the full UI replaces the boot page. When a required plugin fails import or activation, the page names every inactive plugin with the reason (missing service, import failure, or activation error) and marks the required ones, instead of a blank page. An optional plugin's failure appears in one console warning and does not stop the application. The console contains the original import error.

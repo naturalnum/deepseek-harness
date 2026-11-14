@@ -3,6 +3,7 @@ import { Context, FiberState, symbols, type Fiber } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-app-boot'
 import { ExposureService } from '@deepseek-ai/dsh-pe-cloud-api'
 import { RootStorageOwner } from '@deepseek-ai/dsh-pe-cloud-files/root'
+import { nativeEntryFiber, nativeEffectiveConfig, nativeProvision, nativeImplementation } from './native-state.ts'
 import { AccountRuntimeError } from './errors.ts'
 import type { DrainParticipant, RootRecipeInput, RootRecipeIssue, RootRecipeObservation, RootRecipeRole } from './types.ts'
 import type { FileReadTiming } from './file-read-timing.ts'
@@ -75,13 +76,13 @@ export class RootRecipeAudit {
     owner.on('loader/entry-init', () => { this.revoke('entry-init') })
     owner.on('loader/partial-dispose', () => { this.revoke('partial-dispose') })
     owner.on('loader/volatile-update', () => { this.revoke('volatile-update') }, { global: true })
-    owner.on('loader/patch-context', (_entry, next) => { this.revoke('patch-context'); next() })
+    owner.on('loader/patch-context', (_entry, next) => { this.revoke('patch-context'); return next() })
     const checkFiber = (fiber: Fiber): void => {
       if (this.candidate?.facts.some(fact => descends(fiber, fact.fiber))) this.revoke('fiber-update')
     }
-    owner.on('internal/update', function (this: Fiber, _config, _noSave, next) {
+    owner.on('internal/update', function (this: Fiber, _config, next) {
       checkFiber(this)
-      next()
+      return next()
     }, { global: true, prepend: true })
   }
 
@@ -145,7 +146,7 @@ export class RootRecipeAudit {
       if (entry === undefined || entry.disabled) { issue('root-entry-inactive'); continue }
       if (entry.moduleNamespace !== expected.module) { issue('root-module-replaced'); continue }
       if (modules.length !== 1) { issue('root-entry-duplicate-or-missing'); continue }
-      const fiber = entry.fiber
+      const fiber = nativeEntryFiber(entry)
       if (fiber === undefined || fiber.state !== FiberState.ACTIVE || fiber.ctx.root !== root) {
         issue('root-entry-inactive'); continue
       }
@@ -163,10 +164,11 @@ export class RootRecipeAudit {
     // Capture every audited provider entry before invoking any provider health callback.
     for (const expected of input.providers) {
       const entry = rows.find(row => row.options.id === expected.entryId)
-      if (entry?.fiber === undefined || facts.has(entry)) continue
+      const fiber = nativeEntryFiber(entry)
+      if (entry === undefined || fiber === undefined || facts.has(entry)) continue
       const plan = entry.prepareConfigUpdate(entry.options.config)
       if (plan.impact !== 'none') { issue('root-config-unproven'); continue }
-      facts.set(entry, { entry, fiber: entry.fiber, plan, module: entry.moduleNamespace })
+      facts.set(entry, { entry, fiber, plan, module: entry.moduleNamespace })
     }
     const providers: Candidate['providers'][number][] = []
     const implementations = new Map<string, { fiber: Fiber; value: unknown; record: object } | null>()
@@ -176,8 +178,8 @@ export class RootRecipeAudit {
         consume()
         if (fiber.ctx.root !== root || fiber.state !== FiberState.ACTIVE) continue
         for (const expected of input.providers) {
-          const implementation = fiber.store?.[expected.key]
-          if (implementation === undefined || implementation.fiber !== fiber) continue
+          const implementation = nativeProvision(fiber, expected.key)
+          if (implementation === undefined || implementation.ctx.fiber !== fiber) continue
           implementations.set(expected.key, implementations.has(expected.key) ? null
             : { fiber, value: implementation.value, record: implementation })
         }
@@ -189,7 +191,8 @@ export class RootRecipeAudit {
       const entry = rows.find(row => row.options.id === expected.entryId)
       const implementation = implementations.get(expected.key)
       if (implementation == null) { issue('provider-duplicate-or-missing'); continue }
-      if (entry?.fiber === undefined || !descends(implementation.fiber, entry.fiber)
+      const entryFiber = nativeEntryFiber(entry)
+      if (entry === undefined || entryFiber === undefined || !descends(implementation.fiber, entryFiber)
         || !object(implementation.value) || original(implementation.value) !== original(value)) {
         issue('provider-owner-mismatch'); continue
       }
@@ -209,12 +212,12 @@ export class RootRecipeAudit {
       const values = registered.filter(row => row.participant.id === id)
       const provider = providers.find(row => row.key === key)
       const entry = rootEntries.get(role)
-      const contribution = values[0]
-      if (values.length !== 1 || contribution === undefined || provider === undefined || entry?.fiber === undefined) {
+      const contribution = values[0], entryFiber = nativeEntryFiber(entry)
+      if (values.length !== 1 || contribution === undefined || provider === undefined || entryFiber === undefined) {
         issue('participant-missing'); continue
       }
       if (original(contribution.participant) !== provider.value || contribution.fiber.state !== FiberState.ACTIVE
-        || !descends(contribution.fiber, entry.fiber)) issue('participant-provider-mismatch')
+        || !descends(contribution.fiber, entryFiber)) issue('participant-provider-mismatch')
     }
     const exposure = root.get('peExposure')
     let manifest: object | undefined
@@ -343,8 +346,8 @@ export class RootRecipeAudit {
         consume()
         if (fiber.ctx.root !== root || fiber.state !== FiberState.ACTIVE) continue
         for (const key of PROVIDERS) {
-          const installed = fiber.store?.[key], value: unknown = installed?.value
-          if (installed === undefined || installed.fiber !== fiber) continue
+          const installed = nativeProvision(fiber, key), value: unknown = installed?.value
+          if (installed === undefined || installed.ctx.fiber !== fiber) continue
           if (!object(value) || implementations.has(key)) unavailable()
           implementations.set(key, { fiber, value: original(value) })
         }
@@ -353,9 +356,12 @@ export class RootRecipeAudit {
     for (const key of PROVIDERS) {
       const value: unknown = root.get(key), installed = implementations.get(key)
       if (!object(value) || installed === undefined || original(value) !== installed.value) unavailable()
-      const matches = entries.filter(row => row.fiber !== undefined && descends(installed.fiber, row.fiber))
-      const entry = matches.find(row => !matches.some(other => other !== row && other.fiber !== undefined
-        && row.fiber !== undefined && descends(other.fiber, row.fiber)))
+      const matches = entries.flatMap((row) => {
+        const fiber = nativeEntryFiber(row)
+        return fiber !== undefined && descends(installed.fiber, fiber) ? [{ entry: row, fiber }] : []
+      })
+      const entry = matches.find(row => !matches.some(other => other !== row
+        && descends(other.fiber, row.fiber)))?.entry
       if (entry === undefined) unavailable()
       providers.push({ key, entryId: entry.options.id, value: installed.value })
     }
@@ -381,7 +387,7 @@ export class RootRecipeAudit {
     try {
       for (const { entry, fiber, module } of candidate.facts) {
         reason = 'entry-identity'
-        if (entry.fiber !== fiber || fiber.state !== FiberState.ACTIVE || entry.moduleNamespace !== module) throw new Error('changed')
+        if (nativeEntryFiber(entry) !== fiber || fiber.state !== FiberState.ACTIVE || entry.moduleNamespace !== module) throw new Error('changed')
       }
       for (const { key, value, fiber } of candidate.providers) {
         reason = 'provider-identity'; provider = key
@@ -412,7 +418,7 @@ export class RootRecipeAudit {
       }
       for (const { entry, fiber, plan, module } of candidate.facts) {
         reason = 'entry-identity'
-        if (entry.fiber !== fiber || fiber.state !== FiberState.ACTIVE || entry.moduleNamespace !== module) throw new Error('changed')
+        if (nativeEntryFiber(entry) !== fiber || fiber.state !== FiberState.ACTIVE || entry.moduleNamespace !== module) throw new Error('changed')
         reason = 'entry-config-plan'
         if (!entry.isConfigPlanVersionCurrent(plan)) throw new Error('changed')
         if (checkPlans) {
@@ -437,19 +443,17 @@ export class RootRecipeAudit {
       const root = this.owner.root
       for (const { key, fiber, record, registered } of candidate.providers) {
         reason = 'provider-identity'; provider = key
-        const label = root[symbols.isolate][key]
-        const installed = label === undefined ? undefined : root.reflect.store[label]
-        if (installed === undefined || installed !== record || installed !== fiber.store?.[key] || installed.value !== registered
+        const installed = nativeImplementation(root, key)
+        if (installed === undefined || installed !== record || installed !== nativeProvision(fiber, key) || installed.value !== registered
           || fiber.state !== FiberState.ACTIVE) throw new Error('changed')
       }
       provider = undefined; reason = 'manifest'
-      const exposureLabel = root[symbols.isolate].peExposure
-      const exposure: unknown = exposureLabel === undefined ? undefined : root.reflect.store[exposureLabel]?.value
+      const exposure: unknown = nativeImplementation(root, 'peExposure')?.value
       if (candidate.manifest !== undefined && (!(exposure instanceof ExposureService)
         || exposure.policy.manifest !== candidate.manifest)) throw new Error('changed')
       for (const { entry, fiber, module, plan } of candidate.facts) {
         reason = 'entry-identity'
-        if (entry.fiber !== fiber || fiber.state !== FiberState.ACTIVE || entry.moduleNamespace !== module) throw new Error('changed')
+        if (nativeEntryFiber(entry) !== fiber || fiber.state !== FiberState.ACTIVE || entry.moduleNamespace !== module) throw new Error('changed')
         reason = 'entry-config-plan'
         if (!entry.isConfigPlanVersionCurrent(plan)) throw new Error('changed')
       }
@@ -474,7 +478,7 @@ export class RootRecipeAudit {
           return Reflect.get(observed, 'phase') === 'initialized' && object(ingress)
             && Reflect.get(ingress, 'state') === 'installed' && Reflect.get(ingress, 'current') === true
         }
-        const config: unknown = entry.fiber?.config
+        const config: unknown = nativeEffectiveConfig(nativeEntryFiber(entry))
         if (!object(config)) return false
         const minimum: unknown = Reflect.get(config, 'minimumHealthyWorkers')
         const healthy: unknown = Reflect.get(observed, 'healthy')

@@ -1,3 +1,4 @@
+import { nativeProvision } from '../src/native-state.ts'
 import { MODEL_KEY_FIXTURE as APPROVED_MODEL_KEY, modelKeyBinding } from '../../pe-cloud-api/tests/model-key-policy-data.ts'
 /** Actual Profile/Include/native providers with factory or component admission; owned Node paths never prove quota or ready. */
 import z from '@deepseek-ai/schemastery'
@@ -1025,7 +1026,7 @@ it('isolates native parallel ToolFS writes, instruction snapshots and cold Gatew
   const caller = selecting.mock.calls[0]?.[0]
   if (caller === undefined) throw new Error('Original Gateway file caller absent')
   const providers = [...ctx.registry.values()].flatMap(runtime => [...runtime.fibers])
-    .filter(fiber => fiber.ctx.root === ctx.root && fiber.store?.fs?.fiber === fiber)
+    .filter(fiber => fiber.ctx.root === ctx.root && nativeProvision(fiber, 'fs')?.ctx.fiber === fiber)
   expect(providers).toHaveLength(1)
   const provider = providers[0]
   if (provider === undefined) throw new Error('Original native FS provider absent')
@@ -1380,7 +1381,7 @@ it('rejects unselected Office calls before reading the original project', async 
   const resolver = ctx.typert.lookups.get('workspaceFileScope')
   if (resolver === undefined) throw new Error('Original file lookup absent')
   const fibers = [...ctx.registry.values()].flatMap(runtime => [...runtime.fibers])
-    .filter(fiber => fiber.ctx.root === ctx.root && fiber.store?.workspaceFiles?.fiber === fiber)
+    .filter(fiber => fiber.ctx.root === ctx.root && nativeProvision(fiber, 'workspaceFiles')?.ctx.fiber === fiber)
   expect(fibers).toHaveLength(1)
   const owner = fibers[0]
   if (owner === undefined) throw new Error('Original WorkspaceFiles fiber absent')
@@ -1723,7 +1724,7 @@ it('checks account plans and provider after the cold-read stat await without rep
   }
   const stat = ctx.sessionPersistence.stat.bind(ctx.sessionPersistence)
   const implementation = [...ctx.registry.values()].flatMap(runtime => [...runtime.fibers])
-    .map(fiber => fiber.store?.sessions).find(value => value !== undefined)
+    .map(fiber => nativeProvision(fiber, 'sessions')).find(value => value !== undefined)
   if (implementation === undefined) throw new Error('Original session provider missing')
   const originalSessions: unknown = implementation.value
   const swapped = vi.spyOn(ctx.sessionPersistence, 'stat').mockImplementationOnce(async (...args) => {

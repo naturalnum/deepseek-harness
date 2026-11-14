@@ -3,10 +3,10 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import * as fs from 'node:fs/promises'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest'
-import { FiberState, type Context, type Fiber } from '@deepseek-ai/cordis'
+import { Context, FiberState, type Fiber } from '@deepseek-ai/cordis'
 import type { ProfileConfigUpdatePlan } from '@deepseek-ai/dsh-app-boot'
 import { assertProfileConfigUpdate } from '@deepseek-ai/dsh-app-boot'
-import type { LoaderUpdateGuard } from '@deepseek-ai/cordis-plugin-loader'
+import Loader, { type Entry, type LoaderUpdateGuard } from '@deepseek-ai/cordis-plugin-loader'
 import z from '@deepseek-ai/schemastery'
 import { configurationFixture } from '../../../settings/settings/tests/configuration-fixture.ts'
 
@@ -53,12 +53,12 @@ it('commits pure volatile edits through the actual Loader update with the same f
   const { ctx, profile } = await configurationFixture({ hmr: false, apply(scope) { scope.effect(() => dispose) } })
   const entry = first(ctx)
   const fiber = entry.fiber
-  const config: unknown = fiber!.config
+  const config: unknown = fiber!.effectiveConfig
   const plans: ProfileConfigUpdatePlan[] = []
   onTestFinished(ctx.configEditor.registerImpactGuard({ check(plan) { plans.push(plan) } }))
   await ctx.settings.update('first', { count: 5 })
   expect(entry.fiber).toBe(fiber)
-  expect(fiber!.config).toBe(config)
+  expect(fiber!.effectiveConfig).toBe(config)
   expect(dispose).not.toHaveBeenCalled()
   expect(plans[0]!.impact).toBe('live')
   expect(plans[0]!.entries.every(plan => plan.stopped?.length === 0)).toBe(true)
@@ -105,9 +105,10 @@ it('refuses potential effective ordinary drift without executing the extra resol
   const schema = z.object({ ordinary: z.string().required(), count: z.number().default(2).volatile() })
   const { ctx, profile } = await configurationFixture({ hmr: false, schema, apply(scope) {
     scope.effect(() => dispose)
-    scope.on('internal/config', function (this: Fiber, raw: Record<string, unknown>, next: () => Record<string, unknown>) {
+    scope.on('internal/config', function (fiber: Fiber, next: () => Record<string, unknown>) {
       const value = next()
-      if (this.uid !== scope.fiber.uid) return value
+      const raw = value
+      if (fiber.uid !== scope.fiber.uid) return value
       extraCalls++
       return { ...value, ordinary: Number(raw.count ?? 2) > 2 ? 'effective-change' : value.ordinary }
     })
@@ -252,7 +253,7 @@ it('binds the actual Loader options to the opaque prepared plan', async () => {
   const scope = new AsyncLocalStorage<LoaderUpdateGuard>()
   onTestFinished(() => { scope.disable() })
   await expect(ctx.loader.withUpdateGuard({
-    entry: () => plan, group() {}, create() {}, remove() {},
+    command() {}, entry: () => plan, group() {}, create() {}, remove() {},
   }, () => entry.update({ config: { ...raw(ctx), ordinary: 'unplanned' } }),
   scope)).rejects.toThrow('prepared options')
   expect(entry.options).toEqual(options)
@@ -292,7 +293,7 @@ it('reports a required post-commit failure without an unguarded rollback or remo
 it('rejects a guarded mutation without a host scope before invoking its operation', async () => {
   const { ctx } = await configurationFixture({ hmr: false })
   const operation = vi.fn(async () => {})
-  const guard: LoaderUpdateGuard = { entry() { return undefined }, group() {}, create() {}, remove() {} }
+  const guard: LoaderUpdateGuard = { command() {}, entry() { return undefined }, group() {}, create() {}, remove() {} }
   await expect(ctx.loader.withUpdateGuard(guard, operation, undefined)).rejects.toThrow('requires an async execution scope')
   expect(operation).not.toHaveBeenCalled()
   expect(ctx.loader.updateGuard).toBeUndefined()
@@ -305,7 +306,7 @@ it('isolates awaited guarded descendants, refuses nested and unbound mutations, 
   const entry = first(ctx), options = structuredClone(entry.options)
   const next = { ...raw(ctx), count: 4 }
   const plan = entry.prepareConfigUpdate(next)
-  const guard: LoaderUpdateGuard = { entry: () => plan, group() {}, create() {}, remove() {} }
+  const guard: LoaderUpdateGuard = { command() {}, entry: () => plan, group() {}, create() {}, remove() {} }
   const scope = new AsyncLocalStorage<LoaderUpdateGuard>()
   const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
   let settled = false
@@ -341,7 +342,7 @@ it('isolates awaited guarded descendants, refuses nested and unbound mutations, 
 
 it('retains the reservation through a pending rejection and releases it after the original failure', async () => {
   const { ctx } = await configurationFixture({ hmr: false })
-  const guard: LoaderUpdateGuard = { entry() { return undefined }, group() {}, create() {}, remove() {} }
+  const guard: LoaderUpdateGuard = { command() {}, entry() { return undefined }, group() {}, create() {}, remove() {} }
   const scope = new AsyncLocalStorage<LoaderUpdateGuard>()
   const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
   const failure = new Error('actual guarded operation failed')
@@ -418,4 +419,167 @@ it('rejects a plan consumed by the real guarded live commit', async () => {
   await ctx.settings.update('first', { count: 5 })
   if (consumed === undefined) throw new Error('Native live plan missing')
   expect(entry.isConfigPlanVersionCurrent(consumed)).toBe(false)
+})
+
+
+it('invalidates an original plan before a rejected Fiber candidate is resolved', async () => {
+  const { ctx } = await configurationFixture({ hmr: false })
+  const entry = first(ctx), fiber = entry.fiber!.ctx.fiber
+  const plan = entry.prepareConfigUpdate(entry.options.config)
+  const effective = fiber.effectiveConfig, raw = fiber.rawConfig
+  const revision = fiber.configMutationRevision
+  let observed = false
+  onTestFinished(ctx.on('internal/config', (actual, next) => {
+    if (actual === fiber) {
+      observed = true
+      expect(entry.isConfigPlanVersionCurrent(plan)).toBe(false)
+    }
+    return next()
+  }, { prepend: true }))
+  expect(() => fiber.update({ ...(raw as Record<string, unknown>), ordinary: 1 }, true)).toThrow()
+  expect(observed).toBe(true)
+  expect(fiber.configMutationRevision).toBe(revision + 1)
+  expect(fiber.rawConfig).toBe(raw)
+  expect(fiber.effectiveConfig).toBe(effective)
+  expect(() => entry.assertConfigUpdatePlan(plan)).toThrow('stale')
+})
+
+
+it.each(['create', 'move'] as const)('blocks a caught tree %s command before native rows or persistence change', async (operation) => {
+  const { ctx, profile } = await configurationFixture({ hmr: false })
+  const target = first(ctx), tree = target.parent.tree, group = target.parent
+  const carrier = ctx.loader.resolve('include')
+  const rows = [...group.data], options = structuredClone(target.options), parent = target.parent
+  const commit = vi.spyOn(tree, 'commit')
+  const addition = { name: target.options.name, config: structuredClone(target.options.config) }
+  let attempted = false
+  onTestFinished(ctx.configEditor.registerImpactGuard({ check() {} }))
+  onTestFinished(ctx.on('loader/patch-context', async (entry, next) => {
+    if (entry === carrier && !attempted) {
+      attempted = true
+      const action = operation === 'create' ? tree.create(addition)
+        : tree.update(target.options.id, { config: { ...raw(ctx), count: 99 } }, null, Infinity)
+      // The actual child may catch its rejection; the enclosing save still owns the original failure.
+      await action.catch(() => {})
+      expect(Object.hasOwn(addition, 'id')).toBe(false)
+      expect(group.data).toEqual(rows)
+      expect(target.parent).toBe(parent)
+      expect(target.options).toEqual(options)
+      expect(commit).not.toHaveBeenCalled()
+    }
+    return next()
+  }))
+  const edit = ctx.configEditor.edit(target, value => ({ ...value, count: 5 })).catch((error: unknown) => {
+    expect(ctx.configEditor.editFailureOutcome(error)).toBe('unknown')
+    throw error
+  })
+  await expect(edit).rejects.toThrow('tree commands')
+  expect(attempted).toBe(true)
+  expect(readFileSync(profile.patchPath, 'utf8')).toContain('count: 5')
+  expect(commit).not.toHaveBeenCalled()
+})
+
+
+it('rejects a saved live edit when an awaited native Fiber update invalidates its child plan while remaining active', async () => {
+  const { ctx, profile } = await configurationFixture({ hmr: false })
+  const target = first(ctx), fiber = target.fiber!.ctx.fiber, carrier = ctx.loader.resolve('include')
+  const wrapper = target.fiber, original = structuredClone(target.options.config)
+  const renamesBefore = vi.mocked(fs.rename).mock.calls.length
+  let prepared: ReturnType<typeof target.prepareConfigUpdate> | undefined
+  let invalidatedAfterWrite = false
+  onTestFinished(ctx.configEditor.registerImpactGuard({ check(plan) {
+    prepared = plan.entries.find(row => row.entry === target)
+    expect(prepared?.impact).toBe('live')
+  } }))
+  onTestFinished(ctx.on('loader/patch-context', async (entry, next) => {
+    if (entry === carrier && !invalidatedAfterWrite) {
+      expect(readFileSync(profile.patchPath, 'utf8')).toContain('count: 5')
+      if (prepared === undefined) throw new Error('Original child plan is absent')
+      expect(target.isConfigPlanVersionCurrent(prepared)).toBe(true)
+      await fiber.update(fiber.rawConfig, true)
+      expect(fiber.state).toBe(FiberState.ACTIVE)
+      expect(target.isConfigPlanVersionCurrent(prepared)).toBe(false)
+      invalidatedAfterWrite = true
+    }
+    return next()
+  }))
+  let rejection: unknown
+  try { await ctx.configEditor.edit(target, value => ({ ...value, count: 5 })) }
+  catch (error) { rejection = error }
+  expect(invalidatedAfterWrite).toBe(true)
+  expect(rejection).toBeInstanceOf(Error)
+  expect(rejection).toMatchObject({ message: expect.stringContaining('stale') })
+  expect(ctx.configEditor.editFailureOutcome(rejection)).toBe('unknown')
+  expect(readFileSync(profile.patchPath, 'utf8')).toContain('count: 5')
+  expect(vi.mocked(fs.rename).mock.calls.length - renamesBefore).toBe(1)
+  expect(target.fiber).toBe(wrapper)
+  expect(fiber.state).toBe(FiberState.ACTIVE)
+  expect(target.options.config).toEqual(original)
+  expect(ctx.settings.describe().find(row => row.ns === 'first')?.value).toMatchObject({ count: 2 })
+})
+
+it.each([
+  { guarded: false, failures: 2 },
+  { guarded: true, failures: 1 },
+  { guarded: true, failures: 2 },
+])('joins real sibling updates with guarded=$guarded and $failures child failures', async ({ guarded, failures }) => {
+  const ctx = new Context(), scope = new AsyncLocalStorage<LoaderUpdateGuard>()
+  const disposing = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  const children: Entry[] = [], reported: unknown[][] = []
+  const updates: Promise<void>[] = []
+  let siblingClosed = false
+  onTestFinished(async () => {
+    release.resolve(undefined)
+    await Promise.allSettled(updates)
+    await Promise.all(children.map(entry => entry.fiber?.dispose()))
+    await ctx.fiber.dispose()
+    scope.disable()
+  })
+  ctx.logger.exporter({ levels: { default: 4 }, export(message) {
+    if (message.type === 'error') reported.push(message.args)
+  } })
+  await ctx.plugin(Loader)
+  ctx.loader.builtins.probe = {
+    Config: z.object({ value: z.number() }),
+    apply(owner: Context, config: { value: number }) {
+      if (owner.fiber.entry?.options.id === 'slow' && config.value === 1) owner.effect(() => async () => {
+        disposing.resolve(undefined)
+        await release.promise
+        siblingClosed = true
+      })
+    },
+  }
+  const errors = Array.from({ length: failures }, (_, index) => new Error(`Original child ${String(index)} failed`))
+  for (const id of [...errors.map((_, index) => `bad-${String(index)}`), 'slow']) {
+    const created = await ctx.loader.create({ id, name: 'cordis:probe', config: { value: 1 } })
+    children.push(ctx.loader.resolve(created))
+  }
+  await ctx.loader.await()
+  ctx.on('loader/patch-context', (entry, next) => {
+    const index = children.indexOf(entry)
+    if (index >= 0 && index < errors.length) throw errors[index]
+    return next()
+  })
+  const rows = children.map(entry => ({ ...entry.options, config: { value: 2 } }))
+  const guard: LoaderUpdateGuard = { command() {}, entry() { return undefined }, group() {}, create() {}, remove() {} }
+  const updating = guarded ? ctx.loader.withUpdateGuard(guard, () => ctx.loader.root.update(rows), scope)
+    : ctx.loader.root.update(rows)
+  updates.push(updating)
+  let settled = false
+  void updating.then(() => { settled = true }, () => { settled = true })
+  await disposing.promise
+  // Give already-rejected child promises a turn while native sibling cleanup remains explicitly blocked.
+  await new Promise<void>(resolve => setImmediate(() => { resolve() }))
+  expect(settled).toBe(false)
+  expect(siblingClosed).toBe(false)
+  if (guarded) expect(() => ctx.loader.updateGuard).toThrow('reserved')
+  release.resolve(undefined)
+  if (!guarded) {
+    await expect(updating).resolves.toBeUndefined()
+    for (const error of errors) expect(reported.some(args => args.includes(error))).toBe(true)
+  } else if (errors.length === 1) await expect(updating).rejects.toBe(errors[0])
+  else await expect(updating).rejects.toMatchObject({ errors })
+  expect(siblingClosed).toBe(true)
+  expect(ctx.loader.updateGuard).toBeUndefined()
+  expect(children.at(-1)?.fiber?.state).toBe(FiberState.ACTIVE)
 })

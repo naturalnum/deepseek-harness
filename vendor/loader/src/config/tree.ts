@@ -124,6 +124,7 @@ export abstract class EntryTree {
 
   /** Create an entry in the root group or a nested group. */
   async create(options: Omit<EntryOptions, 'id'>, parent: string | null = null, position = Infinity) {
+    this.ctx.loader.updateGuard?.command(this, 'create')
     const group = this.resolveGroup(parent)
     const id = group.tree.ensureId(options)
     group.data.splice(position, 0, options as EntryOptions)
@@ -133,6 +134,7 @@ export abstract class EntryTree {
 
   /** Stop and remove an entry from its parent group. */
   remove(id: string) {
+    this.ctx.loader.updateGuard?.command(this, 'remove')
     const entry = this.resolve(id)
     const group = entry.parent
     const legacy = entry.options
@@ -142,6 +144,7 @@ export abstract class EntryTree {
 
   /** Update an entry and optionally move it to another group. */
   async update(id: string, options: Omit<EntryOptions, 'id' | 'name'>, parent?: string | null, position?: number) {
+    this.ctx.loader.updateGuard?.command(this, 'update')
     const entry = this.resolve(id)
     const source = entry.parent
     const legacy = { ...entry.options }

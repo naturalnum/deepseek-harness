@@ -77,3 +77,5 @@ Gateway `inspectInvocation` 将既有严格/SRC 解析器作为只读 Host 检�
 独立账号插件通过 Runtime 原有的 `projectForSession` 回调复用 `CloudAccountApi.sessionProject(actualSession)`；缺少回调或当前业务准入时拒绝访问。该 Host 方法不创建 Session、Agent 或执行权限。
 
 原生 SubprocessHandle 增加可选 `releaseCollected()`；Cloud 收集输出句柄将其转交给原有 ManagedCommandOperation.release()。消费者先复制输出。原有执行范围和 I/O 结算继续持有容量及未知清理责任，使同一原生科研工具可顺序执行工作流或 Git 命令，而无需将全部已结束输出保留到最终投影。
+
+配置计划计算和原准备状态由 app-boot 持有，profile 在原 Loader 上安装检查器；框架仅保留检查入口、变更计数、异步预留与原生应用。直接[树命令](../../vendor/loader/src/config/tree.ts)在分配 id、修改列表、移动父节点/store 或写配置前先检查。Runtime 对规范 Fiber 身份、有效配置、提供方与隔离记录的读取集中于 [native-state](pe-cloud-runtime/src/native-state.ts)，原取消、关闭和结果未知责任不变。

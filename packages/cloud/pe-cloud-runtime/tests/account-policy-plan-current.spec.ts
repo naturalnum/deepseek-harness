@@ -32,13 +32,13 @@ it.each([false, true])('rejects during the actual Fiber update waterfall (noSave
   if (fiber === undefined) throw new Error('Original Loop fiber absent')
   let observed = false
   const blocked = new Error('The original update observer vetoed the restart')
-  f.graph.ctx.on('internal/update', function (this: Fiber, _config, _noSave, next) {
-    if (this === fiber) {
+  f.graph.ctx.on('internal/update', function (this: Fiber, _config, next) {
+    if (this === fiber.ctx.fiber) {
       observed = true
       expect(() => { f.policy.assertWorkspace(f.workspace) }).toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))
       throw blocked
     }
-    next()
+    return next()
   }, { global: true, prepend: true })
   expect(() => { fiber.update({ agents: [], maxParallelToolCalls: 2 }, noSave) }).toThrow(blocked)
   expect(observed).toBe(true)
@@ -53,8 +53,8 @@ it('rejects reentrant admission while an invalid Native Fiber update is being re
   if (fiber === undefined) throw new Error('Original Loop fiber absent')
   const before = fiber.configMutationRevision
   let observed = false
-  f.graph.ctx.on('internal/config', function (this: Fiber, _config, next) {
-    if (this === fiber) {
+  f.graph.ctx.on('internal/config', function (actual: Fiber, next) {
+    if (actual === fiber.ctx.fiber) {
       observed = true
       expect(() => { f.policy.assertWorkspace(f.workspace) }).toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))
     }
@@ -82,21 +82,21 @@ it('rejects during the Native parent move before the Entry update has run', asyn
   const options = { id: 'account-plan-group', name: 'cordis:account-plan-group', group: true, config: [] }
   await tree.create(options)
   await f.policy.sessions.resolveCreate({})
-  const originalWrite = tree.write.bind(tree)
+  const originalCommit = tree.commit.bind(tree)
   let observed = false
-  const write = vi.spyOn(tree, 'write').mockImplementation(() => {
+  const commit = vi.spyOn(tree, 'commit').mockImplementation((change) => {
     if (f.loop.parent !== previous) {
       observed = true
       expect(() => { f.policy.assertWorkspace(f.workspace) }).toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))
     }
-    originalWrite()
+    originalCommit(change)
   })
   const previous = f.loop.parent
   try {
     await tree.update(f.loop.options.id, {}, options.id)
     expect(observed).toBe(true)
     expect(() => { f.policy.assertWorkspace(f.workspace) }).toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))
-  } finally { write.mockRestore() }
+  } finally { commit.mockRestore() }
 })
 
 it('checks all captured revisions after the last initial full validation reenters a failed Native update', async () => {

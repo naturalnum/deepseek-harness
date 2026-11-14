@@ -37,6 +37,12 @@
     },
     {
       "path": "../../util/native-command"
+    },
+    {
+      "path": "../../../vendor/cosmokit"
+    },
+    {
+      "path": "../../../vendor/schemastery"
     }
   ]
 }

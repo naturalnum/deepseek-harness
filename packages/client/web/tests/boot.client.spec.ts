@@ -5,8 +5,10 @@ import type {
   ClientBundleRegistration, ClientModuleCreateOptions, ClientModuleLoaderTarget, DshWindow,
   WebBootEntry,
 } from '@deepseek-ai/dsh-client-modules/client'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { AppWebEntry } from '../src/boot.ts'
+import { getStaticModules } from '../src/seed.ts'
+import type { ClientPersistence } from '@deepseek-ai/dsh-client-store'
 
 const MODULES_ID = '@deepseek-ai/dsh-client-modules'
 const REQUIRED_ID = '@deepseek-ai/dsh-client-ui-chat'
@@ -335,4 +337,42 @@ it('draws the shared boot page before Host injections and resumes without replac
     await entry.dispose()
     vi.unstubAllGlobals()
   }
+})
+
+
+it('reuses the prepared module system through native entry registration and revokes before cleanup', async () => {
+  const container = document.createElement('div')
+  document.body.append(container)
+  const target = installFacade()
+  const graph = {
+    rev: 'prepared',
+    entries: [{ id: 'renderer', url: '/renderer.js', rev: '1' }],
+    batches: [{ phase: 'application' as const, url: '/application.js', rev: '1', entries: ['renderer'] }],
+  }
+  win.__DSH_BOOT__ = graph
+  const persistence: ClientPersistence = { getItem: () => null, setItem() {}, removeItem() {}, keys: () => [] }
+  const events: string[] = []
+  let revoked = false
+  const modules = target.create({ boot: graph, staticModules: getStaticModules(), loadBundle: async () => {
+    target.load({ id: 'renderer', factory: () => ({ apply(ctx: Context) {
+      expect(ctx.get('clientPersistence')).toBe(persistence)
+      events.push('activate')
+      ctx.reflect.provide('uiRenderer', { mount: () => () => {} })
+      ctx.effect(() => () => { expect(revoked).toBe(true); events.push('cleanup') })
+    } }) })
+  } })
+  const recreate = vi.spyOn(target, 'create')
+  const start = vi.spyOn(modules.entries, 'start')
+  const entry = new AppWebEntry(container, {
+    modules, persistence, requirePersistence: true,
+    prepareContext: (ctx) => { expect(ctx.get('clientPersistence')).toBe(persistence); events.push('prepare') },
+    beforeDispose: () => { revoked = true; events.push('revoke') },
+  })
+  onTestFinished(() => entry.dispose())
+  await entry.run()
+  expect(recreate).not.toHaveBeenCalled()
+  expect(start).toHaveBeenCalledOnce()
+  expect(events).toEqual(['prepare', 'activate'])
+  await entry.dispose()
+  expect(events).toEqual(['prepare', 'activate', 'revoke', 'cleanup'])
 })

@@ -32,13 +32,15 @@ Mount this service in a profile application with Loader and `profileContext`. It
 
 Use [settings](../../settings/settings/README.md) for forms restricted to live fields. Callers that edit complete configuration can use `ctx.configEditor.edit()`; ordinary fields retain Loader’s normal lifecycle.
 
+A Host may register one save-submission hook and one impact guard. The hook admits the actual queued operation before submission; nested writes retain that operation’s completion. With an impact guard, the editor prepares the original profile plan, rechecks caller authority after awaited policy, then reserves Loader through atomic replacement and reconciliation. Unsupported or stale plans fail before replacement; a child plan invalidated after replacement still fails the save even when its plugin remains active. Guarded sibling updates all settle before child rejections return. Failures after replacement remain failed with an unknown outcome and do not trigger an unguarded rollback.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The [editor](src/index.ts) reconciles external changes before deriving a candidate, locks the profile manifest alongside other profile operations, and atomically replaces its config override. It preserves YAML comments and `!!js` expressions outside replaced values. A failed reconciliation restores the prior document and reloads the prior patches.
+The [editor](src/index.ts) locks the profile manifest alongside other profile operations and atomically replaces its config override. Ordinary edits reconcile external changes before deriving a candidate; guarded edits require the already-applied profile to match their prepared plan. It preserves YAML comments and `!!js` expressions outside replaced values. Without an impact guard, a failed reconciliation restores the prior document and reloads the prior patches.
 
 Configuration reads share one composition for entries without profile config overrides. Overridden entries are composed separately with only their own override removed; profile inserts and other entries' overrides remain effective. Returned configs are detached, and compositions are not cached between reads.
 

@@ -6,6 +6,9 @@
  * @module @deepseek-ai/dsh-app-boot
  */
 
+import { installEntryConfigInspection } from './entry-config-impact.ts'
+import { profileIncludes } from './config-impact.ts'
+export { composeProfileEntries, prepareProfileConfigUpdate, prepareProfilePluginUpdate, prepareProfileSelectionUpdate, assertProfileConfigUpdate, withProfileConfigUpdate, type ProfileConfigUpdatePlan } from './config-impact.ts'
 import { pathToFileURL } from 'node:url'
 import { readFileSync } from 'node:fs'
 import { inspect, parseEnv } from 'node:util'
@@ -19,7 +22,7 @@ import Include, { applyEntryPatches, entryListSchema, type PatchOptions } from '
 import Group from '@deepseek-ai/cordis-plugin-group'
 import { dshHomePath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { createLaunchEnvironmentSnapshot, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
-export { readBundlePatches, readProfilePatches, resolveTelemetryPatch, type ProfileContext, type ProfilePnpmInvocation } from './profile-context.ts'
+export { normalizeProfileEntryAliases, readBundlePatches, readProfilePatches, resolveTelemetryPatch, type ProfileContext, type ProfilePnpmInvocation } from './profile-context.ts'
 export { sanitizeProfile } from './profile-sanitize.ts'
 export { getDshRuntimeVersion, evaluatePluginCompatibility, pluginCompatibilityWarning, type PluginCompatibility } from './plugin-compatibility.ts'
 export {
@@ -276,7 +279,7 @@ export function loadLayeredEnv(
   ])
 }
 
-const bootstrapIncludes = new WeakMap<Context, Entry>()
+const bootstrapIncludes = profileIncludes
 
 // The include's YAML dialect (`!!js` scalars become expression nodes the
 // Loader interpolates against each entry's injection-ready context), imported
@@ -762,6 +765,7 @@ export async function mountRootInclude(
   bareModuleBaseUrl?: string,
   binName = 'dsh',
 ): Promise<Entry | undefined> {
+  installEntryConfigInspection(ctx.loader)
   ctx.loader.builtins.include = bareModuleBaseUrl === undefined
     ? Include
     : class HostResolvedRootInclude extends Include {

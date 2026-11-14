@@ -76,6 +76,8 @@ profile 导入插件前，DSH 会将其声明的 DSH 版本要求与 `getDshRunt
 
 启动前，你可以打印应用将挂载的确切配置：dump 会以 `!!js` 表达式原样展示组合后的条目列表，并按注释分组标明每个源文件及其 patch 层，输出是一份可加载的 YAML 文档。未匹配到任何行的 patch 会连同其层标签一起报告；配置缺失、无法解析或字段无效都会使 dump 失败。
 
+Profile 配置检查位于[配置影响模块](src/config-impact.ts)及其[条目检查器](src/entry-config-impact.ts)。挂载根 Include 时在该 Loader 上安装唯一检查提供方。准备计划保留原 Entry、模块、Fiber 与变更版本；复制、过期或无法确定的计划不能批准应用。实际受守护更新与原生生命周期仍由 Loader 执行。准备后的 profile 重新应用拒绝直接树命令，检查先于 id、列表、父节点或 journal 的修改。候选检查读取 `effectiveConfig`，原始输入独立保留。
+
 ### 检查插件配置 schema
 
 `generateConfigSchema` 接收用于诊断的 bin 名称、已准备好的磁盘 profile、有序 patch 列表和安装锚点，返回 `ConfigSchemaDump`。App-boot 负责组合、运行时解析和收集诊断。调用方负责 profile 准备、home/argv 层选择、进程流及退出策略。`createConfigProjector`、`isNativeConfigSchema` 与 `LOADER_EXPRESSION_SCHEMA` 供不经 profile 收集、只投影单个运行中插件 Config 的调用方使用；投影后的取值位置会引用 `#/$defs/loaderExpression`，外层文档必须定义它。

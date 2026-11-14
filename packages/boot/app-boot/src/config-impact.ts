@@ -267,6 +267,7 @@ export async function withProfileConfigUpdate<T>(plan: ProfileConfigUpdatePlan, 
     }
   }
   const guard: LoaderUpdateGuard = {
+    command: () => checked(() => { throw new Error('Profile configuration reconciliation cannot run direct tree commands') }),
     entry: (entry, options, create) => checked(() => {
       if (entry === state.root) {
         assertProfileConfigUpdate(plan, true)

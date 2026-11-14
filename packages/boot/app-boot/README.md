@@ -76,6 +76,8 @@ Before mounting profile rows, the `dsh` launcher computes one immutable runtime 
 
 Before you boot, you can print the exact configuration the app will mount: the dump shows the composed entry list with `!!js` expressions verbatim, grouped under comments naming each source file and the patch layers that changed it, as one loadable YAML document. Patches that match no row are reported with their layer label; a missing, unparsable, or invalid config fails the dump.
 
+Profile configuration inspection lives in [config-impact](src/config-impact.ts) and its [entry inspector](src/entry-config-impact.ts). Mounting the root Include installs one inspector provider on that Loader. Prepared plans retain the original Entry, module, Fiber and mutation versions; copied, stale or unresolved plans cannot authorize application. Loader owns the actual guarded update and native lifecycle. Prepared profile reconciliation rejects direct tree commands before ids, lists, parents or journals change. Candidate checks read `effectiveConfig`; raw input remains separate.
+
 ### Inspecting plugin configuration schemas
 
 `generateConfigSchema` takes a diagnostic bin name, a prepared on-disk profile, ordered patch lists, and an installation anchor, and returns `ConfigSchemaDump`. App-boot owns composition, runtime resolution, and collection diagnostics. The caller owns profile preparation, home/argv layer selection, process streams, and exit policy. `createConfigProjector`, `isNativeConfigSchema`, and `LOADER_EXPRESSION_SCHEMA` are exported for callers that project one live plugin Config without profile collection; projected value positions reference `#/$defs/loaderExpression`, so the enclosing document must define it.

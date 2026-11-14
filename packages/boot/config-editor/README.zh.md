@@ -32,13 +32,15 @@ kind: "package-reference"
 
 使用 [settings](../../settings/settings/README.zh.md) 提供只编辑即时字段的表单。编辑完整配置的调用方可使用 `ctx.configEditor.edit()`；普通字段保留 Loader 的正常生命周期。
 
+Host 可登记唯一保存提交钩子与影响守护。钩子在进入队列前批准实际操作，嵌套写入沿用该操作的完成责任。存在影响守护时，编辑器准备原 profile 计划，在异步策略后重核调用方，再保留 Loader 直到原子替换与重新应用完成。不支持或过期的计划在替换前拒绝；子计划在替换后失效时，即使插件仍处于活动态，保存也必须失败。受守护的兄弟项更新全部结算后再返回子项拒绝。替换后的失败保留结果未知，不触发无守护回滚。
+
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
 <details>
 <summary>实现内部细节——点击展开</summary>
 
-[编辑器](src/index.ts) 在派生候选配置前应用外部更改，与其他 profile 操作共同锁定 profile manifest，并原子替换配置覆盖项。它保留替换值以外的 YAML 注释和 `!!js` 表达式。应用失败时恢复之前的文档并重新加载之前的 patch。
+[编辑器](src/index.ts) 与其他 profile 操作共同锁定 profile manifest，并原子替换配置覆盖项。普通编辑在派生候选配置前应用外部更改；受守护编辑要求已应用的 profile 与其准备计划一致。它保留替换值以外的 YAML 注释和 `!!js` 表达式。未安装影响守护时，应用失败会恢复之前的文档并重新加载之前的 patch。
 
 读取配置时，没有 profile config 覆盖项的条目共用一次组合结果。有覆盖项的条目分别组合，仅移除自身的覆盖项；profile 插入的条目和其他条目的覆盖项仍然生效。返回的配置为独立副本，组合结果不跨读取缓存。
 

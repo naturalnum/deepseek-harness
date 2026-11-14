@@ -6,6 +6,39 @@ import { EntryTree } from './tree.ts'
 import { evaluate, isJsExpr } from './utils.ts'
 import { equalExceptVolatile } from './diff.ts'
 
+/** Native decision for a single config-only update; non-live stop closures are unproven. */
+export interface EntryConfigUpdatePlan {
+  /** Native mutation counter of this entry, rather than a profile-wide revision. */
+  readonly version: number
+  /** Entry that prepared this opaque plan. */
+  readonly entry: Entry
+  /** Running fiber bound to the plan. */
+  readonly fiber: Fiber | undefined
+  /** Actual native decision, with unsupported dependencies reported conservatively. */
+  readonly impact: 'none' | 'live' | 'remount' | 'unknown'
+  /** Empty for proven live/no-op changes; undefined when the stop closure is unproven. */
+  readonly stopped: readonly Fiber[] | undefined
+}
+
+/** Profile-provided preparation; default Loader execution does not create plans. */
+export interface EntryConfigInspection {
+  assertConfigUpdateSupported(): void
+  prepareConfigUpdate(next: unknown): EntryConfigUpdatePlan
+  isConfigPlanVersionCurrent(plan: EntryConfigUpdatePlan): boolean
+  assertConfigUpdatePlan(plan: EntryConfigUpdatePlan): void
+  snapshotConfigUpdatePlan(plan: EntryConfigUpdatePlan): unknown
+  prepareOptionsUpdate(next: EntryOptions, maximum: number): EntryConfigUpdatePlan
+  prepareModuleOptionsUpdate(next: EntryOptions, maximum: number): Promise<EntryConfigUpdatePlan>
+  consume(plan: EntryConfigUpdatePlan, options: Partial<EntryOptions>, create: boolean): PreparedEntryConfigUpdate
+}
+
+/** Checked execution inputs; the profile owns candidate inspection and post-activation judgment. */
+export interface PreparedEntryConfigUpdate {
+  readonly impact: 'none' | 'live' | 'remount'
+  readonly candidate: unknown
+  verify(): void
+}
+
 /** Serialized plugin entry options stored in loader config files. */
 export interface EntryOptions {
   /** Stable id inside the containing entry tree. */
@@ -54,6 +87,38 @@ export class Entry {
   public subtree?: EntryTree
 
   _initTask?: Promise<void>
+  private configVersion = 0
+  private optionsDisposal: Fiber | undefined
+
+  /** Native entry update attempts; read with the retained Entry and Fiber identities. */
+  get configMutationRevision(): number { return this.configVersion }
+
+  private get configInspector(): EntryConfigInspection {
+    const inspector = this.loader.configInspection?.(this)
+    if (inspector === undefined) throw new Error('Profile configuration inspection is not installed')
+    return inspector
+  }
+
+  /** Identify disposal already owned by a guarded native replacement. */
+  ownsPreparedDisposal(fiber: Fiber): boolean {
+    return this.optionsDisposal?.ctx.fiber === fiber.ctx.fiber && this.loader.updateGuard !== undefined
+  }
+
+  /** Prepare a profile-owned config inspection without applying it. */
+  prepareConfigUpdate(next: unknown) { return this.configInspector.prepareConfigUpdate(next) }
+  /** Reject unsupported deterministic candidate resolvers. */
+  assertConfigUpdateSupported() { this.configInspector.assertConfigUpdateSupported() }
+  /** Recheck the original plan's Entry and Fiber mutation versions. */
+  isConfigPlanVersionCurrent(plan: EntryConfigUpdatePlan) { return this.configInspector.isConfigPlanVersionCurrent(plan) }
+  /** Recheck the original plan and its effective values before application. */
+  assertConfigUpdatePlan(plan: EntryConfigUpdatePlan) { this.configInspector.assertConfigUpdatePlan(plan) }
+  /** Read a detached candidate from an original current plan. */
+  snapshotConfigUpdatePlan(plan: EntryConfigUpdatePlan) { return this.configInspector.snapshotConfigUpdatePlan(plan) }
+  /** Prepare one fixed module's bounded config or enablement update. */
+  prepareOptionsUpdate(next: EntryOptions, maximum: number) { return this.configInspector.prepareOptionsUpdate(next, maximum) }
+  /** Import the original preinstalled module before preparing a disabled leaf. */
+  prepareModuleOptionsUpdate(next: EntryOptions, maximum: number) { return this.configInspector.prepareModuleOptionsUpdate(next, maximum) }
+
 
   constructor(public loader: Loader) {
     this.ctx = loader.ctx.extend({ [Entry.key]: this })
@@ -119,6 +184,34 @@ export class Entry {
 
   /** Merge new options, restart as needed, and persist through the parent tree. */
   async update(options: Partial<EntryOptions>, create = false, force = false) {
+    const planned = this.loader.updateGuard?.entry(this, options, create, force)
+    if (planned !== undefined) {
+      const approved = this.configInspector.consume(planned, options, create)
+      if (approved.impact === 'remount') {
+        this.configVersion++
+        this.optionsDisposal = this.fiber
+        try { await this.fiber?.dispose() } finally { this.optionsDisposal = undefined }
+        this.options = (create ? options : { ...this.options, ...options }) as EntryOptions
+        sortKeys(this.options)
+        if (!this.disabled) {
+          this.fiber = undefined
+          await this.init()
+          await (this as Entry).fiber?.await()
+        }
+        approved.verify()
+        return
+      }
+      if (approved.impact === 'live') this.configVersion++
+      if (create) this.options = options as EntryOptions
+      else this.options.config = options.config
+      sortKeys(this.options)
+      if (approved.impact === 'live') {
+        this.fiber!.rawConfig = this.options.config
+        this._applyVolatile(approved.candidate)
+      }
+      return
+    }
+    this.configVersion++
     const legacy = { ...this.options }
 
     // step 1: update options
@@ -181,13 +274,20 @@ export class Entry {
       this.ctx.logger.debug('ordinary config values of %C changed with its volatile values; applying the ordinary update', this.options.id)
       return false
     }
+    this._applyVolatile(candidate)
+    return true
+  }
+
+  private _applyVolatile(candidate: unknown): void {
+    const fiber = this.fiber!.ctx.fiber
+    const refs = volatileEntries(fiber.effectiveConfig)
     const paths = refs.flatMap(({ path, ref }) => {
       const source = path.reduce<unknown>((value, key) => Reflect.get(value as object, key), candidate) as Volatile<unknown>
       if (deepEqual(ref.get(), source.get(), true)) return []
       updateVolatile(ref, source)
       return [path]
     })
-    if (!paths.length) return true
+    if (!paths.length) return
     const self: Context = Object.create(fiber.ctx)
     self[Context.filter] = (owner: Context) => owner.fiber === fiber
     try {
@@ -196,7 +296,6 @@ export class Entry {
       // A listener failure must not fail the entry update; every value is already committed.
       this.ctx.logger.warn(error)
     }
-    return true
   }
 
   getOuterStack = () => {
