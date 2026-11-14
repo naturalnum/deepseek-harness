@@ -64,6 +64,9 @@ export function failureLine(t: TranslateNS<'sidebarFiles'>, failure: RemoteFailu
     case 'workspace-file/not-found': return t('error.notFound')
     case 'workspace-file/outside-workspace': return t('error.outsideWorkspace')
     case 'workspace-file/not-directory': return t('error.notDirectory')
+    case 'workspace-file/directory-changed': return t('error.directoryChanged')
+    case 'workspace-file/directory-stopped': return t('error.directoryStopped')
+    case 'workspace-file/directory-close-unconfirmed': return t('error.directoryCloseFailed')
     // Carrier and unclassified host failures reach the reader as themselves:
     // this tree knows nothing useful to add to a transport-level message.
     default: return t('error.unavailable', { message: failure.message })
@@ -83,6 +86,7 @@ interface TreeContext {
   readonly state: FilesTabState
   readonly onToggle: (parent: string, path: string) => void
   readonly onOpen: (path: string) => void
+  readonly onPage: (path: string, restart: boolean) => void
   readonly t: TranslateNS<'sidebarFiles'>
 }
 
@@ -135,6 +139,7 @@ function Level({ path, tree }: { path: string; tree: TreeContext }): ReactNode {
     return (
       <li className={css.note} data-files-row="failed" data-files-code={level.failure.code}>
         {failureLine(t, level.failure)}
+        {level.failure.code === 'workspace-file/directory-changed' && <button type="button" onClick={() => { tree.onPage(path, true) }}>{t('page.restart')}</button>}
       </li>
     )
   }
@@ -154,6 +159,15 @@ function Level({ path, tree }: { path: string; tree: TreeContext }): ReactNode {
       {entries.length === 0 && <li className={css.note} data-files-row="empty">{t('empty')}</li>}
       {entries.map(entry => <Entry key={entry.name} parent={path} entry={entry} tree={tree} />)}
       {level.level.truncated && <li className={css.note} data-files-row="truncated">{t('truncated')}</li>}
+      {level.level.directoryPaging === true && <li className={css.note} data-files-row="paging">
+        {level.level.page !== undefined && <span>{t('page.number', { number: level.level.page.number })} </span>}
+        {(level.level.page === undefined || level.level.page.more || level.level.page.stopped === true) &&
+          <button type="button" disabled={level.level.pagingPending === true}
+            onClick={() => { tree.onPage(path, level.level.page?.stopped === true || level.failure?.code === 'workspace-file/directory-stopped') }}>
+            {level.level.pagingPending === true ? t('loading') : level.level.page?.stopped === true || level.failure?.code === 'workspace-file/directory-stopped' ? t('page.restart')
+              : level.level.page === undefined ? t('page.browse') : t('page.next')}
+          </button>}
+      </li>}
     </>
   )
 }
@@ -161,7 +175,7 @@ function Level({ path, tree }: { path: string; tree: TreeContext }): ReactNode {
 /** The file tree's body: the workspace root and whatever the reader has opened under it. */
 export function FilesBody({
   useTabInfo, sessionId, useSessions, useStore, actions,
-  start, refresh, setAutoRefresh, toggle, t, renderSlot, management,
+  start, refresh, setAutoRefresh, toggle, nextPage, releaseDirectory, t, renderSlot, management,
 }: FilesBodyProps): ReactNode {
   const { tab } = useTabInfo()
   const [selected, setSelected] = useState<readonly string[]>([])
@@ -210,6 +224,14 @@ export function FilesBody({
     )
   }
   if (state === undefined) return null
+  const afterDirectory = (run: () => void): void => {
+    setFailure(undefined)
+    const closing = releaseDirectory()
+    if (closing === undefined) { if (!signal.aborted) run(); return }
+    void closing.then(() => { if (!signal.aborted) run() }, () => {
+      if (!signal.aborted) setFailure(t('error.directoryCloseFailed'))
+    })
+  }
   const tree: TreeContext = {
     state, selected, selectedDirectory, draft, canManage: management !== undefined,
     selectFile: (path) => { setSelected(old => old.includes(path) ? old.filter(value => value !== path) : [...old, path]) },
@@ -228,7 +250,11 @@ export function FilesBody({
       toggle(tab.id, parent, path, state.expanded, signal)
     },
     // Every row is under the tree's root, so its address is session-relative.
-    onOpen: (path) => { tabActions.openResource(fileAddressFor(sessionId, state.root, path)) },
+    onOpen: (path) => { afterDirectory(() => { tabActions.openResource(fileAddressFor(sessionId, state.root, path)) }) },
+    onPage: (path, restart) => {
+      setSelected([]); setDirectory(undefined); setDraft(undefined)
+      nextPage(tab.id, path, signal, restart)
+    },
     t,
   }
   const upload = (list: FileList | null, folder: boolean): void => {
@@ -293,8 +319,9 @@ export function FilesBody({
           </Menu>
           <Tooltip label={t('download')} side="bottom"><button type="button" className={css.tool}
             aria-label={t('download')} disabled={selected.length === 0} onClick={() => {
-              setFailure(undefined)
-              void management.download(sessionId, selected, signal).catch(() => { setFailure(t('downloadFailed')) })
+              afterDirectory(() => {
+                void management.download(sessionId, selected, signal).catch(() => { setFailure(t('downloadFailed')) })
+              })
             }}><IconDownloadOutlineRegular /></button></Tooltip>
           <Tooltip label={t('newFolder')} side="bottom"><button type="button" className={css.tool}
             aria-label={t('newFolder')} disabled={draft?.pending === true} onClick={() => { setDraft({ parent: selectedDirectory ?? state.root, name: t('untitledFolder') }) }}><IconProjectAddOutlineRegular /></button></Tooltip>

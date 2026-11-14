@@ -17,6 +17,8 @@
 // Import the protocol module so the declaration at the end of this file
 // augments its error map rather than defining an unrelated ambient module.
 import type {} from '@deepseek-ai/dsh-typert-protocol'
+import type { Branded } from '@deepseek-ai/dsh-brand'
+import type { FsDirectoryVersion } from '@deepseek-ai/dsh-fs/types'
 
 /** Identity and freshness of one workspace file, without its content. */
 export interface WorkspaceFileStat {
@@ -118,9 +120,33 @@ export interface WorkspaceDirectoryListing {
    * entry cap. Presentation order is the caller's choice.
    */
   readonly entries: readonly WorkspaceDirectoryEntry[]
-  /** Whether the entry cap dropped children from {@link entries}. */
+  /** Whether the provider omitted children or the service's entry cap dropped them from {@link entries}. */
   readonly truncated: boolean
+  /** The selected provider and Native exposure can open the independent page stream. */
+  readonly directoryPaging?: true
 }
+
+/** One current credit token in one original logical stream; never an offset, path or cross-stream resume token. */
+export type WorkspaceDirectoryCursor = Branded<'WorkspaceDirectoryCursor'>
+
+/** The next action on the same original stream; close selects no new directory. */
+export type WorkspaceDirectoryControl = {
+  readonly kind: 'credit' | 'close'
+  readonly version: FsDirectoryVersion
+  readonly cursor: WorkspaceDirectoryCursor
+}
+
+/** Directory pages remain bounded and distinguish readiness, EOF and explicit Host-confirmed closure. */
+export type WorkspaceDirectoryFrame =
+  | { readonly kind: 'ready'; readonly path: string; readonly version: FsDirectoryVersion; readonly cursor: WorkspaceDirectoryCursor }
+  | ({ readonly kind: 'page'
+    readonly path: string
+    readonly version: FsDirectoryVersion
+    readonly entries: readonly WorkspaceDirectoryEntry[] } & (
+    | { readonly nextCursor: WorkspaceDirectoryCursor; readonly closed: false }
+    | { readonly nextCursor: null; readonly closed: true }
+  ))
+  | { readonly kind: 'closed'; readonly version: FsDirectoryVersion; readonly closed: true }
 
 /**
  * Current target metadata after a filesystem invalidation. File consumers may
@@ -152,6 +178,12 @@ export type WorkspaceFileWatchFrame =
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface RemoteErrorDetailsMap {
+    /** The previous directory page is invalid; actual enumeration cleanup completed. Restart at page one. */
+    'workspace-file/directory-changed': { readonly path: string; readonly closed: true }
+    /** This enumeration stopped and cleanup completed; its cursor cannot continue. */
+    'workspace-file/directory-stopped': { readonly path: string; readonly closed: true; readonly reason: 'cancelled' | 'too-large' | 'unavailable' }
+    /** The Client observed no trustworthy Host cleanup terminal; dependent file actions stay blocked. */
+    'workspace-file/directory-close-unconfirmed': { readonly path: string }
     /** The filesystem provider cannot initialize a watch for this target. */
     'workspace-file/watch-unsupported': { readonly path: string }
     /** No entry exists at that path inside the workspace. */

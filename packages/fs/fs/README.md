@@ -27,6 +27,8 @@ Use `dsh-fs` when an application needs consistent filesystem operations across h
 
 You rarely load `dsh-fs` directly: you mount a backend that registers as `ctx.fs`, then either call the service from your own plugin or let the `dsh-tool-fs` tools call it for you. This page serves the two audiences that do touch it — deployments choosing a backend, and developers implementing or consuming the contract.
 
+Shared wire declarations import filesystem types from `@deepseek-ai/dsh-fs/types` to avoid importing the `ctx.fs` service declaration. The source alias and published subpath both select the filesystem types module.
+
 ### Choosing and mounting a backend
 
 Pick [`fs-local`](../fs-local/README.md) for ordinary host files or [`fs-sandbox`](../fs-sandbox/README.md) when a session's mutations must be confined to its workspace and temp roots. Mounting any backend populates `ctx.fs`; swapping backends changes nothing for the policy plugin, the tools, or the tool schemas. A composition that mounts no backend has no `ctx.fs` at all, and the tools fail at registration.
@@ -36,6 +38,10 @@ Pick [`fs-local`](../fs-local/README.md) for ordinary host files or [`fs-sandbox
 Through `ctx.fs` you can resolve any path to a stable target identity, read a whole text file or stream it in chunks, read raw bytes up to an explicit cap, list one directory level, atomically create or replace a file, and apply a literal text edit atomically. The version guard on both mutations is optional: omit it for unconditional create-or-overwrite, or supply it to fail when the file changed since you last observed it. Read, listing, and mutation failures are typed `FsError`s with stable codes such as `FS_NOT_FOUND`, `FS_STALE_VERSION`, or `FS_AMBIGUOUS_EDIT`, so callers branch on the code, never on message text.
 
 `watch(target, changed, signal)` reports invalidations for one file or a directory's direct entries. It resolves once observation is ready with an asynchronous close function that the caller must await. The signal cancels initialization; unsupported providers reject without polling.
+
+`listDir(target, signal)` returns every direct child or rejects; a partial array is never a complete listing. `listDirectory(target, signal)` returns `FsDirectoryListing { entries, truncated }` for consumers that can display an explicitly incomplete result. Its default delegates to `listDir` with `truncated: false`, preserving existing Local and SSH providers. A bounded provider may override it; `truncated: true` grants no information or access to omitted entries, and a sorted partial subset need not contain the directory's first names. This result has no pagination cursor.
+
+`openDirectory(target, maxEntries, signal)` is an independent optional primitive. It returns a version-bound enumeration with bounded `next()` pages and an idempotent `close()` that joins actual cleanup. EOF carries confirmed closure; `assertCurrent()` rechecks the captured authority before page delivery, and `ended` wakes a caller waiting for credit. Unsupported providers reject instead of collecting or slicing a complete directory. Local and SSH retain their existing listing behavior.
 
 -----
 

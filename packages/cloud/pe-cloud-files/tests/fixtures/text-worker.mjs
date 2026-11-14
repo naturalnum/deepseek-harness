@@ -1,8 +1,8 @@
 /** TEST ONLY Node transport. This supplies no Linux FD, confinement, sync or quota evidence. */
 import { parentPort, workerData } from 'node:worker_threads'
-import { closeSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, readSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { closeSync, lstatSync, mkdirSync, openSync, opendirSync, readFileSync, readdirSync, readSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
-const { mode = 'normal', gate, abiVersion = 7, content, storageFacts, projectMetadataVersion, environmentLayoutVersion, sessionDirectories } = workerData
+const { mode = 'normal', gate, abiVersion = 7, content, directoryPaging, storageFacts, projectMetadataVersion, environmentLayoutVersion, sessionDirectories } = workerData
 const state = new Int32Array(gate)
 const version = info => `${info.dev}:${info.ino}:${info.size}:${info.mtimeNs}:${info.ctimeNs}`
 const normalize = text => text.replace(/\r\n?/g, '\n')
@@ -12,9 +12,69 @@ const block = () => {
   Atomics.wait(state, 2, 0)
 }
 parentPort.postMessage({ kind: 'ready', abiVersion, ...storageFacts === undefined ? {} : { storageProbeVersion: 1 },
+  ...abiVersion === 8 && mode !== 'content-no-directory' ? { directoryListingVersion: 1 } : {},
+  ...abiVersion === 8 && directoryPaging !== undefined && mode !== 'paging-unavailable' ? { directoryPagingVersion: 1 } : {},
   ...projectMetadataVersion === undefined ? {} : { projectMetadataVersion },
   ...environmentLayoutVersion === undefined ? {} : { environmentLayoutVersion } })
+let directory
+const directoryVersion = path => {
+  const info = statSync(path, { bigint: true })
+  return `${info.dev}:${info.ino}:1:${info.mtimeNs / 1000000000n}:${info.mtimeNs % 1000000000n}:${info.ctimeNs / 1000000000n}:${info.ctimeNs % 1000000000n}`
+}
+const closeDirectory = () => {
+  if (directory === undefined) return
+  clearTimeout(directory.timer)
+  directory.dir.closeSync()
+  directory = undefined
+}
+const stopDirectory = (code, syscallCode) => {
+  const id = directory.request.id
+  closeDirectory()
+  parentPort.postMessage({ kind: 'reply', id, ok: false, code, syscallCode })
+}
 parentPort.on('message', request => {
+  // TEST ONLY retained Node Dir verifies original pool/Provider settlement. It
+  // supplies no openat2, mount, hard-quota or native close-fault evidence.
+  if (request.kind === 'directory-open') {
+    if (directory !== undefined || directoryPaging === undefined || abiVersion !== 8) throw new Error('Unexpected test enumeration')
+    const path = join(request.root.rootPath, request.relativePath), version = directoryVersion(path)
+    directory = { request, path, version, dir: opendirSync(path), lookahead: undefined, pages: 0,
+      timer: setTimeout(() => { stopDirectory('FS_ABORTED', 'ETIMEDOUT') }, directoryPaging.totalTimeoutMs) }
+    parentPort.postMessage({ kind: 'directory-ready', id: request.id, version }); return
+  }
+  if (request.kind === 'directory-close') {
+    if (directory === undefined || directory.request.id !== request.id) return
+    const version = directory.version
+    if (mode === 'paging-close-unknown') { process.exit(0) }
+    if (mode === 'paging-block-close') block()
+    closeDirectory()
+    parentPort.postMessage({ kind: 'directory-closed', id: request.id, version, closed: true }); return
+  }
+  if (request.kind === 'directory-pull') {
+    if (directory === undefined || directory.request.id !== request.id || request.sequence !== directory.pages) throw new Error('Invalid test credit')
+    if (directory.pages >= directoryPaging.maxPages) { stopDirectory('FS_TOO_LARGE', 'EFBIG'); return }
+    directory.pages++
+    const active = directory
+    Atomics.add(state, 3, 1)
+    if (Atomics.load(new Int32Array(active.request.cancel), 0) !== 0) { stopDirectory('FS_ABORTED', 'ECANCELED'); return }
+    if (directoryVersion(active.path) !== active.version) { stopDirectory('FS_STALE_VERSION', 'ESTALE'); return }
+    const entries = []
+    while (entries.length < active.request.maxEntries) {
+      const row = active.lookahead ?? active.dir.readSync(); active.lookahead = undefined
+      if (row === null) break
+      const info = lstatSync(join(active.path, row.name), { bigint: true })
+      entries.push({ name: row.name, identity: `${info.dev}:${info.ino}`, version: version(info),
+        type: info.isFile() ? 'file' : info.isDirectory() ? 'directory' : info.isSymbolicLink() ? 'symlink' : 'other',
+        ...info.isFile() ? { size: Number(info.size) } : {} })
+    }
+    active.lookahead = active.dir.readSync()
+    const eof = active.lookahead === null
+    entries.sort((left, right) => Buffer.compare(Buffer.from(left.name), Buffer.from(right.name)))
+    const page = { entries, version: active.version, eof, closed: eof }
+    if (eof) closeDirectory()
+    parentPort.postMessage({ kind: 'directory-page', id: request.id, sequence: request.sequence, page }); return
+  }
+  if (directory !== undefined) throw new Error('Original slot was reused while its test enumeration remained open')
   if (request.kind === 'leaf-prepare') {
     // TEST ONLY ordinary Node mkdir + synthetic closed-FD frame. No Linux fsync/confinement proof.
     Atomics.add(state, 5, 1)
@@ -154,15 +214,23 @@ parentPort.on('message', request => {
         parentPort.postMessage({ kind: 'lstat-reply', id, metadata: info })
       } else if (request.kind === 'list') {
         within(path)
-        const names = readdirSync(path)
-        if (names.length > request.maxEntries || names.some(name => Buffer.byteLength(name) > content.maxNameBytes)) {
-          failed('FS_TOO_LARGE', 'EFBIG'); return
-        }
-        const entries = names.sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)))
-          .map(name => ({ name, ...metadata(join(path, name)) }))
-        const reply = { kind: 'list-reply', id, entries }
-        if (Buffer.byteLength(JSON.stringify(reply)) > request.maxBytes
-          || 128 + entries.reduce((sum, entry) => sum + 512 + 6 * Buffer.byteLength(entry.name), 0) > request.maxBytes) {
+        const directory = opendirSync(path), entries = []
+        let truncated = false, charged = 128
+        try {
+          for (let row; (row = directory.readSync()) !== null;) {
+            if (entries.length === request.maxEntries) { truncated = true; break }
+            const name = row.name, nameBytes = Buffer.byteLength(name), charge = 512 + 6 * nameBytes
+            if (nameBytes > content.maxNameBytes) { failed('FS_TOO_LARGE', 'EFBIG'); return }
+            if (charged + charge > request.maxBytes) {
+              if (entries.length === 0) { failed('FS_TOO_LARGE', 'EFBIG'); return }
+              truncated = true; break
+            }
+            entries.push({ name, ...metadata(join(path, name)) }); charged += charge
+          }
+        } finally { directory.closeSync() }
+        entries.sort((a, b) => Buffer.compare(Buffer.from(a.name), Buffer.from(b.name)))
+        const reply = { kind: 'list-reply', id, listing: { entries, truncated } }
+        if (Buffer.byteLength(JSON.stringify(reply)) > request.maxBytes) {
           failed('FS_TOO_LARGE', 'EFBIG'); return
         }
         parentPort.postMessage(reply)

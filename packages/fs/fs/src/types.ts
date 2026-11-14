@@ -114,6 +114,49 @@ export interface FsDirEntry {
   size?: number
 }
 
+/** Direct children with explicit completeness; a partial result grants no authority over omitted entries. */
+export interface FsDirectoryListing {
+  /** Returned children in stable name order; a partial subset need not be the directory's first names. */
+  readonly entries: FsDirEntry[]
+  /** Whether the provider stopped before observing every direct child. */
+  readonly truncated: boolean
+  /** Present only when this selected provider can open the independent optional page enumeration. */
+  readonly directoryPaging?: true
+}
+
+/** Backend-issued identity and freshness of one held directory, never an offset or path. */
+export type FsDirectoryVersion = Branded<'FsDirectoryVersion'>
+
+/**
+ * Brand a backend-admitted directory version.
+ * @param value Original provider's opaque native directory token.
+ * @returns The same token, branded; consumers never construct it.
+ */
+export function FsDirectoryVersion(value: string): FsDirectoryVersion { return value as FsDirectoryVersion }
+
+/** A finite page from one unchanged directory; a successful EOF includes actual native closure. */
+export type FsDirectoryPage = {
+  readonly version: FsDirectoryVersion
+  readonly entries: readonly FsDirEntry[]
+} & (
+  | { readonly eof: false; readonly closed: false }
+  | { readonly eof: true; readonly closed: true }
+)
+
+/** One optional provider enumeration; no browser cursor or transport authority is represented here. */
+export interface FsDirectoryEnumeration {
+  readonly version: FsDirectoryVersion
+  /** Original provider cap on each complete directory-control or result item. */
+  readonly maxReplyBytes: number
+  /** Completion/failure wakes a consumer waiting for credit, independently of its delivered page. */
+  readonly ended: Promise<void>
+  /** Recheck the original selection immediately before admitting credit or handing off a page. */
+  assertCurrent(): void
+  next(): Promise<FsDirectoryPage>
+  /** Caller discards its current page first; completion confirms native closure, slot settlement and result release. */
+  close(): Promise<void>
+}
+
 /**
  * Guarded write intent. `createIfAbsent` rejects an existing target with
  * `FS_NOT_OBSERVED`; `replaceIfVersion` rejects absence or mismatch with

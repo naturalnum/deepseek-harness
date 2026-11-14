@@ -92,6 +92,10 @@ interface FsPathInfo {
 
 `listDir` returns direct child entries in stable name order. Each entry carries the child basename, type, resolved target, and cheap metadata when the backend can report it. It must not read file contents, so `size` is only for regular files and `version` is metadata-derived. Broken or disappeared children may be returned as `other` without metadata; permission or backend I/O failures while listing or resolving child metadata fail the whole listing with `FS_PERMISSION_DENIED` or `FS_IO_ERROR`.
 
+`listDir` is complete-or-fail. Consumers that can display a partial result use `listDirectory(target, signal): Promise<FsDirectoryListing>`, whose required `entries` and `truncated` fields explicitly describe completeness. The default wraps the complete `listDir` result with `truncated: false`; Local and SSH providers inherit it unchanged. A bounded override may return a sorted subset with `truncated: true`, which need not be the globally first names and grants no authority over omitted children. Provider failures still reject; this primitive has no pagination cursor.
+
+Optional `openDirectory(target, maxEntries, signal)` returns `FsDirectoryEnumeration`. Its `FsDirectoryVersion` belongs to that enumeration; `next()` returns bounded `FsDirectoryPage` values, and `eof: true` requires `closed: true`. The caller checks `assertCurrent()` before credit and delivery, observes `ended` during idle waits, and joins `close()` before dependent operations. Closing revokes issued page authority. The default rejects with `FS_PERMISSION_DENIED`; providers do not emulate this primitive by materializing a full listing.
+
 ```ts type-equiv
 /**
  * One direct child returned by {@link FileSystem.listDir}. Listing returns
@@ -275,7 +279,7 @@ type FsErrorCode =
 
 ## The service and the plugin
 
-`FileSystem` (`ctx.fs`, abstract) owns the provider primitives: `resolve`, `processPath`, `processPathFromHostPath`, `fileUrl`, `contains`, `stat`, `lstat`, `readText`, `streamText`, `readBytes`, `listDir`, `writeText`, and `editText`. `dsh-fs-observation-policy` registers **no service** — it is a plugin that adds policy through the `fs/*` event gate: it decides the write/edit intent waterfalls from unseen/absent/present state and records `FsObservation` values. The executor is `dsh-tool-fs`: it reads/writes/edits through `ctx.fs`, dispatches the waterfalls, and emits the recording event. The generated [`ctx.fs` section](#ctxfs--filesystem-abstract-seam) below shows the exact signatures.
+`FileSystem` (`ctx.fs`, abstract) owns the provider primitives: `resolve`, `processPath`, `processPathFromHostPath`, `fileUrl`, `contains`, `stat`, `lstat`, `readText`, `streamText`, `readBytes`, `listDir`, `listDirectory`, `writeText`, and `editText`. `dsh-fs-observation-policy` registers **no service** — it is a plugin that adds policy through the `fs/*` event gate: it decides the write/edit intent waterfalls from unseen/absent/present state and records `FsObservation` values. The executor is `dsh-tool-fs`: it reads/writes/edits through `ctx.fs`, dispatches the waterfalls, and emits the recording event. The generated [`ctx.fs` section](#ctxfs--filesystem-abstract-seam) below shows the exact signatures.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -435,9 +439,27 @@ abstract readByteRange(target: FsTarget, range: { offset: number; length: number
  * child targets plus cheap metadata only; never reads file contents.
  * @param target - the resolved directory target.
  * @param signal - aborts the listing.
- * @returns one entry per direct child, in stable name order.
+ * @returns one entry per direct child, in stable name order; incomplete listings reject.
  */
 abstract listDir(target: FsTarget, signal?: AbortSignal): Promise<FsDirEntry[]>
+
+/**
+ * List direct children while preserving a provider's explicit completeness result.
+ * Providers with bounded enumeration may override this method; the default uses the complete listing.
+ * @param target - the resolved directory target.
+ * @param signal - aborts the original provider listing.
+ * @returns stable metadata-only entries and whether children were omitted; provider failures propagate.
+ */
+async listDirectory(target: FsTarget, signal?: AbortSignal): Promise<FsDirectoryListing>
+
+/**
+ * Open an explicitly supported direct-child enumeration; the default refuses rather than slicing a full listing.
+ * @param target Original resolved directory target.
+ * @param maxEntries Consumer's existing positive per-page entry cap; provider limits may be smaller.
+ * @param signal Cancels the original enumeration while actual cleanup remains owned.
+ * @returns A finite provider enumeration with explicit version, page and actual closure facts.
+ */
+openDirectory(target: FsTarget, maxEntries: number, signal?: AbortSignal): Promise<FsDirectoryEnumeration>
 
 /**
  * Atomically create or replace UTF-8 text. `expected` guards intent and

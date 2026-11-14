@@ -18,6 +18,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import { FILES_ID, filesDefinition } from './definition.tsx'
 import { createList, createWatch, filesFace } from './face.ts'
+import { createDirectoryPages } from './directory-pages.ts'
 import type {} from './management.ts'
 import type {} from '@deepseek-ai/dsh-client-file-upload/client'
 import { FilesBody } from './FilesBody.tsx'
@@ -85,7 +86,7 @@ export function apply(ctx: ClientContext): void {
 
   const store = createFilesStore()
   const face = filesFace(createList(ctx.remote), createWatch(ctx.remote),
-    (sessionId, changed) => ctx.on('file-upload/complete', (id) => { if (id === sessionId) changed() }))
+    (sessionId, changed) => ctx.on('file-upload/complete', (id) => { if (id === sessionId) changed() }), createDirectoryPages(ctx.remote))
   const inject: typeof face = (sessionId, actions) => {
     const management = ctx.get('workspaceFileManagement')
     return { ...face(sessionId, actions), ...management === undefined ? {} : { management } }

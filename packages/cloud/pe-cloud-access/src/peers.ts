@@ -291,6 +291,37 @@ export class LoginPeerRegistry {
   }
 
   /**
+   * Capture repeated authorization on one original logical stream's existing Peer and Use.
+   * @param peer Exact Gateway invocation Peer.
+   * @param binding Original installed account binding.
+   * @param endpoint Exact endpoint retained for this stream.
+   * @param signal Original stream and native-enumeration lifetime; closing invalidates this check.
+   * @returns A read-only check which neither borrows nor releases an account Use.
+   */
+  captureStreamCurrent(peer: PeerScope, binding: AccountBinding, endpoint: string, signal: AbortSignal): () => void {
+    const id = this.requestId(), entry = [...this.entries.values()].find(row => row.handle?.peer === peer)
+    const handle = entry?.handle, use = entry?.use
+    if (entry === undefined || handle === undefined || use === undefined || use.binding !== binding
+      || handle.binding !== binding) throw new AuthAccessError('cloud/account-unavailable', id)
+    const check = (): void => {
+      if (signal.aborted || entry.phase !== 'ready' || entry.handle !== handle || entry.use !== use
+        || handle.peer !== peer || use.binding !== binding || binding.lifetime.aborted) {
+        throw new AuthAccessError('cloud/account-unavailable', id)
+      }
+      this.assertCurrent(handle, id)
+      use.assertCurrent()
+      this.ports.beforeStream(endpoint, handle)
+      this.assertCurrent(handle, id)
+      use.assertCurrent()
+      if (signal.aborted || entry.handle !== handle || entry.use !== use) {
+        throw new AuthAccessError('cloud/account-unavailable', id)
+      }
+    }
+    check()
+    return check
+  }
+
+  /**
    * Join trusted native work to the exact existing Peer entry without another borrow or release owner.
    * @param peer Original Gateway invocation Peer; ids and copied objects cannot select an entry.
    * @param current Original ingress/generation check, repeated during this same borrowed operation.

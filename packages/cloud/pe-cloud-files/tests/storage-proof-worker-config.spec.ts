@@ -1,7 +1,7 @@
 /** Real workerData -> production parser -> production proof read/hash path; OS/native facts are test-only stand-ins. */
 import { Worker } from 'node:worker_threads'
 import { createHash } from 'node:crypto'
-import { copyFile, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
@@ -39,6 +39,9 @@ beforeAll(async () => {
   const helperPath = resolve(directory, 'file-helper.node'), probeHelperPath = resolve(directory, 'probe.cjs')
   await copyFile(resolve(here, 'fixtures/proof-config-file-helper.cjs'), helperPath)
   await copyFile(resolve(here, 'fixtures/proof-config-native.cjs'), probeHelperPath)
+  // Private test assets obey the production protected-file check regardless of checkout umask.
+  await chmod(helperPath, 0o600)
+  await chmod(probeHelperPath, 0o600)
   const plan = new TextEncoder().encode('{"plan":"fixture"}')
   await writeFile(resolve(directory, 'plan.json'), plan, { mode: 0o600 })
   await writeFile(resolve(directory, 'proof.json'), proof, { mode: 0o600 })

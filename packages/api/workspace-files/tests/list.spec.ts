@@ -1,5 +1,5 @@
 /** The `list` endpoint: the same containment gates as `read`, plus the entry cap. */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { failureOf, openWorkspace, signal, type Harness } from './harness.ts'
@@ -80,6 +80,26 @@ describe('workspaceFiles.list — the happy path', () => {
 })
 
 describe('workspaceFiles.list — the entry cap', () => {
+  it.each([
+    { providerCut: true, maxEntries: 5, count: 2, truncated: true },
+    { providerCut: true, maxEntries: 1, count: 1, truncated: true },
+    { providerCut: false, maxEntries: 2, count: 2, truncated: true },
+    { providerCut: false, maxEntries: 3, count: 3, truncated: false },
+  ])('preserves provider completeness and Native clipping: $providerCut/$maxEntries', async (input) => {
+    for (const name of ['a', 'b', 'c']) await writeFile(join(workspace, name), '', 'utf8')
+    const original = harness.ctx.fs.listDirectory.bind(harness.ctx.fs)
+    const listing = vi.spyOn(harness.ctx.fs, 'listDirectory').mockImplementation(async (target, control) => {
+      const full = await original(target, control)
+      return { entries: input.providerCut ? full.entries.slice(0, 2) : full.entries, truncated: input.providerCut }
+    })
+    try {
+      const result = await endpoint({ maxEntries: input.maxEntries }).list(harness.scope, '.', signal())
+      expect(result.entries).toHaveLength(input.count)
+      expect(result.truncated).toBe(input.truncated)
+      expect(listing).toHaveBeenCalledOnce()
+    } finally { listing.mockRestore() }
+  })
+
   it('cuts at the cap in name order and says so', async () => {
     for (const name of ['a', 'b', 'c', 'd', 'e']) await writeFile(join(workspace, name), '', 'utf8')
     const listing = await endpoint({ maxEntries: 2 }).list(harness.scope, '.', signal())

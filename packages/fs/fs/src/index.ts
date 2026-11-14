@@ -13,6 +13,8 @@ import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandb
 import { FsError } from './types.ts'
 import type {
   FsDirEntry,
+  FsDirectoryListing,
+  FsDirectoryEnumeration,
   FsEditOutcome,
   FsEditRequest,
   FsInfo,
@@ -28,11 +30,15 @@ export {
   FsError,
   FsTargetKey,
   FsVersion,
+  FsDirectoryVersion,
 } from './types.ts'
 export type {
   FsEditOutcome,
   FsEditRequest,
   FsDirEntry,
+  FsDirectoryListing,
+  FsDirectoryPage,
+  FsDirectoryEnumeration,
   FsErrorCode,
   FsInfo,
   FsObservation,
@@ -262,9 +268,34 @@ export abstract class FileSystem extends Service {
    * child targets plus cheap metadata only; never reads file contents.
    * @param target - the resolved directory target.
    * @param signal - aborts the listing.
-   * @returns one entry per direct child, in stable name order.
+   * @returns one entry per direct child, in stable name order; incomplete listings reject.
    */
   abstract listDir(target: FsTarget, signal?: AbortSignal): Promise<FsDirEntry[]>
+
+  /**
+   * List direct children while preserving a provider's explicit completeness result.
+   * Providers with bounded enumeration may override this method; the default uses the complete listing.
+   * @param target - the resolved directory target.
+   * @param signal - aborts the original provider listing.
+   * @returns stable metadata-only entries and whether children were omitted; provider failures propagate.
+   */
+  async listDirectory(target: FsTarget, signal?: AbortSignal): Promise<FsDirectoryListing> {
+    return { entries: await this.listDir(target, signal), truncated: false }
+  }
+
+  /**
+   * Open an explicitly supported direct-child enumeration; the default refuses rather than slicing a full listing.
+   * @param target Original resolved directory target.
+   * @param maxEntries Consumer's existing positive per-page entry cap; provider limits may be smaller.
+   * @param signal Cancels the original enumeration while actual cleanup remains owned.
+   * @returns A finite provider enumeration with explicit version, page and actual closure facts.
+   */
+  openDirectory(target: FsTarget, maxEntries: number, signal?: AbortSignal): Promise<FsDirectoryEnumeration> {
+    void target
+    void maxEntries
+    void signal
+    return Promise.reject(new FsError('Directory paging is unavailable from this provider.', 'FS_PERMISSION_DENIED'))
+  }
 
   /**
    * Atomically create or replace UTF-8 text. `expected` guards intent and

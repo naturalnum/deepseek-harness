@@ -6,8 +6,8 @@
   en: 9085200a1975c5cd
   zh: 48af21e513f7dc25
 /filesystem/target-identity-and-metadata-provider-contract:
-  en: 345def8a8e6c58e0
-  zh: 01d6e2f0f22daf9d
+  en: 338232a48cafe7a4
+  zh: e30b83c939c2fd0f
 /filesystem/write-and-edit-guards-provider-contract:
   en: 067137c8b8181c98
   zh: 0a9c8282789d147f
@@ -30,5 +30,5 @@
   en: ae18af906f3f7e50
   zh: 24a1aa6f903fe08d
 /filesystem/the-service-and-the-plugin:
-  en: 6dcd1f39906d785e
-  zh: e2b4b104bad31144
+  en: 305eb0ea40f1ca06
+  zh: d189bf5c832d481f

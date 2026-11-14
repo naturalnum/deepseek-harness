@@ -33,6 +33,9 @@ export class DirectoryNode {
     return this
   }
 
+  /** The original node lifetime; collapse ends dependent directory enumerations as well as watches. */
+  get lifetime(): AbortSignal { return this.signal }
+
   /**
    * Find an active node in this subtree.
    * @param path - absolute directory path.
@@ -115,6 +118,22 @@ export class DirectoryNode {
     this.children.clear()
   }
 
+  /**
+   * Reconcile the current bounded page, closing child watches that left it.
+   * @param level - current page; previous page entries are not retained.
+   */
+  async reconcile(level: DirLevel): Promise<void> {
+    const directories = new Set(level.entries.filter(entry => entry.type === 'directory')
+      .map(entry => `${this.path.replace(/[/\\]+$/, '')}/${entry.name}`))
+    for (const path of this.children.keys()) {
+      if (!directories.has(path)) await this.collapse(path)
+    }
+    for (const path of directories) {
+      if (this.restore.includes(path)) this.expand(path, this.restore)
+    }
+    this.restore = []
+  }
+
   private async follow(): Promise<void> {
     try {
       for await (const _event of this.watch(this.path, this.signal)) {
@@ -139,15 +158,7 @@ export class DirectoryNode {
         const level = await this.load(this.path, this.signal)
         if (this.signal.aborted || level === undefined) return
         this.initialized = true
-        const directories = new Set(level.entries.filter(entry => entry.type === 'directory')
-          .map(entry => `${this.path.replace(/[/\\]+$/, '')}/${entry.name}`))
-        for (const path of this.children.keys()) {
-          if (!directories.has(path)) await this.collapse(path)
-        }
-        for (const path of directories) {
-          if (this.restore.includes(path)) this.expand(path, this.restore)
-        }
-        this.restore = []
+        await this.reconcile(level)
       } while (readAgain())
     } finally {
       this.reading = undefined

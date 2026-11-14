@@ -41,6 +41,11 @@ function hasReadCarrier(value: unknown): value is {
 } {
   return value !== null && typeof value === 'object' && typeof Reflect.get(value, 'readOperationCurrent') === 'function'
 }
+function hasStreamCurrent(value: unknown): value is {
+  captureStreamCurrent(peer: PeerScope, binding: AccountBinding, endpoint: string, signal: AbortSignal): () => void
+} {
+  return value !== null && typeof value === 'object' && typeof Reflect.get(value, 'captureStreamCurrent') === 'function'
+}
 import { createAccountPolicy } from './account-policy.ts'
 import { selectOfficeProfile } from './office-profile.ts'
 import { createFileReadTiming, type FileReadTiming } from './file-read-timing.ts'
@@ -1055,6 +1060,15 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
             if (!hasReadCarrier(current) || (Reflect.get(current, symbols.original) ?? current)
               !== (Reflect.get(selectedAuth, symbols.original) ?? selectedAuth)) throw new AccountMountPrerequisiteError()
             return selectedAuth.readOperationCurrent(peer, binding, endpoint)
+          } },
+          ...!hasStreamCurrent(selectedAuth) ? {} : { captureStreamCurrent: (caller, binding, endpoint, signal) => {
+            const invocation = caller.invocation, current: unknown = this.ctx.root.get('peAuth')
+            if (invocation === undefined || invocation.service !== 'workspaceFiles' || invocation.request.namespace !== 'workspaceFiles'
+              || invocation.request.method !== 'listPages' || endpoint !== 'workspaceFiles/listPages'
+              || !hasStreamCurrent(current) || (Reflect.get(current, symbols.original) ?? current)
+                !== (Reflect.get(selectedAuth, symbols.original) ?? selectedAuth)) throw new AccountMountPrerequisiteError()
+            const lifetime = signal === undefined ? invocation.signal : AbortSignal.any([invocation.signal, signal])
+            return selectedAuth.captureStreamCurrent(invocation.peer, binding, endpoint, lifetime)
           } },
           assertRootCurrent: () => { this.assertRecipeSealed(config.recipeVersion) } },
         prepare: (_ctx, binding) => {
