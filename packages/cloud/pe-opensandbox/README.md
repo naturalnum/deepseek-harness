@@ -39,6 +39,8 @@ Native `glob` and `grep` require that explicit selection, search capture limits 
 
 ### Configuration and failure
 
+Skill-project preparation refusals are retryable only when Files reports `FdMutationFailure.outcome: not-published` before export or allocation creation, and the original allocation owner has completed `stop`. The failed Session request is then removed, so a later explicit attempt in the same or another Session can proceed. Known capacity uses `cloud/capacity`; other definite refusals name the Files code and require inspection when persistent. Structured refusal logs contain codes, not private failure messages. Unknown writes, untyped failures, later preparation stages and unconfirmed stop retain their original account failure and cleanup responsibility; they are never converted to retryable capacity.
+
 The deployed closed recipe requires explicit closed mode and an empty capability declaration. The [schema](src/config.ts) owns the accepted values; declarations never verify execution capabilities.
 
 | Field | Default | Meaning |

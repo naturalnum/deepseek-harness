@@ -1188,6 +1188,7 @@ static napi_value init(napi_env env, napi_value exports) {
     {"projectSkillVersion", NULL, project_skill_version, NULL, NULL, NULL, napi_default, NULL},
     {"prepareSkillStore", NULL, prepare_skill_store, NULL, NULL, NULL, napi_default, NULL},
     {"verifySkillStore", NULL, verify_skill_store, NULL, NULL, NULL, napi_default, NULL},
+    {"inspectSkillStore", NULL, inspect_skill_store, NULL, NULL, NULL, napi_default, NULL},
     {"prepareSkillParent", NULL, prepare_skill_parent, NULL, NULL, NULL, napi_default, NULL},
     {"verifySkillParent", NULL, verify_skill_parent, NULL, NULL, NULL, napi_default, NULL},
     {"prepareSkillVersion", NULL, prepare_skill_version, NULL, NULL, NULL, napi_default, NULL},

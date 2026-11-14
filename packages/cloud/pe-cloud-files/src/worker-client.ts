@@ -430,7 +430,7 @@ export class FdWorkerClient {
    * @param signal Actual original operation cancellation.
    * @returns Durable closed-FD facts for the fixed directory.
    */
-  skillDirectory(root: FdRootIdentity, uid: number, gid: number, purpose: 'store' | 'store-verify' | 'parent-create' | 'parent-verify',
+  skillDirectory(root: FdRootIdentity, uid: number, gid: number, purpose: 'store' | 'store-read' | 'store-verify' | 'parent-create' | 'parent-verify',
     limits: SkillProjectionLimits, signal: AbortSignal): Promise<FdProjectMetadataResult> {
     try { this.assertAvailable(signal) } catch (cause) { throw new FdMutationFailure('not-published', 'FS_IO_ERROR', undefined, { cause }) }
     if (!this.supportsSkillProjection || root.rootMountId === undefined) throw new FdMutationFailure('not-published',

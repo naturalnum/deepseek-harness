@@ -1,0 +1,11 @@
+version: 1
+scenario: cloud-skill-project-capacity
+profile: headless
+composition: cloud-skill-project-capacity
+recording: authored
+header:
+  class: cloud-skill-project-capacity
+  pin: true
+permission: read-only
+workspace:
+  final: true
