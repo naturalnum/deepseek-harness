@@ -25,9 +25,10 @@ export const remoteManagedConfig: ManagedCoordinatorConfig = {
 }
 
 /** Start the original coordinator. It cannot create an external allocation without an explicit test transport.
+ * @param options Optional explicit skill-copy preparation for replay scenarios.
  * @returns Original owner, runtime registry, nominal installation and actual joined shutdown.
  */
-export async function remoteManagedFixture() {
+export async function remoteManagedFixture(options: { skillCopies?: number } = {}) {
   const ctx = new Context(), runtime = new PeAccountRuntime(ctx, { maxMountedAccounts: 4, maxConcurrentMounts: 2, maxConcurrentDrains: 2 })
   const db: RootMetadataDatabase = { async query() { return { rows: [] } }, wasNotSubmitted: () => false }
   let participant: DrainParticipant | undefined
@@ -44,7 +45,9 @@ export async function remoteManagedFixture() {
   const owner = new ManagedCoordinator(ctx, {
     registerDrainParticipant(value) { participant = value; return runtime.registerDrainParticipant(value) },
     controlDatabase(value) { if (value !== participant) throw new Error('Foreign Root metadata consumer'); return db },
-  }, remoteManagedConfig, { backend, runtimes, assertCurrent() { ctx.fiber.assertActive() }, assertEpochReleased() {},
+  }, remoteManagedConfig, { backend, runtimes,
+    ...options.skillCopies === undefined ? {} : { skillCopies: { maxCopiesPerOperation: options.skillCopies } },
+    assertCurrent() { ctx.fiber.assertActive() }, assertEpochReleased() {},
     share: async () => { throw new Error('No file export selected') } })
   await owner.start()
   return { owner, runtimes,

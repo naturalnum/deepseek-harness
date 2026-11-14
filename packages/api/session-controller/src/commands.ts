@@ -104,11 +104,19 @@ export class SessionCommandController {
    * @param ctx - Host context carrying Agent, model, attachment, title, and Workspace services.
    * @param agents - sole owner of create, resume, and Agent composition.
    * @param defaultCwd - project directory used when create names neither a Workspace nor a cwd.
+   * @param prepareFiles - awaited receipt preparation before content admission or binding.
+   * @param assertModelSelection - synchronous Host check at native model commit.
+   * @param assertCommandAgent - synchronous Host admission after command awaits and before mutation.
+   * @param prepareForkSession - awaited source admission before the original fork factory call.
    */
   constructor(
     private readonly ctx: Context,
     private readonly agents: ApiSessionAgentController,
     private readonly defaultCwd: string,
+    private readonly prepareFiles?: (agent: Agent, ids: readonly FileUploadReceiptId[], signal?: AbortSignal) => Promise<void>,
+    private readonly assertModelSelection?: (agent: Agent, selection: AgentModelSelection) => void,
+    private readonly assertCommandAgent?: (operation: 'prompt' | 'rename' | 'updateQueue', agent: Agent) => void,
+    private readonly prepareForkSession?: (sessionId: SessionId) => Promise<void>,
   ) {}
 
   /**
@@ -167,7 +175,6 @@ export class SessionCommandController {
     const agent = await this.resolveAgent(request.sessionId)
     return this.agents.serializeImageAdmission(agent, async () => {
       try {
-        await this.requireModel(request)
         const selected: AgentModelSelection = {
           provider: request.provider,
           model: request.model,
@@ -175,7 +182,14 @@ export class SessionCommandController {
             ? {}
             : { reasoningEffort: ReasoningEffortId(request.reasoningEffort) }),
         }
+        this.ctx.fiber.assertActive()
+        this.assertModelSelection?.(agent, selected)
+        await this.requireModel(request)
+        this.ctx.fiber.assertActive()
+        this.assertModelSelection?.(agent, selected)
         await this.ctx.llm.resolveCallConfig(selected)
+        this.ctx.fiber.assertActive()
+        this.assertModelSelection?.(agent, selected)
         agent.model.select(selected)
         void this.ctx.agentDefaultModel.saveSelection(selected).catch((error: unknown) => {
           this.ctx.logger.warn(
@@ -201,6 +215,7 @@ export class SessionCommandController {
    */
   async rename(request: SessionRenameRequest): Promise<SessionRenameValue> {
     const agent = await this.resolveAgent(request.sessionId)
+    this.assertCommandAgent?.('rename', agent)
     const titles = this.ctx.get('sessionTitle')
     if (titles === undefined) {
       throw new RemoteError('gateway/internal', 'renaming is unavailable: this deployment mounts no session-title service', {})
@@ -276,6 +291,8 @@ export class SessionCommandController {
     const composition = await this.agents.composeAgent(this.agents.presetForObservation(source))
     try {
       const { provider, model } = this.ctx.agentDefaultModel.currentSelection()
+      await this.prepareForkSession?.(request.sessionId)
+      this.ctx.fiber.assertActive()
       await this.ctx.agents.create({
         sessionId: childId,
         seed,
@@ -291,6 +308,7 @@ export class SessionCommandController {
         setup: composition.setup,
       })
     } catch (error) {
+      if (remoteErrorOf(error) !== undefined) throw error
       throw new RemoteError(
         'gateway/internal',
         `failed to fork session "${request.sessionId}": ${String(error)}`,
@@ -316,14 +334,23 @@ export class SessionCommandController {
    * has already validated the content and built the durable message source.
    * @param request - Session identity, prompt content, and delivery mode.
    * @param source - caller metadata recorded on the accepted ordinary or retry user message.
+   * @param signal - cancellation retained through receipt and attachment admission.
    * @returns acknowledgement that the Agent accepted the prompt.
    */
-  async prompt(request: SessionPromptRequest, source: MessageSource): Promise<SessionPromptValue> {
+  async prompt(request: SessionPromptRequest, source: MessageSource, signal?: AbortSignal): Promise<SessionPromptValue> {
+    signal?.throwIfAborted()
     const agent = await this.resolveAgent(request.sessionId)
+    const assertCurrent = (): void => {
+      signal?.throwIfAborted()
+      this.ctx.fiber.assertActive()
+      this.assertCommandAgent?.('prompt', agent)
+    }
+    assertCurrent()
     if (this.hasPromptRequest(agent.session, request.requestId)) return { accepted: true }
     if (request.content.length === 0) {
       try {
         return await agent.runMaintenance(() => {
+          assertCurrent()
           const inbox = agent.inbox
           if (request.mode !== 'queue' || this.continuation.stateOf(agent.session).ending === null
             || inbox.nextTurn.length > 0 || inbox.nextStep.some(message => message.source.kind === 'user')) {
@@ -333,6 +360,7 @@ export class SessionCommandController {
           return Promise.resolve({ accepted: true as const })
         })
       } catch (error: unknown) {
+        if (signal?.aborted && error === signal.reason) throw error
         if (remoteErrorOf(error) !== undefined) throw error
         throw new RemoteError('session/agent-busy', 'generation continuation was not accepted', { reason: String(error) })
       }
@@ -345,11 +373,13 @@ export class SessionCommandController {
     const hasImage = admission.content.some(part => part.type === 'image')
     const admit = async (): Promise<SessionPromptValue> => {
       try {
+        assertCurrent()
         if (this.hasPromptRequest(agent.session, request.requestId)) return { accepted: true }
         if (hasImage) {
           const current = agent.model.current()
           if (current !== undefined) {
             const model = await this.ctx.llm.resolveModelInfo(current.provider, current.model)
+            assertCurrent()
             if (model.inputModalities !== undefined && !model.inputModalities.includes('image')) {
               throw new RemoteError(
                 'session/attachment-invalid',
@@ -359,7 +389,12 @@ export class SessionCommandController {
             }
           }
         }
+        if (admission.receiptIds.length > 0) {
+          await this.prepareFiles?.(agent, admission.receiptIds, signal)
+          assertCurrent()
+        }
         const content = await this.ctx.attachments.admitPromptContent(admission.content)
+        assertCurrent()
         if (this.hasPromptRequest(agent.session, request.requestId)) return { accepted: true }
         const message: UserMessage = createUserMessage({ content, source })
         if (this.ctx.agents.get(agent.id) !== agent) {
@@ -375,6 +410,7 @@ export class SessionCommandController {
         binding.commit()
       } catch (error) {
         if (this.hasPromptRequest(agent.session, request.requestId)) return { accepted: true }
+        if (signal?.aborted && error === signal.reason) throw error
         if (remoteErrorOf(error) !== undefined) throw error
         if (error instanceof AttachmentError) {
           throw new RemoteError('session/attachment-invalid', error.message, { reason: error.code })
@@ -471,6 +507,7 @@ export class SessionCommandController {
       }
       agent = found.agent
     }
+    this.assertCommandAgent?.('updateQueue', agent)
     if (hasApiSessionSubagentOwner(agent.session)) {
       const identity = this.ctx.sessionProjections
         .snapshot(agent.session, ['subagent'])

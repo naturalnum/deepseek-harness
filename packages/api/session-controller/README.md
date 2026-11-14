@@ -27,6 +27,14 @@ Desktop analytics follows the [product collection policy](../../client/product-a
 <a id="use-this-package"></a>
 ## Use this package
 
+Session Controller connects trusted Host directory preparation, prompt-file receipt preparation, model commit checks, and control-stream budgets to its original Agent, Command, and Control owners during service initialization. Omitted overrides preserve Native defaults; a path, an earlier HTTP check, or an old Agent identity grants no Cloud admission.
+
+Create, resume, and fork retain the original guarded Agent factory and target SessionPreparation. Their original owners retain unpublished state, persistence, publication, and cleanup. A rejected directory override never falls back to Host mkdir; existing durable generations and the Session format are unchanged.
+
+File prompts recheck admission and cancellation after same-Agent receipt preparation and attachment admission, before binding receipts and enqueueing. Model policy is checked after asynchronous resolution and before selection and default saving. Rejection or cancellation leaves uncommitted receipts unconsumed; accepted request IDs still recover from the original durable receipts, and an unknown outcome is never treated as no execution.
+
+Page retains the target history/events pagination and its complete cursor. Control budgets apply to the original queue and complete changes frames; omission preserves native buffering. Cloud retains only its reviewed endpoints, so inherited Native readers are not automatically exposed. Follow still awaits tail cleanup and retains failures and unknown outcomes.
+
 Prompt retries use the request identity in the first committed inbox insertion, including after the message is claimed or removed. Admission checks again after asynchronous attachment preparation, so concurrent retries accept one input. Acceptance acknowledges insertion, not execution or completion.
 
 The controller reads a Session's recorded preset through the optional `agentPresets.presetForSession(session)` service method. A null result means no preset was recorded; an absent service means preset identity is unavailable to the controller.

@@ -179,7 +179,10 @@ it('initializes a cold attachment directory and keeps subsequent native uploads 
     const bytes = Uint8Array.of(1, 2, 3)
     const upload = await f.uploads.uploadStream({ sessionId: agent.id, name,
       data: (async function* () { yield bytes })() })
-    expect(f.uploads.resolve(agent, upload.receiptId)).toEqual(upload.file)
+    const staged = f.uploads.resolve(agent, upload.receiptId)
+    expect(staged?.type).toBe('file')
+    if (staged?.type !== 'file') throw new Error('The original file receipt is absent')
+    expect(staged.attachment).toBe(upload.file)
     const stored: number[] = []
     for await (const chunk of f.store.readFileStream(upload.file)) stored.push(...chunk)
     expect(stored).toEqual([...bytes])

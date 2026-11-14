@@ -61,6 +61,8 @@ Native [file discovery](../fs/tool-fs-search/src/glob.ts) groups the six VCS nam
 
 Native [theme settings](../client/ui-theme/README.md) project the original Host write outcome separately from the palette preview. The Appearance row disables choices while loading or saving and after an unconfirmed write; only Host acceptance reports saved. The current shared boolean write result cannot distinguish every refusal from structured transport failure, so both false and rejected promises remain unconfirmed without replay. Native settings ordering, persistence and cancellation remain unchanged; refreshing can still cancel an unacknowledged write.
 
+Native Chat retains its original [decorative running indicator](../client/ui-chat/src/client/chat/RunningWhaleTail.tsx), with motion and accessibility behavior owned by the [Chat package](../client/ui-chat/README.md). The FileUploads Schema normalizes omitted configuration before plugin activation; its original receipt/intake capacity remains finite.
+
 ## Upgrade procedure
 
 1. Record the current clean source revision, deployment revision, chosen upstream revision and trusted configuration before changing anything. Source tests and an old running release are different evidence.
@@ -81,3 +83,5 @@ The native attachment staging provider exposes a phase-scoped storage-capacity e
 Independent account plugins reuse `CloudAccountApi.sessionProject(actualSession)` through Runtime's original `projectForSession` callback; missing callback or current business admission rejects access. This Host-only method creates no Session, Agent or execution authority.
 
 The native SubprocessHandle has optional `releaseCollected()`; Cloud collected handles delegate it to their original ManagedCommandOperation.release(). The consumer copies output first. Original range/I/O settlement retains reservations and unknown cleanup, so a single native research tool can run sequential workflow/Git commands without retaining every completed output until final projection.
+
+The original Session Controller connects embedding preparation, model checks, and finite control buffering during service initialization, using its existing Agent, Command, and Control owners. Its [preparation and settlement rules](../api/session-controller/README.md) retain Native defaults, the guarded factory and SessionPreparation, original receipts, and unknown outcomes. Cloud supplies its existing account policy and exposes only reviewed methods; this adds no Session store, migration, or runtime owner.

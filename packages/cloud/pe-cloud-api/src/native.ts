@@ -7,7 +7,7 @@ import type {
   SessionCancelRequest, SessionCancelValue, SessionForkRequest, SessionForkValue,
   SessionUpdateQueueRequest, SessionUpdateQueueValue,
   SessionRenameRequest, SessionRenameValue,
-  SessionAddress, SessionPageRequest, SessionPage, SessionFollowRequest, SessionFollowFrame,
+  SessionAddress, SessionPageRequest, SessionEventsPage, SessionFollowRequest, SessionFollowFrame,
   SessionListRequest, SessionListValue, SessionControlFrame, SessionSummary, SessionProjectionsRequest, SessionProjectionsValue,
   SkillListRequest, SkillListValue, ModelCatalog, ModelSelection, SessionSelectModelRequest, SessionSelectModelValue,
 } from '@deepseek-ai/dsh-api-session-controller/types'
@@ -119,6 +119,7 @@ class NativeSessionAdmission {
   async create(request: SessionCreateRequest): Promise<SessionCreateRequest> {
     this.admit('session/create', 'account-project')
     const resolved = await this.guards.resolveCreate(request)
+    this.admit('session/create', 'account-project')
     if (resolved.workspaceId === undefined && resolved.cwd === undefined) {
       throw new CloudApiError('cloud/account-unavailable', 'A verified project location is required before native creation.')
     }
@@ -143,15 +144,37 @@ class NativeSessionAdmission {
   async session(endpoint: 'session/prompt' | 'session/fork' | 'session/updateQueue' | 'session/rename', sessionId: SessionId): Promise<void> {
     this.admit(endpoint, 'account-session')
     await this.guards.assertSessionProject(sessionId)
+    this.admit(endpoint, 'account-session')
   }
 
-  /** Recheck the actual attached child after native Workspace publication, before returning its identity. */
-  assertForkResult(value: SessionForkValue): void {
-    this.admit('session/fork', 'account-session')
+  commandAgent(operation: 'prompt' | 'rename' | 'updateQueue', agent: Agent): void {
+    const endpoint = `session/${operation}`
+    this.admit(endpoint, 'account-session')
+    if (this.ctx.agents.get(agent.id) !== agent || agent.ctx.get('peAccount') !== this.binding) {
+      throw new CloudApiError('cloud/stale-generation', 'The native command no longer owns its original Agent.')
+    }
+    agent.ctx.fiber.assertActive()
+    this.guards.assertActiveScope(agent)
+    this.admit(endpoint, 'account-session')
+    if (this.ctx.agents.get(agent.id) !== agent) {
+      throw new CloudApiError('cloud/stale-generation', 'The native Agent changed during command admission.')
+    }
+  }
+
+  /** Recheck the actual attached Agent after native Workspace publication, before returning its identity. */
+  assertPublishedResult(endpoint: 'session/create' | 'session/fork', value: SessionCreateValue | SessionForkValue): void {
+    const guard = endpoint === 'session/create' ? 'account-project' : 'account-session'
+    this.admit(endpoint, guard)
     const child = this.ctx.get('agents')?.get(value.sessionId)
-    if (child === undefined) throw new CloudApiError('cloud/account-unavailable', 'The native fork child is unavailable.')
+    if (child === undefined || child.ctx.get('peAccount') !== this.binding) {
+      throw new CloudApiError('cloud/account-unavailable', 'The native published Agent is unavailable.')
+    }
+    child.ctx.fiber.assertActive()
     this.guards.assertActiveScope(child)
-    this.admit('session/fork', 'account-session')
+    this.admit(endpoint, guard)
+    if (this.ctx.agents.get(value.sessionId) !== child) {
+      throw new CloudApiError('cloud/stale-generation', 'The published Agent changed during scope validation.')
+    }
   }
 
   promptInput(request: SessionPromptRequest): void {
@@ -168,6 +191,7 @@ class NativeSessionAdmission {
       throw new CloudApiError('cloud/forbidden', 'Subagent history is not admitted by this account adapter.')
     }
     await this.guards.assertSessionProject(address.sessionId)
+    this.admitHistory(endpoint)
   }
 
   historySignal(signal: AbortSignal): AbortSignal {
@@ -243,6 +267,9 @@ class NativeSessionAdmission {
     this.guards.assertActiveScope(agent)
     assertNativeModelRoute(selection, policy)
     this.admit('session/selectModel', 'account-session')
+    if (this.ctx.agents.get(agent.id) !== agent) {
+      throw new CloudApiError('cloud/stale-generation', 'The selected Agent changed during scope validation.')
+    }
   }
 
   skillCatalogSelected(): boolean { return this.policy.manifest.rpcEndpoints.some(row => row.endpoint === 'skills/list') }
@@ -329,13 +356,12 @@ class NativeSessionAdmission {
   }
 
   async preparePromptFiles(agent: Agent, ids: readonly FileUploadReceiptId[], signal?: AbortSignal): Promise<void> {
-    this.admit('session/prompt', 'account-session')
-    this.guards.assertActiveScope(agent)
+    this.commandAgent('prompt', agent)
     const prepare = this.guards.preparePromptFiles
     if (prepare === undefined) throw new CloudApiError('cloud/forbidden', 'File prompt admission is unavailable.')
     await prepare(agent, ids, signal)
-    this.guards.assertActiveScope(agent)
-    this.admit('session/prompt', 'account-session')
+    signal?.throwIfAborted()
+    this.commandAgent('prompt', agent)
   }
 
   admit(endpoint: string, guard: ExposureGuard, mode: 'rpc' | 'stream' = 'rpc'): void {
@@ -408,6 +434,14 @@ class AccountSessionController extends SessionController {
     this.admission.commitModelSelection(agent, selection)
   }
 
+  protected override assertCommandAgent(operation: 'prompt' | 'rename' | 'updateQueue', agent: Agent): void {
+    this.admission.commandAgent(operation, agent)
+  }
+
+  protected override prepareForkSession(sessionId: SessionId): Promise<void> {
+    return this.admission.session('session/fork', sessionId)
+  }
+
   override async modelCatalog(): Promise<ModelCatalog> {
     this.admission.admitModelCatalog()
     return this.admission.modelCatalog(await super.modelCatalog())
@@ -428,21 +462,26 @@ class AccountSessionController extends SessionController {
   override async create(request: SessionCreateRequest): Promise<SessionCreateValue> {
     const resolved = await this.admission.create(request)
     this.admission.admit('session/create', 'account-project')
-    return super.create(resolved)
+    const value = await super.create(resolved)
+    this.admission.assertPublishedResult('session/create', value)
+    return value
   }
 
   override async prompt(request: SessionPromptRequest, signal: AbortSignal): Promise<SessionPromptValue> {
+    const control = this.admission.historySignal(signal)
+    control.throwIfAborted()
     this.admission.promptInput(request)
     await this.admission.session('session/prompt', request.sessionId)
+    control.throwIfAborted()
     this.admission.admit('session/prompt', 'account-session')
-    return super.prompt(request, signal)
+    return super.prompt(request, control)
   }
 
   override async fork(request: SessionForkRequest): Promise<SessionForkValue> {
     await this.admission.session('session/fork', request.sessionId)
     this.admission.admit('session/fork', 'account-session')
     const value = await super.fork(request)
-    this.admission.assertForkResult(value)
+    this.admission.assertPublishedResult('session/fork', value)
     return value
   }
 
@@ -511,7 +550,7 @@ class AccountSessionController extends SessionController {
     } finally { await source.return?.() }
   }
 
-  override async page(request: SessionPageRequest, signal: AbortSignal): Promise<SessionPage> {
+  override async page(request: SessionPageRequest, signal: AbortSignal): Promise<SessionEventsPage> {
     const nativeSignal = this.admission.historySignal(signal)
     nativeSignal.throwIfAborted()
     await this.admission.history('session/page', request.address)
@@ -534,7 +573,7 @@ class AccountSessionController extends SessionController {
     const source = super.follow(request, nativeSignal)[Symbol.asyncIterator]()
     try {
       while (true) {
-        // Native cold promotion resumes after the snapshot yield, inside the next advance.
+        // Native opening may promote before yielding; the original guarded factory retains publication admission.
         signal.throwIfAborted()
         this.admission.admitHistory('session/follow')
         nativeSignal.throwIfAborted()

@@ -13,3 +13,11 @@ export class FilesFailure extends Error {
     this.name = 'FilesFailure'
   }
 }
+
+/** A definite skill-project capacity refusal; no unconfirmed record publication is released. */
+export class SkillProjectCapacityFailure extends FilesFailure {
+  constructor(readonly resource: 'associations' | 'parent-borrows' | 'metadata', message: string) {
+    super('cloud/capacity', message)
+    this.name = 'SkillProjectCapacityFailure'
+  }
+}

@@ -38,6 +38,8 @@ interface TypertLookupDefinition {
 
 ## Invocation descriptors
 
+The concrete Host Gateway exposes `inspectInvocation(namespace, method)` through its original strict/SRC descriptor resolver. The returned `InvocationDescriptor` grants no lookup, resource or dispatch authority; an inactive caller, unavailable endpoint or withdrawn strict definition rejects through the original owning checks. The [Gateway package](../../packages/api/gateway/README.md) owns inspection and invocation behavior.
+
 An `InvocationDescriptor` is local reflection, not a wire message. Host and consumer builds generate corresponding descriptors; the request sends only the endpoint and named `args`. Strict codecs carry generated schema factories, while SRC codecs enforce JSON-safe inputs without structural type recovery. Unary result codecs can supply `encode()` for byte-containing subtrees and `decode()` for recursive native-byte validation; Client declarations narrow every `Uint8Array` to `ArrayBuffer` backing. Pure JSON results need neither byte detection nor Client decoding. Cancellation is an out-of-band carrier signal injected after business parameters and never enters `args`.
 
 `createTypertRemoteInfo` returns a lazy class instance implementing `TypertRemoteInfo`, which extends the mountable `TypertRemoteContribution`. Its `methods` index aliases the direct objects in `descriptors`: each `TypertRemoteMethod` adds named `input(options?)` and `invoke`, retains documentation on the method and its parameters, and uses `result` as its only output codec. Unary `mode` is absent; stream `mode` is `'stream'`. Context-only receivers remain in descriptors and scoped declarations. Registry queries return base descriptors; `isTypertRemoteMethod` narrows generated direct capabilities without recovering endpoint-specific generics.
@@ -679,6 +681,16 @@ getPendingRemoteEvents(): readonly PendingRemoteEventInfo[]
  * @returns disposer removing this source and cancelling its active streams.
  */
 registerRemoteEvents( source: TypertRemoteEventSource, host: RemoteEventHostInfo, ): () => Promise<void>
+
+/**
+ * Inspect the current strict or SRC definition without resolving a lookup or invoking business work.
+ * Inspection grants no dispatch or resource authorization; a withdrawn strict definition never falls back to SRC.
+ * @param namespace - the Remote namespace to inspect.
+ * @param method - the exported method name.
+ * @returns the descriptor selected by the original live dispatch resolver.
+ * @throws When the calling Fiber is inactive or the original resolver rejects the endpoint.
+ */
+inspectInvocation(namespace: string, method: string): InvocationDescriptor
 
 /**
  * Invoke one live Remote method through strict generated reflection or SRC markers.

@@ -10,6 +10,7 @@ import type {
   SaveImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import type { MessageSource, UserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { Session, SessionId, SessionLogOffset, type SessionEvent } from '@deepseek-ai/dsh-session'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
@@ -47,6 +48,7 @@ async function uploadHarness(
   origin?: 'subagent',
   imageLimits: ImageAttachmentLimits = IMAGE_LIMITS,
   seed?: readonly SessionEvent[],
+  prepareFiles?: ConstructorParameters<typeof SessionCommandController>[3],
 ): Promise<{
   ctx: Context
   controller: SessionCommandController
@@ -143,7 +145,7 @@ async function uploadHarness(
   if (uploadRoute === undefined) throw new Error('file upload route was not registered')
   return {
     ctx,
-    controller: new SessionCommandController(ctx, agents, '/workspace'),
+    controller: new SessionCommandController(ctx, agents, '/workspace', prepareFiles),
     uploads,
     agent,
     followup,
@@ -774,3 +776,33 @@ describe('Session file uploads', () => {
       })
   })
 })
+
+it.each(['refusal', 'cancellation'] as const)(
+  'leaves a real staged receipt unbound when preparation ends in %s', async (ending) => {
+    const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+    const denied = new RemoteError('gateway/internal', 'original directory preparation refused', {})
+    const prepare = vi.fn(async () => {
+      entered.resolve(undefined)
+      await release.promise
+      if (ending === 'refusal') throw denied
+    })
+    const f = await uploadHarness(undefined, IMAGE_LIMITS, undefined, prepare)
+    const receipt = await f.uploads.upload(f.agent, { data: 'AAAA' }, new AbortController().signal)
+    const bind = vi.spyOn(f.uploads, 'bindPrompt'), caller = new AbortController()
+    const cancelled = new Error('caller cancelled while receipt preparation was pending')
+    const work = f.controller.prompt(promptRequest([{ type: 'file', receiptId: receipt.receiptId }]), USER_SOURCE, caller.signal)
+    const rejected = ending === 'refusal' ? expect(work).rejects.toBe(denied)
+      : expect(work).rejects.toBe(cancelled)
+    onTestFinished(async () => { release.resolve(undefined); await Promise.allSettled([work]) })
+    await entered.promise
+    expect(prepare).toHaveBeenCalledExactlyOnceWith(f.agent, [receipt.receiptId], caller.signal)
+    expect(bind).not.toHaveBeenCalled()
+    expect(f.followup).not.toHaveBeenCalled()
+    if (ending === 'cancellation') caller.abort(cancelled)
+    release.resolve(undefined)
+    await rejected
+    expect(bind).not.toHaveBeenCalled()
+    expect(f.followup).not.toHaveBeenCalled()
+    expect(f.uploads.resolve(f.agent, receipt.receiptId)).toEqual({ type: 'file', attachment: receipt.file })
+  },
+)

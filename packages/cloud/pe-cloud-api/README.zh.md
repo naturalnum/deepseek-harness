@@ -28,6 +28,8 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## Use this package
 
+Cloud Session 委派使用原 [Session Controller 准备与提交检查](../../api/session-controller/README.zh.md)。准备阶段异步等待后核原账号与实际 Agent 范围；控制流限制作用于原完整帧队列。原审核端点清单保持精确，Native 新增读取方法也不会自动开放。
+
 在部署方拥有的组合中挂载根入口；账户挂载需要完整的可信集成。
 
 ### When to choose it

@@ -6,6 +6,7 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { FdMutationFailure, FdWorkerClient } from '../src/worker-client.ts'
+import { FilesFailure } from '../src/error.ts'
 import { createSkillProjectWork, skillCopyReferences, type SkillProjectWork } from '../src/skill-project-work.ts'
 import type { SkillVersion } from '../src/skill-versions.ts'
 
@@ -92,6 +93,46 @@ it('reopens existing identities with the current mount, reuses the edited copy a
   borrowed.release(); held.release(); f.lifetime.abort()
   expect(() => { f.port.assertProject(held.value) }).toThrow()
 })
+it.each(['Root', 'Workspace', 'proof'] as const)(
+  'rechecks %s authority after the skill store write reserve before revalidation CAS', async (authority) => {
+    const f = await fixture(), entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+    const originalDirectory = f.skillDirectory.getMockImplementation()!, originalAssert = f.assertRecord.getMockImplementation()!
+    let suspended = true, revoked = false
+    const stale = new FilesFailure('cloud/stale-generation', 'The original skill revalidation authority is no longer current.')
+    const refusal = () => { throw stale }
+    f.skillDirectory.mockImplementation(async (...args) => {
+      if (args[3] === 'store-verify' && suspended) { entered.resolve(undefined); await release.promise }
+      return originalDirectory(...args)
+    })
+    f.assertRecord.mockImplementation((revision) => {
+      originalAssert(revision)
+      if (authority === 'proof' && revoked) refusal()
+    })
+    const port = createSkillProjectWork({ ...f.input, limits: { ...f.input.limits, maxParentBorrows: 1 }, assertCurrent() {
+      f.input.assertCurrent()
+      if (authority === 'Root' && revoked) refusal()
+    } })
+    const assertRegistered = () => { if (authority === 'Workspace' && revoked) refusal() }
+    const pending = port.prepareProject(f.workspace, assertRegistered, signal())
+    const refused = expect(pending).rejects.toBe(stale)
+    try {
+      await entered.promise
+      revoked = true
+    } finally { suspended = false; release.resolve(undefined) }
+    await refused
+    expect(f.projection).toHaveBeenCalledTimes(1)
+    expect(f.skillDirectory.mock.calls.map(call => call[3])).toEqual(expect.arrayContaining(['store-read', 'store-verify']))
+    expect(f.write).not.toHaveBeenCalled()
+    expect(f.confirmRecord).not.toHaveBeenCalled()
+    expect(f.bytes()).toEqual(encode(f.original))
+    expect(f.input.revalidation?.[0]?.pending).toBe(true)
+    revoked = false
+    const held = await port.prepareProject(f.workspace, assertRegistered, signal())
+    expect(f.write).toHaveBeenCalledTimes(1)
+    expect(f.confirmRecord).toHaveBeenCalledExactlyOnceWith('1:2:3:4:5', '1:2:3:4:6')
+    held.release()
+  },
+)
 it('keeps the original stale rejection without Root authority or after the bound record changes', async () => {
   const f = await fixture(false)
   await expect(f.port.prepareProject(f.workspace, () => {}, signal())).rejects.toMatchObject({ outcome: 'not-published', code: 'FS_STALE_VERSION' })
@@ -184,10 +225,12 @@ it('prepares a new workspace while preserving another workspace cold record', as
   f.list.mockImplementation(async selected => selected.rootPath.endsWith('skill-working-copies')
     ? [{ name: coldName, type: 'file', identity: '1794:100', version: 'cold-v1', size: bytes.byteLength }] : [])
   f.skillDirectory.mockImplementation(async (_root, _uid, _gid, purpose) => ({
-    directory: purpose === 'store-verify' ? directory('99', '1794', '1536') : directory('55'), created: purpose === 'parent-create' }))
+    directory: purpose === 'store-verify' || purpose === 'store-read' ? directory('99', '1794', '1536') : directory('55'), created: purpose === 'parent-create' }))
   vi.spyOn(f.client, 'prepareProjectMetadata').mockResolvedValue({ created: true, directory: directory('19') })
   const limited = createSkillProjectWork({ ...f.input, limits: { ...f.input.limits, maxProjects: 1 } })
-  await expect(limited.prepareProject(f.workspace, () => {}, signal())).rejects.toMatchObject({ code: 'FS_TOO_LARGE' })
+  const unassociated = await limited.prepareProject(f.workspace, () => {}, signal())
+  const empty = await limited.borrowAll(unassociated.value, signal())
+  expect(empty.value.copies).toEqual([]); empty.release(); unassociated.release()
   expect(f.write).not.toHaveBeenCalled()
   const held = await f.port.prepareProject(f.workspace, () => {}, signal())
   expect(held.value.workspaceId).toBe(f.workspace.id)

@@ -16,6 +16,34 @@
 
 命令自身的操作锁只防止同一时刻重复运行，不能替代整个验证期间持有的候选环境锁。
 
+## 外置原生组合状态
+
+原生组合不保存为普通更新状态，旧版入口会被阻挡。新控制器只通过下面的固定匹配检查处理原生更新和回滚；未知格式、混合状态或不匹配的 JavaScript、FD 模块和 profile 在环境动作前被拒绝。
+
+原生交付的权威记录位于独立的 Root 私有目录，宿主状态只用于阻挡普通入口。固定控制流程在解除绑定、建立绑定、封存和首次启动前同步同一份责任记录；写入、关闭、同步、读回、绑定或启动结果不能确认时保留操作锁或独立待确认阻挡，不自动启动、重试或回退。没有当前应用或启动回执不代表首次启动未提交。保留记录和阻挡供原操作负责人复核，不手工改为普通成功状态或删除阻挡。
+
+操作完成后，控制器先把独立的 `native-release.pending` 文件同步、读回并关闭，才删除操作锁、同步并关闭目录。任一收尾未确认时，待确认文件保持存在，三个默认入口及下一次原生操作均拒绝继续。只有这些步骤全部确认后，最后一次原子改名才发布完成凭据；此后没有新的关闭或同步步骤。崩溃若丢失这次改名，只会恢复成待确认阻挡，不自动清除。后续原生入口还须核原操作的准确完成凭据；这份凭据只确认宿主锁收尾，Root操作阶段仍由原记录决定。
+
+本页命令不接受任意原生资产、profile 或复制目标。原生交付需要当前批准的固定文件、单 profile 绑定和匹配读取方输入；普通产品包对 `.node` 的排除及保护继续适用。
+
+首次交付由环境维护者提供一份权限为 0600 的私有固定输入，在正常更新命令中追加 `--native-input '<私有JSON>'`。输入只包含已审单线资产的本地来源、准确字节数和摘要、现有资产父目录身份、原 profile/FD 身份、原路径和资产上限，以及匹配兼容产品包目录；`native-update.mjs` 拒绝额外字段。profile沿现有JSON patch数组格式，仅定位唯一insert项中id为files-root的config.helperPath，替换该字符串token，使用原token逆向逐字节还原。其它插件的helperPath保持原字节，重复files-root、重复JSON键、表达式或歧义格式拒绝，不重写整个配置。
+
+首次成功后，普通 `update` 和 `rollback` 自动读取该操作的私有匹配记录，实际检查安装的产品字节、原生文件和只读 profile 绑定，仅允许记录中的普通包或兼容包。回滚安装匹配的兼容读取方，保留同一 FD/profile，不恢复旧的、不兼容的备份。原生状态下的 `start` 拒绝自动重启，由原操作负责人核对持久阶段；缺失启动回执或当前进程不能作为首次启动未提交的依据。
+
+发布新模块后，控制器先使用现行 Node、UID 2000、零能力、no-new-privileges 和原 seccomp 条件加载模块，确认本单线导出，再正常停止原应用。加载子进程由Node显式禁止继承管理员FD，按固定argv直接启动，不依赖shell解释多位FD关闭语法。此步骤不调用账号或文件操作；当前应用不因加载失败而停止。新模块、候选 profile 和责任记录独立保留，现有文件不覆盖、不删除。
+
+## 同一未确认发布的一次接续
+
+专用入口为 `node deploy/local/update.mjs continue-native-publish <原operation> --line <原调用线>`，只接受原责任，不接受包、资产、profile、私有输入或其它阶段参数。默认 update、rollback 和 start 对未知状态的拒绝继续生效。现场执行仍由原主线负责人在准确正常源、必要测试和同案结论齐备后完成。
+
+入口只读持有原 operation.lock，核原候选持有者、私有 prepared 输入、原 app exec/PID/start、keeper/ns、产品只读条件、完整原组和 prepared 产品计划及源文件；不会重新 prepare、reserve 或发布资产，不比较服务运行中正常变化的用户数据。已存在模块及来源从固定 FD10 只读核实，候选须尚不存在。
+
+原 FD9 内固定 `native-publish-continuation.intent.json` 以独占创建、同步、关闭、目录同步及读回关闭确认一次新尝试；任何已有或部分文件永久拒绝再次尝试。意图分别绑定原记录、原组/资产来源与新控制器正常保存点和实际程序摘要，明确前次加载未知。随后只做一次新的受限只读加载和原函数的独占候选创建，新退出、信号、原始 stdout/stderr、缺失/超限事实及候选结果保存在同目录私有 receipt，不补造旧调用日志。
+
+只有新 receipt 确认后才按准确 expected-record 追加 published（保原三项 history 前缀），再正常保存原私有输入并由 Root 事实投影 latest；上述动作及桥关闭任何未知均不停止原应用，不自动回退、不重新加载、不倒退实际 Root 阶段。只有本次成功调用能继续原 stop/backup/install/profile/start/ready/smoke，已有 published 不能作为另一次恢复入口。最终 verified 后才沿原释放护栏处理同一个操作锁，候选锁仍由主线完成原额外验收后交还。
+
+控制器源在原产品两包之外：新正常保存点/程序摘要与原包 manifest/sourceCommit、原 prepared 输入及原生产模块分别绑定；原两包不重打、不改名或改来源标签。本入口不包含后继新 JavaScript 读者对或目录协议扩展。
+
 ## 只启动当前版本
 
 ```sh
@@ -32,7 +60,7 @@ deploy/local/start --line '<工作线名>'
 
 ```sh
 deploy/bundle --output '<仓库外产品包目录>'
-deploy/local/update '<产品包目录>' --line '<工作线名>' --credentials '<私密JSON>' --account ordinaryUserC
+deploy/local/update '<产品包目录>' --line '<工作线名>' --credentials '<私密JSON>' --account ordinaryUserB
 ```
 
 不指定 `--output` 时，产品包放在工作目录上一级的 `bundles/` 中。口令不放在命令行参数里；也可预先提供 `PE_CLOUD_SMOKE_EMAIL`、`PE_CLOUD_SMOKE_PASSWORD`，省略凭据文件参数。
@@ -53,7 +81,7 @@ deploy/local/update '<产品包目录>' --line '<工作线名>' --credentials '<
 deploy/local/rollback --line '<工作线名>'
 ```
 
-回滚使用最近一次更新保存的测试账号参数；需要更换时可追加 `--credentials '<私密JSON>' --account ordinaryUserC`。已有对话参数仍需成对提供。
+回滚使用最近一次更新保存的测试账号参数；需要更换时可追加 `--credentials '<私密JSON>' --account ordinaryUserB`。已有对话参数仍需成对提供。
 
 回滚恢复上一个版本的产品文件，启动后运行冒烟检查。检测到数据格式变化时，在停止应用之前拒绝自动回滚，由评审者处理。数据库和账号文件备份仅留存，不自动恢复。更新、回滚和再次更新是否通过，以本次迭代记录的实际结果为准。
 

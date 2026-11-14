@@ -27,6 +27,14 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
+Session Controller 在 Service 初始化时将可信 Host 目录准备、提示文件回执准备、模型提交检查及控制流预算接到原 Agent、Command 和 Control 所有者。省略覆盖保持 Native 默认行为；Cloud 不因路径、HTTP 前检或旧 Agent 身份获得新准入。
+
+新建、恢复及分叉仍使用原受保护 Agent 工厂和目标 SessionPreparation；未发布状态、持久化、发布与清理由原所有者负责。目录覆盖拒绝时不退回宿主 mkdir，旧持久代际和 Session 格式不变。
+
+文件提示在同 Agent 回执准备及附件准入返回后重新核准入和取消，再绑定回执并入队；模型策略在异步解析返回后、实际选择及默认保存之前复查。拒绝或取消不消费未提交回执；已提交 request-id 仍从原耐久回执恢复，不能将未知结果当作未执行。
+
+page 沿目标原 history/events 分页返回完整 cursor；control 预算作用于原队列和完整 changes 帧，省略预算保持原缓冲行为。Cloud 仅保既有审核端点，新增 Native 读取方法不会因继承而自动开放；follow 尾部清理仍等待并保留失败与未知结果。
+
 提示重试按首次已提交入队记录中的请求标识去重，消息被领取或删除后仍然有效。异步附件准备结束后再次检查，因此并发重试只接受一条输入。接受确认入队，不代表执行或完成。
 
 控制器通过可选服务方法 `agentPresets.presetForSession(session)` 读取 Session 已记录的预设。null 结果表示未记录预设；服务缺席表示控制器无法获知预设身份。

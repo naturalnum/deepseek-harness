@@ -8,7 +8,7 @@ import type { AccountBinding, AccountId, AccountRuntimeService, OperationId,
 import { nativeProvision } from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
-import { FdMutationFailure, FilesFailure, type ExecutionMountGrant } from '@deepseek-ai/dsh-pe-cloud-files'
+import { FdMutationFailure, FilesFailure, SkillProjectCapacityFailure, type ExecutionMountGrant } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { SandboxCoordinator, type NativeAccountExecutionAuthority } from './coordinator.ts'
 import { IssuedExecutionPort, assertInstalledExecutionBinding, requireIssuedExecutionPort,
@@ -96,6 +96,32 @@ class SessionEnvironmentCapacityError extends ExecutionStateError {
   constructor(cause: FdMutationFailure) {
     super('cloud/capacity', 'No free session environment is available. Continue in a session that already has an environment, or ask an administrator to release or provision one.')
     this.cause = cause
+  }
+}
+
+/**
+ * Files definitely refused the Workspace skill project before any export, allocation intent or SDK request existed.
+ * No shared export or sandbox exists; only this attempt fails after the original allocation owner joins.
+ */
+class SkillProjectRefusalError extends ExecutionStateError {
+  readonly filesCode: string
+  readonly reasonCode: string | undefined
+  readonly resource: SkillProjectCapacityFailure['resource'] | undefined
+  constructor(cause: FdMutationFailure) {
+    const reason = cause.cause instanceof FilesFailure ? cause.cause : undefined
+    const capacity = cause.code === 'FS_TOO_LARGE' && reason?.code === 'cloud/capacity'
+    const resource = reason instanceof SkillProjectCapacityFailure ? reason.resource : undefined
+    super(capacity ? 'cloud/capacity' : 'cloud/execution-unavailable', capacity
+      ? resource === 'parent-borrows'
+        ? 'All skill project preparation grants for this account are in use. Wait for running work in other sessions to finish, then retry.'
+        : resource === 'metadata'
+          ? 'The skill project association storage of this account is full. Ask an administrator to inspect it before retrying.'
+          : 'The skill project association limit of this account is reached. Continue in an existing workspace or ask an administrator to inspect the associations.'
+      : `The skill directory of this workspace could not be prepared (${cause.code}); no sandbox was created. Retry, or ask an administrator to inspect the workspace skill association.`)
+    this.cause = cause
+    this.filesCode = cause.code
+    this.reasonCode = reason?.code
+    this.resource = resource
   }
 }
 
@@ -192,6 +218,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
   private readonly bindings = new WeakMap<AccountBinding, AccountWork>()
   private readonly ports = new WeakMap<AccountExecutionPort, AccountWork>()
   private readonly accounts = new Map<AccountId, AccountWork>()
+  private readonly observedRefusals = new WeakSet<SkillProjectRefusalError>()
   private readonly state: {
     open: boolean
     ready: boolean
@@ -505,9 +532,9 @@ export class ManagedCoordinator extends SandboxCoordinator {
         }
         catch (cause) {
           this.observePreparationFailure(work, stage, cause)
-          if (cause instanceof SessionEnvironmentCapacityError) {
+          if (cause instanceof SessionEnvironmentCapacityError || cause instanceof SkillProjectRefusalError) {
             try {
-              // Only this typed, pre-intent files refusal proves no backend was created. Join the original owner anyway.
+              // Only these typed, pre-intent files refusals prove no backend was created. Join the original owner anyway.
               await this.allocations.stop(request)
               if (work.sessions.get(request.sessionId) === request) work.sessions.delete(request.sessionId)
             } catch (failure) {
@@ -517,7 +544,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
               return this.unavailable()
             }
             if (signal.aborted) throw signal.reason
-            throw new ExecutionStateError('cloud/capacity', cause.message)
+            throw new ExecutionStateError(cause.code, cause.message)
           }
           const retirementFailed = failedRetirement !== undefined && failedRetirement.cause === cause
           this.observePrivateFailure(work, retirementFailed ? 'continuation-stop' : 'preparation', cause, scope.sessionId, stage)
@@ -802,7 +829,11 @@ export class ManagedCoordinator extends SandboxCoordinator {
               if (!Number.isSafeInteger(policy.maxCopiesPerOperation)
                 || policy.maxCopiesPerOperation < 1 || policy.maxCopiesPerOperation > 2147483647) this.capacity()
               stage = 'skill-project'
-              parent = await files.prepareSkillProject(project, work.binding.lifetime)
+              parent = await files.prepareSkillProject(project, work.binding.lifetime).catch((cause: unknown) => {
+                // Only a definite files refusal before export/allocation permits another attempt; unknown writes stay retained.
+                if (cause instanceof FdMutationFailure && cause.outcome === 'not-published') throw new SkillProjectRefusalError(cause)
+                throw cause
+              })
             }
             stage = 'shared-export'
             granted(); share = await this.deployment.share(held.value, granted, parent === undefined || policy === undefined ? undefined
@@ -1008,6 +1039,18 @@ export class ManagedCoordinator extends SandboxCoordinator {
   }
 
   private observePreparationFailure(work: AccountWork, stage: PreparationFailureStage, cause: unknown): void {
+    if (cause instanceof SkillProjectRefusalError) {
+      // Name the actual refusal once per failure; it does not consume the account's single retained-failure observation.
+      if (this.observedRefusals.has(cause)) return
+      this.observedRefusals.add(cause)
+      try {
+        console.warn('Cloud managed execution preparation refused: %j', { event: 'managed-execution-preparation-refused',
+          pid: process.pid, stage: 'skill-project', accountId: work.binding.accountId, code: cause.code, filesCode: cause.filesCode,
+          ...(cause.reasonCode === undefined ? {} : { reasonCode: cause.reasonCode }),
+          ...(cause.resource === undefined ? {} : { resource: cause.resource }) })
+      } catch (_unavailableObservation) { /* The refusal itself is still returned to its original caller. */ }
+      return
+    }
     if (work.preparationFailureObserved || cause instanceof SessionEnvironmentCapacityError) return
     work.preparationFailureObserved = true
     try {

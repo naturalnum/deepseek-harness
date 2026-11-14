@@ -5750,6 +5750,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'disposer removing this source and cancelling its active streams.',
       },
       {
+        signature: 'inspectInvocation(namespace: string, method: string): InvocationDescriptor',
+        description: 'Inspect the current strict or SRC definition without resolving a lookup or invoking business work. Inspection grants no dispatch or resource authorization; a withdrawn strict definition never falls back to SRC.',
+        parameters: [{ name: 'namespace', description: 'the Remote namespace to inspect.' }, { name: 'method', description: 'the exported method name.' }],
+        returns: 'the descriptor selected by the original live dispatch resolver.',
+        throws: ['When the calling Fiber is inactive or the original resolver rejects the endpoint.'],
+      },
+      {
         signature: 'async invoke(request: InvokeRemoteRequest): Promise<unknown>',
         description: 'Invoke one live Remote method through strict generated reflection or SRC markers.',
         parameters: [{ name: 'request', description: 'decoded endpoint and exact named wire arguments.' }],
@@ -10960,7 +10967,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionControllerInternals',
-    declaration: 'export interface SessionControllerInternals {\n    readonly openPath?: (path: string, signal: AbortSignal) => Promise<void>;\n    readonly fileApplications?: typeof nativeFileApplications;\n    readonly openFileApplication?: typeof openNativeFileApplication;\n    readonly revealPath?: (path: string, signal: AbortSignal) => Promise<void>;\n    readonly canOpenPath?: () => boolean;\n}',
+    declaration: 'export interface SessionControllerInternals {\n    readonly skillCatalog?: typeof SessionSkillCatalog;\n    readonly openPath?: (path: string, signal: AbortSignal) => Promise<void>;\n    readonly fileApplications?: typeof nativeFileApplications;\n    readonly openFileApplication?: typeof openNativeFileApplication;\n    readonly revealPath?: (path: string, signal: AbortSignal) => Promise<void>;\n    readonly canOpenPath?: () => boolean;\n}',
   },
   {
     name: 'SessionCreateRequest',
@@ -11401,6 +11408,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionSeqCursor',
     declaration: 'export type SessionSeqCursor = SessionSeq | -1;',
+  },
+  {
+    name: 'SessionSkillCatalog',
+    declaration: 'export class SessionSkillCatalog extends TypertRemoteService {\n    static inject;\n    constructor(ctx: Context);\n    @Remote\n    async list(request: SkillListRequest, signal: AbortSignal): Promise<SkillListValue>;\n}',
   },
   {
     name: 'SessionStartInput',

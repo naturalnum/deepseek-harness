@@ -39,6 +39,7 @@ interface LinuxFdHelper {
     maxPath: number, retries: number, timeout: number, cancel: Int32Array<SharedArrayBuffer>,
     maximum: number, maxRecord: number, maxBytes: number, maxInodes: number): unknown
   verifySkillStore?: LinuxFdHelper['prepareSkillStore']
+  inspectSkillStore?: LinuxFdHelper['prepareSkillStore']
   prepareSkillParent?(this: void, path: string, device: string, inode: string, mountId: string, uid: number, gid: number,
     maxPath: number, retries: number, timeout: number, cancel: Int32Array<SharedArrayBuffer>): unknown
   verifySkillParent?(this: void, path: string, device: string, inode: string, mountId: string, uid: number, gid: number,
@@ -97,10 +98,12 @@ function isHelper(value: unknown): value is LinuxFdHelper {
     && (value.environmentLayoutVersion === undefined ? value.prepareEnvironmentLayout === undefined
       : value.environmentLayoutVersion === 1 && value.abiVersion === 8 && typeof value.prepareEnvironmentLayout === 'function')
     && (value.skillProjectionVersion === undefined ? value.projectSkillVersion === undefined && value.prepareSkillStore === undefined
-      && value.verifySkillStore === undefined && value.prepareSkillParent === undefined && value.verifySkillParent === undefined
+      && value.verifySkillStore === undefined && value.inspectSkillStore === undefined
+      && value.prepareSkillParent === undefined && value.verifySkillParent === undefined
       : value.skillProjectionVersion === 1 && value.abiVersion === 8 && value.skillVersionsVersion === 1
         && typeof value.projectSkillVersion === 'function'
         && typeof value.prepareSkillStore === 'function' && typeof value.verifySkillStore === 'function'
+        && (value.inspectSkillStore === undefined || typeof value.inspectSkillStore === 'function')
           && typeof value.prepareSkillParent === 'function' && typeof value.verifySkillParent === 'function')
     && (value.skillVersionsVersion === undefined ? value.prepareSkillVersion === undefined
       : value.skillVersionsVersion === 1 && value.abiVersion === 8 && typeof value.prepareSkillVersion === 'function'
@@ -286,7 +289,8 @@ function helper(path: string): LinuxFdHelper {
       || loaded.prepareSkillStore === undefined || loaded.verifySkillStore === undefined
       || loaded.prepareSkillParent === undefined || loaded.verifySkillParent === undefined ? {} : {
         skillProjectionVersion: 1, projectSkillVersion: loaded.projectSkillVersion,
-        prepareSkillStore: loaded.prepareSkillStore, verifySkillStore: loaded.verifySkillStore, prepareSkillParent
+        prepareSkillStore: loaded.prepareSkillStore, verifySkillStore: loaded.verifySkillStore,
+        ...loaded.inspectSkillStore === undefined ? {} : { inspectSkillStore: loaded.inspectSkillStore }, prepareSkillParent
         : loaded.prepareSkillParent, verifySkillParent: loaded.verifySkillParent,
       },
     ...loaded.skillVersionsVersion !== 1 || loaded.prepareSkillVersion === undefined ? {} : {
@@ -1036,7 +1040,7 @@ function start(): void {
     if (record(raw) && raw.kind === 'skill-directory') {
       const config = limits.skillProjection, supplied = skillProjectionLimits(raw.limits)
       if (native.skillProjectionVersion !== 1 || config === undefined || supplied === undefined || limits.content === undefined
-        || Object.keys(raw).length !== 8 || !['store', 'store-verify', 'parent-create', 'parent-verify'].includes(String(raw.purpose))
+        || Object.keys(raw).length !== 8 || !['store', 'store-read', 'store-verify', 'parent-create', 'parent-verify'].includes(String(raw.purpose))
         || Object.entries(config).some(([key, value]) => Object.entries(supplied).find(([k]) => k === key)?.[1] !== value)) {
         port.close(); return }
       const base = projectMetadataRequest({ kind: 'project-metadata-prepare', id: raw.id, root: raw.root, uid: raw.uid, gid: raw.gid,
@@ -1049,8 +1053,10 @@ function start(): void {
         new Int32Array(base.cancel)]
       const frame = raw.purpose === 'store' ? native.prepareSkillStore?.(...args, config.maxProjects, config.maxRecordBytes,
         config.maxMetadataBytes, config.maxMetadataInodes)
-        : raw.purpose === 'store-verify' ? native.verifySkillStore?.(...args, config.maxProjects, config.maxRecordBytes,
-          config.maxMetadataBytes, config.maxMetadataInodes)
+        : raw.purpose === 'store-verify' || raw.purpose === 'store-read'
+          ? (raw.purpose === 'store-read' ? native.inspectSkillStore ?? native.verifySkillStore : native.verifySkillStore)?.(
+            ...args, config.maxProjects, config.maxRecordBytes,
+            config.maxMetadataBytes, config.maxMetadataInodes)
           : raw.purpose === 'parent-create' ? native.prepareSkillParent?.(...args) : native.verifySkillParent?.(...args)
       if (!(frame instanceof Uint8Array) || !(frame.buffer instanceof ArrayBuffer) || parseProjectMetadataFrame(frame, root,
         base.uid, base.gid) === undefined) {

@@ -13,6 +13,19 @@ import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-ses
 import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-typert-registry'
 
+/**
+ * Prepare the default local project directory before native Agent creation.
+ * @param cwd - resolved directory selected by the native create command.
+ * @returns completion of recursive preparation, accepting an existing directory.
+ */
+export async function prepareSessionProjectDirectory(cwd: string): Promise<void> {
+  try {
+    await mkdir(cwd, { recursive: true })
+  } catch (error: unknown) {
+    throw new Error(`failed to ensure project directory "${cwd}": ${String(error)}`, { cause: error })
+  }
+}
+
 /** Cold Session identity absent from persistence. */
 export class ApiSessionNotFound extends Error {}
 
@@ -118,8 +131,14 @@ export class ApiSessionAgentController {
   private readonly claims = new Map<SessionId, Promise<void>>()
   private readonly imageAdmissionChains = new WeakMap<Agent, Promise<void>>()
 
-  /** @param ctx - Host context carrying Agent, model, persistence, and Typert services. */
-  constructor(private readonly ctx: Context) {}
+  /**
+   * @param ctx - Host context carrying Agent, model, persistence, and Typert services.
+   * @param ensureProjectDirectory - awaited original directory preparation; omission keeps local mkdir.
+   */
+  constructor(
+    private readonly ctx: Context,
+    private readonly ensureProjectDirectory: (cwd: string) => Promise<void> = prepareSessionProjectDirectory,
+  ) {}
 
   /**
    * Configure Session and Agent lookups for Typert.
@@ -434,11 +453,8 @@ export class ApiSessionAgentController {
   }
 
   private async createAgent(sessionId: SessionId, cwd: string, composition: ApiSessionComposition): Promise<Agent> {
-    try {
-      await mkdir(cwd, { recursive: true })
-    } catch (error: unknown) {
-      throw new Error(`failed to ensure project directory "${cwd}": ${String(error)}`, { cause: error })
-    }
+    await this.ensureProjectDirectory(cwd)
+    this.ctx.fiber.assertActive()
     return (await this.ctx.agents.create({
       sessionId,
       agentOptions: this.agentOptions(),

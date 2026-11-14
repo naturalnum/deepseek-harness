@@ -667,3 +667,36 @@ it('rechecks the exact binding after the synchronous active-scope callback befor
   await expect(invoke('cancel', { sessionId })).rejects.toMatchObject({ code: 'cloud/stale-generation' })
   expect(nativeCancel).not.toHaveBeenCalled()
 })
+
+it.each(['generation', 'business', 'caller'] as const)(
+  'does not bind receipts or enqueue a native prompt when %s closes during attachment admission', async (ending) => {
+    const f = await fixture('prompt-await-' + ending)
+    const { sessionId } = await f.create()
+    const agent = f.ctx.agents.get(sessionId)!
+    const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+    const admit = f.ctx.attachments.admitPromptContent.bind(f.ctx.attachments)
+    vi.spyOn(f.ctx.attachments, 'admitPromptContent').mockImplementationOnce(async (...args) => {
+      entered.resolve(undefined)
+      await release.promise
+      return admit(...args)
+    })
+    const bind = vi.spyOn(f.ctx.fileUploads, 'bindPrompt'), followup = vi.spyOn(agent, 'followup')
+    const caller = new AbortController(), cancelled = new Error('original caller or generation cancelled')
+    const work = f.controller.prompt({ sessionId, requestId: 'uncommitted-prompt' as import('@deepseek-ai/dsh-api-session-controller/types').SessionRequestId,
+      mode: 'queue', content: [{ type: 'text', text: 'must not enqueue' }] }, caller.signal)
+    const rejected = ending === 'business' ? expect(work).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+      : expect(work).rejects.toBe(cancelled)
+    onTestFinished(async () => { release.resolve(undefined); await Promise.allSettled([work]) })
+    await entered.promise
+    if (ending === 'generation') f.lifetime.abort(cancelled)
+    else if (ending === 'business') f.policy.invalidate()
+    else caller.abort(cancelled)
+    release.resolve(undefined)
+    await rejected
+    expect(bind).not.toHaveBeenCalled()
+    expect(followup).not.toHaveBeenCalled()
+    expect(f.adapter.calls).toBe(0)
+    expect(agent.inbox.nextTurn).toEqual([])
+    expect(agent.inbox.nextStep).toEqual([])
+  },
+)

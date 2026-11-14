@@ -416,6 +416,19 @@ export class TypertGatewayService extends Service implements TypertGateway {
   }
 
   /**
+   * Inspect the current strict or SRC definition without resolving a lookup or invoking business work.
+   * Inspection grants no dispatch or resource authorization; a withdrawn strict definition never falls back to SRC.
+   * @param namespace - the Remote namespace to inspect.
+   * @param method - the exported method name.
+   * @returns the descriptor selected by the original live dispatch resolver.
+   * @throws When the calling Fiber is inactive or the original resolver rejects the endpoint.
+   */
+  inspectInvocation(namespace: string, method: string): InvocationDescriptor {
+    this.ctx.fiber.assertActive()
+    return this.resolveDescriptor(namespace, method, endpointOf(namespace, method))
+  }
+
+  /**
    * Invoke one live Remote method through strict generated reflection or SRC markers.
    * @param request - decoded endpoint and exact named wire arguments.
    * @returns the business result without output decoding.

@@ -403,7 +403,11 @@ describe('TypertGatewayService', () => {
     const { ctx, service } = await setup()
     const gateway = ctx.get('typertGateway')
     if (!(gateway instanceof TypertGatewayService)) throw new Error('Actual Host Gateway absent')
-    registerAgentLookup(ctx, { id: 'agent-1' })
+    const lookupCalls = { count: 0 }
+    ctx.typert.lookups.register('gatewayFixture', {
+      ...agentLookup({ id: 'agent-1' }),
+      resolve: () => { lookupCalls.count++; throw new Error('Readonly inspection resolved a lookup') },
+    })
     const source = gateway.inspectInvocation('goals', 'create')
     expect(source.parameters[0]).toMatchObject({ source: 'lookup', lookup: 'gatewayFixture' })
     const strict = createDescriptor()
@@ -413,6 +417,7 @@ describe('TypertGatewayService', () => {
     await dispose()
     expect(() => gateway.inspectInvocation('goals', 'create'))
       .toThrow(expect.objectContaining({ code: 'gateway/definition-unavailable' }))
+    expect(lookupCalls.count).toBe(0)
   })
 
   it('refuses absent and ambiguous definitions during readonly inspection', async () => {

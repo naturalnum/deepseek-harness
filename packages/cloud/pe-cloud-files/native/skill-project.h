@@ -210,7 +210,7 @@ static int skill_directory_open(int parent, const char *name, uint64_t retries, 
 }
 
 static int skill_store_scan(int store, uid_t uid, gid_t gid, dev_t device, uint64_t mount,
-  uint32_t max_records, uint32_t max_record, uint32_t max_bytes, uint32_t max_inodes, int *close_failed) {
+  uint32_t max_records, uint32_t max_record, uint32_t max_bytes, uint32_t max_inodes, int reserve, int *close_failed) {
   int copy=skill_open(store,".",O_RDONLY | O_DIRECTORY),error=0;
   if (copy<0) return errno;
   DIR *directory=fdopendir(copy);
@@ -241,7 +241,7 @@ static int skill_store_scan(int store, uid_t uid, gid_t gid, dev_t device, uint6
     if (close(fd)) *close_failed=1;
     if (error || *close_failed) break;
   }
-  if (!error && (bytes+temporary+4*block>max_bytes || (uint64_t)count+2>max_inodes)) error=EFBIG;
+  if (!error && (bytes+(reserve ? temporary+4*block : 0)>max_bytes || (uint64_t)count+(reserve ? 2 : 1)>max_inodes)) error=EFBIG;
   if (closedir(directory)) *close_failed=1;
   return error;
 }
@@ -301,7 +301,7 @@ static napi_value prepare_skill_directory(napi_env env, napi_callback_info info,
     || filesystem.f_type != EXT4_SUPER_MAGIC) { error = EPERM; goto finished; }
   error = mount_identity(owned->anchor, mount); if (error) goto finished;
   owned->mount_id = mount; flags |= PM_ROOT;
-  if (store) {
+  if (store == 1) {
     uint64_t block=(uint64_t)filesystem.f_bsize;
     if (!block || block>65536 || ((uint64_t)max_record+block-1)/block*block+5*block>max_bytes) { error=EFBIG; goto finished; }
   }
@@ -330,7 +330,7 @@ static napi_value prepare_skill_directory(napi_env env, napi_callback_info info,
     || (target.st_mode & 07777) != 0700 || (uint64_t)target.st_dev != device) { error = EPERM; goto finished; }
   error = mount_identity(owned->reader, mount); if (error) goto finished;
   put64(frame + 64, mount); flags |= PM_DIRECTORY;
-  if (store) { error=skill_store_scan(owned->reader,(uid_t)uid_value,(gid_t)gid_value,(dev_t)device,mount,max_records,max_record,max_bytes,max_inodes,&close_failed); if (error || close_failed) goto finished; }
+  if (store) { error=skill_store_scan(owned->reader,(uid_t)uid_value,(gid_t)gid_value,(dev_t)device,mount,max_records,max_record,max_bytes,max_inodes,store == 1,&close_failed); if (error || close_failed) goto finished; }
   /* After obtaining the directory, finish durability and closure even if the observer has left. */
   syncing = 1;
   if (fsync(owned->reader)) { error = errno; goto finished; }
@@ -373,4 +373,9 @@ static napi_value verify_skill_parent(napi_env env, napi_callback_info info) {
 
 static napi_value verify_skill_store(napi_env env, napi_callback_info info) {
   return prepare_skill_directory(env,info,"skill-working-copies",0,1);
+}
+
+/* Read-only inspection keeps actual storage bounds without reserving a future atomic write. */
+static napi_value inspect_skill_store(napi_env env, napi_callback_info info) {
+  return prepare_skill_directory(env,info,"skill-working-copies",0,2);
 }

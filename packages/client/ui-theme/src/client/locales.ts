@@ -75,6 +75,12 @@ export const en = {
 
 /** Japanese copy, checked against the English keys. */
 export const ja = {
+  'save.loading': '外観設定を読み込み中…',
+  'save.readonly': '外観設定は読み取り専用です。',
+  'save.saving': '外観の変更を保存中です。更新やページの移動は完了までお待ちください。',
+  'save.saved': '外観の変更を保存しました。',
+  'save.refused': '外観の変更は受け付けられませんでした。現在の設定を確認してから操作してください。',
+  'save.unknown': '保存を確認できません。ページを再読み込みし、保存された値を確認してからテーマを変更してください。',
   'appearance.title': '外観',
   'appearance.light': 'ライト',
   'appearance.dark': 'ダーク',
@@ -104,6 +110,12 @@ export const ja = {
 
 /** Spanish dictionary, checked against the English keys. */
 export const es = {
+  'save.loading': 'Cargando la configuración de apariencia…',
+  'save.readonly': 'La configuración de apariencia es de solo lectura.',
+  'save.saving': 'Guardando los cambios de apariencia. Espera antes de actualizar o salir de la página.',
+  'save.saved': 'Cambios de apariencia guardados.',
+  'save.refused': 'Los cambios de apariencia no se aceptaron. Comprueba la configuración actual antes de volver a intentarlo.',
+  'save.unknown': 'No se pudo confirmar el guardado. Recarga la página y comprueba los valores guardados antes de volver a cambiar el tema.',
   'appearance.title': 'Apariencia',
   'appearance.light': 'Claro',
   'appearance.dark': 'Oscuro',
@@ -133,6 +145,12 @@ export const es = {
 
 /** French dictionary, checked against the English keys. */
 export const fr = {
+  'save.loading': 'Chargement des paramètres d’apparence…',
+  'save.readonly': 'Les paramètres d’apparence sont en lecture seule.',
+  'save.saving': 'Enregistrement des modifications d’apparence. Attendez avant d’actualiser ou de quitter la page.',
+  'save.saved': 'Modifications d’apparence enregistrées.',
+  'save.refused': 'Les modifications d’apparence n’ont pas été acceptées. Vérifiez les paramètres actuels avant de réessayer.',
+  'save.unknown': 'L’enregistrement n’a pas pu être confirmé. Rechargez la page et vérifiez les valeurs enregistrées avant de modifier à nouveau le thème.',
   'appearance.title': 'Apparence',
   'appearance.light': 'Clair',
   'appearance.dark': 'Sombre',
@@ -162,6 +180,12 @@ export const fr = {
 
 /** German dictionary, checked against the English keys. */
 export const de = {
+  'save.loading': 'Darstellungseinstellungen werden geladen…',
+  'save.readonly': 'Die Darstellungseinstellungen sind schreibgeschützt.',
+  'save.saving': 'Änderungen an der Darstellung werden gespeichert. Warten Sie, bevor Sie die Seite neu laden oder verlassen.',
+  'save.saved': 'Änderungen an der Darstellung gespeichert.',
+  'save.refused': 'Die Änderungen an der Darstellung wurden nicht angenommen. Prüfen Sie vor einem erneuten Versuch die aktuellen Einstellungen.',
+  'save.unknown': 'Das Speichern konnte nicht bestätigt werden. Laden Sie die Seite neu und prüfen Sie die gespeicherten Werte, bevor Sie das Design erneut ändern.',
   'appearance.title': 'Aussehen',
   'appearance.light': 'Hell',
   'appearance.dark': 'Dunkel',
@@ -191,6 +215,12 @@ export const de = {
 
 /** Russian dictionary, checked against the English keys. */
 export const ru = {
+  'save.loading': 'Загрузка настроек оформления…',
+  'save.readonly': 'Настройки оформления доступны только для чтения.',
+  'save.saving': 'Сохранение изменений оформления. Подождите, прежде чем обновлять или покидать страницу.',
+  'save.saved': 'Изменения оформления сохранены.',
+  'save.refused': 'Изменения оформления не приняты. Проверьте текущие настройки перед повторной попыткой.',
+  'save.unknown': 'Не удалось подтвердить сохранение. Перезагрузите страницу и проверьте сохранённые значения, прежде чем снова менять тему.',
   'appearance.title': 'Внешний вид',
   'appearance.light': 'Светлая',
   'appearance.dark': 'Тёмная',
@@ -220,6 +250,12 @@ export const ru = {
 
 /** Portuguese dictionary, checked against the English keys. */
 export const pt = {
+  'save.loading': 'Carregando as configurações de aparência…',
+  'save.readonly': 'As configurações de aparência são somente leitura.',
+  'save.saving': 'Salvando as alterações de aparência. Aguarde antes de atualizar ou sair da página.',
+  'save.saved': 'Alterações de aparência salvas.',
+  'save.refused': 'As alterações de aparência não foram aceitas. Confira as configurações atuais antes de tentar novamente.',
+  'save.unknown': 'Não foi possível confirmar o salvamento. Recarregue a página e confira os valores salvos antes de alterar o tema novamente.',
   'appearance.title': 'Aparência',
   'appearance.light': 'Claro',
   'appearance.dark': 'Escuro',

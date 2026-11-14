@@ -28,6 +28,8 @@ Trusted account plugins can call `sessionProject(actualSession)` to reuse Runtim
 <a id="use-this-package"></a>
 ## Use this package
 
+Cloud Session delegation uses the original [Session Controller preparation and commit checks](../../api/session-controller/README.md). Account and actual Agent scope are checked after preparation awaits; control limits apply to the original complete-frame queue. The reviewed endpoint inventory remains exact, including when Native adds readers.
+
 Mount the root entry in a deployment-owned composition; account mounting requires the complete trusted integration.
 
 ### When to choose it

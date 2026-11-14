@@ -60,6 +60,8 @@ Gateway `inspectInvocation` 将既有严格/SRC 解析器作为只读 Host 检�
 
 原生[主题设置](../client/ui-theme/README.zh.md)将原 Host 写入结果与调色板预览分开投影。外观行在加载、保存及写入结果未确认期间禁用选择；只有 Host 接受更改才显示已保存。当前共享布尔写入结果无法区分所有拒绝与结构化传输失败，因此 false 与 Promise 拒绝均保留为未确认且不重放。原生设置排序、持久化与取消行为不变；刷新仍可能取消尚未获得回执的写入。
 
+Native Chat 保留原[装饰性运行指示器](../client/ui-chat/src/client/chat/RunningWhaleTail.tsx)，动态效果与无障碍行为由[Chat 包](../client/ui-chat/README.zh.md)定义。FileUploads Schema 在插件激活前规范化省略的配置；原回执/接收容量仍保持有限。
+
 ## 升级步骤
 
 1. 修改前记录当前干净源码、实际部署、目标上游修订及可信配置。源码测试与旧运行版本是不同证据。
@@ -82,3 +84,5 @@ Gateway `inspectInvocation` 将既有严格/SRC 解析器作为只读 Host 检�
 原生 SubprocessHandle 增加可选 `releaseCollected()`；Cloud 收集输出句柄将其转交给原有 ManagedCommandOperation.release()。消费者先复制输出。原有执行范围和 I/O 结算继续持有容量及未知清理责任，使同一原生科研工具可顺序执行工作流或 Git 命令，而无需将全部已结束输出保留到最终投影。
 
 配置计划计算和原准备状态由 app-boot 持有，profile 在原 Loader 上安装检查器；框架仅保留检查入口、变更计数、异步预留与原生应用。直接[树命令](../../vendor/loader/src/config/tree.ts)在分配 id、修改列表、移动父节点/store 或写配置前先检查。Runtime 对规范 Fiber 身份、有效配置、提供方与隔离记录的读取集中于 [native-state](pe-cloud-runtime/src/native-state.ts)，原取消、关闭和结果未知责任不变。
+
+原 Session Controller 在 Service 初始化时将嵌入方准备、模型检查及有限控制缓冲接到既有 Agent、Command 和 Control 所有者。[准备与结算规则](../api/session-controller/README.zh.md)保留 Native 默认行为、受保护工厂与 SessionPreparation、原回执及未知结果。Cloud 提供既有账号策略，仅暴露已审核方法；不新增 Session 存储、迁移或运行时所有者。

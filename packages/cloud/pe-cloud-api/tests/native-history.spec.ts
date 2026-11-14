@@ -190,7 +190,7 @@ it('uses native page on real cold JSONL without activating and preserves its val
   const address = await f.cold()
   const native = vi.spyOn(SessionController.prototype, 'page')
   const resume = vi.spyOn(f.ctx.agents, 'resume')
-  await expect(f.page(address)).resolves.toEqual({ records: [], hasMore: false })
+  await expect(f.page(address)).resolves.toEqual({ records: [], hasMore: false, cursor: -1 })
   expect(native).toHaveBeenCalledOnce()
   expect(f.guards.assertSessionProject).toHaveBeenCalledWith(address.sessionId)
   expect(resume).not.toHaveBeenCalled()

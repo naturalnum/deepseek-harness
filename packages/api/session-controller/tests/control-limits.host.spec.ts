@@ -48,24 +48,24 @@ it('fails a stalled original control queue at its item limit while a healthy rea
   await slow.next(); await healthy.next()
   for (const value of ['a', 'b', 'c']) {
     f.emit(value)
-    await expect(healthy.next()).resolves.toMatchObject({ value: { type: 'projection', value } })
+    await expect(healthy.next()).resolves.toMatchObject({ value: { type: 'projection', changes: [{ key: 'm8bb/value', val: value }] } })
   }
   await expect(slow.next()).rejects.toThrow('queued-event limit')
   await expect(slow.return?.()).resolves.toMatchObject({ done: true })
   f.emit('d')
-  await expect(healthy.next()).resolves.toMatchObject({ value: { value: 'd' } })
+  await expect(healthy.next()).resolves.toMatchObject({ value: { changes: [{ key: 'm8bb/value', val: 'd' }] } })
 })
 
 it('charges whole native frames and frees resident bytes on normal dequeue', async () => {
   const f = await fixture()
   const bytes = Buffer.byteLength(JSON.stringify({ type: 'projection', sessionId: f.session.id,
-    key: 'm8bb/value', value: 'a', seq: 0 }))
+    changes: [{ key: 'm8bb/value', val: 'a' }], seq: 0 }))
   const reader = f.open({ ...limits, maxQueuedBytes: bytes }).reader
   await reader.next()
   f.emit('a')
-  await expect(reader.next()).resolves.toMatchObject({ value: { value: 'a' } })
+  await expect(reader.next()).resolves.toMatchObject({ value: { changes: [{ key: 'm8bb/value', val: 'a' }] } })
   f.emit('b')
-  await expect(reader.next()).resolves.toMatchObject({ value: { value: 'b' } })
+  await expect(reader.next()).resolves.toMatchObject({ value: { changes: [{ key: 'm8bb/value', val: 'b' }] } })
   f.emit('c'); f.emit('d')
   await expect(reader.next()).rejects.toThrow('resident-byte limit')
 })
@@ -87,8 +87,8 @@ it('drops bounded resident frames on cancellation and disposal but preserves omi
   bounded.abort.abort()
   await expect(bounded.reader.next()).resolves.toMatchObject({ done: true })
   await f.ctx.fiber.dispose()
-  await expect(original.reader.next()).resolves.toMatchObject({ value: { value: 'a' } })
-  await expect(original.reader.next()).resolves.toMatchObject({ value: { value: 'b' } })
+  await expect(original.reader.next()).resolves.toMatchObject({ value: { changes: [{ key: 'm8bb/value', val: 'a' }] } })
+  await expect(original.reader.next()).resolves.toMatchObject({ value: { changes: [{ key: 'm8bb/value', val: 'b' }] } })
   await expect(original.reader.next()).resolves.toMatchObject({ done: true })
 })
 
@@ -106,7 +106,7 @@ it('rejects invalid native budgets before yielding a baseline and preserves omit
   await reader.next()
   for (let index = 0; index < 8; index++) f.emit(String(index))
   for (let index = 0; index < 8; index++) {
-    await expect(reader.next()).resolves.toMatchObject({ value: { value: String(index) } })
+    await expect(reader.next()).resolves.toMatchObject({ value: { changes: [{ key: 'm8bb/value', val: String(index) }] } })
   }
 })
 
@@ -134,7 +134,8 @@ it('reads the protected buffer hook after original Controller construction witho
       return this.budget
     }
   }
-  const controller = new LimitedController(ctx, { nativeOpen: false })
+  await ctx.plugin(LimitedController, { nativeOpen: false })
+  const controller = ctx.sessionController
   expect(reads).toBe(0)
   const markers = remoteMethods(controller).filter(row => row.method === 'control')
   expect(markers).toHaveLength(1)
@@ -148,11 +149,11 @@ it('reads the protected buffer hook after original Controller construction witho
 it('preserves an exact complete UTF-8 replacement frame and refuses one additional byte', async () => {
   const f = await fixture(), value = '中"\\\n'.repeat(32)
   const bytes = Buffer.byteLength(JSON.stringify({ type: 'projection', sessionId: f.session.id,
-    key: 'm8bb/value', value, seq: 0 }))
+    changes: [{ key: 'm8bb/value', val: value }], seq: 0 }))
   const reader = f.open({ ...limits, maxFrameBytes: bytes, maxQueuedBytes: bytes * 2 }).reader
   await reader.next()
   f.emit(value)
-  await expect(reader.next()).resolves.toMatchObject({ value: { type: 'projection', value } })
+  await expect(reader.next()).resolves.toMatchObject({ value: { type: 'projection', changes: [{ key: 'm8bb/value', val: value }] } })
   f.emit(value + 'a')
   await expect(reader.next()).rejects.toThrow('frame exceeds')
 })

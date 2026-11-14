@@ -2,7 +2,8 @@
 
 import { hostname } from 'node:os'
 import { resolve } from 'node:path'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Agent, ModelSelection } from '@deepseek-ai/dsh-agent'
+import type { FileUploadReceiptId } from '@deepseek-ai/dsh-client-file-upload/types'
 import type {} from '@deepseek-ai/dsh-fs'
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -18,10 +19,11 @@ import { assertNever } from '@deepseek-ai/dsh-util-values'
 import type {} from '@deepseek-ai/dsh-api-remote-access'
 import {
   ApiSessionAgentController,
+  prepareSessionProjectDirectory,
   type ApiSessionAgentResult,
 } from './agent.ts'
 import { SessionCommandController, hasPromptContent } from './commands.ts'
-import { SessionControlController } from './control.ts'
+import { SessionControlController, type SessionControlBufferLimits } from './control.ts'
 import { HistoryController } from './history/controller.ts'
 import { StateController } from './state/controller.ts'
 import { WebController } from './web/controller.ts'
@@ -70,6 +72,7 @@ export type * from './types.ts'
 export { ApiSessionNotFound } from './agent.ts'
 export { SessionFileReferences } from './file-references.ts'
 export { SessionSkillCatalog } from './skill-catalog.ts'
+export type { SessionControlBufferLimits } from './control.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -119,6 +122,8 @@ type ResolvedConfig = Config & { readonly listWorkSliceMs: number }
 
 /** Host integrations replaceable by direct unit tests. */
 export interface SessionControllerInternals {
+  /** Trusted Host catalog constructor; omission retains the native non-activating catalog. */
+  readonly skillCatalog?: typeof SessionSkillCatalog
   /** Native default-application handoff. */
   readonly openPath?: (path: string, signal: AbortSignal) => Promise<void>
   /** Native file-association query. */
@@ -169,6 +174,7 @@ export class SessionController extends TypertRemoteService {
   private readonly canOpenPath: () => boolean
   private readonly listWorkSliceMs: number
   private readonly promotions = new Set<Promise<void>>()
+  private readonly skillCatalog: typeof SessionSkillCatalog
 
   /**
    * @param ctx - Host context containing the Session capability assembly.
@@ -177,6 +183,7 @@ export class SessionController extends TypertRemoteService {
    */
   constructor(ctx: Context, config: Config, internals: SessionControllerInternals = {}) {
     super(ctx, 'sessionController', { namespace: 'session' })
+    this.skillCatalog = internals.skillCatalog ?? SessionSkillCatalog
     this.listWorkSliceMs = SessionController.Config(config).listWorkSliceMs
     this.fileApplications = internals.fileApplications ?? nativeFileApplications
     this.openFileApplication = internals.openFileApplication ?? openNativeFileApplication
@@ -189,9 +196,10 @@ export class SessionController extends TypertRemoteService {
   protected async [Service.init](): Promise<void> {
     const ctx = this.ctx
     ctx.typert.resources.register('session', { resolve: resolveSessionResource })
-    this.agents = new ApiSessionAgentController(ctx)
+    this.agents = new ApiSessionAgentController(ctx, this.ensureProjectDirectory.bind(this))
     this.agents.initialize()
-    this.commands = new SessionCommandController(ctx, this.agents, process.cwd())
+    this.commands = new SessionCommandController(ctx, this.agents, process.cwd(), this.preparePromptFiles.bind(this),
+      this.assertModelSelection.bind(this), this.assertCommandAgent.bind(this), this.prepareForkSession.bind(this))
     ctx.effect(() => ctx.fileUploads.registerAgentResolver(async (sessionId) => {
       const result = await this.agents.resolveAgent(sessionId)
       if ('error' in result) throw result.error
@@ -215,7 +223,7 @@ export class SessionController extends TypertRemoteService {
     ctx.fiber.assertActive()
     ctx.plugin(SessionFileReferences)
     ctx.plugin(SessionMediaReferences)
-    ctx.plugin(SessionSkillCatalog)
+    ctx.plugin(this.skillCatalog)
     // An archived Session, or a subagent descendant of one, runs no model step
     // until it is restored; what it still runs is stopped by the owners that
     // answer the Workspace registry's archive-admission events.
@@ -271,6 +279,49 @@ export class SessionController extends TypertRemoteService {
   resolveAgent(sessionId: SessionId): Promise<ApiSessionAgentResult> {
     return this.agents.resolveAgent(sessionId)
   }
+
+  /**
+   * Await directory preparation before the original Agent factory creates a new Session.
+   * Reuse and resume retain their existing paths; overrides do not fall back to local mkdir.
+   * @param cwd - resolved native project directory.
+   * @returns completion of the actual directory operation.
+   */
+  protected ensureProjectDirectory(cwd: string): Promise<void> { return prepareSessionProjectDirectory(cwd) }
+
+  /**
+   * Prepare exact same-Agent receipts before content admission or binding.
+   * @param agent - Agent resolved by the native command owner.
+   * @param receiptIds - unique resolved file receipts.
+   * @param signal - original caller cancellation.
+   * @returns preparation completion; omission performs no work.
+   */
+  protected preparePromptFiles(
+    _agent: Agent, _receiptIds: readonly FileUploadReceiptId[], _signal?: AbortSignal,
+  ): Promise<void> { return Promise.resolve() }
+
+  /**
+   * Recheck Host policy after adapter resolution, immediately before native model selection and default saving.
+   * @param agent - exact native Agent.
+   * @param selection - selected route and reasoning effort.
+   */
+  protected assertModelSelection(_agent: Agent, _selection: ModelSelection): void {}
+
+  /**
+   * Recheck Host admission after asynchronous command work and at the actual mutation.
+   * @param operation - native command about to use the Agent.
+   * @param agent - exact live Agent selected by the native owner.
+   */
+  protected assertCommandAgent(_operation: 'prompt' | 'rename' | 'updateQueue', _agent: Agent): void {}
+
+  /**
+   * Recheck the original fork source before invoking the native Agent factory.
+   * @param sessionId - original source observed by the native fork command.
+   * @returns admission completion; omission performs no work.
+   */
+  protected prepareForkSession(_sessionId: SessionId): Promise<void> { return Promise.resolve() }
+
+  /** Supply per-generation native control budgets; omission retains original buffering. */
+  protected controlBufferLimits(): SessionControlBufferLimits | undefined { return undefined }
 
   /**
    * Read all visible Session rows without resuming an Agent.
@@ -488,7 +539,7 @@ export class SessionController extends TypertRemoteService {
       ...(clientTimeZone === undefined ? {} : { clientTimeZone }),
       ...(principal === undefined ? {} : { principal }),
     }
-    return this.commands.prompt(request, source)
+    return this.commands.prompt(request, source, signal)
   }
 
   /**
@@ -629,7 +680,7 @@ export class SessionController extends TypertRemoteService {
    */
   @Remote({ mode: 'stream' })
   async *control(signal: AbortSignal): AsyncIterable<SessionControlFrame> {
-    for await (const frame of this.controlState.control(signal)) {
+    for await (const frame of this.controlState.control(signal, this.controlBufferLimits())) {
       switch (frame.type) {
         case 'baseline': {
           const projections = Object.fromEntries(Object.entries(frame.value.projections)

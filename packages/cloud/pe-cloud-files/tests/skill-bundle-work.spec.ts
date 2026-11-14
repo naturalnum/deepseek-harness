@@ -74,7 +74,7 @@ async function fixture(queueWaitMs?: number) {
     return { operation: before === undefined ? 'create' : 'update', version: after.version, before: before?.version ?? null, after: after.version }
   })
   const skillDirectory = vi.spyOn(client, 'skillDirectory').mockImplementation(async (r, _uid, _gid, purpose) => {
-    if (purpose !== 'store-verify') throw new Error('This executor fixture never creates a real projection')
+    if (purpose !== 'store-verify' && purpose !== 'store-read') throw new Error('This executor fixture never creates a real projection')
     const node = nodes.get(path(r, 'skill-working-copies'))
     if (node?.type !== 'directory') throw new Error('Fixture omitted its store')
     return { created: false, directory: { device: '1', inode: node.inode, mountId: '11', uid: 2000, gid: 2000, mode: 0o40700 } }

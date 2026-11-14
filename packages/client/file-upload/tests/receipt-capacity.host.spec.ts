@@ -141,7 +141,9 @@ it.each([
     ctx.provide('connection', { fetch: { register } } as never)
     const fiber = config === undefined ? ctx.plugin(FileUploads) : ctx.plugin(FileUploads, config)
     await fiber
-    expect(fiber.config).toEqual({ maxPendingReceipts: expected })
+    // Fiber keeps authored input separate from the validated configuration passed to the plugin.
+    expect(fiber.effectiveConfig).toEqual({ maxPendingReceipts: expected })
+    expect(fiber.config).toEqual(config)
     expect(ctx.get('fileUploads')).toBeDefined()
     expect(register).toHaveBeenCalledOnce()
     expect(logger.buffer.filter(message => message.type === 'error')).toEqual([])

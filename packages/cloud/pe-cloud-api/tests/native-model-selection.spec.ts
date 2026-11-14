@@ -1,6 +1,6 @@
 /** Policy projection keeps original native model metadata and excludes foreign routes. */
 import { Context } from '@deepseek-ai/cordis'
-import { buildModelCatalog } from '@deepseek-ai/dsh-api-session-controller'
+import { buildModelCatalog } from '@deepseek-ai/dsh-api-session-controller/src/catalog.ts'
 import type { ModelCatalog } from '@deepseek-ai/dsh-api-session-controller/types'
 import LlmRuntime, { LlmAdapter, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmModelInfo, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'

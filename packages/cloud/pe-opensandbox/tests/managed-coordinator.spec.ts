@@ -30,7 +30,7 @@ import * as accountEntry from '../src/account.ts'
 import * as rootEntry from '../src/root.ts'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
-import { CloudAccountFiles, FdMutationFailure, FilesFailure, type AccountFilesProject } from '@deepseek-ai/dsh-pe-cloud-files'
+import { CloudAccountFiles, FdMutationFailure, FilesFailure, SkillProjectCapacityFailure, type AccountFilesProject } from '@deepseek-ai/dsh-pe-cloud-files'
 import { copyFacts } from '../src/skill-wire.ts'
 import type { SkillProjectGrant, SkillOperationCopies } from '../src/skill-files-types.ts'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
@@ -1391,6 +1391,136 @@ it.each(['not-published', 'unknown', 'untyped-cause', 'outside-mount', 'getter-c
         ...kind === 'unknown' || kind === 'outside-mount' ? { causeCode: 'cloud/capacity' } : {},
       })
       expect(JSON.stringify(warn.mock.calls)).not.toMatch(/private|SDK-key|getter/)
+    }
+  })
+
+it.each(['capacity', 'parent-borrows', 'metadata', 'stale', 'unassociated', 'unknown', 'unknown-private-cause', 'untyped', 'stop-unknown', 'outside', 'shared-export', 'concurrent'] as const)(
+  'contains skill-project preparation refusal and permits only confirmed pre-allocation retries: %s', async (kind) => {
+    const f = await applicationFixture({ skillCopies: 2 }), a = await f.account('skill-project-capacity', 3)
+    const originalPrepare = f.prepare.getMockImplementation()!
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const project: AccountFilesProject = { binding: a.binding,
+      workspace: a.authority.projectForSession(a.agents[0]!.session),
+      projectDirectory: { binding: a.binding, prepare: async () => {} } }
+    const release = vi.fn(), releaseParent = vi.fn(), prepare = vi.fn(async () => {
+      if (kind === 'shared-export') return { value: undefined, release: releaseParent }
+      if (kind === 'untyped') throw new Error('PRIVATE_SKILL_REASON')
+      throw new FdMutationFailure(kind === 'unknown' || kind === 'unknown-private-cause' ? 'unknown' : 'not-published',
+        kind === 'stale' ? 'FS_STALE_VERSION' : kind === 'unassociated' ? 'FS_PERMISSION_DENIED' : 'FS_TOO_LARGE', undefined,
+        { cause: kind === 'capacity' || kind === 'parent-borrows' || kind === 'metadata'
+          ? new SkillProjectCapacityFailure(kind === 'capacity' ? 'associations' : kind, 'PRIVATE_SKILL_REASON')
+          : kind === 'unknown-private-cause' ? new Error('PRIVATE_SKILL_REASON')
+            : new FilesFailure(kind === 'unassociated' ? 'files/prerequisite-missing' : 'cloud/capacity',
+              kind === 'unknown' ? 'Safe project-owned skill refusal.' : 'PRIVATE_SKILL_REASON') })
+    })
+    // The external Files frontier refuses before the held mount value is consumed or shared.
+    const scripted = { projectFor: async () => project, prepareExecutionMounts: async () => ({ value: project, release }),
+      prepareSkillProject: prepare, assertExecutionMountGrant() {}, assertSkillProjectGrant() {} }
+    a.authority.files.mockReturnValue(new Proxy(CloudAccountFiles.prototype, { get(_target, key): unknown {
+      return Reflect.get(scripted, key)
+    } }))
+    // Match the original allocation owner's retained promise: repeated observers do not rerun prepareMount.
+    const attempts = new WeakMap<object, Promise<PreparedSandbox>>()
+    f.prepare.mockImplementation((request) => {
+      let actual = attempts.get(request)
+      if (actual === undefined) {
+        actual = (async () => {
+          if (kind === 'outside') throw new FdMutationFailure('not-published', 'FS_TOO_LARGE')
+          await request.prepareMount(); throw new Error('A refused skill project cannot prepare a runtime')
+        })()
+        attempts.set(request, actual)
+      }
+      return actual
+    })
+    const stop = vi.spyOn(SessionAllocationOwner.prototype, 'stop')
+    if (kind === 'stop-unknown') stop.mockRejectedValue(new Error('PRIVATE_STOP_REASON'))
+    if (kind === 'shared-export') f.deployment.share.mockRejectedValueOnce(new FdMutationFailure('not-published', 'FS_TOO_LARGE'))
+    const metadata = { relativePath: '.pe', device: '7', inode: '11', mountId: '8', uid: 2000, gid: 2000, mode: 0o40700 }
+    const parent: SkillProjectGrant = { binding: a.binding, workspaceId: a.workspace.id,
+      project: { rootPath: '/project', rootDevice: '7', rootInode: '9', rootMountId: '8',
+        quota: { device: '7', mountId: '8', maximumBytes: '65536', maximumInodes: '128' } },
+      metadataDirectory: metadata, skillsDirectory: { ...metadata, inode: '12' } }
+    const copies: SkillOperationCopies = { project: parent, copies: [] }
+    Object.assign(scripted, { borrowAllBundleWorkingCopies: async () => ({ value: copies, release() {} }),
+      assertBundleOperationCopies() {} })
+    vi.spyOn(f.deployment.runtimes, 'skillProject').mockReturnValue({ grant: parent, maxCopies: 2 })
+    vi.spyOn(f.deployment.runtimes, 'needsContinuation').mockReturnValue(false)
+    vi.spyOn(f.deployment.runtimes, 'command').mockImplementation((_sandbox, operation) => {
+      if (operation === undefined) throw new Error('A successful retry requires its original copy borrow')
+      operation.assertCurrent()
+      const empty = { bytes: Buffer.alloc(0), observedBytes: 0, eof: false }
+      const initial: CommandSnapshot = { prepared: true, submitted: false, commitClosed: false, rangeEmpty: false,
+        ioClosed: false, physicalStopRequired: false, providerFailure: false, direct: undefined, stdout: empty, stderr: empty }
+      const complete: CommandSnapshot = { ...initial, submitted: true, rangeEmpty: true, ioClosed: true,
+        direct: { exitCode: 0, signal: null }, stdout: { ...empty, eof: true }, stderr: { ...empty, eof: true } }
+      return { release: () => { operation.release() }, prepare: async () => initial,
+        commit: async () => complete, poll: async () => complete, stop: async () => complete }
+    })
+    const firstStop = Promise.withResolvers<undefined>(), lastStop = Promise.withResolvers<undefined>()
+    applicationCleanups.push(() => { firstStop.resolve(undefined); lastStop.resolve(undefined) })
+    if (kind === 'concurrent') stop.mockImplementationOnce(() => firstStop.promise).mockImplementationOnce(() => lastStop.promise)
+    const dispose = a.ctx.tools.register(defineTool({ name: 'bash', description: 'Native Shell skill capacity consumer.', parameters: {},
+      output: { schema: { type: 'json' }, render: () => [] }, execute: async () => {
+        const shell = async () => {
+          const handle = await a.ctx.shell.execute(a.ctx.shell.resolve({ command: 'printf hello', onExpiry: 'none' }))
+          await handle.done
+        }
+        await shell()
+        return { completed: true }
+      } }))
+    applicationCleanups.push(dispose)
+    let serial = 0
+    const run = (index: number) => a.ctx.tools.execute({ callId: ToolCallId(`skill-capacity-${++serial}`), name: 'bash', arguments: {},
+      agent: a.agents[index]!, signal: new AbortController().signal })
+    if (kind === 'concurrent') {
+      // Foreground Shell and service startup are the two permitted simultaneous roles of one original Session.
+      const first = run(0)
+      await vi.waitFor(() => { expect(stop).toHaveBeenCalledTimes(1) })
+      const second = expect(a.start(0)).rejects.toBeDefined()
+      await vi.waitFor(() => { expect(stop).toHaveBeenCalledTimes(2) })
+      expect(f.prepare.mock.calls[1]?.[0]).toBe(f.prepare.mock.calls[0]?.[0])
+      firstStop.resolve(undefined); expect((await first).isError).toBe(true)
+      f.prepare.mockImplementation(originalPrepare)
+      expect((await run(0)).isError).toBe(false)
+      const replacement = f.prepare.mock.calls[2]?.[0]
+      expect(replacement).not.toBe(f.prepare.mock.calls[0]?.[0])
+      lastStop.resolve(undefined); await second
+      expect((await run(0)).isError).toBe(false)
+      expect(f.prepare.mock.calls[3]?.[0]).toBe(replacement)
+      return
+    }
+    const retryable = ['capacity', 'parent-borrows', 'metadata', 'stale', 'unassociated'].includes(kind)
+    // The same Session is retried first, then a different Session; no automatic retry is installed.
+    for (const index of [0, 0, 1]) {
+      const result = await run(index)
+      expect(result.isError).toBe(true)
+      if (!result.isError) throw new Error('The refused skill project unexpectedly executed')
+      expect(result.error.message).toBe(kind === 'parent-borrows'
+        ? 'All skill project preparation grants for this account are in use. Wait for running work in other sessions to finish, then retry.'
+        : kind === 'metadata'
+          ? 'The skill project association storage of this account is full. Ask an administrator to inspect it before retrying.'
+          : retryable ? kind === 'capacity'
+            ? 'The skill project association limit of this account is reached. Continue in an existing workspace or ask an administrator to inspect the associations.'
+            : `The skill directory of this workspace could not be prepared (${kind === 'stale' ? 'FS_STALE_VERSION' : 'FS_PERMISSION_DENIED'}); no sandbox was created. Retry, or ask an administrator to inspect the workspace skill association.`
+            : 'Cloud execution is not confirmed available; Root retains cleanup responsibility.')
+    }
+    expect(f.prepare).toHaveBeenCalledTimes(retryable ? 3 : 2)
+    if (!retryable) expect(f.prepare.mock.calls[1]?.[0]).toBe(f.prepare.mock.calls[0]?.[0])
+    expect(prepare).toHaveBeenCalledTimes(kind === 'outside' ? 0 : retryable ? 3 : 1)
+    expect(release).toHaveBeenCalledTimes(kind === 'outside' ? 0 : retryable ? 3 : 1)
+    expect(stop).toHaveBeenCalledTimes(retryable ? 3 : kind === 'stop-unknown' ? 2 : 0)
+    expect(f.create).not.toHaveBeenCalled(); expect(f.fetch).not.toHaveBeenCalled()
+    expect(f.deployment.share).toHaveBeenCalledTimes(kind === 'shared-export' ? 1 : 0)
+    expect(releaseParent).toHaveBeenCalledTimes(kind === 'shared-export' ? 1 : 0)
+    expect(JSON.stringify(warn.mock.calls)).not.toMatch(/PRIVATE_SKILL_REASON|PRIVATE_STOP_REASON/)
+    if (kind === 'unknown') expect(JSON.stringify(warn.mock.calls)).toContain('Safe project-owned skill refusal.')
+    if (kind === 'unknown-private-cause') {
+      const diagnostic = warn.mock.calls.find(call => call[1]?.event === 'managed-execution-failed')?.[1]
+      expect(diagnostic.error.cause).toEqual({ type: 'Error' })
+    }
+    if (retryable) {
+      f.prepare.mockImplementation(originalPrepare)
+      expect((await run(0)).isError).toBe(false)
     }
   })
 

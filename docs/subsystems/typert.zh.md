@@ -38,6 +38,8 @@ interface TypertLookupDefinition {
 
 ## 调用 descriptor
 
+具体 Host Gateway 通过原 strict/SRC descriptor 解析器提供 `inspectInvocation(namespace, method)`。返回的 `InvocationDescriptor` 不授予 lookup、资源或分发权限；非活动调用者、不可用 endpoint 或已撤回的 strict 定义由原拥有方检查拒绝。[Gateway 包](../../packages/api/gateway/README.zh.md) 负责检查和调用行为。
+
 `InvocationDescriptor` 是本地反射信息，不是 wire message。Host 与消费方构建会生成彼此对应的 descriptor；请求只发送 endpoint 与具名 `args`。strict codec 携带生成的 schema factory，SRC codec 则在不恢复结构类型的前提下强制要求输入为 JSON 安全值。一元结果 codec 可提供 `encode()` 处理含字节的子树，并通过 `decode()` 递归校验原生字节；Client 声明将每个 `Uint8Array` 限定为以 `ArrayBuffer` 为底层缓冲区。纯 JSON 结果无需字节识别或 Client 解码。取消通过带外 carrier signal 表达：它在业务参数之后注入，绝不进入 `args`。
 
 `createTypertRemoteInfo` 返回实现 `TypertRemoteInfo` 的惰性类实例，后者扩展可挂载的 `TypertRemoteContribution`。其 `methods` 索引引用 `descriptors` 中的直接方法对象：每个 `TypertRemoteMethod` 增加具名 `input(options?)` 和 `invoke`，在方法及参数上保留文档，并以 `result` 作为唯一输出 codec。一元 `mode` 缺省；流式 `mode` 为 `'stream'`。仅使用 Context 接收器的方法保留在描述符和作用域声明中。Registry 查询返回基础描述符；`isTypertRemoteMethod` 收窄生成的直接调用能力，但不会恢复各端点的精确泛型。
@@ -679,6 +681,16 @@ getPendingRemoteEvents(): readonly PendingRemoteEventInfo[]
  * @returns disposer removing this source and cancelling its active streams.
  */
 registerRemoteEvents( source: TypertRemoteEventSource, host: RemoteEventHostInfo, ): () => Promise<void>
+
+/**
+ * Inspect the current strict or SRC definition without resolving a lookup or invoking business work.
+ * Inspection grants no dispatch or resource authorization; a withdrawn strict definition never falls back to SRC.
+ * @param namespace - the Remote namespace to inspect.
+ * @param method - the exported method name.
+ * @returns the descriptor selected by the original live dispatch resolver.
+ * @throws When the calling Fiber is inactive or the original resolver rejects the endpoint.
+ */
+inspectInvocation(namespace: string, method: string): InvocationDescriptor
 
 /**
  * Invoke one live Remote method through strict generated reflection or SRC markers.
