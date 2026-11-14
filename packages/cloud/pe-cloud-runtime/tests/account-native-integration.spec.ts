@@ -421,7 +421,7 @@ async function fixture(options: {
         const internal = ctx.loader.internal
         if (internal === undefined) throw new Error('Original native module importer is absent')
         const originalImport = internal.import.bind(internal)
-        vi.spyOn(internal, 'import').mockImplementation(async (name, parent, attributes) =>
+        vi.spyOn(internal, 'import').mockImplementation(async (name: string, parent: string, attributes: ImportAttributes) =>
           name === '@deepseek-ai/dsh-settings' ? SettingsModule : await originalImport(name, parent, attributes))
       }
       Object.assign(ctx.loader.builtins, { 'm8s-dependencies': dependencies, 'm8s-jsonl': Jsonl, 'm8s-model': DefaultModel,
