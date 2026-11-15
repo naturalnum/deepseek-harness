@@ -78,6 +78,8 @@ XLSX preview omits DrawingML parts from an in-memory copy before parsing and ign
 
 CSV and TSV default to the spreadsheet viewer and also offer Plain text; CSV additionally offers syntax-highlighted Code. Commas and tabs delimit their fields respectively; quoted separators, escaped quotes, multiline fields, empty fields, and unequal row lengths are supported. The first row remains data. Values remain literal strings, including leading zeros, dates, booleans, and formula-looking text. Text files accept UTF-8 or BOM-marked UTF-16; invalid encoding receives conversion guidance. Malformed quoted fields fail the table preview rather than silently dropping data.
 
+CSV/TSV preview follows Native decoding and parsing defaults: a final record separator may produce another empty row and exceed an exact cell budget; the decoder and parser may each consume one leading BOM, changing the display of an extra U+FEFF in the first field. Conversion produces only a read-only preview and never writes the source file. Explicit larger byte and cell budgets continue to support files within those budgets.
+
 Configure `excel` on the same `ui-sidebar-documentpreview` entry. These limits complement the Host's complete-file read limit; they do not cap browser process memory or decompression allocations.
 
 | Field | Default | Meaning |

@@ -68,12 +68,7 @@ describe('SessionLogDownloadDialog', () => {
     await act(async () => { second.resolve(new Response('zip')); await other })
     expect(b.view.getByRole('dialog', { name: 'Exporting Session' }).textContent).toContain(SID)
     close(b.view)
-    const ready = b.view.getByRole('dialog', { name: 'Session download requested' })
-    expect(ready.textContent).toContain(OTHER)
-    expect(ready.textContent).toContain('Check your browser downloads')
-    const link = b.view.getByRole('link', { name: 'Download Session ZIP' }) as HTMLAnchorElement
-    expect(link.getAttribute('href')).toBe(`api/session.export?sessionId=${OTHER}&includeDescendants=true`)
-    expect(link.download).toBe(`dsh-session-${OTHER}.zip`)
+    expect(b.view.getByRole('dialog', { name: 'Session download started' }).textContent).toContain(OTHER)
     await act(async () => { first.resolve(new Response('zip')); await a })
     expect(save).toHaveBeenCalledTimes(2)
     expect(b.view.getByRole('dialog').textContent).toContain(OTHER)

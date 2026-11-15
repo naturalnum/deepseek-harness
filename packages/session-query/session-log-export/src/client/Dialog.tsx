@@ -49,13 +49,7 @@ export function SessionLogDownloadDialog({
       title={title}
       description={`${t('dialog.session', { sessionId })} ${description}`}
       closeLabel={t('dialog.close')}
-      footer={(
-        <>
-          {status === 'success' && entry?.download !== undefined
-            && <a href={entry.download.url} download={entry.download.filename}>{t('dialog.manualDownload')}</a>}
-          <Button variant="primary" onClick={() => { dismiss(sessionId) }}>{t('dialog.close')}</Button>
-        </>
-      )}
+      footer={<Button variant="primary" onClick={() => { dismiss(sessionId) }}>{t('dialog.close')}</Button>}
     />
   )
 }

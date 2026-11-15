@@ -15,27 +15,15 @@ export function convertDelimited(bytes: Uint8Array<ArrayBuffer>, format: 'csv' |
   const encoding = bytes[0] === 0xff && bytes[1] === 0xfe ? 'utf-16le'
     : bytes[0] === 0xfe && bytes[1] === 0xff ? 'utf-16be' : 'utf-8'
   let text: string
-  // Papa removes one leading BOM itself. Preserve it here so a second U+FEFF
-  // in the first field remains data rather than being removed twice.
-  try { text = new TextDecoder(encoding, { fatal: true, ignoreBOM: true }).decode(bytes) }
+  try { text = new TextDecoder(encoding, { fatal: true }).decode(bytes) }
   catch (error) { throw new ExcelPreviewError('encoding', { cause: error }) }
-  const parsedLength = text.length - (text.charCodeAt(0) === 0xfeff ? 1 : 0)
   const celldata: NonNullable<Sheet['celldata']> = []
   let row = 0
   let column = 1
-  let previousCursor: number | undefined
   let failure: ExcelPreviewError | undefined
   Papa.parse<string[]>(text, {
     delimiter: format === 'csv' ? ',' : '\t', header: false, dynamicTyping: false, skipEmptyLines: false,
     step(result, parser) {
-      // Papa emits a duplicate empty step after the final record separator.
-      // Compare its actual parser cursor and chosen linebreak, rather than
-      // stripping a character that may belong to a mixed-line-ending field.
-      const syntheticTail = result.errors.length === 0 && previousCursor === result.meta.cursor
-        && result.meta.cursor === parsedLength && text.endsWith(result.meta.linebreak)
-        && result.data.length === 1 && result.data[0] === ''
-      previousCursor = result.meta.cursor
-      if (syntheticTail) return
       row += 1
       column = Math.max(column, result.data.length)
       if (result.errors.length > 0 || row * column > limits.maxCells) {

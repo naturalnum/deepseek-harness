@@ -79,7 +79,7 @@ packages/client/ui-settings-web-search/src/client/web-search-card-controller.ts	
 packages/client/ui-settings/src/client/config-form-types.ts	扩展点	mutate 增加可选第三参 assertCurrent 的类型	需上游接受	留作口子	没动
 packages/client/ui-settings/src/client/config-form.ts	扩展点	mutate 在发送前后调用可选的 assertCurrent（云端“已批准配置”用它确认账号未变）	需上游接受	留作口子	没动
 packages/client/ui-sidebar-documentpreview/src/client/TextPreview.tsx	通用修复	整文件读取时带上所选渲染器，状态按渲染器区分	随 rpc.ts	撤掉	没动
-packages/client/ui-sidebar-documentpreview/src/client/excel/delimited.ts	通用修复	CSV/TSV 预览保留首字段里的 BOM 数据、去掉解析器多出的末尾空行	向上游提交	撤掉	没动
+packages/client/ui-sidebar-documentpreview/src/client/excel/delimited.ts	通用修复	额外BOM保留和合成尾行消除按三问撤回；只读转换恢复目标Native，不修改原文件字节	无具体多账号串读、持久化丢失或密钥泄漏场景；按开发手册默认撤回并记用户可见变化	撤掉	已撤
 packages/client/ui-sidebar-documentpreview/src/client/excel/index.ts	通用修复	导出表格渲染器标识，供分段读取判断	随 rpc.ts	撤掉	没动
 packages/client/ui-sidebar-documentpreview/src/client/face.ts	通用修复	loadAll、reloadAll 增加渲染器参数	随 rpc.ts	撤掉	没动
 packages/client/ui-sidebar-documentpreview/src/client/index.ts	通用修复	整文件读取改用分段读取函数	随 rpc.ts	撤掉	没动
@@ -164,7 +164,7 @@ packages/session/session-persistence/src/index.ts	扩展点	仅保守的isQuiesc
 packages/feedback/command-feedback/src/index.ts	扩展点	可选服务 sessionFeedbackIdentity；已有 sessionFeedback 服务时复用而不重复注册	保留；或云端自己注册 /feedback 命令	留作口子	没动
 packages/boot/cmdline/src/index.ts	扩展点	可选能力 appShutdown：关闭参与者在进程退出前被等待；启动器不提供时不存在	保留	留作口子	没动
 packages/typert/generator/src/cordis-catalog.ts	扩展点	文档目录生成器支持 ctx.<服务>:<类型> 限定名，避免不同服务的同名类型互相顶替	目前只有一个云端条目用到；改掉云端那个类型名即可回退	留作口子	没动
-packages/session-query/session-log-export/src/client/controller.ts	通用修复	下载锚点先挂到页面再点击；成功状态带上下载地址供手动下载；另含可选参数 bindUrl（扩展点）	界面修复提上游；bindUrl 保留	撤掉	没动
+packages/session-query/session-log-export/src/client/controller.ts	扩展点	仅保可选导航URL绑定回调，默认identity维持原生；临时DOM挂接/手动链接状态等通用UI增强撤回	原生提供同等默认不变应用导航绑定入口时替换	留作口子	已按新原生重加
 packages/test-support/client-runtime/src/assembly/bundle-roster.ts	通用修复	链接安装的 bundle 自引用解析；上游最新版已用另一种写法修了	合并时取上游版本，丢弃我方改动	撤掉	已撤
 packages/api/terminal-controller/src/client/index.ts	扩展点	终端客户端服务从 ctx 取可选的 clientPersistence 并传给各子对象	同 close-requests.ts	撤掉	已撤
 packages/preset/agent-preset-registry/src/index.ts	通用修复	预设重组和选择记录放进 agent.runMaintenance，排队消息等重组结束再执行（改默认）；另含扩展点 assertSelectionCurrent	修复提上游；扩展点保留	撤掉	没动
@@ -195,10 +195,10 @@ packages/api/session-controller/src/commands.ts	扩展点	构造函数可选回�
 vendor/cordis/src/fiber.ts	通用修复	状态通知循环跳过已被前一个通知撤掉的服务记录（否则访问 undefined）；另含扩展点 configMutationRevision 和 resolveConfig 参数类型放宽	修复提上游（上游最新版仍无此判断）；计数器保留	撤掉	没动
 packages/boot/plugin-manager/src/patch.ts	扩展点	writePluginEnabled 加可选回调 prepared，包住实际写文件	保留	留作口子	没动
 packages/extensions/cordis-client-runner/src/client/api-catalog.ts	生成	由 pnpm run gen-cordis-inspect-catalog 生成；随界面侧 ClientPersistence 类型和主题事件说明变化	不手工合并，合并后重新生成	撤掉	没动
-packages/session-query/session-log-export/src/client/locales.ts	通用修复	导出对话框文案改成“已请求下载”，并加手动下载链接的文字	随 controller.ts 一起提上游	撤掉	没动
+packages/session-query/session-log-export/src/client/locales.ts	通用修复	额外手动链接及已请求下载文字随通用增强撤回，整个词典恢复目标Native	无具体多账号串读、持久化丢失或密钥泄漏场景；按开发手册默认撤回并记用户可见变化	撤掉	已撤
 packages/api/session-controller/src/client/sessions/service.ts	通用修复	会话作用域被直接销毁时，先撤回它的代际再跑清理回调	提上游	撤掉	没动
 packages/skill/tool-skill/src/index.ts	通用修复	预设里可见的技能工具负责目录，被隐藏的上层注册不再覆盖它的决定	提上游	撤掉	没动
-packages/session-query/session-log-export/src/client/Dialog.tsx	通用修复	导出成功后显示手动下载链接	随 controller.ts 一起提上游	撤掉	没动
+packages/session-query/session-log-export/src/client/Dialog.tsx	通用修复	手动ZIP链接通用增强按三问撤回，恢复目标Native弹窗；原HEAD/GET下载保留	无具体多账号串读、持久化丢失或密钥泄漏场景；按开发手册默认撤回并记用户可见变化	撤掉	已撤
 packages/interaction/commands/src/index.ts	扩展点	加受保护方法 assertCommandInvocation，在调用命令处理器前复核；默认不做事	保留	留作口子	没动
 packages/typert/generator/src/analyzer.ts	通用修复	撤回仅缩窄诊断计算范围的性能补丁；目标原生已在最终输出筛选本包文件	无具体跨账号、丢数据或密钥泄露场景，按开发手册撤回	撤掉	已撤
 packages/fs/tool-fs/src/index.ts	扩展点	提供方声明不支持文本编辑时不注册 edit 工具；默认提供方返回 true	保留	留作口子	已按新原生重加

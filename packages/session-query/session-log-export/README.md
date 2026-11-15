@@ -116,7 +116,7 @@ The Header asks the Markdown copy controller for the clicked Session. During the
 
 The controller holds one pending operation and one `shell.overlay` toast entry. A second Header request joins the pending operation, so the clipboard and its notice always describe the first click's Session. Both the preparation promise and the admitted clipboard write are observed; every rejection is contained. Disposal aborts the read, prevents later text from reaching the promised Blob, suppresses notices, and awaits admitted clipboard work.
 
-An optional application-owned `sessionLogDownloadIntegration` binds the existing authenticated HEAD carrier and the matching GET navigation URL before the plugin activates. The success dialog reports that a download was requested and retains that exact URL and filename as a manual link; it cannot confirm browser acceptance or completion. The native modal order, one in-flight operation per Session, cancellation and disposal waits remain unchanged. Without the integration, ordinary document-relative browser carriers are used.
+The optional application-owned `sessionLogDownloadIntegration` binds the existing authenticated HEAD carrier and matching GET navigation URL before activation, through a bindUrl callback whose default is identity. The modal and copy retain Native behavior. Success is published after requesting the browser save, without an extra manual URL link or proof of browser acceptance or completion. The default helper keeps the Native detached-anchor click. Modal ordering, one in-flight operation per Session, cancellation and disposal waits remain unchanged; omission uses ordinary document-relative browser carriers.
 
 </details>
 

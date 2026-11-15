@@ -1,7 +1,7 @@
 {
   "counts": {
-    "native_source_files": 201,
-    "non_seam_files": 76,
+    "native_source_files": 198,
+    "non_seam_files": 72,
     "uncentralized_internal_lines": 0
   },
   "imports": [
@@ -9815,11 +9815,11 @@
     {
       "路径": "packages/client/ui-sidebar-documentpreview/src/client/excel/delimited.ts",
       "类别": "通用修复",
-      "原因": "CSV/TSV 预览保留首字段里的 BOM 数据、去掉解析器多出的末尾空行",
-      "撤销条件": "向上游提交",
+      "原因": "额外BOM保留和合成尾行消除按三问撤回；只读转换恢复目标Native，不修改原文件字节",
+      "撤销条件": "无具体多账号串读、持久化丢失或密钥泄漏场景；按开发手册默认撤回并记用户可见变化",
       "处置": "撤掉",
-      "这一程的状态": "没动",
-      "changed": true
+      "这一程的状态": "已撤",
+      "changed": false
     },
     {
       "路径": "packages/client/ui-sidebar-documentpreview/src/client/excel/index.ts",
@@ -10579,11 +10579,11 @@
     },
     {
       "路径": "packages/session-query/session-log-export/src/client/controller.ts",
-      "类别": "通用修复",
-      "原因": "下载锚点先挂到页面再点击；成功状态带上下载地址供手动下载；另含可选参数 bindUrl（扩展点）",
-      "撤销条件": "界面修复提上游；bindUrl 保留",
-      "处置": "撤掉",
-      "这一程的状态": "没动",
+      "类别": "扩展点",
+      "原因": "仅保可选导航URL绑定回调，默认identity维持原生；临时DOM挂接/手动链接状态等通用UI增强撤回",
+      "撤销条件": "原生提供同等默认不变应用导航绑定入口时替换",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
       "changed": true
     },
     {
@@ -10859,11 +10859,11 @@
     {
       "路径": "packages/session-query/session-log-export/src/client/locales.ts",
       "类别": "通用修复",
-      "原因": "导出对话框文案改成“已请求下载”，并加手动下载链接的文字",
-      "撤销条件": "随 controller.ts 一起提上游",
+      "原因": "额外手动链接及已请求下载文字随通用增强撤回，整个词典恢复目标Native",
+      "撤销条件": "无具体多账号串读、持久化丢失或密钥泄漏场景；按开发手册默认撤回并记用户可见变化",
       "处置": "撤掉",
-      "这一程的状态": "没动",
-      "changed": true
+      "这一程的状态": "已撤",
+      "changed": false
     },
     {
       "路径": "packages/api/session-controller/src/client/sessions/service.ts",
@@ -10886,11 +10886,11 @@
     {
       "路径": "packages/session-query/session-log-export/src/client/Dialog.tsx",
       "类别": "通用修复",
-      "原因": "导出成功后显示手动下载链接",
-      "撤销条件": "随 controller.ts 一起提上游",
+      "原因": "手动ZIP链接通用增强按三问撤回，恢复目标Native弹窗；原HEAD/GET下载保留",
+      "撤销条件": "无具体多账号串读、持久化丢失或密钥泄漏场景；按开发手册默认撤回并记用户可见变化",
       "处置": "撤掉",
-      "这一程的状态": "没动",
-      "changed": true
+      "这一程的状态": "已撤",
+      "changed": false
     },
     {
       "路径": "packages/interaction/commands/src/index.ts",

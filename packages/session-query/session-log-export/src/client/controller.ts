@@ -14,8 +14,6 @@ export interface SessionLogDownloadEntry {
   readonly open: boolean
   readonly status: SessionLogDownloadStatus
   readonly error: string | null
-  /** Bound route for a user-initiated download if the browser did not start the requested one. */
-  readonly download?: Readonly<{ url: string; filename: string }>
 }
 
 /** Authoritative download states; open entries display in initiation order across Sessions. */
@@ -40,7 +38,8 @@ export function sessionLogZipFilename(sessionId: SessionId): string {
 }
 
 /**
- * Request a browser download without claiming that the browser accepted or completed it.
+ * Hand a Host download route to the browser download manager, which resolves it
+ * against the document's own base.
  * @param url - document-relative Host download route.
  * @param filename - browser download filename.
  */
@@ -48,8 +47,7 @@ export function downloadUrl(url: string, filename: string): void {
   const anchor = document.createElement('a')
   anchor.href = url
   anchor.download = filename
-  document.body.append(anchor)
-  try { anchor.click() } finally { anchor.remove() }
+  anchor.click()
 }
 
 function messageOf(error: unknown): string {
@@ -68,7 +66,7 @@ export class SessionLogDownloadController {
   /**
    * @param fetcher - HTTP carrier used to read the host-streamed ZIP.
    * @param save - browser save operation.
-   * @param bindUrl - binds the route to the application's navigation carrier.
+   * @param bindUrl - optional application navigation binding; omission keeps the original route.
    */
   constructor(
     private readonly fetcher: Fetch = (input, init) => fetch(input, init),
@@ -80,7 +78,7 @@ export class SessionLogDownloadController {
    * Download one Session tree; concurrent gestures for the same Session share one operation.
    * Different Sessions run concurrently; each new operation joins the modal FIFO.
    * @param sessionId - root Session whose ZIP includes descendants and attachments.
-   * @returns after requesting the browser download, publishing an error, or ignoring a late post-disposal request.
+   * @returns after the browser save starts, an error state is published, or a late post-disposal request is ignored.
    */
   download(sessionId: SessionId): Promise<void> {
     const existing = this.active.get(sessionId)
@@ -126,10 +124,9 @@ export class SessionLogDownloadController {
         throw new Error(`Export failed: HTTP ${response.status}${detail === '' ? '' : ` ${detail}`}`)
       }
       if (signal.aborted) return
-      const download = { url: this.bindUrl(route), filename: sessionLogZipFilename(sessionId) }
-      this.save(download.url, download.filename)
+      this.save(this.bindUrl(route), sessionLogZipFilename(sessionId))
       const open = this.store.getSnapshot().bySession[String(sessionId)]?.open ?? true
-      this.publish(sessionId, { order, open, status: 'success', error: null, download })
+      this.publish(sessionId, { order, open, status: 'success', error: null })
     } catch (error: unknown) {
       if (signal.aborted) return
       const open = this.store.getSnapshot().bySession[String(sessionId)]?.open ?? true
