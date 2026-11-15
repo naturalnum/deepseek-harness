@@ -1,7 +1,7 @@
 {
   "counts": {
-    "native_source_files": 202,
-    "non_seam_files": 83,
+    "native_source_files": 201,
+    "non_seam_files": 82,
     "uncentralized_internal_lines": 0
   },
   "imports": [
@@ -9264,11 +9264,11 @@
     {
       "路径": "packages/client/ui-agent-preset/src/client/settings-store.ts",
       "类别": "通用修复",
-      "原因": "预设名单请求传输失败时返回错误状态，不再抛出；保留原分类已明确的通用修复",
-      "撤销条件": "上游接受该通用修复后撤销",
+      "原因": "撤回名单层将直接Remote异常转成普通error结果的通用补丁；真实网关载体失败仍由原生Gateway返回失败结果",
+      "撤销条件": "没有已确认跨账号、丢数据或密钥泄露场景；目标原生已有正式RemoteResult与网关载体失败投影，按手册默认撤回",
       "处置": "撤掉",
-      "这一程的状态": "没动",
-      "changed": true
+      "这一程的状态": "已撤",
+      "changed": false
     },
     {
       "路径": "packages/client/ui-attachment/src/FileCard.module.css",
