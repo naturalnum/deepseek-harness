@@ -37,7 +37,7 @@ Cloud 包负责账号身份、owner 路由、租户策略、存储准入、执�
 
 Root 配方封印执行完整的原生计划校验。准入时，原计划以常量时间检查 Entry 和 Fiber 的变更版本及原有身份，并保留 provider 与健康状态审查；直接更新原生 Fiber 时，更新 waterfall 继续之前会撤销封印。Fiber 版本还会检测在 waterfall 前被拒绝的更新尝试。现有 `/account` 入口向 API 和执行插件提供两个提供记录读取函数。集中模块归属低层 account 编译面，沿其现有声明与打包产物发布，避免通过 runtime Host 编译面形成反向引用。Cloud 对规范 Fiber 身份、有效配置、提供方与隔离记录的读取集中于 [native-state](pe-cloud-runtime/src/native-state.ts)。API 和执行所有权检查使用目标原生提供记录，保留隔离重复项与等待卸载的记录，维持当前性、身份检查和有限访问上限。原 AgentRegistry 条目保留 create/resume 显式提供的可选创建者原对象，`isOwnedBy` 只观察该对象，不推断持久血缘或授予当前父级权限。目标工厂在原发布点记录该关系；SubagentManager 提供新建创建者或冷恢复实时根，仍持有原祖先关系和资源生命周期。同一原缓存 Agent teardown 在驱动、作用域、写句柄和注册表清理后消费既有清理观察接口。被放弃且未结算的 setup 或清理失败只报告一次 unknown，晚到 setup 不升级该结果；准备前失败没有回执。原 Cloud 容量预留仍由原所有者持有。原 SubagentRuntime 在提供方派发、冷重建和实际工厂/activation 发布点，通过 effect 作用域检查消费已有准入类型。Cloud 读取目标扁平 start 规格及实际管理器停止信号，保留原账户、Workspace、模型、preset 检查和容量。提供方登记身份区分同一对象撤回后重新登记。无贡献时不改变原生默认行为或驻留消息行为。版本检查本身不能证明配置或 ready 状态；它跟踪原生更新 API，不检测对可信 Host 内部对象的直接修改。
 
-通用修复保留为原生补丁：UTF-8 与完整帧上限、取消和关闭结果、有界分段字节预览、[回答完成后的文件链接](../client/ui-primitives/README.zh.md#rendering-agent-output)、上传收据、配置脱敏、宽度几何和激活判定。把这些引擎移到 Cloud 会重复原生功能。保留原归属测试，作为可单独向上游提交的修改评估。
+通用修复保留为原生补丁：UTF-8 与完整帧上限、取消和关闭结果、[回答完成后的文件链接](../client/ui-primitives/README.zh.md#rendering-agent-output)、上传收据、配置脱敏、宽度几何和激活判定。把这些引擎移到 Cloud 会重复原生功能。保留原归属测试，作为可单独向上游提交的修改评估。
 
 Cloud 在 `pe-cloud-client` 持有 `workspaceFileManagement`、选择状态、文件／文件夹选择器、目录表单及操作文案。它使用原生标题列表、可选 Session 行 Factory 及原分栏刷新回调；Native 保留目录树与导航引擎。上传及建目录在派发前等待目录关闭确认。旧调用方传入 watch-FS 的补丁已撤回：Native 恢复使用服务自己的文件系统，Cloud 提供方仍明确拒绝目录监听。原生上传所有者将可选工作区目标与附件内容分别接收，并支持不保留对话回执的工作区专用流式上传；浏览器完成事件使不支持目录监听的 Cloud 后端也能刷新文件树。Connection 桥接器终止已取消的请求体读取，在销毁未读请求前刷出提前响应，然后等待原始销毁完成，不排空剩余请求体。Cloud 适配器在现有 Connection Fetch 注册入口提供流式附件响应，文件所有者通过带版本的原 staging 组件发布工作区文件；没有引入另一套上传、下载或账户文件系统所有者。
 
@@ -105,3 +105,5 @@ Agent 预设选择在原 Agent 队列和维护操作中、追加已提交选择�
 只读导出与表格转换保留原 Native 默认。日志下载仅保原认证 HEAD 与可选导航绑定口，手动下载链接/临时 DOM 挂接等通用增强已撤；浏览器接管并不证明实际保存完成。CSV 双 BOM 及合成尾行通用修复已撤，只读预览不修改原文件字节；Cloud 文件提供方、限额及实际下载绑定保持原有所有者。
 
 附加的 `skills/change` 订阅、共享 API 事件选择、既有受准入约束的账号发送者及原依赖生命周期归 Cloud 持有；Native 事件转发文件恢复默认。Native ui-skill 仅通过 `uiSkillCatalog.invalidate()` 显式控制原缓存；嵌入方未调用时，Native 预设／插件管理／连接重置行为不变。目录读取、取消、Session 引用和 RPC 实际结束仍由原 Native 引擎持有。
+
+Cloud 持有原有提供方受限时的完整字节预览政策及有界分段；Native 仅增加可选 `DocumentPreviewByteReader` 回调和 renderer 标识数据，省略时保留原单次 Remote 读取及完整文件缓存。每窗口的原账号授权、版本／路径／大小一致性和真实待处理 RPC 结束仍须满足，解析器、Session、tab 与 store 所有权不变。

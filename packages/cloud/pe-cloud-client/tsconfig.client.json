@@ -103,7 +103,8 @@
     "src/client/remote-servers/locales.ts",
     "src/client/mcp/index.ts",
     "src/client/mcp/McpConnectionsSection.tsx",
-    "src/client/mcp/locales.ts"
+    "src/client/mcp/locales.ts",
+    "src/client/document-byte-reader.ts"
   ],
   "references": [
     {

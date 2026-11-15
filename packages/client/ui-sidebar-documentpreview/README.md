@@ -153,6 +153,12 @@ No direct effect; what the user reads here never enters a model request.
 - **A failed PDF chunk load requires a page reload.** React caches a rejected lazy import for the page lifetime; ordinary PDF open or render failures remain retryable inside the loaded body.
 
 <a id="dev-note"></a>
+### Embedding complete-byte reads
+
+The default complete-byte reader makes the original single `workspaceFiles.readBytes` call. An embedding may provide `ctx.documentPreviewByteReader` with the exported `DocumentPreviewByteReader` face; its `read` callback receives the original Session/file address, tab signal, selected renderer id and resolved Excel source-byte budget. It returns complete Native bytes or the original Remote failure. The callback grants no file authority and changes neither the parser nor the tab/store owner.
+
+Whole-file renderers share the original complete-byte cache. Switching between them does not itself confirm another read; use the original Reload action when another read is needed. Preview conversion remains read-only and never writes the file.
+
 ### Dev Note
 
 <details>

@@ -11,6 +11,7 @@ import { installCloudFileDownloads } from './downloads.ts'
 import { installCloudModelSettings } from './model-settings.ts'
 import { installCloudSkillSettings } from './skill-settings.ts'
 import { installCloudSkillCatalogRefresh } from './skill-catalog-refresh.ts'
+import { installCloudDocumentByteReader } from './document-byte-reader.ts'
 import { installCloudManagement } from './management/register.tsx'
 import { installCloudServicePreviews } from './service-previews.ts'
 import { installCloudSidebarAccount } from './sidebar-account.ts'
@@ -46,6 +47,7 @@ export function apply(ctx: Context, config: Config): void {
   installCloudModelSettings(ctx, owner)
   installCloudSkillSettings(ctx, owner)
   installCloudSkillCatalogRefresh(ctx)
+  installCloudDocumentByteReader(ctx)
   installCloudManagement(ctx, owner)
   installCloudAccountManagement(ctx, owner)
   installCloudApprovedSettings(ctx, owner)

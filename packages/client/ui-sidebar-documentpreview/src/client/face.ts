@@ -59,7 +59,7 @@ export interface TextInjected {
    * @param file - the session and workspace path the tab's address names.
    * @param signal - tab lifetime.
    * @param observedVersion - metadata version observed at read start.
-   * @param rendererId - selected whole-file renderer.
+   * @param rendererId - Selected whole-file renderer passed to an optional embedding reader.
    */
   readonly loadAll: (
     tabId: TabId, file: SessionFile, signal: AbortSignal, observedVersion?: string, rendererId?: string,
@@ -70,7 +70,7 @@ export interface TextInjected {
    * @param file - the session and workspace path the tab's address names.
    * @param signal - tab lifetime.
    * @param observedVersion - metadata version observed at read start.
-   * @param rendererId - selected whole-file renderer.
+   * @param rendererId - Selected whole-file renderer passed to an optional embedding reader.
    */
   readonly reloadAll: (
     tabId: TabId, file: SessionFile, signal: AbortSignal, observedVersion?: string, rendererId?: string,
@@ -170,12 +170,12 @@ export function textFace(
       tabId: TabId, file: SessionFile, signal: AbortSignal, observedVersion?: string, rendererId?: string,
     ): void => {
       if (signal.aborted) return
-      const reads = modeOf(tabId, signal, 'bytes-complete', rendererId)
+      const reads = modeOf(tabId, signal, 'bytes-complete')
       reads.controller?.abort()
       const controller = new AbortController()
       reads.controller = controller
       const lifetime = AbortSignal.any([signal, controller.signal])
-      actions.loading(tabId, 'bytes-complete', observedVersion, rendererId)
+      actions.loading(tabId, 'bytes-complete', observedVersion)
       const request = rendererId === undefined ? readAll(file, lifetime) : readAll(file, lifetime, rendererId)
       void request.then((result) => {
         if (lifetime.aborted) return

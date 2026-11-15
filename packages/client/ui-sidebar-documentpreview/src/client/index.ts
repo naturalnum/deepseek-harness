@@ -26,7 +26,7 @@ import type { TextPreviewInjected } from './TextPreview.tsx'
 import { TextTitle } from './TextTitle.tsx'
 import { TEXTPREVIEW_ID, textDefinition } from './definition.ts'
 import { textFace } from './face.ts'
-import { createReadPage, readCompleteBytes, readDelimitedBytes } from './rpc.ts'
+import { createReadPage } from './rpc.ts'
 import { createTextStore } from './store.ts'
 import { en, ja, es, fr, de, ru, pt, zh } from './locales.ts'
 import { DocumentPreviewRegistry } from './document/registry.ts'
@@ -38,7 +38,7 @@ import { apply as registerImage } from './image/index.ts'
 import { apply as registerPdf } from './pdf/index.ts'
 import { apply as registerCode } from './code/index.ts'
 import { apply as registerOffice } from './office/index.ts'
-import { apply as registerExcel, EXCEL_PREVIEW_ID } from './excel/index.ts'
+import { apply as registerExcel } from './excel/index.ts'
 import { Config } from '../config.ts'
 
 // Values stay package-private unless another package needs them; the plugin
@@ -52,8 +52,23 @@ export type { TextPage, TextState, TextStore, TextTabState } from './store.ts'
 export type { DocumentContent, DocumentPreviewProps, DocumentTextPage } from './document/contract.ts'
 export type { DocumentLoadMode, DocumentPreviewDefinition } from './document/registry.ts'
 
+/** Optional embedding policy over the original complete-byte read operation. */
+export interface DocumentPreviewByteReader {
+  /**
+   * Read for the original Session and tab lifetime without changing the preview engine.
+   * @param file - Original Session and file path.
+   * @param signal - Original tab/read lifetime.
+   * @param options - Original renderer identity and resolved delimited-file byte budget.
+   * @returns Complete original bytes or the original Remote failure; actual pending RPC settlement remains with its owner.
+   */
+  read(file: import('./rpc.ts').SessionFile, signal: AbortSignal,
+    options: { readonly rendererId?: string; readonly delimitedMaxBytes: number }): ReturnType<import('./rpc.ts').ReadDocumentBytes>
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
+    /** Optional embedding byte reader; omission preserves the Native single-read default. */
+    documentPreviewByteReader: DocumentPreviewByteReader
     /** File-extension renderer registrations, independent from their keyed document bodies. */
     documentPreviews: DocumentPreviewRegistry
   }
@@ -97,9 +112,13 @@ export function apply(ctx: ClientContext): void {
   const store = createTextStore()
   const face = textFace(
     createReadPage(ctx.remote),
-    (file, signal, rendererId) => rendererId === EXCEL_PREVIEW_ID && /\.(?:csv|tsv)$/i.test(file.path)
-      ? readDelimitedBytes(ctx.remote.workspaceFiles.readBytes.bind(ctx.remote.workspaceFiles), file, config.excel.maxBytes, signal)
-      : readCompleteBytes(ctx.remote.workspaceFiles.readBytes.bind(ctx.remote.workspaceFiles), file, signal),
+    (file, signal, rendererId) => {
+      const reader = ctx.get('documentPreviewByteReader')
+      return reader === undefined
+        ? ctx.remote.workspaceFiles.readBytes(file.sessionId, file.path, {}, signal)
+        : reader.read(file, signal, { delimitedMaxBytes: config.excel.maxBytes,
+          ...(rendererId === undefined ? {} : { rendererId }) })
+    },
     ctx.resources,
   )
   const source = { getSnapshot: previews.getSnapshot, subscribe: previews.subscribe }

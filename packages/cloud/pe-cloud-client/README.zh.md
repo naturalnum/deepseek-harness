@@ -40,6 +40,9 @@ Cloud 浏览器以自有双语品牌字典提供 PowerEvolve 名称，并以黑�
 
 Cloud 通过 `skill-catalog-refresh.ts` 持有原有 `skills/change` 目录刷新政策。共享 API 类型选择该事件，既有账号事件源经原能力复查发送，Native 转发名单文件恢复默认。只有原 Remote 技能服务与 Native `uiSkillCatalog` 控制口同时存在时，依赖作用域才持有订阅；Cloud 或提供方释放时退订，替换后重新绑定。它只调用原缓存失效方法，不增加 RPC 或缓存状态。账号事件刷新所属两个 Session 的目录，其他账号根仍保留自己的缓存；待处理 RPC 的实际结束及 Session 引用仍归 Native 所有。
 
+
+Cloud 通过 `document-byte-reader.ts` 和 Native 可选 `documentPreviewByteReader` 回调持有提供方受限时的完整字节预览政策。原表格 renderer 在已解析的 Native 字节预算内，以最多 32 KiB 窗口读取 CSV／TSV；其他完整文件保留普通读取，仅在原声明大小错误后回退。每个窗口仍使用原账号 Remote 和 Session 地址，复核路径／版本／大小一致性，并在交付字节前确认末尾空范围。原依赖作用域在释放或 Remote 替换时撤回调并取消后续窗口；已派发的真实 RPC 仍须等待，取消不等于实际结束。注册不发 I/O，原 Native store、缓存、解析和刷新行为保持。
+
 ### 适用场景
 
 先从原始原生模块表导入本包公开 `/client` 命名空间，再在 Cordis 激活前调用 `PreparedCloudPage.prepare(input, signal)`。其 `ready` promise 在 bootstrap 请求结算后交付已解码页面 owner，并不证明服务端账户图就绪。用同一张表构造 `AppWebEntry(container, { ...page.nativeOptions, modules })`，随后等待 `page.start(entry)`；不能第二次调用 bootstrap facade 的 `create()`。保留 preparation，并在替换页面前等待 `preparation.dispose()`。只有 Cloud `/client` entry 安装 Connection；Host 通过 `registerClientPackages(..., { activate: false })` 声明原始 Connection 模块，使其普通插件不被激活。

@@ -87,7 +87,7 @@ export function TextPreview({
   }, [definitions, file.path, unviewable])
   const selected = candidates.find(candidate => candidate.id === state?.rendererId) ?? candidates[0]
   const mode = selected?.loading
-  const contentRendererId = mode === 'renderer' || mode === 'bytes-complete' ? selected?.id : undefined
+  const contentRendererId = mode === 'renderer' ? selected?.id : undefined
   const current = (state?.mode ?? 'text-pages') === mode && state?.contentRendererId === contentRendererId ? state : undefined
   const add = useCallback((address: string) => {
     addResource(tab.id, address, signal)

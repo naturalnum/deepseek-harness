@@ -166,26 +166,18 @@ describe('ui-sidebar-documentpreview apply', () => {
     await expect.poll(() => instance.getSnapshot().byTab[TAB_ID]?.failure).toMatchObject({ code: 'workspace-file/not-found', message: 'File missing' })
     expect(instance.getSnapshot().byTab[TAB_ID]?.complete).toBeUndefined()
   })
-
-  it('selects bounded CSV ranges only for the built-in spreadsheet renderer', async () => {
-    const { registered, readBytes } = await boot()
+  it('keeps the original Native CSV byte read when no embedding reader is present', async () => {
+    const { ctx, registered, readBytes } = await boot()
+    expect(ctx.get('documentPreviewByteReader')).toBeUndefined()
     const registration = registered.find(entry => entry.component === TextPreview)
     if (registration === undefined) throw new Error('missing preview registration')
     const instance = (registration.store as TextStore).create()
     const face = (registration.inject as ReturnType<typeof textFace>)(SESSION, instance.actions)
-    const controller = new AbortController()
+    const controller = new AbortController(), file = { sessionId: SESSION, path: '/host/data.csv' }
     onTestFinished(() => { controller.abort() })
-    const file = { sessionId: SESSION, path: '/host/data.csv' }
-    const source = new Uint8Array(102_672).fill(42)
-    readBytes.mockImplementation(async (_session, _path, options) => {
-      const range = options?.range
-      if (range?.offset === undefined || range.length === undefined) throw new Error('expected range')
-      const data = source.slice(range.offset, range.offset + range.length)
-      return { ok: true, value: { absolutePath: file.path, version: 'v1', bytes: source.length,
-        offset: range.offset, data, eof: range.offset + data.length === source.length } }
-    })
     face.loadAll(TAB_ID, file, controller.signal, 'v1', '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/excel')
-    await vi.waitFor(() => { expect(instance.getSnapshot().byTab[TAB_ID]?.complete?.data).toEqual(source) })
-    expect(readBytes.mock.calls.map(call => call[2]?.range?.offset)).toEqual([0, 32768, 65536, 98304, 102672])
+    await vi.waitFor(() => { expect(instance.getSnapshot().byTab[TAB_ID]?.complete).toBeDefined() })
+    expect(readBytes).toHaveBeenCalledExactlyOnceWith(SESSION, file.path, {}, expect.any(AbortSignal))
   })
+
 })

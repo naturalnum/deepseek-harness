@@ -153,6 +153,12 @@ Office Remote 通过 Connection 的 multipart 二进制传输返回原生 `Uint8
 - **PDF chunk 加载失败后需要刷新页面。** React 会在页面生命周期内缓存被拒绝的 lazy import；已加载正文中的普通 PDF 打开或渲染失败仍可重试。
 
 <a id="dev-note"></a>
+### 嵌入方完整字节读取
+
+默认完整字节读取器继续调用原单次 `workspaceFiles.readBytes`。嵌入方可通过公开的 `DocumentPreviewByteReader` 提供 `ctx.documentPreviewByteReader`；`read` 回调接收原 Session／文件地址、tab 信号、所选 renderer id 及已解析的 Excel 源字节预算，返回完整 Native 字节或原 Remote 失败。该回调不授予文件权限，不改变解析器或 tab／store 所有者。
+
+完整文件渲染器共享原完整字节缓存。在它们之间切换本身不证明发生了另一次读取；需要重读时使用原 Reload 操作。预览转换保持只读，不写原文件。
+
 ### 开发备注
 
 <details>
