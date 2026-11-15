@@ -228,6 +228,9 @@ Markdown 文件、链接、图片、引用 chip 和工具文件控件将明确�
 
 
 <a id="dev-note"></a>
+
+嵌入方可提供可选 root 标准回调 `assistantFilePresentation`。原 Assistant Node 渲染器将既有已关闭 closing 消息及非 interrupted 准入作为普通绑定数据传下，原 Markdown 组件将绑定携带到落定与流式上下文。未提供 selector 时保持 Native 呈现。root 贡献持有回调生命周期，不经 UI owner props 传 Context、文件服务或替代渲染器。
+
 ### 开发备注
 
 <details>

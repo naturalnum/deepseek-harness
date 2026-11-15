@@ -49,6 +49,9 @@ Cloud 在挂载原生成 API 贡献前提供显式 Remote 名称兼容，仅允�
 
 Cloud 在 `model-credential-locales.ts` 持有原七条密钥控件文案的八种语言及原官方提供商布局选择。PreparedPage 经原 editing 快照提供纯显示回调，调用时读取原 Root 当前 locale；切换语言不请求元数据或凭据。未提供这些回调与显式模式时保留 Native 默认。本次呈现调整保持原捕获版本、一次提交、账户／页面撤销、未知写入拒绝与仅删除密钥的责任；密钥动作流程现归 `model-key-actions.tsx`。可选 Native 行贡献持有准备、可取消意图与确认状态，以及原八语动作文案和样式。它以 JSON 和捕获回调通过已注册 Factory 渲染唯一原 Native 提供商编辑器，保留仅凭据校验。scope／引用变化重挂意图；editing 准入置 null、依赖撤回或页面取消均移除控件。关闭准备会取消观察并忽略迟到结果；未知或拒绝的删除不能从该确认框再次提交。删除从不修改提供商或模型。
 
+
+Cloud 在 `file-presentation.ts` 持有展示 selector，并经原 Native root 贡献安装。已完成 closing 回复中，普通列表或尚无已记录文件 resolver 的行内代码可将简单产物文件名交原作用域文件打开器。行内代码仍以既有已记录文件 resolver 为准。显式账户作用域 `sandbox:/绝对路径` 及无 authority 的 `file:///绝对路径` 只解码一次，保留合法起始行片段，未获该呈现准入时保持文本。authority、错误形式、编码分隔符、路径回退、反斜线、控制字符与 query 均不成为可激活目标。普通链接和路径仍走原 Native 解析与回调。选择不做 I/O、不授予账户或文件权限；实际打开、图片、上下文菜单和 Host 隔离不变。回调撤回只影响其原 root。
+
 ### 适用场景
 
 先从原始原生模块表导入本包公开 `/client` 命名空间，再在 Cordis 激活前调用 `PreparedCloudPage.prepare(input, signal)`。其 `ready` promise 在 bootstrap 请求结算后交付已解码页面 owner，并不证明服务端账户图就绪。用同一张表构造 `AppWebEntry(container, { ...page.nativeOptions, modules })`，随后等待 `page.start(entry)`；不能第二次调用 bootstrap facade 的 `create()`。保留 preparation，并在替换页面前等待 `preparation.dispose()`。只有 Cloud `/client` entry 安装 Connection；Host 通过 `registerClientPackages(..., { activate: false })` 声明原始 Connection 模块，使其普通插件不被激活。

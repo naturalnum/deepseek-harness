@@ -228,6 +228,9 @@ None; Chat presentation does not assemble or mutate provider requests.
 
 
 <a id="dev-note"></a>
+
+An embedding may provide the optional root standard callback `assistantFilePresentation`. The original Assistant Node renderer supplies its existing closed-closing-message and non-interrupted admission as plain binding data, and the original Markdown component carries that binding to its settled and streaming contexts. No selector leaves Native presentation unchanged. The root contribution owns callback lifetime; it carries no Context, file service or alternate renderer through UI owner props.
+
 ### Dev Note
 
 <details>

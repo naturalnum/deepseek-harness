@@ -3,7 +3,7 @@ import { fileMediaUrl } from '@deepseek-ai/dsh-util-workspace-path'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ReactNode } from 'react'
 import { JsonBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { MarkdownFileMentions, MarkdownPathImages } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { MarkdownFileMentions, MarkdownPathImages, MarkdownFilePresentationBinding } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNodeOwnerProps, ChatViewSlotProps, UseDisclosure, UsePresentation, UseGroupAction } from '../contract/slots.ts'
 import type { AssistantBlock } from '../contract/snapshot.ts'
 import { markdownLabels } from '../markdown-labels.ts'
@@ -50,8 +50,8 @@ export interface AssistantMarkdownProps extends
   revealProcess?: (() => void) | undefined
   /** Resolved prose file mentions for this Assistant's closing turn. */
   mentions?: MarkdownFileMentions | undefined
-  /** Allow simple output filename list items in the completed closing reply. */
-  standaloneFileLinks?: boolean | undefined
+  /** Optional display callback and original caller admission, with no service or I/O authority. */
+  filePresentation?: MarkdownFilePresentationBinding | undefined
   /** The owning view's locale seat, passed down as a plain prop. */
   t: ChatViewSlotProps['t']
 }
@@ -59,7 +59,7 @@ export interface AssistantMarkdownProps extends
 /** Renders non-blank reasoning blocks as independent disclosures alongside the response. */
 export const AssistantMarkdown = memo(function AssistantMarkdown({
   blocks, streaming, textInteractionSource = false, interrupted, loadImage, groupPart, useDisclosure,
-  reasoningHidden = false, usePresentation, revealProcess, mentions, standaloneFileLinks = false, renderSlot, useGroupAction, t,
+  reasoningHidden = false, usePresentation, revealProcess, mentions, filePresentation, renderSlot, useGroupAction, t,
 }: AssistantMarkdownProps) {
   // Stable per locale revision (t identity changes on switch): a fresh object
   // per render would rebuild MarkdownText's component table every chunk.
@@ -93,7 +93,7 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
             fileMentions={mentions}
             pathImages={pathImages}
             textInteractionSource={textInteractionSource}
-            standaloneFileLinks={standaloneFileLinks}
+            filePresentation={filePresentation}
           />,
         )
         break

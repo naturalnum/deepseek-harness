@@ -141,7 +141,7 @@ kind: "package-library"
 
 <a id="understand-the-implementation"></a>
 
-显式设置 `standaloneFileLinks` 后，已完成回复里只含简单文件名的列表项复用同一个作用域 `openFile` 回调。默认和流式渲染保留普通文本，路径、命令和 URL 不在此范围。
+`MarkdownText.filePresentation` 可选接收稳定的 `MarkdownFilePresentationBinding`，仅含纯 selector 和调用方准入布尔值。selector 只接收 link／list-filename／inline-code 位置、原文本及实际已落定准入，返回选择 Native 行为、不可激活文本或带可选行号文件路径的 JSON。缺少绑定时，原 Native 解析、链接和 delegate 保持原样。已记录 `fileMentions` 保留行内代码优先权；selector 不会在锚内套文件按钮，流式阶段仍禁用文件控件。绑定参与原流式缓存身份；解析、文件打开、菜单和图片仍由原持有方负责。
 
 ## 理解实现
 

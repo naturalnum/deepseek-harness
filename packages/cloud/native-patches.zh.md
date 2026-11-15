@@ -37,7 +37,7 @@ Cloud 包负责账号身份、owner 路由、租户策略、存储准入、执�
 
 Root 配方封印执行完整的原生计划校验。准入时，原计划以常量时间检查 Entry 和 Fiber 的变更版本及原有身份，并保留 provider 与健康状态审查；直接更新原生 Fiber 时，更新 waterfall 继续之前会撤销封印。Fiber 版本还会检测在 waterfall 前被拒绝的更新尝试。现有 `/account` 入口向 API 和执行插件提供两个提供记录读取函数。集中模块归属低层 account 编译面，沿其现有声明与打包产物发布，避免通过 runtime Host 编译面形成反向引用。Cloud 对规范 Fiber 身份、有效配置、提供方与隔离记录的读取集中于 [native-state](pe-cloud-runtime/src/native-state.ts)。API 和执行所有权检查使用目标原生提供记录，保留隔离重复项与等待卸载的记录，维持当前性、身份检查和有限访问上限。原 AgentRegistry 条目保留 create/resume 显式提供的可选创建者原对象，`isOwnedBy` 只观察该对象，不推断持久血缘或授予当前父级权限。目标工厂在原发布点记录该关系；SubagentManager 提供新建创建者或冷恢复实时根，仍持有原祖先关系和资源生命周期。同一原缓存 Agent teardown 在驱动、作用域、写句柄和注册表清理后消费既有清理观察接口。被放弃且未结算的 setup 或清理失败只报告一次 unknown，晚到 setup 不升级该结果；准备前失败没有回执。原 Cloud 容量预留仍由原所有者持有。原 SubagentRuntime 在提供方派发、冷重建和实际工厂/activation 发布点，通过 effect 作用域检查消费已有准入类型。Cloud 读取目标扁平 start 规格及实际管理器停止信号，保留原账户、Workspace、模型、preset 检查和容量。提供方登记身份区分同一对象撤回后重新登记。无贡献时不改变原生默认行为或驻留消息行为。版本检查本身不能证明配置或 ready 状态；它跟踪原生更新 API，不检测对可信 Host 内部对象的直接修改。
 
-通用修复保留为原生补丁：UTF-8 与完整帧上限、取消和关闭结果、[回答完成后的文件链接](../client/ui-primitives/README.zh.md#rendering-agent-output)、上传收据、配置脱敏、宽度几何和激活判定。把这些引擎移到 Cloud 会重复原生功能。保留原归属测试，作为可单独向上游提交的修改评估。
+通用修复保留为原生补丁：UTF-8 与完整帧上限、取消和关闭结果、上传收据、配置脱敏、宽度几何和激活判定。把这些引擎移到 Cloud 会重复原生功能。保留原归属测试，作为可单独向上游提交的修改评估。
 
 Cloud 在 `pe-cloud-client` 持有 `workspaceFileManagement`、选择状态、文件／文件夹选择器、目录表单及操作文案。它使用原生标题列表、可选 Session 行 Factory 及原分栏刷新回调；Native 保留目录树与导航引擎。上传及建目录在派发前等待目录关闭确认。旧调用方传入 watch-FS 的补丁已撤回：Native 恢复使用服务自己的文件系统，Cloud 提供方仍明确拒绝目录监听。原生上传所有者将可选工作区目标与附件内容分别接收，并支持不保留对话回执的工作区专用流式上传；浏览器完成事件使不支持目录监听的 Cloud 后端也能刷新文件树。Connection 桥接器终止已取消的请求体读取，在销毁未读请求前刷出提前响应，然后等待原始销毁完成，不排空剩余请求体。Cloud 适配器在现有 Connection Fetch 注册入口提供流式附件响应，文件所有者通过带版本的原 staging 组件发布工作区文件；没有引入另一套上传、下载或账户文件系统所有者。
 
@@ -111,3 +111,5 @@ Cloud 持有原有提供方受限时的完整字节预览政策及有界分段�
 Native 默认保留原生成方法 `install` 的名称冲突检查；可选 `ClientRemoteMethodCompatibility` 回调仅让嵌入方显式选择确切 namespace，不替换命名空间引擎。Cloud 在挂载原生成贡献前只提供已有 `cloudSkills` 选择；Service／原型冲突、原 codec 与 Connection 分派、挂载生命周期及 Host 授权保持不变。
 
 模型密钥呈现已归 Cloud：原七条八语动作文案留在 Cloud 自有贡献，仅本地化拒绝回调和显式提供商布局值进入 Native。Native locale 精确恢复固定目标。无嵌入方的设置编辑器恢复未知写入后原手动重试，显式已准备凭据与仅目录模式保留捕获意图的阻止重复写入。可选密钥动作准备、可取消意图与对话框亦已迁 Cloud。Native 只经可选 root 插槽派发原行 JSON 和展平回调，并以 Native 持有的 operations／schema／locale 将原编辑器注册为 Factory。Cloud 使用此框架 Factory，不复制编辑器、Remote 引擎或凭据存储；缺少贡献时保持 Native 默认。原 UI 目的迁至 Cloud 拥有的测试，通过真实已声明 Native 父组件、SlotRegistry 和 Factory，保留捕获引用、只读、未知、取消、撤回及 HMR 核验。
+
+完成回复的文件呈现归 Cloud。Native 在原 Markdown、mention、文件打开与菜单引擎上只保可选 JSON／select 绑定及原 closing／stream 守卫；原 Native 文件名 regex 和布尔产品开关撤回。Cloud 经原 root 贡献提供产物文件名选择与严格作用域 URI 展示选择。原24个未满足 URI 目的保留在改前基线，归 Cloud 拥有范围修复；Native 默认 DOM 与原图片／路径行为分别核验不变。回调不授予 Host 文件权限，也不证明实际部署页面。

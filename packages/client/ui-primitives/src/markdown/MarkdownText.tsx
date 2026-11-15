@@ -21,11 +21,12 @@ import {
   collectReferenceTargets, createReferenceTargets, renderBlocks, renderFootnoteSection,
   wrapBlockChildren,
 } from './render.tsx'
-import type { MarkdownFileMentions, MarkdownLabels, MarkdownPathImages, MarkdownRenderContext, ReferenceTargets } from './render.tsx'
+import type { MarkdownFileMentions, MarkdownLabels, MarkdownPathImages, MarkdownRenderContext, ReferenceTargets, MarkdownFilePresentationBinding } from './render.tsx'
 import 'katex/dist/katex.min.css'
 import css from './MarkdownText.module.css'
 
-export type { MarkdownCodeLabels, MarkdownFileMentions, MarkdownLabels, MarkdownPathImages } from './render.tsx'
+export type { MarkdownCodeLabels, MarkdownFileMentions, MarkdownLabels, MarkdownPathImages,
+  MarkdownFilePresentation, MarkdownFilePresentationBinding, MarkdownFilePresentationChoice, MarkdownFilePresentationRequest } from './render.tsx'
 
 /** One settled full render: parse with math, resolve references, append the footnote section. */
 function renderSettled(
@@ -34,7 +35,7 @@ function renderSettled(
   fileMentions: MarkdownFileMentions | undefined,
   pathImages: MarkdownPathImages | undefined,
   omitHtml: boolean,
-  standaloneFileLinks: boolean,
+  filePresentation: MarkdownFilePresentationBinding | undefined,
 ): ReactNode[] {
   const root = parseGfmWithMath(text)
   const targets = createReferenceTargets()
@@ -45,7 +46,7 @@ function renderSettled(
     fileMentions,
     pathImages,
     omitHtml,
-    standaloneFileLinks,
+    filePresentation,
     targets,
     footnoteOrder: [],
     footnoteCounts: new Map(),
@@ -82,8 +83,10 @@ class StreamingRenderer {
   /**
    * @param labels - Localized Markdown chrome baked into cached elements; the owner replaces the renderer when it changes.
    * @param omitHtml - Whether raw HTML renders nothing; the owner replaces the renderer when it changes.
+   * @param filePresentation - Optional pure display binding; replacement invalidates cached choices.
    */
-  constructor(private readonly labels: MarkdownLabels, readonly omitHtml: boolean) {}
+  constructor(private readonly labels: MarkdownLabels, readonly omitHtml: boolean,
+    readonly filePresentation: MarkdownFilePresentationBinding | undefined) {}
 
   /**
    * Render the current accumulated text. Idempotent per text value, so React
@@ -119,6 +122,7 @@ class StreamingRenderer {
         fileMentions: undefined,
         pathImages: undefined,
         omitHtml: this.omitHtml,
+        filePresentation: this.filePresentation,
         targets: frameTargets,
         footnoteOrder: this.frozenFootnoteOrder,
         footnoteCounts: this.frozenFootnoteCounts,
@@ -139,6 +143,7 @@ class StreamingRenderer {
       fileMentions: undefined,
       pathImages: undefined,
       omitHtml: this.omitHtml,
+      filePresentation: this.filePresentation,
       targets: frameTargets,
       footnoteOrder: [...this.frozenFootnoteOrder],
       footnoteCounts: new Map(this.frozenFootnoteCounts),
@@ -167,8 +172,8 @@ class StreamingRenderer {
  * identity discards the streaming render cache mid-message. `fileMentions`
  * links inline-code tokens its resolver recognizes as real files, and
  * `pathImages` rewrites image destinations that are local file paths into
- * displayable URLs its resolver vouches for. Those two vocabularies are the
- * single streaming gate — they apply to settled renders only, because a
+ * displayable URLs its resolver vouches for. Those two vocabularies apply
+ * to settled renders only, because a
  * streaming message's vocabulary is not final and frozen cached elements
  * must not bake in handlers that could go stale. A surrounding
  * `MarkdownDelegateProvider` can delegate ordinary HTTP(S) activation while
@@ -190,7 +195,7 @@ class StreamingRenderer {
  */
 export const MarkdownText = memo(function MarkdownText({
   text, streaming = false, labels, fileMentions, pathImages, variant = 'body', omitHtml = false, textInteractionSource = false,
-  standaloneFileLinks = false,
+  filePresentation,
 }: {
   text: string
   streaming?: boolean
@@ -200,22 +205,23 @@ export const MarkdownText = memo(function MarkdownText({
   variant?: 'body' | 'compact'
   omitHtml?: boolean
   textInteractionSource?: boolean
-  /** Enable simple filename-only list items through the scoped file opener, after settlement. */
-  standaloneFileLinks?: boolean
+  /** Optional JSON/callback presentation; absent preserves original Native links. */
+  filePresentation?: MarkdownFilePresentationBinding | undefined
 }) {
   const streamRef = useRef<StreamingRenderer | null>(null)
   const streamLabelsRef = useRef<MarkdownLabels>(labels)
   const children = useMemo(() => {
     if (!streaming) {
       streamRef.current = null
-      return renderSettled(text, labels, fileMentions, pathImages, omitHtml, standaloneFileLinks)
+      return renderSettled(text, labels, fileMentions, pathImages, omitHtml, filePresentation)
     }
-    if (streamRef.current === null || streamLabelsRef.current !== labels || streamRef.current.omitHtml !== omitHtml) {
-      streamRef.current = new StreamingRenderer(labels, omitHtml)
+    if (streamRef.current === null || streamLabelsRef.current !== labels || streamRef.current.omitHtml !== omitHtml
+      || streamRef.current.filePresentation !== filePresentation) {
+      streamRef.current = new StreamingRenderer(labels, omitHtml, filePresentation)
       streamLabelsRef.current = labels
     }
     return streamRef.current.render(text)
-  }, [text, streaming, labels, fileMentions, pathImages, omitHtml, standaloneFileLinks])
+  }, [text, streaming, labels, fileMentions, pathImages, omitHtml, filePresentation])
   return <div className={clsx(css.markdown, variant === 'compact' && css.compact)}
     data-text-interaction-source={textInteractionSource ? '' : undefined}
     data-markdown-variant={variant === 'compact' ? variant : undefined}

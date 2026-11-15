@@ -64,8 +64,8 @@ packages/client/ui-attachment/src/FileCard.module.css	通用修复	“上传未�
 packages/client/ui-attachment/src/FileCard.tsx	通用修复	文件卡片区分“未确认”与“失败”，未确认时不给重试	组件内部状态展示；向上游提交	撤掉	没动
 packages/client/ui-attachment/src/client/ComposerAttachments.tsx	通用修复	把未确认状态和 retryAllowed 传给卡片	同上	撤掉	没动
 packages/client/ui-chat/src/client/apply.ts	扩展点	仅登记原Flow的运行装饰mark/copy两个inline root chain子槽；旧无消费者fork通知回调撤回	原生有默认不变的同等运行装饰位置时改用其入口	留作口子	已按新原生重加
-packages/client/ui-chat/src/client/chat/AssistantMarkdown.tsx	功能增强	向 Markdown 渲染传 standaloneFileLinks（回答完成后把独立文件名变成可点链接）	渲染器没有外部插入点；向上游提交	撤掉	没动
-packages/client/ui-chat/src/client/chat/AssistantNodeView.tsx	功能增强	回答已完成时开启 standaloneFileLinks	同上	撤掉	没动
+packages/client/ui-chat/src/client/chat/AssistantMarkdown.tsx	扩展点	Cloud持文件名/URI呈现选择；Native仅可选JSON/callback消费和原closing/stream守卫，无callback保持固定目标原链接引擎	Native有等价JSON文件呈现入口后替换；原解析/文件delegate/Host权限不改	留作口子	已按新原生重加
+packages/client/ui-chat/src/client/chat/AssistantNodeView.tsx	扩展点	Cloud持文件名/URI呈现选择；Native仅可选JSON/callback消费和原closing/stream守卫，无callback保持固定目标原链接引擎	Native有等价JSON文件呈现入口后替换；原解析/文件delegate/Host权限不改	留作口子	已按新原生重加
 packages/client/ui-chat/src/client/chat/ChatFlow.tsx	扩展点	仅把原framework chain座传给RunningStatus，不改行、时钟及状态数据	原生有默认不变的同等运行装饰位置时改用其入口	留作口子	已按新原生重加
 packages/client/ui-chat/src/client/chat/ChatView.module.css	云端定制	删除鲸尾动画样式（品牌，改了上游默认外观）	还原则保留上游鲸尾；要换图标需上游给“运行状态图标”插槽	撤掉	已撤
 packages/client/ui-chat/src/client/chat/ChatView.tsx	通用修复	分支会话失败时弹出说明	向上游提交	撤掉	已撤
@@ -91,9 +91,9 @@ packages/client/ui-plugin-manager/src/client/index.ts	登记	账号私有数据�
 packages/client/ui-plugin-manager/src/client/locales.ts	云端定制	撤掉没有消费方的actionRestricted字典项；保留自有插件页和原生配置插槽登记	当前Native页面未读取这些字典键	撤掉	已撤
 packages/client/ui-plugin-manager/src/client/manager-store.ts	云端定制	有 pluginManagerIntegration 时改由它读清单、判断许可、执行开关和安装（有开关）；兼界面偏好走存储端口、请求异常转为错误状态	同 PluginManagerPage.tsx	撤掉	已撤
 packages/client/ui-primitives/src/index.ts	登记	导出 ConfigField 和新增的 LightningMark	LightningMark 可搬进 pe-cloud-client（前提是 ui-chat 不再用它）；ConfigField 需上游导出或云端自写	撤掉	没动
-packages/client/ui-primitives/src/markdown/MarkdownText.tsx	功能增强	新增 standaloneFileLinks 选项并传给渲染	渲染器没有外部插入点；向上游提交	撤掉	没动
+packages/client/ui-primitives/src/markdown/MarkdownText.tsx	扩展点	Cloud持文件名/URI呈现选择；Native仅可选JSON/callback消费和原closing/stream守卫，无callback保持固定目标原链接引擎	Native有等价JSON文件呈现入口后替换；原解析/文件delegate/Host权限不改	留作口子	已按新原生重加
 packages/client/ui-primitives/src/markdown/file-link.ts	功能增强	识别 file:/// 和 sandbox: 形式的文件链接	同上	撤掉	已撤
-packages/client/ui-primitives/src/markdown/render.tsx	功能增强	把回答里独立成段的文件名渲染成可点的文件链接	同上	撤掉	没动
+packages/client/ui-primitives/src/markdown/render.tsx	扩展点	Cloud持文件名/URI呈现选择；Native仅可选JSON/callback消费和原closing/stream守卫，无callback保持固定目标原链接引擎	Native有等价JSON文件呈现入口后替换；原解析/文件delegate/Host权限不改	留作口子	已按新原生重加
 packages/client/ui-renderer/src/client/registry.ts	扩展点	插槽 store 实例创建时带上页面存储端口	上游若提供页面级默认存储端口，本文件不用改	留作口子	没动
 packages/client/ui-schedule/src/client/TaskDetail.tsx	扩展点	最近时区的读写改由注入函数提供	同上	撤掉	已撤
 packages/client/ui-schedule/src/client/index.ts	扩展点	取 clientPersistence 并传给时区和任务标签绑定	同上	撤掉	已撤

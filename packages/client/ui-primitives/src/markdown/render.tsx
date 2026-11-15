@@ -218,6 +218,27 @@ export interface MarkdownFileMentions {
   } | undefined
 }
 
+/** JSON input for an optional embedding-owned file presentation choice. */
+export interface MarkdownFilePresentationRequest {
+  /** Presentation position, without a parser node or service. */
+  readonly kind: 'link' | 'list-filename' | 'inline-code'
+  /** Original authored destination or complete text token. */
+  readonly text: string
+  /** Original caller admission and renderer settlement; grants no Host authority. */
+  readonly active: boolean
+}
+/** JSON output; native delegates to the unchanged renderer, text suppresses activation. */
+export type MarkdownFilePresentationChoice =
+  | { readonly kind: 'native' | 'text' }
+  | { readonly kind: 'file'; readonly path: string; readonly line?: number }
+/** Pure display callback; storage, parsing and file opening stay with their original owners. */
+export type MarkdownFilePresentation = (input: MarkdownFilePresentationRequest) => MarkdownFilePresentationChoice
+/** Callback and original caller admission; stable identity preserves streaming caches. */
+export interface MarkdownFilePresentationBinding {
+  readonly select: MarkdownFilePresentation
+  readonly active: boolean
+}
+
 /**
  * One render pass's state: immutable options and targets plus the footnote
  * numbering accumulated in document order while references render.
@@ -233,8 +254,8 @@ export interface MarkdownRenderContext {
   readonly fileMentions: MarkdownFileMentions | undefined
   /** Local-path image vocabulary; absent wherever no rewriting owner exists. */
   readonly pathImages: MarkdownPathImages | undefined
-  /** Explicit completed-reply option for filename-only list items. */
-  readonly standaloneFileLinks?: boolean
+  /** Optional display choice; omission preserves the Native renderer. */
+  readonly filePresentation?: MarkdownFilePresentationBinding | undefined
   /** Raw HTML renders nothing instead of literal text. */
   readonly omitHtml: boolean
   /** Inside an anchor's children: interactive mentions must not nest there. */
@@ -373,6 +394,11 @@ function renderNode(node: Md.RootContent, key: Key, context: MarkdownRenderConte
           </code>
         )
       }
+      if (context.inLink !== true && context.fileMentions === undefined && !context.streaming
+        && context.filePresentation?.active === true) {
+        const choice = context.filePresentation.select({ kind: 'inline-code', text: value, active: true })
+        if (choice.kind === 'file') return <code key={key}><MarkdownFileLink file={choice} glyph>{[value]}</MarkdownFileLink></code>
+      }
       return <code key={key}>{value}</code>
     }
     case 'html':
@@ -394,7 +420,7 @@ function renderNode(node: Md.RootContent, key: Key, context: MarkdownRenderConte
     case 'link':
       return renderAnchor(
         node.url, renderChildren(node.children, { ...context, inLink: true }), key,
-        !anchorWrapsOnlyImages(node.children), context.streaming,
+        !anchorWrapsOnlyImages(node.children), context.streaming, context.filePresentation,
       )
     case 'linkReference':
       return renderLinkReference(node, key, context)
@@ -498,9 +524,11 @@ function renderListItem(
 ): ReactNode {
   const paragraph = item.children.length === 1 ? item.children[0] : undefined
   const text = paragraph?.type === 'paragraph' && paragraph.children.length === 1 ? paragraph.children[0] : undefined
-  if (!context.streaming && context.standaloneFileLinks === true && typeof item.checked !== 'boolean'
-    && text?.type === 'text' && /^[\p{L}\p{N}_-][\p{L}\p{N}_.-]*\.[A-Za-z0-9]{1,12}$/u.test(text.value)) {
-    return <li key={key}>{renderAnchor(text.value, [text.value], 'file')}</li>
+  if (!context.streaming && context.filePresentation?.active === true && typeof item.checked !== 'boolean' && text?.type === 'text') {
+    const choice = context.filePresentation.select({ kind: 'list-filename', text: text.value, active: true })
+    if (choice.kind === 'file') {
+      return <li key={key}><MarkdownFileLink file={choice} glyph>{[text.value]}</MarkdownFileLink></li>
+    }
   }
   const entries = renderBlockEntries(item.children, context)
   const task = typeof item.checked === 'boolean'
@@ -633,7 +661,14 @@ function MarkdownAnchor({ href, glyph, children }: {
 }
 
 /** Local destinations use the scoped file delegate after settlement. */
-function renderAnchor(url: string, children: ReactNode[], key: Key, glyph = true, streaming = false): ReactNode {
+function renderAnchor(url: string, children: ReactNode[], key: Key, glyph = true, streaming = false,
+  presentation?: MarkdownFilePresentationBinding): ReactNode {
+  const choice = presentation?.select({ kind: 'link', text: url, active: presentation.active && !streaming })
+  if (choice?.kind === 'text') return <Fragment key={key}>{children}</Fragment>
+  if (choice?.kind === 'file') {
+    if (streaming || presentation?.active !== true) return <Fragment key={key}>{children}</Fragment>
+    return <MarkdownFileLink key={key} file={choice} glyph={glyph}>{children}</MarkdownFileLink>
+  }
   const file = parseFileLink(url)
   if (file !== undefined) {
     if (streaming) return <Fragment key={key}>{children}</Fragment>
@@ -765,7 +800,7 @@ function renderLinkReference(
     return <Fragment key={key}>{'['}{renderChildren(node.children, context)}{referenceSuffix(node)}</Fragment>
   }
   const rendered = renderChildren(node.children, { ...context, inLink: true })
-  return renderAnchor(definition.url, rendered, key, !anchorWrapsOnlyImages(node.children), context.streaming)
+  return renderAnchor(definition.url, rendered, key, !anchorWrapsOnlyImages(node.children), context.streaming, context.filePresentation)
 }
 
 function renderImageReference(

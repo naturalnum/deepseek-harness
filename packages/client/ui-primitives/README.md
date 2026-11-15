@@ -141,7 +141,7 @@ The atoms cannot read the application locale, so every piece of user-facing copy
 
 <a id="understand-the-implementation"></a>
 
-With `standaloneFileLinks`, completed filename-only list items use the same scoped `openFile` callback. The default and streaming renders stay plain text; paths, commands, and URLs are excluded.
+`MarkdownText.filePresentation` optionally receives a stable `MarkdownFilePresentationBinding`: a pure selector and caller admission boolean. The selector receives only the link/list-filename/inline-code position, authored text and effective settled admission, and returns JSON selecting Native behavior, inert text or a file path with an optional line. Without it, the original Native parser, links and delegates remain unchanged. Recorded `fileMentions` retain inline-code priority; the selector cannot nest file buttons inside anchors, and file controls remain disabled while streaming. The binding participates in the original streaming-cache identity; parsing, file opening, menus and image rendering retain their existing owners.
 
 ## Understand the implementation
 

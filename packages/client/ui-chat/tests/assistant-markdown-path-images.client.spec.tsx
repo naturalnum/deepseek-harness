@@ -57,36 +57,6 @@ describe('localPathMediaUrl', () => {
 })
 
 describe('AssistantMarkdown local-path images', () => {
-  it('offers the session file opener for plain output filenames in a settled reply', () => {
-    const openFile = vi.fn()
-    const view = render(
-      <MarkdownDelegateProvider openFile={openFile}>
-        <AssistantMarkdown renderSlot={() => null} useDisclosure={useDisclosure} useGroupAction={useSearchableHidden}
-          usePresentation={useDetailedPresentation} blocks={[textBlock('Downloads:\n\n- model.json\n- predictions.csv')]}
-          streaming={false} standaloneFileLinks loadImage={unusedImageLoader} t={t} />
-      </MarkdownDelegateProvider>,
-    )
-    fireEvent.click(view.getByRole('button', { name: 'predictions.csv' }))
-    expect(openFile).toHaveBeenCalledExactlyOnceWith('predictions.csv', undefined)
-  })
-
-  it.each([
-    { streaming: true, enabled: true, text: '- predictions.csv' },
-    { streaming: false, enabled: false, text: '- predictions.csv' },
-    { streaming: false, enabled: true, text: '- ../private.csv\n- report.csv --flag\n- javascript:alert(1)' },
-  ])('keeps filenames inert outside an opted-in settled filename item: %j', ({ streaming, enabled, text }) => {
-    const openFile = vi.fn()
-    const view = render(
-      <MarkdownDelegateProvider openFile={openFile}>
-        <AssistantMarkdown renderSlot={() => null} useDisclosure={useDisclosure} useGroupAction={useSearchableHidden}
-          usePresentation={useDetailedPresentation} blocks={[textBlock(text)]}
-          streaming={streaming} standaloneFileLinks={enabled} loadImage={unusedImageLoader} t={t} />
-      </MarkdownDelegateProvider>,
-    )
-    expect(view.queryAllByRole('button')).toHaveLength(0)
-    expect(openFile).not.toHaveBeenCalled()
-  })
-
   it.each([BASE, 'dsh-app://app/'])('renders a local image in closing prose through %s', (base) => {
     vi.spyOn(document, 'baseURI', 'get').mockReturnValue(base)
     const { container } = render(
@@ -128,4 +98,31 @@ it('decodes Markdown URL escapes once before encoding the file query', () => {
     ['/work/literal%2520.png', '/work/literal%20.png'],
   ]) expect(new URL(localPathMediaUrl(BASE, authored!)!).searchParams.get('path')).toBe(path)
   expect(localPathMediaUrl(BASE, '/work/bad%escape.png')).toBeUndefined()
+})
+
+
+describe('Native Markdown without an embedding presentation', () => {
+  it('keeps plain filenames inert and preserves the original explicit path opener', () => {
+    const openFile = vi.fn()
+    const view = render(<MarkdownDelegateProvider openFile={openFile}>
+      <AssistantMarkdown renderSlot={() => null} useDisclosure={useDisclosure} useGroupAction={useSearchableHidden}
+        usePresentation={useDetailedPresentation} blocks={[textBlock('- model.json\n\n[file](/workspace/report.csv#L2)\n\n`train.py`')]}
+        streaming={false} loadImage={unusedImageLoader} t={t}/>
+    </MarkdownDelegateProvider>)
+    expect(view.queryByRole('button', { name: 'model.json' })).toBeNull()
+    expect(view.queryByRole('button', { name: 'train.py' })).toBeNull()
+    fireEvent.click(view.getByRole('button', { name: 'file' }))
+    expect(openFile).toHaveBeenCalledExactlyOnceWith('/workspace/report.csv', { line: 2 })
+  })
+
+  it('keeps the original explicit-path streaming gate without an embedding callback', () => {
+    const openFile = vi.fn()
+    const view = render(<MarkdownDelegateProvider openFile={openFile}>
+      <AssistantMarkdown renderSlot={() => null} useDisclosure={useDisclosure} useGroupAction={useSearchableHidden}
+        usePresentation={useDetailedPresentation} blocks={[textBlock('[file](/workspace/report.csv)')]}
+        streaming loadImage={unusedImageLoader} t={t}/>
+    </MarkdownDelegateProvider>)
+    expect(view.queryByRole('button', { name: 'file' })).toBeNull()
+    expect(openFile).not.toHaveBeenCalled()
+  })
 })

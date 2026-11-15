@@ -54,8 +54,7 @@ export interface ToolImagesOwnerProps {
 export interface ToolCallCommonProps {
   /** Stable Hook; each invocation owns its open state and subscribes to enclosing-Turn resets. */
   useDisclosure: UseDisclosure
-  /** Call identity, stable across all stages. */
-  callId: string
+  /** Call identity, stable across all stages. */ callId: string
   /** Wire Tool name and keyed dispatch value. */
   toolName: string
   /** Session workspace root for relative summaries. */

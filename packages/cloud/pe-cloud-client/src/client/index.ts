@@ -1,3 +1,4 @@
+import { installCloudFilePresentation } from './file-presentation.ts'
 import { installCloudModelKeyActions } from './model-key-actions.tsx'
 import { installCloudBrand } from './branding.tsx'
 import { installCloudMcpConnections } from './mcp/index.ts'
@@ -41,6 +42,7 @@ export function apply(ctx: Context, config: Config): void {
   owner.activate(ctx)
   installCloudRemoteMethodCompatibility(ctx)
   installCloudBrand(ctx)
+  installCloudFilePresentation(ctx)
   installCloudSubagentSettings(ctx, owner)
   installCloudRemoteServers(ctx, owner)
   installCloudMcpConnections(ctx, owner)

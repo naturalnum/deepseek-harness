@@ -1,7 +1,7 @@
 {
   "counts": {
     "native_source_files": 190,
-    "non_seam_files": 55,
+    "non_seam_files": 51,
     "uncentralized_internal_lines": 0
   },
   "imports": [
@@ -3346,8 +3346,45 @@
       "typeOnly": false
     },
     {
+      "path": "packages/cloud/pe-cloud-client/src/client/file-presentation.ts",
+      "line": 2,
+      "module": "@deepseek-ai/cordis",
+      "names": [
+        "Context"
+      ],
+      "typeOnly": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-client/src/client/file-presentation.ts",
+      "line": 3,
+      "module": "@deepseek-ai/dsh-client-ui-primitives",
+      "names": [
+        "MarkdownFilePresentation",
+        "MarkdownFilePresentationChoice"
+      ],
+      "typeOnly": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-client/src/client/file-presentation.ts",
+      "line": 4,
+      "module": "@deepseek-ai/dsh-client-ui-chat/client",
+      "names": [
+        "(augmentation)"
+      ],
+      "typeOnly": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-client/src/client/file-presentation.ts",
+      "line": 5,
+      "module": "@deepseek-ai/dsh-client-ui-renderer/client",
+      "names": [
+        "(augmentation)"
+      ],
+      "typeOnly": true
+    },
+    {
       "path": "packages/cloud/pe-cloud-client/src/client/index.ts",
-      "line": 8,
+      "line": 9,
       "module": "@deepseek-ai/cordis",
       "names": [
         "Context"
@@ -9837,20 +9874,20 @@
     },
     {
       "路径": "packages/client/ui-chat/src/client/chat/AssistantMarkdown.tsx",
-      "类别": "功能增强",
-      "原因": "向 Markdown 渲染传 standaloneFileLinks（回答完成后把独立文件名变成可点链接）",
-      "撤销条件": "渲染器没有外部插入点；向上游提交",
-      "处置": "撤掉",
-      "这一程的状态": "没动",
+      "类别": "扩展点",
+      "原因": "Cloud持文件名/URI呈现选择；Native仅可选JSON/callback消费和原closing/stream守卫，无callback保持固定目标原链接引擎",
+      "撤销条件": "Native有等价JSON文件呈现入口后替换；原解析/文件delegate/Host权限不改",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
       "changed": true
     },
     {
       "路径": "packages/client/ui-chat/src/client/chat/AssistantNodeView.tsx",
-      "类别": "功能增强",
-      "原因": "回答已完成时开启 standaloneFileLinks",
-      "撤销条件": "同上",
-      "处置": "撤掉",
-      "这一程的状态": "没动",
+      "类别": "扩展点",
+      "原因": "Cloud持文件名/URI呈现选择；Native仅可选JSON/callback消费和原closing/stream守卫，无callback保持固定目标原链接引擎",
+      "撤销条件": "Native有等价JSON文件呈现入口后替换；原解析/文件delegate/Host权限不改",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
       "changed": true
     },
     {
@@ -10080,11 +10117,11 @@
     },
     {
       "路径": "packages/client/ui-primitives/src/markdown/MarkdownText.tsx",
-      "类别": "功能增强",
-      "原因": "新增 standaloneFileLinks 选项并传给渲染",
-      "撤销条件": "渲染器没有外部插入点；向上游提交",
-      "处置": "撤掉",
-      "这一程的状态": "没动",
+      "类别": "扩展点",
+      "原因": "Cloud持文件名/URI呈现选择；Native仅可选JSON/callback消费和原closing/stream守卫，无callback保持固定目标原链接引擎",
+      "撤销条件": "Native有等价JSON文件呈现入口后替换；原解析/文件delegate/Host权限不改",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
       "changed": true
     },
     {
@@ -10098,11 +10135,11 @@
     },
     {
       "路径": "packages/client/ui-primitives/src/markdown/render.tsx",
-      "类别": "功能增强",
-      "原因": "把回答里独立成段的文件名渲染成可点的文件链接",
-      "撤销条件": "同上",
-      "处置": "撤掉",
-      "这一程的状态": "没动",
+      "类别": "扩展点",
+      "原因": "Cloud持文件名/URI呈现选择；Native仅可选JSON/callback消费和原closing/stream守卫，无callback保持固定目标原链接引擎",
+      "撤销条件": "Native有等价JSON文件呈现入口后替换；原解析/文件delegate/Host权限不改",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
       "changed": true
     },
     {

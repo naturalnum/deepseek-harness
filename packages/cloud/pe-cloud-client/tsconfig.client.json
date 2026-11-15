@@ -108,7 +108,8 @@
     "src/client/remote-method-compatibility.ts",
     "src/client/model-credential-locales.ts",
     "src/client/locales/model-credentials.ts",
-    "src/client/model-key-actions.tsx"
+    "src/client/model-key-actions.tsx",
+    "src/client/file-presentation.ts"
   ],
   "references": [
     {

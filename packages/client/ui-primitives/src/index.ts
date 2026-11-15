@@ -124,7 +124,9 @@ export type { MarkdownDelegate, MarkdownDelegateProviderProps, MarkdownExternalL
 export { DetailDocument, detailDocumentState, useDetailDocumentLabels } from './DetailDocument.tsx'
 export type { DetailDocumentCopy, DetailDocumentLabels, DetailDocumentRead, DetailDocumentState } from './DetailDocument.tsx'
 export { MarkdownText } from './markdown/MarkdownText.tsx'
-export type { MarkdownCodeLabels, MarkdownFileMentions, MarkdownLabels, MarkdownPathImages } from './markdown/MarkdownText.tsx'
+export type { MarkdownCodeLabels, MarkdownFileMentions, MarkdownLabels, MarkdownPathImages,
+  MarkdownFilePresentation, MarkdownFilePresentationBinding, MarkdownFilePresentationChoice, MarkdownFilePresentationRequest }
+  from './markdown/MarkdownText.tsx'
 export { extractMarkdownPlainText } from './markdown/plain-text.ts'
 export type { MarkdownPlainTextMode, MarkdownPlainTextOptions } from './markdown/plain-text.ts'
 export * from './icons/index.tsx'

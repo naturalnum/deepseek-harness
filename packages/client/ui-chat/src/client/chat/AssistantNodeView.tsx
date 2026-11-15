@@ -17,7 +17,7 @@ type AssistantNodeViewProps = ChatNodeViewProps<'assistant-step'> & InjectFace<A
 /** Streaming, settled, and interrupted Assistant states share one keyed renderer instance. */
 export const AssistantNodeView = memo(function AssistantNodeView({
   node, groupPart, useDisclosure, useGroupAction, useTurnData, turnProcess, openFile, loadImage, fileMentions,
-  usePresentation, renderSlot, t, sessionId, useContextMenu, resolveFilePath,
+  usePresentation, renderSlot, t, sessionId, useContextMenu, resolveFilePath, assistantFilePresentation,
 }: AssistantNodeViewProps) {
   const { getTriggerProps } = useContextMenu()
   const getFileTriggerProps = useCallback((path: string) => getTriggerProps(() => ({
@@ -37,6 +37,9 @@ export const AssistantNodeView = memo(function AssistantNodeView({
     () => owner === undefined ? undefined : fileMentions(owner, getFileTriggerProps),
     [fileMentions, owner, getFileTriggerProps],
   )
+  const filePresentation = useMemo(() => assistantFilePresentation === undefined ? undefined : {
+    select: assistantFilePresentation, active: owner !== undefined && data.status !== 'interrupted',
+  }, [assistantFilePresentation, owner, data.status])
   const keepReplies = usePresentation(policy => policy.foldedReplies === 'all')
   // A kept reply row stays visible while the folded Turn hides its inline reasoning.
   const reasoningHidden = turnProcess !== undefined
@@ -61,7 +64,7 @@ export const AssistantNodeView = memo(function AssistantNodeView({
       renderSlot={renderSlot}
       revealProcess={revealProcess}
       mentions={mentions}
-      standaloneFileLinks={owner !== undefined && data.status !== 'interrupted'}
+      filePresentation={filePresentation}
       t={t}
     />
   )

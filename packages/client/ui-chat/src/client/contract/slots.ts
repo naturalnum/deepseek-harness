@@ -17,7 +17,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { ConnectionStateSource } from '@deepseek-ai/dsh-client-connection/client'
-import type { FileDragActions, MarkdownDelegateFenceInfo, MarkdownFileMentions, MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { FileDragActions, MarkdownDelegateFenceInfo, MarkdownFileMentions, MarkdownLabels, MarkdownFilePresentation } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ContextMenuTriggerProps } from '@deepseek-ai/dsh-client-ui-context-menu/client'
 import type { ChatKey } from '../locale.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
@@ -400,6 +400,11 @@ export type MessageImagesProps =
   PropsRuntime<'conversation.chat.user.images' | 'conversation.chat.message.images'> & PropsRenderFactories
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface GlobalStandardProps {
+    /** Optional embedding display selector; JSON choices grant no file access. */
+    assistantFilePresentation?: MarkdownFilePresentation | undefined
+  }
+
   interface SessionStandardProps {
     /** Selector hook over the current Conversation binding's Chat target. */
     useChat: UseChat
