@@ -3,7 +3,8 @@ import { posix } from 'node:path'
 import { symbols, type Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { SkillResourcePreparation, ManagedSkillResourcePreparation } from '@deepseek-ai/dsh-pe-cloud-api'
-import { FdMutationFailure, type CloudAccountFiles, type SkillBundleVersion, type SkillVersion } from '@deepseek-ai/dsh-pe-cloud-files'
+import { FdMutationFailure, type CloudAccountFiles, type SkillBundleVersion, type SkillVersion,
+  type SkillBundleSource, type SkillVersionSource } from '@deepseek-ai/dsh-pe-cloud-files'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-working-directory'
 import type { AccountNativeGuards } from './account-native-integration.ts'
@@ -11,8 +12,8 @@ import type { AccountBinding } from './types.ts'
 import { AccountRuntimeError } from './errors.ts'
 
 type SkillFiles = Pick<CloudAccountFiles, 'binding' | 'assertInstalled' | 'projectFor' | 'prepareSkillProject'
-  | 'materializeSkillVersion' | 'materializeBundleVersion' | 'assertSkillProjectGrant'
-  | 'borrowBundleWorkingCopies' | 'assertBundleOperationCopies'>
+  | 'materializeWorkspaceSkill' | 'assertSkillProjectGrant'
+  | 'borrowAllBundleWorkingCopies' | 'assertBundleOperationCopies'>
 type SkillGuards = Pick<AccountNativeGuards, 'sessions' | 'projectForAgent' | 'assertWorkspace'>
 
 function original(value: object): object {
@@ -67,9 +68,10 @@ export function prepareAccountSkillResources(ctx: Context, binding: AccountBindi
   }
   return {
     assertCaller(options) { admit(options) },
-    async materialize(version: SkillVersion | SkillBundleVersion, options: Parameters<SkillResourcePreparation['materialize']>[1]) {
+    async materialize(version: SkillVersion | SkillBundleVersion, options: Parameters<SkillResourcePreparation['materialize']>[1],
+      source: SkillVersionSource | SkillBundleSource) {
       const selected = admit(options), { sources, workspace } = selected
-      if (version.binding !== binding) denied()
+      if (version.binding !== binding || source.version !== version) denied()
       const current = (): void => {
         const checked = admit(options)
         if (checked.agent !== selected.agent || original(checked.sources) !== original(sources)
@@ -86,31 +88,29 @@ export function prepareAccountSkillResources(ctx: Context, binding: AccountBindi
         current(); sources.assertSkillProjectGrant(parent.value)
         if (parent.value.binding !== binding || parent.value.workspaceId !== workspace.id
           || parent.value.project.rootPath !== workspace.path) denied()
-        let copy: Awaited<ReturnType<SkillFiles['materializeSkillVersion'] | SkillFiles['materializeBundleVersion']>>
-        try { copy = 'format' in version
-          ? await sources.materializeBundleVersion(parent.value, version, settlement)
-          : await sources.materializeSkillVersion(parent.value, version, settlement) }
-        catch (error) {
-          if (error instanceof FdMutationFailure && error.outcome === 'not-published') throw error
-          cleanup.releaseParent = false
-          throw error instanceof FdMutationFailure ? error : new FdMutationFailure('unknown', 'FS_IO_ERROR', undefined, { cause: error })
-        }
+        const operation = await sources.borrowAllBundleWorkingCopies(parent.value, settlement)
         try {
-          current(); sources.assertSkillProjectGrant(parent.value)
-          const operation = await sources.borrowBundleWorkingCopies(parent.value, [copy.value], settlement)
-          try {
-            current(); sources.assertSkillProjectGrant(parent.value); sources.assertBundleOperationCopies(operation.value)
-            if (operation.value.project !== parent.value || operation.value.copies.length !== 1 || operation.value.copies[0] !== copy.value
-              || copy.value.binding !== binding || copy.value.workspaceId !== workspace.id || copy.value.version.binding !== binding
-              || copy.value.version.id !== version.id || copy.value.resourceBase !== `.pe/skills/${version.id}/`
-              || !posix.isAbsolute(workspace.path)) denied()
+          current(); sources.assertSkillProjectGrant(parent.value); sources.assertBundleOperationCopies(operation.value)
+          if (operation.value.project !== parent.value || !posix.isAbsolute(workspace.path)) denied()
+          const copy = operation.value.copies.find(value => value.version.id === version.id)
+          if (copy !== undefined) {
+            if (copy.binding !== binding || copy.workspaceId !== workspace.id || copy.version.binding !== binding
+              || copy.resourceBase !== `.pe/skills/${version.id}/`) denied()
             if ('format' in version) {
-              if (!('format' in copy.value.version) || copy.value.version.treeSha256 !== version.treeSha256) denied()
-            } else if (copy.value.version !== version) denied()
-            const base = `${posix.join(workspace.path, copy.value.resourceBase)}/`
+              if (!('format' in copy.version) || copy.version.treeSha256 !== version.treeSha256) denied()
+            } else if (copy.version !== version) denied()
+            const base = `${posix.join(workspace.path, copy.resourceBase)}/`
             return { resourceBase: { kind: 'directory', path: base }, path: `${base}SKILL.md` }
-          } finally { operation.release() }
-        } finally { copy.release() }
+          }
+        } finally { operation.release() }
+        const relative = await sources.materializeWorkspaceSkill(installed, parent.value, source, current, settlement)
+        current(); sources.assertSkillProjectGrant(parent.value)
+        if (posix.isAbsolute(relative) || !relative.startsWith('.skills/') || posix.normalize(relative) !== relative) denied()
+        const base = `${posix.join(workspace.path, relative)}/`
+        return { resourceBase: { kind: 'directory', path: base }, path: `${base}SKILL.md` }
+      } catch (error) {
+        if (error instanceof FdMutationFailure && error.outcome === 'unknown') cleanup.releaseParent = false
+        throw error
       } finally { if (cleanup.releaseParent) parent.release() }
     },
   }

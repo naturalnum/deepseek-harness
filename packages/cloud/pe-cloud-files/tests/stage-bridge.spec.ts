@@ -64,6 +64,12 @@ async function fixture(mode = 'normal', enabled = true) {
     release: () => { Atomics.store(counters, 2, 1); Atomics.notify(counters, 2) }, stale: () => { current = false } }
 }
 
+it.each([false, true])('advertises the existing bounded source frame only with workspace staging enabled=%s', async (enabled) => {
+  const test = await fixture('normal', enabled)
+  expect(test.port.workspaceUploadChunkBytes).toBe(enabled ? 4096 : undefined)
+  expect(Object.hasOwn(test.port, 'workspaceUploadChunkBytes')).toBe(enabled)
+})
+
 it('stages sequential native hard-link sources with one reservation and exact single-credit frames, then fully reuses copies', async () => {
   const test = await fixture(), first = await test.source(new Uint8Array(17003).fill(137)), second = await test.source(new Uint8Array(), 'empty.bin')
   const held = await test.port.stageFiles(test.workspace, [first.entry, second.entry], test.assertCurrent)
