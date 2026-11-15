@@ -39,6 +39,9 @@ The `workspace.files` command shows the navigator beside a docked preview or exp
 The [registration](src/client/index.ts) assembles the page, navigator, toggle, and tree Factories over the shared [files face](src/client/face.ts) and [pane store](src/client/store.ts).
 
 <a id="the-navigator"></a>
+
+The files page passes its optional original-pane `refresh()` command with `absolutePath` to the Session-scoped header actions. Only the full files-page navigator selects a module-level tree accessory that renders the optional Session Factory `sidebar.files.workspace-entry-actions`, with `{ entry: TreeEntry }`. Without a registered Factory it draws nothing; preview navigators keep their default accessory. The embedding owns its selection store, operations and copy; Native keeps the tree, paging, opening and refresh command.
+
 ## The navigator
 
 Render `sidebar.files.navigator` with `FileNavigatorInput`: `{ useTabInfo, page, onOpen }`. The required `onOpen: (address: string) => void` callback belongs to the containing plugin; the navigator builds the file address without choosing placement. `page` controls presentation only: `true` always fills the files page, while `false` follows the preview's pane preference and available width. Render the Factory as a direct child of the row it shares with the body, and mark that row with `data-files-navigator-row`: the layout that fills the row hides the row's other children only under that attribute, so a host without it leaves the covered body reachable by keyboard.

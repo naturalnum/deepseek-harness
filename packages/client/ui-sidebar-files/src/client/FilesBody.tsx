@@ -47,10 +47,8 @@ export function FilesBody(props: FilesBodyProps): ReactNode {
     if (panel.isFloating) tab.actions.openResource(address)
     else tab.actions.openResource(address, { paneId: panel.id })
   }, [tab.actions, panel.id, panel.isFloating])
-  useEffect(
-    () => tab.actions.bindCommands({ refresh: () => { refresh(panel.id) } }),
-    [tab.actions, panel.id, refresh],
-  )
+  const reload = useCallback(() => { refresh(panel.id) }, [panel.id, refresh])
+  useEffect(() => tab.actions.bindCommands({ refresh: reload }), [tab.actions, reload])
   const cwd = useSessions(sessions => sessions.byId[sessionId]?.cwd)
   // The setting belongs to a listed tree, so there is nothing to set before one.
   const autoRefresh = useStore((store) => {
@@ -89,7 +87,7 @@ export function FilesBody(props: FilesBodyProps): ReactNode {
             aria-label={t('reload')}
             aria-keyshortcuts={tab.refreshShortcut?.aria}
             data-files-reload
-            onClick={() => { refresh(panel.id) }}
+            onClick={reload}
           >
             <IconRefreshOutlineRegular />
           </button>
@@ -111,7 +109,7 @@ export function FilesBody(props: FilesBodyProps): ReactNode {
             <IconSearchOutlineRegular />
           </button>
         </Tooltip>
-        {renderSlot('sidebar.right.tab.files.actions', { absolutePath: cwd })}
+        {renderSlot('sidebar.right.tab.files.actions', { absolutePath: cwd, refresh: reload })}
       </div>
       <div className={css.content} data-files-content data-files-navigator-row>{navigator}</div>
     </div>

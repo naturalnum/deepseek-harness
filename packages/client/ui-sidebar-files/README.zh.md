@@ -39,6 +39,9 @@ kind: "package-reference"
 [注册入口](src/client/index.ts) 在共享 [files face](src/client/face.ts) 与[分栏 store](src/client/store.ts) 上组装文件页、导航栏、开关和目录树 Factory。
 
 <a id="the-navigator"></a>
+
+文件页把可选的原分栏 `refresh()` 命令与 `absolutePath` 一起交给 Session 作用域的标题操作。仅完整文件页的导航栏选择模块级目录树 accessory，渲染可选的 Session Factory `sidebar.files.workspace-entry-actions`，参数为 `{ entry: TreeEntry }`。未注册 Factory 时不显示内容；预览导航栏保留默认 accessory。嵌入方持有自己的选择 store、操作与文案；Native 继续持有目录树、分页、打开及刷新命令。
+
 ## 导航栏
 
 用 `FileNavigatorInput` 渲染 `sidebar.files.navigator`：`{ useTabInfo, page, onOpen }`。必填的 `onOpen: (address: string) => void` 回调由容纳它的插件提供；导航栏构造文件地址，不决定落位。`page` 只控制呈现：`true` 时始终铺满文件页，`false` 时遵循预览所在分栏的偏好与可用宽度。Factory 要作为它与正文共用的那一行的直接子元素渲染，并给该行加上 `data-files-navigator-row`：铺满整行的布局只在带这个属性的行里隐藏其他子元素，宿主不加时，被盖住的正文仍可用键盘访问。

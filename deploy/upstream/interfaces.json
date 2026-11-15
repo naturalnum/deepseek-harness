@@ -1,7 +1,7 @@
 {
   "counts": {
     "native_source_files": 202,
-    "non_seam_files": 84,
+    "non_seam_files": 83,
     "uncentralized_internal_lines": 0
   },
   "imports": [
@@ -4412,6 +4412,73 @@
       "typeOnly": true
     },
     {
+      "path": "packages/cloud/pe-cloud-client/src/client/workspace-file-actions-store.ts",
+      "line": 2,
+      "module": "@deepseek-ai/dsh-client-store",
+      "names": [
+        "defineStore"
+      ],
+      "typeOnly": false
+    },
+    {
+      "path": "packages/cloud/pe-cloud-client/src/client/workspace-file-actions.tsx",
+      "line": 3,
+      "module": "@deepseek-ai/cordis",
+      "names": [
+        "Context"
+      ],
+      "typeOnly": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-client/src/client/workspace-file-actions.tsx",
+      "line": 4,
+      "module": "@deepseek-ai/dsh-session/types",
+      "names": [
+        "SessionId"
+      ],
+      "typeOnly": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-client/src/client/workspace-file-actions.tsx",
+      "line": 5,
+      "module": "@deepseek-ai/dsh-client-ui-slots",
+      "names": [
+        "FactoryComponentPropsOf",
+        "PropsLocale",
+        "PropsRuntime",
+        "PropsStore"
+      ],
+      "typeOnly": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-client/src/client/workspace-file-actions.tsx",
+      "line": 6,
+      "module": "@deepseek-ai/dsh-client-ui-primitives",
+      "names": [
+        "IconChevronDownOutlineRegular",
+        "IconDownloadOutlineRegular",
+        "IconProjectAddOutlineRegular",
+        "IconUploadOutlineRegular",
+        "IconWarningOutlineRegular",
+        "Input",
+        "Menu",
+        "MenuItemButton",
+        "Modal",
+        "PathLabel",
+        "Tooltip"
+      ],
+      "typeOnly": false
+    },
+    {
+      "path": "packages/cloud/pe-cloud-client/src/client/workspace-file-actions.tsx",
+      "line": 8,
+      "module": "@deepseek-ai/dsh-client-ui-sidebar-files/client",
+      "names": [
+        "(augmentation)"
+      ],
+      "typeOnly": true
+    },
+    {
       "path": "packages/cloud/pe-cloud-client/src/client/workspace-file-upload.ts",
       "line": 3,
       "module": "@deepseek-ai/dsh-session/types",
@@ -4430,17 +4497,8 @@
       "typeOnly": true
     },
     {
-      "path": "packages/cloud/pe-cloud-client/src/client/workspace-management.ts",
-      "line": 4,
-      "module": "@deepseek-ai/cordis",
-      "names": [
-        "Context"
-      ],
-      "typeOnly": true
-    },
-    {
-      "path": "packages/cloud/pe-cloud-client/src/client/workspace-management.ts",
-      "line": 5,
+      "path": "packages/cloud/pe-cloud-client/src/client/workspace-management-types.ts",
+      "line": 2,
       "module": "@deepseek-ai/dsh-session/types",
       "names": [
         "SessionId"
@@ -4449,16 +4507,25 @@
     },
     {
       "path": "packages/cloud/pe-cloud-client/src/client/workspace-management.ts",
-      "line": 6,
-      "module": "@deepseek-ai/dsh-client-ui-sidebar-files/src/client/management.ts",
+      "line": 5,
+      "module": "@deepseek-ai/cordis",
       "names": [
-        "WorkspaceFileManagement"
+        "Context"
       ],
       "typeOnly": true
     },
     {
       "path": "packages/cloud/pe-cloud-client/src/client/workspace-management.ts",
-      "line": 7,
+      "line": 6,
+      "module": "@deepseek-ai/dsh-session/types",
+      "names": [
+        "SessionId"
+      ],
+      "typeOnly": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-client/src/client/workspace-management.ts",
+      "line": 8,
       "module": "@deepseek-ai/dsh-client-file-upload/types",
       "names": [
         "FileUploadFetch"
@@ -4467,7 +4534,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-client/src/client/workspace-management.ts",
-      "line": 9,
+      "line": 10,
       "module": "@deepseek-ai/dsh-util-workspace-path",
       "names": [
         "sessionFileAddress"
@@ -9772,12 +9839,12 @@
     },
     {
       "路径": "packages/client/ui-sidebar-files/src/client/FilesBody.tsx",
-      "类别": "云端定制",
-      "原因": "文件侧栏新增上传、下载、新建文件夹按钮和进度（有开关：未提供 workspaceFileManagement 时不显示）",
-      "撤销条件": "上游已有 sidebar.right.tab.files.actions 插槽，但只给根目录路径；上游把“当前选中目录”和“刷新”加进插槽属性后可整体搬进 pe-cloud-client",
-      "处置": "撤掉",
-      "这一程的状态": "已撤",
-      "changed": false
+      "类别": "扩展点",
+      "原因": "原目录actions槽仅加可选原面板refresh回调；上传/下载/新建目录及状态全部由Cloud提供，默认Native不变",
+      "撤销条件": "原生actions槽提供同等面板刷新后撤回",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": true
     },
     {
       "路径": "packages/client/ui-sidebar-files/src/client/face.ts",
@@ -9799,11 +9866,11 @@
     },
     {
       "路径": "packages/client/ui-sidebar-files/src/client/locales.ts",
-      "类别": "云端定制",
-      "原因": "上传、下载、新建文件夹文案",
-      "撤销条件": "同上",
-      "处置": "搬进插件",
-      "这一程的状态": "没动",
+      "类别": "功能增强",
+      "原因": "旧12条管理文案及8语言内容已搬Cloud；仅保用户已交分页7键，未改变其余原生文案",
+      "撤销条件": "原生提供同等分页交互后撤回7键；管理文案已不在原生",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
       "changed": true
     },
     {
@@ -10520,11 +10587,11 @@
     {
       "路径": "packages/api/workspace-files/src/changes.ts",
       "类别": "通用修复",
-      "原因": "文件监听改用调用方当时绑定的 fs，而不是服务自身的 ctx.fs；只有一套文件系统时等价",
-      "撤销条件": "提上游",
+      "原因": "按三问撤回caller-FS补丁；实际Cloud两个FS均拒绝watch，原生目标继续原服务FS和原关闭流程",
+      "撤销条件": "未有必须携带的账号安全场景；原生多FS作用域监听恢复原服务绑定行为，独立用户影响已列",
       "处置": "撤掉",
-      "这一程的状态": "没动",
-      "changed": true
+      "这一程的状态": "已撤",
+      "changed": false
     },
     {
       "路径": "packages/api/terminal-controller/src/client/bindings.ts",
@@ -10916,8 +10983,8 @@
     {
       "路径": "packages/api/workspace-files/src/index.ts",
       "类别": "功能增强",
-      "原因": "保留用户已交目录功能的显式partial列表与原流credit/close消费者；旧changes的caller-FS参数仍待独立三问，不认作纯口子",
-      "撤销条件": "原生提供等价有界列表和分页消费接口后撤回；旧watch改动另按实际账号安全场景处置",
+      "原因": "保留用户已交目录partial列表和原流credit/close分页消费者；旧changes caller-FS转发已按三问撤回",
+      "撤销条件": "原生提供等价有界列表与分页消费接口后撤回；不恢复已撤caller-FS修复",
       "处置": "必须携带",
       "这一程的状态": "已按新原生重加",
       "changed": true
@@ -11186,7 +11253,7 @@
     {
       "路径": "packages/client/ui-sidebar-files/src/client/FileNavigator.tsx",
       "类别": "扩展点",
-      "原因": "接目录分页到新版Native面板共享导航器；只有提供方声明分页能力时显示/调用，普通提供方行为保持",
+      "原因": "接目录分页到新版Native面板共享导航器；只有提供方声明分页能力时显示/调用，普通提供方行为保持；完整files页复用既有tree accessory并调用可选行操作Factory，缺定义为空",
       "撤销条件": "原生提供同等公开接口后改用原生",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",

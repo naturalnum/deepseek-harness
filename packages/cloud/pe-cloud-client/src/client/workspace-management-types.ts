@@ -1,4 +1,4 @@
-/** Optional account-owned HTTP operations; native tree retains selection, picking and presentation. */
+/** Account-owned operations reused by the Cloud workspace controls; Native retains the tree. */
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 /** One user-selected file; File bytes stay in the browser's native HTTP body. */

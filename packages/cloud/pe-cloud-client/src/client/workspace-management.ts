@@ -1,9 +1,10 @@
 import { uploadWorkspaceFile } from './workspace-file-upload.ts'
+import { installWorkspaceFileActions } from './workspace-file-actions.tsx'
 import { readResponse } from './read-response.ts'
 /** Page-owned binary HTTP operations for the original native workspace tree. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { WorkspaceFileManagement } from '@deepseek-ai/dsh-client-ui-sidebar-files/src/client/management.ts'
+import type { WorkspaceFileManagement } from './workspace-management-types.ts'
 import type { FileUploadFetch } from '@deepseek-ai/dsh-client-file-upload/types'
 import { CloudFileDownload } from './file-download.ts'
 import { sessionFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
@@ -116,4 +117,5 @@ export function prepareWorkspaceManagement(ctx: Context, fetch: FileUploadFetch,
     },
   }
   ctx.provide('workspaceFileManagement', Object.freeze(management))
+  installWorkspaceFileActions(ctx, lifetime)
 }

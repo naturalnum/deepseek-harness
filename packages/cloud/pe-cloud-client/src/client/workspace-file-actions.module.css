@@ -1,0 +1,12 @@
+.root { display: flex; align-items: center; flex: none; width: 140px; min-width: 0; gap: 0; }
+.tools { display: flex; align-items: center; width: 112px; gap: 0; }
+.tool { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 28px; width: 28px; height: 28px; padding: 6px; border: 0; border-radius: var(--dsw-radius-sm); color: var(--dsw-alias-label-secondary); background: transparent; cursor: pointer; }
+@media (hover: hover) { .tool:hover { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-interactive-bg-hover); } }
+.tool:disabled { opacity: .4; cursor: default; }
+.select { width: 14px; height: 14px; margin: 0 4px; accent-color: var(--dsw-alias-label-primary); }
+.folder { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.folder button, .progress button { flex-shrink: 0; font: inherit; color: inherit; }
+.progress { display: flex; align-items: center; width: 112px; min-width: 0; gap: 4px; }
+.progress progress { width: 100%; min-width: 0; }
+.errorSeat { display: inline-flex; width: 28px; height: 28px; flex: none; }
+.srOnly { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

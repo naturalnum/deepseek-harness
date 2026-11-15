@@ -31,6 +31,17 @@ function names(root: HTMLElement): string[] {
 }
 
 describe('FilesBody', () => {
+  it('gives addons the same original-pane refresh command as the Native header', () => {
+    const h = mountBody(), refresh = vi.spyOn(h.shared, 'refresh')
+    let owner: { readonly refresh?: () => void } | undefined
+    Object.assign(h.shared, { renderSlot: (_name: string, input: typeof owner) => { owner = input; return null } })
+    h.rerender()
+    expect(owner?.refresh).toBeTypeOf('function')
+    expect(owner?.refresh).toBe(h.tabActions.bindCommands.mock.lastCall?.[0].refresh)
+    act(() => { owner!.refresh!() })
+    expect(refresh).toHaveBeenCalledExactlyOnceWith(PANE)
+  })
+
   it('replaces the page and opens the original Native preview only after confirmed closure', async () => {
     const gate = Promise.withResolvers<undefined>(), ended = Promise.withResolvers<undefined>()
     const openPages = vi.fn<OpenDirectoryPages>(() => ({ ended: ended.promise,

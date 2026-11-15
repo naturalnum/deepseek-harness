@@ -1,0 +1,128 @@
+/** Account workspace actions retain the original eight-language copy. */
+const en = {
+  cancel: 'Cancel',
+  upload: 'Upload',
+  download: 'Download',
+  uploadOptions: 'Upload options',
+  uploadFolder: 'Upload folder',
+  newFolder: 'New folder',
+  untitledFolder: 'Untitled folder',
+  selectFile: 'Select {name}',
+  transferFailed: 'Upload did not complete. Completed files remain; refresh before retrying unfinished files.',
+  cancelledUnknown: 'Upload stopped. Refresh to check completed files before retrying.',
+  downloadFailed: 'Unable to download. Check the file and try again.',
+  folderFailed: 'Creation is unconfirmed. Refresh to check, then correct the name or access and retry.',
+  directoryCloseFailed: 'Directory closure is unconfirmed. Opening and downloading are blocked. Reopen the session before trying again.',
+}
+const zh: Record<keyof typeof en, string> = {
+  cancel: '取消',
+  upload: '上传',
+  download: '下载',
+  uploadOptions: '上传选项',
+  uploadFolder: '上传文件夹',
+  newFolder: '新建文件夹',
+  untitledFolder: '未命名文件夹',
+  selectFile: '选择 {name}',
+  transferFailed: '上传未完成。已完成文件保留，请刷新检查后重试未完成文件。',
+  cancelledUnknown: '已停止上传。刷新检查已完成文件后再重试。',
+  downloadFailed: '无法下载，请检查文件后重试。',
+  folderFailed: '创建未确认。刷新检查是否已创建；检查名称和权限后重试。',
+  directoryCloseFailed: '目录关闭尚未确认，暂不能打开或下载文件。请重新进入会话后再试。',
+}
+const ja: Record<keyof typeof en, string> = {
+  cancel: 'キャンセル',
+  upload: 'アップロード',
+  download: 'ダウンロード',
+  uploadOptions: 'アップロードのオプション',
+  uploadFolder: 'フォルダーをアップロード',
+  newFolder: '新しいフォルダー',
+  untitledFolder: '名前のないフォルダー',
+  selectFile: '{name} を選択',
+  transferFailed: 'アップロードは完了しませんでした。完了したファイルは保持されています。更新してから未完了のファイルを再試行してください。',
+  cancelledUnknown: 'アップロードを停止しました。再試行する前に更新して完了したファイルを確認してください。',
+  downloadFailed: 'ダウンロードできません。ファイルを確認して再試行してください。',
+  folderFailed: '作成を確認できません。更新して確認し、名前やアクセス権を修正してから再試行してください。',
+  directoryCloseFailed: 'ディレクトリの終了を確認できません。ファイルを開く操作とダウンロードはできません。セッションに入り直してください。',
+}
+const es: Record<keyof typeof en, string> = {
+  cancel: 'Cancelar',
+  upload: 'Subir',
+  download: 'Descargar',
+  uploadOptions: 'Opciones de carga',
+  uploadFolder: 'Subir carpeta',
+  newFolder: 'Nueva carpeta',
+  untitledFolder: 'Carpeta sin título',
+  selectFile: 'Seleccionar {name}',
+  transferFailed: 'La carga no se completó. Los archivos completados se conservan; actualiza antes de reintentar los pendientes.',
+  cancelledUnknown: 'La carga se detuvo. Actualiza para comprobar los archivos completados antes de reintentar.',
+  downloadFailed: 'No se pudo descargar. Comprueba el archivo y vuelve a intentarlo.',
+  folderFailed: 'La creación no está confirmada. Actualiza para comprobarlo, corrige el nombre o el acceso y vuelve a intentarlo.',
+  directoryCloseFailed: 'No se ha confirmado el cierre del directorio. No se pueden abrir ni descargar archivos. Vuelva a entrar en la sesión.',
+}
+const fr: Record<keyof typeof en, string> = {
+  cancel: 'Annuler',
+  upload: 'Téléverser',
+  download: 'Télécharger',
+  uploadOptions: 'Options de téléversement',
+  uploadFolder: 'Téléverser un dossier',
+  newFolder: 'Nouveau dossier',
+  untitledFolder: 'Dossier sans titre',
+  selectFile: 'Sélectionner {name}',
+  transferFailed: 'Le téléversement n’est pas terminé. Les fichiers terminés sont conservés ; actualisez avant de réessayer les autres.',
+  cancelledUnknown: 'Le téléversement a été arrêté. Actualisez pour vérifier les fichiers terminés avant de réessayer.',
+  downloadFailed: 'Téléchargement impossible. Vérifiez le fichier et réessayez.',
+  folderFailed: 'La création n’est pas confirmée. Actualisez pour vérifier, corrigez le nom ou les droits d’accès, puis réessayez.',
+  directoryCloseFailed: 'La fermeture du répertoire est non confirmée. Ouverture et téléchargement sont bloqués. Rouvrez la session.',
+}
+const de: Record<keyof typeof en, string> = {
+  cancel: 'Abbrechen',
+  upload: 'Hochladen',
+  download: 'Herunterladen',
+  uploadOptions: 'Upload-Optionen',
+  uploadFolder: 'Ordner hochladen',
+  newFolder: 'Neuer Ordner',
+  untitledFolder: 'Unbenannter Ordner',
+  selectFile: '{name} auswählen',
+  transferFailed: 'Der Upload wurde nicht abgeschlossen. Fertige Dateien bleiben erhalten. Aktualisiere vor einem erneuten Versuch mit den übrigen Dateien.',
+  cancelledUnknown: 'Der Upload wurde gestoppt. Aktualisiere und prüfe fertige Dateien, bevor du es erneut versuchst.',
+  downloadFailed: 'Herunterladen nicht möglich. Prüfe die Datei und versuche es erneut.',
+  folderFailed: 'Die Erstellung ist unbestätigt. Aktualisiere zur Prüfung, korrigiere Namen oder Zugriff und versuche es erneut.',
+  directoryCloseFailed: 'Das Schließen des Verzeichnisses ist unbestätigt. Öffnen und Herunterladen sind gesperrt. Öffnen Sie die Sitzung erneut.',
+}
+const ru: Record<keyof typeof en, string> = {
+  cancel: 'Отмена',
+  upload: 'Загрузить',
+  download: 'Скачать',
+  uploadOptions: 'Параметры загрузки',
+  uploadFolder: 'Загрузить папку',
+  newFolder: 'Новая папка',
+  untitledFolder: 'Папка без названия',
+  selectFile: 'Выбрать {name}',
+  transferFailed: 'Загрузка не завершена. Готовые файлы сохранены; обновите список, прежде чем повторять загрузку остальных.',
+  cancelledUnknown: 'Загрузка остановлена. Обновите список и проверьте готовые файлы перед повторной попыткой.',
+  downloadFailed: 'Не удалось скачать файл. Проверьте его и повторите попытку.',
+  folderFailed: 'Создание не подтверждено. Обновите список, проверьте результат, исправьте имя или права доступа и повторите попытку.',
+  directoryCloseFailed: 'Закрытие каталога не подтверждено. Открытие и скачивание файлов заблокированы. Заново откройте сеанс.',
+}
+const pt: Record<keyof typeof en, string> = {
+  cancel: 'Cancelar',
+  upload: 'Enviar',
+  download: 'Transferir',
+  uploadOptions: 'Opções de envio',
+  uploadFolder: 'Enviar pasta',
+  newFolder: 'Nova pasta',
+  untitledFolder: 'Pasta sem título',
+  selectFile: 'Selecionar {name}',
+  transferFailed: 'O envio não foi concluído. Os ficheiros concluídos foram mantidos; atualize antes de tentar os restantes novamente.',
+  cancelledUnknown: 'O envio parou. Atualize para verificar os ficheiros concluídos antes de tentar novamente.',
+  downloadFailed: 'Não foi possível transferir. Verifique o ficheiro e tente novamente.',
+  folderFailed: 'A criação não foi confirmada. Atualize para verificar, corrija o nome ou o acesso e tente novamente.',
+  directoryCloseFailed: 'O encerramento do diretório não foi confirmado. Não é possível abrir nem baixar arquivos. Entre novamente na sessão.',
+}
+export const WORKSPACE_FILES_NAMESPACE = 'cloud-workspace-files'
+export const workspaceFileDictionaries = { en, zh, ja, es, fr, de, ru, pt }
+export type WorkspaceFilesKey = keyof typeof en
+
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface LocaleNamespaceMap { 'cloud-workspace-files': WorkspaceFilesKey }
+}

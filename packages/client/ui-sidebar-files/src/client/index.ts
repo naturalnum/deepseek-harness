@@ -19,7 +19,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { FILES_ID, FILES_KIND, filesDefinition } from './definition.tsx'
 import { canOpenOf, createList, createWatch, filesFace, type FilesInjected } from './face.ts'
 import { createSearch } from './search-workspace.ts'
-import { FileTree } from './FileTree.tsx'
+import { FileTree, type TreeEntry } from './FileTree.tsx'
 import { createDirectoryPages } from './directory-pages.ts'
 import { FileNavigator } from './FileNavigator.tsx'
 import { FilesBody } from './FilesBody.tsx'
@@ -52,7 +52,16 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+/** Optional workspace-row presentation; the installing plugin owns its store and copy. */
+export interface WorkspaceFileRowActionsDefinition {
+  scope: 'session'
+  props: { readonly entry: TreeEntry }
+}
+
 declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface SlotFactoryMap {
+    'sidebar.files.workspace-entry-actions': WorkspaceFileRowActionsDefinition
+  }
   interface SlotMap {
     /** Workspace directory actions after the `files` page's reload control. */
     'sidebar.right.tab.files.actions': {
@@ -61,6 +70,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       owner: {
         /** Absolute directory path displayed by the file tree. */
         readonly absolutePath: string
+        /** Refresh this original pane after a confirmed file operation. */
+        readonly refresh?: () => void
       }
     }
   }

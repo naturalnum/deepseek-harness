@@ -13,7 +13,7 @@ import clsx from 'clsx'
 import type { RemoteFailure } from '@deepseek-ai/dsh-api-remotes/client'
 import type { UseSidebarRightTabInfo } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { TreeEntry } from './FileTree.tsx'
-import type { FactoryComponentPropsOf, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import type { FactoryComponentPropsOf, FactoryLocalComponentPropsOf, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import {
   Button, IconCloseOutlineRegular, IconEyeOffOutlineRegular, IconEyeOutlineRegular, IconInfoOutlineRegular, IconSearchOutlineRegular,
   StateDot, Tooltip,
@@ -54,6 +54,14 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       inject: FilesInjected
     }
   }
+}
+
+const WORKSPACE_TREE_OPTIONS = { slots: { accessory: WorkspaceFileEntryAccessory } }
+
+/** Stable local accessory; absent optional factory leaves Native rows unchanged. */
+export function WorkspaceFileEntryAccessory({ entry, renderFactorySlot }:
+FactoryLocalComponentPropsOf<'sidebar.files.tree', 'accessory'>): ReactNode {
+  return renderFactorySlot('sidebar.files.workspace-entry-actions', { entry })
 }
 
 /** One keyboard resize step. */
@@ -425,11 +433,12 @@ export function FileNavigator({
                     && renderFactorySlot('sidebar.files.tree', {
                       ...resultView, entries: resultEntries, directories: resultDirectories, highlight: found.query,
                       current: resultCurrent, currentRef,
-                    })}
+                    }, page ? WORKSPACE_TREE_OPTIONS : undefined)}
                   <SearchNotes result={found} t={t} />
                 </>
               )
-            : renderFactorySlot('sidebar.files.tree', { ...view, entries, directories, current: location?.current, currentRef })}
+            : renderFactorySlot('sidebar.files.tree', { ...view, entries, directories, current: location?.current, currentRef },
+              page ? WORKSPACE_TREE_OPTIONS : undefined)}
       </div>
       {searchBarOpen && draft !== undefined && (
         <SearchSettings rules={draft} trigger={trigger} onChange={setDraft}
