@@ -1,0 +1,347 @@
+/** Project catalog, graph and policy registrations consumed by existing repository generators. */
+
+import type { ToolPackage } from '../../scripts/gen-tool-catalog.ts'
+import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+
+/** Subsystem pages for project services. */
+export const UPSTREAM_SERVICE_PAGES: Record<string, string> = {
+  cloudModelKey: 'cloud.md',
+  cloudPlugins: 'cloud.md',
+  cloudProjects: 'cloud.md',
+  cloudSkills: 'cloud.md',
+  cloudRemoteServers: 'cloud.md',
+  peAccount: 'cloud.md',
+  peAccountExecution: 'cloud.md',
+  peAccountInstructions: 'cloud.md',
+  peAccountRuntime: 'cloud.md',
+  peAuth: 'cloud.md',
+  peCloudApi: 'cloud.md',
+  cloudMcpConnections: 'cloud.md',
+  peCloudFiles: 'cloud.md',
+  peExposure: 'cloud.md',
+  peSandboxCoordinator: 'cloud.md',
+}
+
+/** Documented project values outside the Host service projection. */
+export const UPSTREAM_SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
+  appShutdown: 'optional launcher close participant value, not a Service — packages/boot/cmdline/README.md owns its close and ownership rules',
+  fileUploadHooks: 'client-side captured upload fetch and presentation policy, outside the Host projection — packages/client/file-upload/README.md owns the API',
+  workspaceFileManagement: 'client-side captured workspace HTTP callbacks — packages/client/ui-sidebar-files/README.md owns the API',
+  sessionFeedbackIdentity: 'optional application-owned anonymous display identity callback, not a Service — packages/feedback/command-feedback/README.md owns its admission and no-fallback behavior',
+  modelsSettingsIntegration: 'client-side page-owned Models input value — packages/client/ui-settings-models/README.md owns the API',
+  webSearchSettingsIntegration: 'client-side page-owned Web search credential editor — packages/client/ui-settings-web-search/README.md owns the API',
+  pluginManagerIntegration: 'client-side account plugin inventory and controls — packages/client/ui-plugin-manager/README.md owns the API',
+  subagentSettingsIntegration: 'client-side namespace and field binding — packages/client/ui-settings-subagent/README.md owns the API',
+  shellSettingsCard: 'client-side scoped card renderer — packages/client/ui-settings-shell/README.md owns the API',
+  pluginInventory: 'original read-only Typert Remote gateway, outside the Service projection — packages/host/plugin-inventory/README.md owns the API',
+  clientPersistence: 'client-side captured logical-key storage port — packages/client/store/README.md owns the API',
+  peCloudPage: 'client-side pre-Cordis prepared page owner — packages/cloud/pe-cloud-client/README.md owns the lifecycle',
+  peFilesPool: 'root-only LinuxFilesPool instance value, not a Cordis Service subclass — packages/cloud/pe-cloud-files/README.md owns pool startup, static storage and actual shutdown',
+  uiSkillCatalog: 'client-side explicit Native skill cache invalidation control, outside the Host projection — packages/client/ui-skill/README.md owns the API',
+  documentPreviewByteReader: 'client-side optional complete-byte preview callback, outside the Host projection — packages/client/ui-sidebar-documentpreview/README.md owns the API',
+  remoteMethodCompatibility: 'client-side optional generated install-name policy, outside the Host projection — packages/api/gateway/README.md owns the API',
+  sessionLogDownloadIntegration: 'client-side captured download carrier — packages/session-query/session-log-export/README.md owns the API',
+}
+
+/** Documented Client events outside the Host event projection. */
+export const UPSTREAM_EVENT_WALK_EXEMPTIONS: Record<string, string> = {
+  'sidebar-files/release-directory': 'client-side original directory closure — packages/client/ui-sidebar-files/README.md owns the event',
+  'file-upload/complete': 'client-side upload notification, outside the Host projection — packages/client/file-upload/README.md owns the event',
+}
+
+/** Documentation pages for project and optional public input types. */
+export const UPSTREAM_TYPE_PAGES: Record<string, string> = {
+  SessionControlBufferLimits: 'session.md',
+  FsDirectoryEnumeration: 'filesystem.md',
+  FsDirectoryListing: 'filesystem.md',
+  FsDirectoryPage: 'filesystem.md',
+  FsDirectoryVersion: 'filesystem.md',
+  NodeStreamTransport: 'typert.md',
+  NodeStreamTransportOptions: 'typert.md',
+  TypertGatewayWireStream: 'typert.md',
+  RemoteEventQueueLimits: 'typert.md',
+  PluginSaveOperation: 'boot.md',
+  PluginSaveSubmissionHook: 'boot.md',
+  PluginSelectionGuard: 'boot.md',
+  ProfileConfigUpdatePlan: 'boot.md',
+  ScheduleDispatchAdmission: 'schedule.md',
+  ScheduleTask: 'schedule.md',
+  FileSystemSkillReader: 'skills.md',
+  FileSystemSkillResources: 'skills.md',
+  FileSystemSkillSource: 'skills.md',
+  InvocationDescriptor: 'typert.md',
+  CloudMcpConnectionRequest: 'cloud.md',
+  CloudMcpConnectionReply: 'cloud.md',
+  CloudMcpConnectionPreparation: 'cloud.md',
+  CloudMcpConnectionService: 'cloud.md',
+  AccountMcpConnectionStore: 'cloud.md',
+  McpStoreLimits: 'cloud.md',
+  AccountResearchStorage: 'cloud.md',
+  StaticAccountAssignmentResolver: 'cloud.md',
+  StaticAccountInventory: 'cloud.md',
+  AccountAdministrationBudgets: 'cloud.md',
+  RemoteServerReply: 'cloud.md#remote-server-management',
+  RemoteServerRequest: 'cloud.md#remote-server-management',
+  CloudRemoteServerPreparation: 'cloud.md#remote-server-management',
+  CloudRemoteServerService: 'cloud.md#remote-server-management',
+  AccountRemoteServerStore: 'cloud.md#remote-server-management',
+  RemoteStoreLimits: 'cloud.md#remote-server-management',
+  ConfigEditControl: 'boot.md#native-edit-controls',
+  CloudPluginService: 'cloud.md#approved-plugin-controls',
+  PluginCurrentRequest: 'cloud.md#approved-plugin-controls',
+  PluginCurrentState: 'cloud.md#approved-plugin-controls',
+  PluginManagerSnapshot: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  PluginChangeRequest: 'cloud.md#approved-plugin-controls',
+  PluginChangeResult: 'cloud.md#approved-plugin-controls',
+  ConfigurationPeerOperation: 'cloud.md#approved-plugin-controls',
+  PluginRebuildIntent: 'cloud.md#approved-plugin-controls',
+  PluginRebuildPersistence: 'cloud.md#approved-plugin-controls',
+  PluginRebuildVerification: 'cloud.md#approved-plugin-controls',
+  ConfigSaveBarrier: 'cloud.md#actual-work-and-capacity',
+  AccountBinding: 'cloud.md',
+  AccountExecutionPort: 'cloud.md',
+  NativeAccountExecutionAuthority: 'cloud.md',
+  AccountFilesProject: 'cloud.md',
+  AccountId: 'cloud.md',
+  AccountOwner: 'cloud.md',
+  AccountUse: 'cloud.md',
+  AgentLoop: 'core.md',
+  AuthRootObservation: 'cloud.md',
+  CloudModelKeyPreparation: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  CloudModelKeyService: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  CloudProjectCreateRequest: 'cloud.md',
+  CloudProjectsPreparation: 'cloud.md',
+  CloudProjectsService: 'cloud.md',
+  BundledSkillResponseBorrow: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
+  BundledSkillResponseSettlement: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
+  CloudSkillPreparation: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
+  CloudSkillService: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
+  ManagedSkillDetails: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
+  ManagedSkillDetailsRequest: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
+  ManagedSkillDownload: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
+  ManagedSkillDownloadRequest: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
+  ManagedSkillReadFileRequest: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
+  ManagedSkillFileContent: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
+  ManagedSkillInstallRequest: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
+  ManagedSkillMutationResult: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
+  ManagedSkillUninstallRequest: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
+  ManagedSkillUpdateRequest: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
+  ManagedSkillsInstalled: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
+  ManagedSkillsInstalledRequest: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
+  SkillBundleInput: '../../packages/cloud/pe-cloud-files/README.md#use-this-package',
+  SkillBundleOperationCopies: '../../packages/cloud/pe-cloud-files/README.md#use-this-package',
+  SkillBundleSource: '../../packages/cloud/pe-cloud-files/README.md#use-this-package',
+  SkillBundleVersion: '../../packages/cloud/pe-cloud-files/README.md#use-this-package',
+  SkillBundleWorkingCopy: '../../packages/cloud/pe-cloud-files/README.md#use-this-package',
+  SkillCatalog: '../../packages/cloud/pe-cloud-files/README.md#use-this-package',
+  SkillCatalogChange: '../../packages/cloud/pe-cloud-files/README.md#use-this-package',
+  SkillCatalogCommit: '../../packages/cloud/pe-cloud-files/README.md#use-this-package',
+  SkillCurrentRequest: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
+  SkillCurrentState: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
+  SkillOperationCopies: '../../packages/cloud/pe-cloud-files/README.md#use-this-package',
+  SkillProjectGrant: '../../packages/cloud/pe-cloud-files/README.md#use-this-package',
+  SkillPublishRequest: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
+  SkillPublishResult: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
+  SkillVersion: '../../packages/cloud/pe-cloud-files/README.md#use-this-package',
+  SkillVersionPort: '../../packages/cloud/pe-cloud-files/README.md#understand-the-implementation',
+  SkillWorkingCopyGrant: '../../packages/cloud/pe-cloud-files/README.md#use-this-package',
+  'ctx.peAccountInstructions:Config': '../../packages/cloud/pe-account-instructions/README.md#minimal-configuration',
+  ConfigImpactGuard: '../../packages/boot/config-editor/README.md',
+  ConfigSaveReceipt: 'cloud.md',
+  ConfigSaveSubmissionHook: '../../packages/boot/config-editor/README.md',
+  ConnectionDispatchGuard: '../../packages/client/connection/README.md',
+  CredentialSaveSubmissionHook: '../../packages/credentials/credentials/README.md',
+  DrainCapacityReservation: 'cloud.md',
+  DrainParticipant: 'cloud.md',
+  EndpointExposure: 'cloud.md',
+  EnvironmentSessionId: 'cloud.md',
+  ExactFetchExposure: 'cloud.md',
+  ExecutionMountGrant: 'cloud.md',
+  ExposureInventory: 'cloud.md',
+  FileUploads: 'attachment.md',
+  FirstScreenEventInput: 'cloud.md',
+  FirstScreenEvents: 'cloud.md',
+  FirstScreenNativeInput: 'cloud.md',
+  InstructionReadReaders: 'cloud.md',
+  LocalAttachmentStore: '../../packages/attachment/attachment-local/README.md',
+  ModelKeyAccess: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  ModelKeyMetadata: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  ModelKeyProvider: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  ModelKeyReference: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  ModelKeySaved: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  ModelKeySet: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  ModelKeyState: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  ModelKeyUnset: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  MountCapacityReservation: 'cloud.md',
+  NativeAgentFactoryGuards: 'cloud.md',
+  ApprovedModelKeyConfiguration: 'cloud.md',
+  NativeFirstScreen: 'cloud.md',
+  NativePluginInventory: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  NativeSchedule: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  createNativeSchedule: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  NativeCommands: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  NativeGoals: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  NativePermissions: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  NativePresetGuards: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  NativePresets: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  createNativePresets: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  NativeUserQuestions: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  createNativeGoals: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  createNativeSessionExport: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  createNativePermissions: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  createNativeSessionFeedback: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  createNativeMessageFeedback: '../../packages/cloud/pe-cloud-api/README.md#understand-the-implementation',
+  NativeSessionGuards: 'cloud.md',
+  NativeUploadPreparation: 'cloud.md',
+  SelectWorkspaceTransfer: 'cloud.md',
+  WorkspaceTransferLimits: 'cloud.md',
+  ParticipantReceipt: 'cloud.md',
+  ResidentResult: 'cloud.md',
+  RootIngressCloseOwner: 'cloud.md#actual-work-and-capacity',
+  RootMetadataDatabase: 'cloud.md',
+  RootRecipeInput: 'cloud.md',
+  RootRecipeObservation: 'cloud.md',
+  RuntimeControlObservation: 'cloud.md',
+  WorkspaceUploadBorrow: '../../packages/cloud/pe-cloud-api/README.md#workspace-http-transfers',
+  WorkspaceUploadSettlement: '../../packages/cloud/pe-cloud-api/README.md#workspace-http-transfers',
+  StageFileResult: 'cloud.md',
+  WorkspaceFiles: 'workspace.md',
+  SessionController: 'session.md',
+  SkillCatalogInspection: 'skills.md',
+  SubagentCapacityReservation: 'cloud.md#actual-work-and-capacity',
+  SubagentAdmission: 'subagent.md',
+  SubagentAdmissionRequest: 'subagent.md',
+  WorkspaceDirectoryControl: 'workspace.md',
+  WorkspaceDirectoryCursor: 'workspace.md',
+  WorkspaceDirectoryFrame: 'workspace.md',
+}
+
+/** Standard-library types used by project signatures without a repository page. */
+export const UPSTREAM_FOUNDATION_TYPE_NAMES = ['ArrayBuffer', 'Parameters', 'ConstructorParameters']
+
+/** Project service roles added to the existing capability graph. */
+export const UPSTREAM_SERVICE_ROLES = [
+  {
+    key: 'cloudModelKey', pkg: 'pe-cloud-api', title: 'Account model-key editing', mode: 'service' as const,
+    consumers: ['pe-cloud-api'],
+    note: 'Exposes the approved account model-key RPCs through the original Peer Use and native configuration save owner.',
+  },
+  {
+    key: 'cloudPlugins', pkg: 'pe-cloud-api', title: 'Approved account plugin controls', mode: 'service' as const,
+    consumers: ['pe-cloud-client', 'pe-cloud-runtime'],
+    note: 'Adapts fixed plugin edits to original Peer admission, account saves and native profile application.',
+  },
+  {
+    key: 'cloudProjects', pkg: 'pe-cloud-api', title: 'Account project metadata', mode: 'service' as const,
+    consumers: ['pe-cloud-api', 'pe-cloud-runtime'],
+    note: 'Adapts native Workspace operations to the installed account files owner and approved project roots.',
+  },
+  {
+    key: 'cloudRemoteServers', pkg: 'pe-cloud-api', title: 'Account remote-server management', mode: 'service' as const,
+    consumers: ['pe-cloud-client', 'pe-cloud-runtime'],
+    note: 'Uses the original authenticated Peer, private files/credentials and save owner; execution remains with native Session tools.',
+  },
+  {
+    key: 'cloudMcpConnections', pkg: 'pe-cloud-api', title: 'Account HTTP MCP management', mode: 'service' as const,
+    consumers: ['pe-cloud-client', 'pe-cloud-runtime'],
+    note: 'Uses the original account Peer, private credentials and official native MCP client with explicit HTTP and discovery limits.',
+  },
+  {
+    key: 'cloudSkills', pkg: 'pe-cloud-api', title: 'Account skill installation management', mode: 'service' as const,
+    consumers: ['pe-cloud-api', 'pe-cloud-client', 'pe-cloud-runtime'],
+    note: 'Manages account skill installations and complete packages through original Peer admission, account saves '
+      + 'and files-owned catalog/version CAS.',
+  },
+  {
+    key: 'peAccount', pkg: 'pe-cloud-runtime', title: 'Installed account generation', mode: 'core' as const,
+    consumers: ['pe-cloud-api', 'pe-cloud-files', 'pe-opensandbox', 'pe-account-instructions'],
+    note: 'Carries the immutable account binding and lifetime for one independent account Context.',
+  },
+  {
+    key: 'peAccountExecution', pkg: 'pe-opensandbox', title: 'Account execution port', mode: 'service' as const,
+    consumers: ['pe-cloud-api', 'pe-cloud-runtime'],
+    note: 'Exposes only the original Root-issued account capability; closed mode refuses native execution.',
+  },
+  {
+    key: 'peAccountInstructions', pkg: 'pe-account-instructions', title: 'Account instruction sources', mode: 'service' as const,
+    consumers: ['pe-account-instructions'],
+    note: 'Reads bounded private and project instruction snapshots through the original account files owner.',
+  },
+  {
+    key: 'peAccountRuntime', pkg: 'pe-cloud-runtime', title: 'Account Context lifecycle', mode: 'core' as const,
+    consumers: ['pe-cloud-access', 'pe-cloud-api'],
+    note: 'Owns account mounting, current-generation admission and retained participant cleanup.',
+  },
+  {
+    key: 'peAuth', pkg: 'pe-cloud-access', title: 'Cloud account authentication', mode: 'service' as const,
+    consumers: ['pe-cloud-access', 'pe-cloud-runtime'],
+    note: 'Resolves authenticated requests through the Root-owned BetterAuth and account-owner selection.',
+  },
+  {
+    key: 'peCloudApi', pkg: 'pe-cloud-api', title: 'Account native API assembly', mode: 'service' as const,
+    consumers: ['pe-cloud-access', 'pe-cloud-runtime'],
+    note: 'Audits and invokes native endpoints on the exact installed account graph under the exposure manifest.',
+  },
+  {
+    key: 'peCloudFiles', pkg: 'pe-cloud-files', title: 'Account file operations', mode: 'service' as const,
+    consumers: ['pe-cloud-api', 'pe-cloud-runtime', 'pe-opensandbox', 'pe-account-instructions'],
+    note: 'Owns scoped project and private-file access, bounded worker requests and session environment banks.',
+  },
+  {
+    key: 'peExposure', pkg: 'pe-cloud-api', title: 'Cloud endpoint exposure policy', mode: 'service' as const,
+    consumers: ['pe-cloud-access', 'pe-cloud-runtime'],
+    note: 'Validates the explicit native endpoint manifest and exact HTTP route declarations before account publication.',
+  },
+  {
+    key: 'peSandboxCoordinator', pkg: 'pe-opensandbox', title: 'Cloud session execution ownership', mode: 'seam' as const,
+    implementations: ['pe-opensandbox'], consumers: ['pe-cloud-runtime', 'pe-cloud-api'],
+    note: 'Owns allocation metadata, issued account ports, process ranges and actual stop evidence; providers retain unknown work.',
+  },
+]
+
+/** Project tool schema recipes; execution and persistence remain unavailable during collection. */
+export const UPSTREAM_TOOL_PACKAGES: ToolPackage[] = [
+  {
+    pkg: '@deepseek-ai/dsh-remote-server-cloud', dir: 'remote-server', source: 'packages/community/remote-server/src/tools.ts',
+    requires: ['ctx.tools', 'original account binding, approval and managed execution'],
+    writes: ['native tool result', 'approval audit events', 'actual probe observations'],
+    async mount(ctx) {
+      const [{ brandString }, { AccountRemoteServers, installRemoteServerTools }] = await Promise.all([
+        import('@deepseek-ai/dsh-brand'), import('@deepseek-ai/dsh-remote-server-cloud'),
+      ])
+      // Schema harvest registers the production consumer but cannot execute or issue account readiness.
+      const binding: AccountBinding = { accountId: brandString<AccountBinding['accountId']>('tool-catalog'),
+        epoch: brandString<AccountBinding['epoch']>('1'), recipeVersion: 'schema-harvest', lifetime: new AbortController().signal }
+      ctx.provide('peAccount', binding)
+      const collection = new AccountRemoteServers(ctx, binding, { maxServers: 4, maxCommandBytes: 4096,
+        policy: { alwaysAsk: true, readOnlyAllowlist: [] }, assertCurrent() { ctx.fiber.assertActive() }, read: () => [],
+        write: () => Promise.reject(new Error('Schema harvest cannot persist remote servers')),
+        deleteCredential: () => Promise.reject(new Error('Schema harvest cannot mutate credentials')) })
+      installRemoteServerTools(ctx, collection, { maxReplyBytes: 65536, assertCurrent() { ctx.fiber.assertActive() },
+        approval: () => undefined, run: () => Promise.reject(new Error('Schema harvest cannot execute SSH')) })
+    },
+    note: 'Optional cloud integration only; native never policy refuses mandatory approval. Local SSH cleanup does not certify remote descendant termination.',
+  },
+]
+
+/** Project development dependencies consumed through application configuration. */
+export const UPSTREAM_CONFIGURATION_DEV_DEPENDENCIES = {
+  '@deepseek-ai/dsh-pe-cloud-client': [
+    '@deepseek-ai/dsh-api-gateway',
+    '@deepseek-ai/dsh-api-remote-access',
+    '@deepseek-ai/dsh-api-session-controller',
+    '@deepseek-ai/dsh-api-workspace-controller',
+    '@deepseek-ai/dsh-api-remotes',
+    '@deepseek-ai/dsh-client-file-upload',
+    '@deepseek-ai/dsh-typert-registry',
+  ],
+} as const satisfies Readonly<Record<string, readonly string[]>>
+
+/** Additional declaration-only public exports required by optional project inputs. */
+export const UPSTREAM_DECLARATION_EXPORTS: Readonly<Partial<Record<string, string>>> = {
+  '@deepseek-ai/dsh-host-frontend-static': 'resource',
+  '@deepseek-ai/dsh-session-log-export': 'registration',
+}
+
+/** The additional bilingual Cloud guide accepted by the existing pairing corpus. */
+export const UPSTREAM_TRANSLATION_PAIR = /^integrations\/epri-research\/CLOUD(?:\.md|\.zh\.md|\.i18n\.yaml)$/u

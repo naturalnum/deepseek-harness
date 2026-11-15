@@ -1,5 +1,7 @@
 /** Explicit exceptions and Host packages for the published dependency policy. */
 
+import { UPSTREAM_CONFIGURATION_DEV_DEPENDENCIES } from '../deploy/upstream/registrations.ts'
+
 /** Packages treated as Client/Host packages without declaring `dsh.client`. */
 const CLIENT_FACE_INCLUDE: readonly string[] = []
 
@@ -22,15 +24,6 @@ const REQUIRED_SERVICE_PEERS = {
 
 /** Development-only package relationships not represented by source imports. */
 const CONFIGURATION_ONLY_DEV_DEPENDENCIES = {
-  '@deepseek-ai/dsh-pe-cloud-client': [
-    '@deepseek-ai/dsh-api-gateway',
-    '@deepseek-ai/dsh-api-remote-access',
-    '@deepseek-ai/dsh-api-session-controller',
-    '@deepseek-ai/dsh-api-workspace-controller',
-    '@deepseek-ai/dsh-api-remotes',
-    '@deepseek-ai/dsh-client-file-upload',
-    '@deepseek-ai/dsh-typert-registry',
-  ],
   '@deepseek-ai/dsh-client-locale': ['@deepseek-ai/dsh-api-remotes'],
   '@deepseek-ai/dsh-client-ui-conversation': [
     '@deepseek-ai/dsh-api-remotes',
@@ -41,6 +34,7 @@ const CONFIGURATION_ONLY_DEV_DEPENDENCIES = {
   '@deepseek-ai/dsh-client-ui-subagent': ['@deepseek-ai/dsh-client-ui-input-trigger'],
   '@deepseek-ai/dsh-client-ui-theme': ['@deepseek-ai/dsh-api-remotes'],
   '@deepseek-ai/dsh-client-ui-tool': ['@deepseek-ai/dsh-api-remotes'],
+  ...UPSTREAM_CONFIGURATION_DEV_DEPENDENCIES,
 } as const satisfies Readonly<Record<string, readonly string[]>>
 
 /** Workspace packages whose complete runtime surface is safe across duplicate installations. */

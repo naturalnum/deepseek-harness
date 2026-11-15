@@ -6,6 +6,7 @@
  * gate and the region-injecting generators.
  */
 
+import { UPSTREAM_TRANSLATION_PAIR } from '../deploy/upstream/registrations.ts'
 import { basename } from 'node:path'
 import { fromMarkdown } from 'mdast-util-from-markdown'
 import { gfmFromMarkdown } from 'mdast-util-gfm'
@@ -165,7 +166,7 @@ export function isTranslationScopeFile(file: string): boolean {
     && !isTranslationSourceExcluded(file) && (README_ARTIFACT.test(file)
     || ROOT_PAIRED_DOCUMENT_ARTIFACT.test(file)
     || file.startsWith('.agents/notes/')
-    || /^integrations\/epri-research\/CLOUD(?:\.md|\.zh\.md|\.i18n\.yaml)$/u.test(file)
+    || UPSTREAM_TRANSLATION_PAIR.test(file)
     || file.startsWith('docs/')
     || file.startsWith('python/'))
 }

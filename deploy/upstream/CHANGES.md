@@ -14,4 +14,6 @@ The Native Session format constant is **4** and the Native SQLite schema constan
 
 The source ledger is [ledger.tsv](ledger.tsv); the generated interface inventory is [SEAMS.md](SEAMS.md).
 
+Project catalog, graph, package and translation registrations live in [registrations.ts](registrations.ts); the Native scripts consume these entries through their existing checks.
+
 等您回来看的事：目前技能名额只做了过渡：每个账号只有两个工作区能挂技能，第三个工作区可以执行命令但不能用技能；释放闲置工作区占用名额的真正回收还没做。

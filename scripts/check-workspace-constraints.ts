@@ -5,6 +5,7 @@
  * Run: `tsx scripts/check-workspace-constraints.ts`.
  */
 
+import { UPSTREAM_DECLARATION_EXPORTS } from '../deploy/upstream/registrations.ts'
 import { existsSync, globSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -605,8 +606,7 @@ export function checkWorkspaceManifest({ dir, manifest }: WorkspaceManifest): st
       && !hasExportPair(manifest, './pipeline', './lib/types/pipeline.d.ts', './lib/pipeline.js')) {
       errors.push(`${label}: exports["./pipeline"] must expose lib/types/pipeline.d.ts and lib/pipeline.js`)
     }
-    const helper = manifest.name === '@deepseek-ai/dsh-host-frontend-static' ? 'resource'
-      : manifest.name === '@deepseek-ai/dsh-session-log-export' ? 'registration' : undefined
+    const helper = UPSTREAM_DECLARATION_EXPORTS[manifest.name]
     if (helper !== undefined && !hasExportPair(manifest, `./${helper}`,
       `./lib/types/${helper}.d.ts`, `./lib/types/${helper}.js`)) {
       errors.push(`${label}: exports["./${helper}"] must expose lib/types/${helper}.d.ts and lib/types/${helper}.js`)
