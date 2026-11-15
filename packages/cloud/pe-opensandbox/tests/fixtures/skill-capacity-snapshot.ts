@@ -2,6 +2,7 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
+import Schema from '@deepseek-ai/schemastery'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
 import { CloudAccountFiles, FdMutationFailure, SkillProjectCapacityFailure } from '@deepseek-ai/dsh-pe-cloud-files'
@@ -14,8 +15,17 @@ import { remoteManagedFixture } from '../remote-managed-fixture.ts'
 export const name = 'skill-capacity-snapshot'
 export const inject = ['agents', 'tools', 'sessions', 'workingDirectory']
 
-/** @param owner Shipped headless profile's scenario-owned effect context. */
-export async function apply(owner: Context): Promise<void> {
+/** Files refusal selected by the scenario; it never represents a real deployment limit. */
+export interface Config { resource: 'associations' | 'parent-borrows' }
+export const Config: Schema<Config> = Schema.object({
+  resource: Schema.union(['associations', 'parent-borrows']).default('associations'),
+})
+
+/**
+ * @param owner Shipped headless profile's scenario-owned effect context.
+ * @param config Explicit refusal selected by the recorded scenario.
+ */
+export async function apply(owner: Context, config: Config): Promise<void> {
   const ctx = owner.root, managed = await remoteManagedFixture({ skillCopies: 2 }), project = process.cwd()
   const lifetime = new AbortController(), methods = Object.getOwnPropertyDescriptors(SessionAllocationOwner.prototype)
   let attempts = 0, stops = 0, mountReleases = 0, refusals = 0
@@ -40,7 +50,7 @@ export async function apply(owner: Context): Promise<void> {
     if (args[0] === 'Cloud managed execution preparation refused: %j'
       && field('event') === 'managed-execution-preparation-refused' && field('accountId') === 'snapshot-account'
       && field('code') === 'cloud/capacity' && field('filesCode') === 'FS_TOO_LARGE'
-      && field('reasonCode') === 'cloud/capacity' && field('resource') === 'associations') {
+      && field('reasonCode') === 'cloud/capacity' && field('resource') === config.resource) {
       refusals++; audit(); return
     }
     warn(...args)
@@ -54,7 +64,7 @@ export async function apply(owner: Context): Promise<void> {
   const scripted = { projectFor: async () => ({ binding, workspace }),
     prepareExecutionMounts: async () => ({ value: undefined, release() { mountReleases++; audit() } }),
     prepareSkillProject: async () => { throw new FdMutationFailure('not-published', 'FS_TOO_LARGE', undefined,
-      { cause: new SkillProjectCapacityFailure('associations', 'Synthetic capacity refusal') }) } }
+      { cause: new SkillProjectCapacityFailure(config.resource, 'Synthetic capacity refusal') }) } }
   const files = new Proxy(CloudAccountFiles.prototype, { get(_target, key): unknown { return Reflect.get(scripted, key) } })
   const port = managed.bind(ctx, binding, { assertBusinessCurrent() { lifetime.signal.throwIfAborted() },
     getAgent: id => ctx.agents.get(id), projectForAgent: (agent) => {

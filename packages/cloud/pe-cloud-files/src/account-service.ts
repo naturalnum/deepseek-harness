@@ -25,6 +25,8 @@ import { LocalAttachmentStore } from '@deepseek-ai/dsh-attachment-local'
 import { createAccountAttachmentStore, type AccountAttachmentBackend } from './account-attachment-store.ts'
 import type { StageFileResult } from './stage-bridge.ts'
 import type { EnvironmentSessionId, ExecutionMountGrant } from './environment-bank.ts'
+import { materializeWorkspaceSkill } from './workspace-skill.ts'
+import type { SkillVersionSource } from './skill-versions.ts'
 
 /** Trusted runtime preparation only; Loader JSON cannot select an account, path, backend or plugin. */
 export interface AccountFilesPreparation {
@@ -50,7 +52,7 @@ export interface AccountFilesPreparation {
     mapProcessPath?: (caller: Context, hostPath: string) => string | undefined, enforceSessionFilePolicy?: boolean,
   ) => Promise<S2ProjectPort['FileSystem']>
   /** Original lane mutation capabilities; omission keeps attachment intake and staging closed. */
-  readonly attachments?: Pick<PoolReadPort, 'assertStagingAvailable' | 'stageFiles' | 'stageWorkspaceUploads' | 'runNativeMutation' | 'workspaceContent'>
+  readonly attachments?: Pick<PoolReadPort, 'assertStagingAvailable' | 'stageFiles' | 'stageWorkspaceUploads' | 'workspaceUploadChunkBytes' | 'runNativeMutation' | 'workspaceContent'>
   /** Trusted synchronous lookup of an active request's verified copies; never a private-root prefix grant. */
   readonly attachmentProjection?: Pick<AccountAttachmentBackend, 'mapFileHostPath'> & {
     mapProcessPath(caller: Context, hostPath: string): string | undefined
@@ -139,6 +141,7 @@ export class CloudAccountFiles extends Service {
   private readonly executionStorage = {
     projects: new WeakSet<AccountFilesProject>(), grants: new WeakMap<ExecutionMountGrant, () => void>(),
   }
+  private readonly workspaceSkillCopies = new WeakMap<Workspace, Map<string, Promise<string>>>()
 
   /**
    * Prepare before native Include activation using an already bound, restricted lane.
@@ -311,6 +314,57 @@ export class CloudAccountFiles extends Service {
   materializeBundleVersion(project: SkillProjectGrant, version: SkillBundleVersion,
     signal: AbortSignal): Promise<ResidentResult<SkillBundleWorkingCopy>> {
     return this.skillBundlePort().materializeBundleVersion(project, version, signal)
+  }
+
+  /**
+   * Publish ordinary project resources while retaining the original source and active parent admission.
+   * @param project Exact projectFor result for the live caller's Workspace.
+   * @param parent Original actively borrowed parent; this does not consume another persistent association.
+   * @param source Live immutable source snapshot, retained by its original Provider callback.
+   * @param authorized Original Agent/project recheck, including after actual I/O.
+   * @param signal Actual copy settlement; observer cancellation must join this operation.
+   * @returns Relative complete writable resource directory; existing user modifications are preserved.
+   */
+  async materializeWorkspaceSkill(project: AccountFilesProject, parent: SkillProjectGrant,
+    source: SkillVersionSource | SkillBundleSource, authorized: () => void, signal: AbortSignal): Promise<string> {
+    const current = (): void => {
+      this.assertWorkspace(project.workspace); authorized(); this.assertSkillProjectGrant(parent)
+      if (!this.executionStorage.projects.has(project) || project.binding !== this.binding
+        || source.version.binding !== this.binding || parent.binding !== this.binding
+        || parent.workspaceId !== project.workspace.id || parent.project.rootPath !== project.workspace.path) {
+        throw new FilesFailure('cloud/stale-generation', 'Skill resources require the original account Workspace.')
+      }
+    }
+    current()
+    const port = this.providers.attachments, chunkBytes = port?.workspaceUploadChunkBytes
+    if (port === undefined || chunkBytes === undefined) {
+      throw new FilesFailure('files/prerequisite-missing', 'Workspace skill publication is unavailable.')
+    }
+    const workspace = project.workspace
+    let copies = this.workspaceSkillCopies.get(workspace)
+    if (copies === undefined) { copies = new Map(); this.workspaceSkillCopies.set(workspace, copies) }
+    const existing = copies.get(source.version.id)
+    if (existing !== undefined) { const result = await existing; current(); return result }
+    const prior = [...copies.values()]
+    // Active parent borrows bound concurrent preparation; completed copies retain only ordinary project quota.
+    const actual = (async () => {
+      // Different versions in one Workspace share the container directory. Join earlier publication before creating it.
+      await Promise.allSettled(prior)
+      current()
+      const content = await this.workspaceContent(workspace, current, signal)
+      current()
+      return await materializeWorkspaceSkill({ source, content, chunkBytes, signal,
+        assertCurrent: current,
+        createDirectory: (directory, name) => this.createWorkspaceDirectory(workspace, directory, name, current, signal),
+        publish: value => this.stageWorkspaceUpload(workspace, value, current, signal),
+      })
+    })()
+    copies.set(source.version.id, actual)
+    try { const result = await actual; current(); return result }
+    finally {
+      if (copies.get(source.version.id) === actual) copies.delete(source.version.id)
+      if (copies.size === 0) this.workspaceSkillCopies.delete(workspace)
+    }
   }
 
   private skillProjectPort(): SkillProjectPort {

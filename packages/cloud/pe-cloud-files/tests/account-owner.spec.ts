@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { Worker } from 'node:worker_threads'
 import { randomUUID } from 'node:crypto'
 import { Context, FiberState } from '@deepseek-ai/cordis'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import { boot } from '@deepseek-ai/dsh-app-boot'
 import SessionStore from '@deepseek-ai/dsh-session'
 import Storage from '@deepseek-ai/dsh-storage'
@@ -20,6 +21,8 @@ import * as AccountEntry from '../src/account.ts'
 import { LinuxFilesPool, type IsolatedLeafGrant } from '../src/worker-pool.ts'
 import { directoryWorkBudget } from '../src/directory-budget.ts'
 import type { ControlledWorkspaceRegistry } from '../src/workspace-adapter.ts'
+import type { SkillProjectGrant } from '../src/skill-projection.ts'
+import { workspaceSkillFixture } from './fixtures/workspace-skill.ts'
 
 async function fixture(mode = 'normal') {
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'm8r-files-owner-')))
@@ -136,6 +139,62 @@ it('installs real native Registry and FS through files/account before returning 
   expect(first).toBe(repeat)
   expect(await repeat).toBe(project)
   expect(f.workers).toHaveLength(1)
+})
+
+it('joins same-version Workspace preparations and serializes different versions through actual publication settlement', async () => {
+  const f = await fixture(), account = f.prepare('skill-owner')
+  const storage = workspaceSkillFixture(account.binding)
+  const graph = await account.start({ attachments: {
+    workspaceUploadChunkBytes: 8, assertStagingAvailable() {},
+    workspaceContent: async () => { throw new Error('Only the scripted storage observation belongs to this component test') },
+    stageFiles: async () => { throw new Error('Only scripted directory publication belongs to this component test') },
+    stageWorkspaceUploads: async () => { throw new Error('Only scripted file publication belongs to this component test') },
+    runNativeMutation: async () => { throw new Error('No independent mutation belongs to this component test') },
+  } })
+  const owner = graph.owner(), project = await owner.projectFor(graph.owner().project().workspace)
+  // Scripted native parent qualification is confined to this Node lifecycle test; production requires the original files issuer.
+  const directory = { device: '1', inode: '2', mountId: '3', uid: 2000, gid: 2000, mode: 0o40700 }
+  const parent: SkillProjectGrant = { binding: account.binding, workspaceId: project.workspace.id,
+    project: { rootPath: project.workspace.path, rootDevice: '1', rootInode: '2', rootMountId: '3',
+      quota: { device: '1', mountId: '3', maximumBytes: '65536', maximumInodes: '128' } },
+    metadataDirectory: directory, skillsDirectory: { ...directory, inode: '4' } }
+  vi.spyOn(owner, 'assertSkillProjectGrant').mockImplementation((value) => { expect(value).toBe(parent) })
+  vi.spyOn(owner, 'workspaceContent').mockResolvedValue({ ...storage.work.content,
+    binding: account.binding, workspace: project.workspace,
+    reader: graph.ctx.fs,
+    maxPathBytes: 256, assertInstalled() {},
+    canonicalPath: async () => { throw new Error('No path mutation belongs to this fixture') },
+    readText: async () => { throw new Error('No source read belongs to this fixture') },
+    readBytes: async () => { throw new Error('No source read belongs to this fixture') },
+    readByteRange: async () => { throw new Error('No source range belongs to this fixture') },
+    listDir: async () => { throw new Error('No source list belongs to this fixture') },
+    writeText: async () => { throw new Error('No text mutation belongs to this fixture') },
+  })
+  vi.spyOn(owner, 'createWorkspaceDirectory').mockImplementation((_workspace, directory, name) => storage.work.createDirectory(directory, name))
+  const entered = Promise.withResolvers<undefined>(), closed = Promise.withResolvers<undefined>()
+  const publish = vi.spyOn(owner, 'stageWorkspaceUpload').mockImplementation(async (_workspace, source) => {
+    entered.resolve(undefined); await closed.promise; return await storage.work.publish(source)
+  })
+  const source = storage.source, nextSource = { ...source, version: { ...source.version,
+    id: brandString<typeof source.version.id>(randomUUID()) } }
+  const first = owner.materializeWorkspaceSkill(project, parent, source, () => {}, account.lifetime.signal)
+  const second = owner.materializeWorkspaceSkill(project, parent, source, () => {}, account.lifetime.signal)
+  const third = owner.materializeWorkspaceSkill(project, parent, nextSource, () => {}, account.lifetime.signal)
+  const joined = Promise.all([first, second, third])
+  void joined.catch(() => {}) // The barrier assertions can fail before the owned preparations settle; finally joins all three.
+  try {
+    await entered.promise
+    expect(publish).toHaveBeenCalledOnce()
+    closed.resolve(undefined)
+    const [one, same, other] = await joined
+    expect(same).toBe(one); expect(other).not.toBe(one)
+    expect(publish).toHaveBeenCalledTimes(2 * storage.version.files.length)
+    expect(storage.published.size).toBe(2 * storage.version.files.length)
+    storage.published.delete(`${one}/SKILL.md`)
+    await expect(owner.materializeWorkspaceSkill(project, parent, source, () => {}, account.lifetime.signal))
+      .rejects.toMatchObject({ code: 'files/prerequisite-missing' })
+    expect(publish).toHaveBeenCalledTimes(2 * storage.version.files.length)
+  } finally { closed.resolve(undefined); await Promise.allSettled([first, second, third]) }
 })
 
 it('derives an exact registered project without changing the bootstrap and survives default deletion for other projects', async () => {

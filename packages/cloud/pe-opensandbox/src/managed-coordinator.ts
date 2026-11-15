@@ -7,7 +7,8 @@ import type { AccountBinding, AccountId, AccountRuntimeService, OperationId,
   ParticipantReceipt } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
-import { FdMutationFailure, FilesFailure, SkillProjectCapacityFailure, type ExecutionMountGrant } from '@deepseek-ai/dsh-pe-cloud-files'
+import { FdMutationFailure, FilesFailure, SkillProjectCapacityFailure, type ExecutionMountGrant,
+  type AccountFilesProject, type CloudAccountFiles } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { SandboxCoordinator, type NativeAccountExecutionAuthority } from './coordinator.ts'
 import { IssuedExecutionPort, assertInstalledExecutionBinding, requireIssuedExecutionPort,
@@ -610,6 +611,22 @@ export class ManagedCoordinator extends SandboxCoordinator {
   }
 
   /**
+   * Prepare an original files project without allocating compute, retiring only confirmed idle compute on parent pressure.
+   * @param port Exact installed account execution port.
+   * @param ctx Actual account caller.
+   * @param project Original files-issued project.
+   * @param signal Actual files preparation cancellation.
+   * @returns Original grant; retirement failure retains its original stop responsibility.
+   */
+  async prepareSkillProject(port: AccountExecutionPort, ctx: Context, project: AccountFilesProject,
+    signal: AbortSignal): Promise<Awaited<ReturnType<CloudAccountFiles['prepareSkillProject']>>> {
+    this.assertProviders(port, ctx)
+    const held = await this.prepareSkillProjectFor(this.owned(port), project, signal)
+    try { this.assertProviders(port, ctx); signal.throwIfAborted(); return held }
+    catch (cause) { held.release(); throw cause }
+  }
+
+  /**
    * Recheck the original provider pair and retained Session work before a synchronous policy change.
    * @param port Exact Root-issued account execution capability.
    * @param ctx Original account caller.
@@ -777,20 +794,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
         if (prepared !== undefined) { selected = { request, prepared }; break }
       }
       if (selected === undefined) this.capacity()
-      const settled = Promise.withResolvers<void>()
-      const original: SessionRetirement = { ...selected, actual: settled.promise }
-      // Fence only this Session before any await; concurrent admission joins this original retirement.
-      work.retiring = original
-      void original.actual.catch(() => { /* The original rejected retirement remains retained. */ })
-      void this.retireSession(work, original).then(() => {
-        settled.resolve()
-        if (work.retiring === original) work.retiring = undefined
-      }, (cause: unknown) => {
-        this.observePrivateFailure(work, 'session-retirement', cause, original.request.sessionId)
-        this.retainPrivateFailure(work, cause)
-        settled.reject(cause)
-      })
-      await original.actual
+      await this.retirePreparedSession(work, selected)
     }
     const session: Session = scope.agent.session, workspace = scope.project
     const current = (): void => {
@@ -828,7 +832,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
               if (!Number.isSafeInteger(policy.maxCopiesPerOperation)
                 || policy.maxCopiesPerOperation < 1 || policy.maxCopiesPerOperation > 2147483647) this.capacity()
               stage = 'skill-project'
-              parent = await files.prepareSkillProject(project, work.binding.lifetime).catch((cause: unknown) => {
+              parent = await this.prepareSkillProjectFor(work, project, work.binding.lifetime).catch((cause: unknown) => {
                 // Only a definite files refusal before export/allocation permits another attempt; unknown writes stay retained.
                 if (cause instanceof FdMutationFailure && cause.outcome === 'not-published') throw new SkillProjectRefusalError(cause)
                 throw cause
@@ -850,6 +854,57 @@ export class ManagedCoordinator extends SandboxCoordinator {
       } }
     work.sessions.set(scope.sessionId, request)
     return request
+  }
+
+  private async prepareSkillProjectFor(work: AccountWork, project: AccountFilesProject,
+    signal: AbortSignal): Promise<Awaited<ReturnType<CloudAccountFiles['prepareSkillProject']>>> {
+    const prepare = () => {
+      this.assertReady(); work.authority.assertBusinessCurrent(); signal.throwIfAborted()
+      if (!work.open || work.binding.lifetime.aborted || project.binding !== work.binding) this.stale()
+      if (work.privateFailure !== undefined) this.unavailable()
+      return work.authority.files().prepareSkillProject(project, signal)
+    }
+    try { return await prepare() }
+    catch (cause) {
+      if (!(cause instanceof FdMutationFailure) || cause.outcome !== 'not-published' || cause.code !== 'FS_TOO_LARGE'
+        || !(cause.cause instanceof SkillProjectCapacityFailure) || cause.cause.resource !== 'parent-borrows') throw cause
+      signal.throwIfAborted()
+      if (work.privateFailure !== undefined) this.unavailable()
+      const retiring = work.retiring
+      if (retiring !== undefined) await retiring.actual
+      else {
+        const commands = work.providers?.commands
+        if (commands === undefined) this.unavailable()
+        let selected: Pick<SessionRetirement, 'request' | 'prepared'> | undefined
+        for (const request of work.sessions.values()) {
+          if (!commands.isSessionQuiescent(request.sessionId)) continue
+          const prepared = this.allocations.preparedForRetirement(request)
+          if (prepared !== undefined) { selected = { request, prepared }; break }
+        }
+        if (selected === undefined) throw cause
+        await this.retirePreparedSession(work, selected)
+      }
+      // Only the definite pre-intent refusal is prepared once more, after actual retirement releases its parent.
+      return await prepare()
+    }
+  }
+
+  private async retirePreparedSession(work: AccountWork,
+    selected: Pick<SessionRetirement, 'request' | 'prepared' | 'reopening'>): Promise<void> {
+    const settled = Promise.withResolvers<void>()
+    const original: SessionRetirement = { ...selected, actual: settled.promise }
+    // Fence only this Session before any await; concurrent admission joins this original retirement.
+    work.retiring = original
+    void original.actual.catch(() => { /* The original rejected retirement remains retained. */ })
+    void this.retireSession(work, original).then(() => {
+      settled.resolve()
+      if (work.retiring === original) work.retiring = undefined
+    }, (cause: unknown) => {
+      this.observePrivateFailure(work, 'session-retirement', cause, original.request.sessionId)
+      this.retainPrivateFailure(work, cause)
+      settled.reject(cause)
+    })
+    await original.actual
   }
 
   /** Retire one original idle compute after synchronously fencing its Session admission.

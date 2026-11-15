@@ -20,7 +20,7 @@ import SkillRegistry, { type SkillProviderControl } from '@deepseek-ai/dsh-skill
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { FsVersion } from '@deepseek-ai/dsh-fs'
 import { FdMutationFailure, FilesFailure, type SkillBundlePort, type SkillBundleVersion, type SkillCatalog, type SkillInstallationId,
-  type SkillVersion, type SkillVersionPort } from '@deepseek-ai/dsh-pe-cloud-files'
+  type SkillVersion, type SkillVersionPort, type SkillBundleSource } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { AccountManagedSkills } from '../src/managed-skill-publication.ts'
 import { ConfigSaveCoordinator } from '../src/config-saves.ts'
@@ -78,6 +78,8 @@ async function fixture(configuredLimits = apiLimits, builtins = false, archiveLi
   let projectionFailure: Error | undefined
   let exportBlock: ReturnType<typeof deferred> | undefined, sourceBlock: ReturnType<typeof deferred> | undefined
   let afterSource: (() => void) | undefined, sourceResidents = 0, sourceReleases = 0
+  let resourceBlock: ReturnType<typeof deferred> | undefined
+  const resourceEntered = deferred()
   const prepared = new Map<SkillBundleVersion, number>(), releases = new Map<string, number>()
   const releaseWhilePending: boolean[] = [], sourcePreparedRefs: number[] = [], commitPreparedRefs: number[] = []
   const preparedResident = <T>(value: T, version: SkillBundleVersion) => {
@@ -202,10 +204,18 @@ async function fixture(configuredLimits = apiLimits, builtins = false, archiveLi
   let manager!: AccountManagedSkills, providerSignal!: AbortSignal
   const resources = {
     assertCaller(options: import('@deepseek-ai/dsh-skill').SkillViewOptions) { if (options.scope !== ctx) throw Error('Original live caller required') },
-    async materialize(version: SkillBundleVersion, options: import('@deepseek-ai/dsh-skill').SkillViewOptions) {
+    async materialize(version: SkillBundleVersion, options: import('@deepseek-ai/dsh-skill').SkillViewOptions,
+      source?: SkillBundleSource) {
       if (options.scope !== ctx || !activeSourceLeases.has(version) || bytes.has(version)) throw Error('Exact active operation source lease required')
+      if (source !== undefined) {
+        expect(source.version).toBe(version)
+        const member = source.files.find(file => file.relativePath !== 'SKILL.md')
+        if (member !== undefined) await source.readBytes(member.relativePath, options.signal)
+      }
       materialized.push(version)
       expect(borrows).toBe(1)
+      resourceEntered.release()
+      await resourceBlock?.promise
       if (projectionFailure !== undefined) throw projectionFailure
       return { resourceBase: { kind: 'directory' as const, path: `/test/project/.pe/skills/${version.id}/` } }
     },
@@ -235,8 +245,40 @@ async function fixture(configuredLimits = apiLimits, builtins = false, archiveLi
     failPrepare: (error: Error) => { preparationFailure = error },
     failProjection: (error: Error | undefined) => { projectionFailure = error },
     failApply: () => { failApply = true }, unknownCommit: () => { unknownCommit = true },
-    blockExport() { exportBlock = deferred(); return exportBlock }, blockSource() { sourceBlock = deferred(); return sourceBlock } }
+    blockExport() { exportBlock = deferred(); return exportBlock }, blockSource() { sourceBlock = deferred(); return sourceBlock },
+    blockResources() { resourceBlock = deferred(); return { ...resourceBlock, entered: resourceEntered.promise } } }
 }
+
+it('retains the original Native Provider source borrow until Workspace resource publication settles', async () => {
+  const f = await fixture(), initial = await f.manager.installed({}, f.check, f.signal)
+  const installed = await f.manager.install(initial.version, bundle('resource-lifetime'), f.check, f.signal)
+  if (installed.persisted !== true || installed.entry === null) throw Error('Expected install')
+  const gate = f.blockResources()
+  let delivered = false
+  const loading = f.ctx.skills.get('resource-lifetime', { scope: f.ctx }).then((value) => { delivered = true; return value })
+  try {
+    await gate.entered
+    expect(f.stats().borrows).toBe(1); expect(delivered).toBe(false)
+    gate.release()
+    expect((await loading)?.content).toContain('body')
+    expect(f.stats()).toMatchObject({ borrows: 0, sourceResidents: 0 })
+  } finally { gate.release(); await loading }
+})
+
+it('joins real Native Provider resource preparation before cancelling its observer', async () => {
+  const f = await fixture(), initial = await f.manager.installed({}, f.check, f.signal)
+  const installed = await f.manager.install(initial.version, bundle('resource-cancel'), f.check, f.signal)
+  if (installed.persisted !== true || installed.entry === null) throw Error('Expected install')
+  const gate = f.blockResources(), observer = new AbortController(), reason = new Error('resource observer left')
+  const loading = f.ctx.skills.get('resource-cancel', { scope: f.ctx, signal: observer.signal })
+  const failed = expect(loading).rejects.toBe(reason)
+  try {
+    await gate.entered; observer.abort(reason)
+    expect(f.stats().borrows).toBe(1)
+    gate.release(); await failed
+    expect(f.stats()).toMatchObject({ borrows: 0, sourceResidents: 0 })
+  } finally { gate.release(); await loading.catch(() => undefined) }
+})
 
 it('installs two complete roots, exposes native selection and replaces the original directory edit', async () => {
   const f = await fixture(), initial = await f.manager.current(f.check, f.signal)

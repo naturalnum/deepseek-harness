@@ -1,0 +1,11 @@
+version: 1
+scenario: cloud-skill-parent-capacity
+profile: headless
+composition: cloud-skill-parent-capacity
+recording: authored
+header:
+  class: cloud-skill-parent-capacity
+  pin: true
+permission: read-only
+workspace:
+  final: true

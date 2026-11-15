@@ -145,6 +145,8 @@ export interface PoolReadPort {
   /** Stage declared raw upload claims on the same mutation owner, without issuing Native attachment receipts. */
   stageWorkspaceUploads(workspace: Workspace, sources: readonly WorkspaceUploadSource[],
     assertRegistered: () => void, signal?: AbortSignal): Promise<ResidentResult<readonly WorkspaceUploadResult[]>>
+  /** Existing source/staging frame bound; omitted when workspace publication is not configured. */
+  readonly workspaceUploadChunkBytes?: number
   /**
    * Controlled native intake work on this same mutation owner; no intake business or receipt service is supplied here.
    * @param reservationBytes Complete Root-reviewed source/storage/result/cleanup reservation.
@@ -1142,6 +1144,8 @@ export class LinuxFilesPool implements DrainParticipant {
         assertRegistered: () => void, signal?: AbortSignal) => stagePublications(workspace,
         (selection, staging) => planWorkspaceUploadBatch(sources, selection, staging, this.config), false, assertRegistered, signal, true,
         this.uploadTrace(binding, sources)),
+      ...this.config.staging === undefined ? {} : { workspaceUploadChunkBytes:
+        Math.min(this.config.readChunkBytes, this.config.staging.maxSourceChunkBytes, this.config.staging.maxFileBytes) },
       derivePreparedLeaf,
       createWorkspaceRegistry: (defaultGrant: IsolatedLeafGrant, assertUnpublished: () => void) => {
         const defaultPort = derivePreparedLeaf(defaultGrant)
