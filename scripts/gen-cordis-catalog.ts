@@ -678,6 +678,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   GoalView: 'goal.md',
   NodeStreamTransport: 'api-gateway.md',
   NodeStreamTransportOptions: 'api-gateway.md',
+  TypertGatewayWireStream: 'api-gateway.md',
   RemoteEventQueueLimits: 'api-gateway.md',
   PluginSaveOperation: 'boot.md',
   PluginSaveSubmissionHook: 'boot.md',

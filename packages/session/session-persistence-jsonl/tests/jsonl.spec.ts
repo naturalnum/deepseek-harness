@@ -86,30 +86,8 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       listingProbe.inFlight -= 1
     }
   }
-  const probeBodyRead = async <T>(path: string | undefined, read: () => Promise<T>): Promise<T> => {
-    if (path === readFailure.path && readFailure.error !== undefined) throw readFailure.error
-    if (readTally.enabled && path !== undefined) readTally.bySuffix.set(path, (readTally.bySuffix.get(path) ?? 0) + 1)
-    if (path !== pausedRead.path || pausedRead.resume === undefined) return read()
-    const resume = pausedRead.resume, finished = pausedRead.finished
-    pausedRead.active = true; pausedRead.entered?.()
-    await resume
-    try { return await read() } finally { pausedRead.active = false; finished?.() }
-  }
   return {
     ...actual,
-    open: (async (...args: Parameters<typeof actual.open>) => {
-      const handle = await actual.open(...args)
-      if (typeof args[0] !== 'string' || args[1] !== 'r') return handle
-      const path = args[0]
-      return new Proxy(handle, { get(target, property) {
-        if (property === 'readFile') return (...readArgs: Parameters<typeof target.readFile>) =>
-          probeBodyRead(path, () => target.readFile(...readArgs))
-        const value: unknown = Reflect.get(target, property, target)
-        if (typeof value !== 'function') return value
-        const bound: unknown = value.bind(target)
-        return bound
-      } })
-    }),
     stat: (async (...args: Parameters<typeof actual.stat>) => {
       if (listingProbe.active) return probeListingRead(String(args[0]), () => actual.stat(...args))
       if (String(args[0]) === statFailure.path && statFailure.error !== undefined) throw statFailure.error
@@ -122,7 +100,24 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     }) as typeof actual.stat,
     readFile: (async (...args: Parameters<typeof actual.readFile>) => {
       const path = typeof args[0] === 'string' ? args[0] : undefined
-      return probeBodyRead(path, () => actual.readFile(...args))
+      if (path === readFailure.path && readFailure.error !== undefined) throw readFailure.error
+      if (readTally.enabled && path !== undefined) {
+        readTally.bySuffix.set(path, (readTally.bySuffix.get(path) ?? 0) + 1)
+      }
+      if (path !== pausedRead.path || pausedRead.resume === undefined) {
+        return actual.readFile(...args)
+      }
+      const resume = pausedRead.resume
+      const finished = pausedRead.finished
+      pausedRead.active = true
+      pausedRead.entered?.()
+      await resume
+      try {
+        return await actual.readFile(...args)
+      } finally {
+        pausedRead.active = false
+        finished?.()
+      }
     }) as typeof actual.readFile,
     readdir: (async (...args: Parameters<typeof actual.readdir>) => {
       if (listingProbe.active) return probeListingRead(String(args[0]), () => actual.readdir(...args))
@@ -925,8 +920,8 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
       // Both callers must join the preparation before either caller leaves it.
       await expect.poll(() => internals.migrationPreparations.get(header.id)?.waiters).toBe(2)
       controller.abort(reason)
-      pause.release()
       await expect(first).rejects.toBe(reason)
+      pause.release()
       const handle = await second
       expect((await handle.read()).events).toEqual([])
       expect(readTally.bySuffix.get(sourcePath)).toBe(1)
@@ -952,11 +947,11 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
     const opening = ctx.sessionPersistence.open(header.id, 'read', { signal: controller.signal })
     await pause.entered
     controller.abort(reason)
-    pause.release()
     await expect(opening).rejects.toMatchObject({
       message: 'session migration preparation aborted',
       cause: reason,
     })
+    pause.release()
     await pause.finished
     await scheduler.yield()
 
@@ -1955,7 +1950,6 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
         sourceVersion: number
         currentPath: string
       } | undefined>
-      readGenerationHeader(...args: never[]): Promise<unknown>
     }
     const path = rawLogPath(root, m.cwd, m.id)
     const selected = {
@@ -1980,9 +1974,7 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
       controller.abort(reason)
       return { ...selected, sourcePath: invalidPath, currentPath: invalidPath }
     })
-    const headerRead = vi.spyOn(internals, 'readGenerationHeader')
     await expect(persistence.stat(m.id, { signal: controller.signal })).rejects.toBe(reason)
-    expect(headerRead).not.toHaveBeenCalled()
   })
 
   it('stat reports absence for an artifact vanishing before its identity stat and surfaces other faults', async () => {

@@ -4409,16 +4409,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'False unless the concrete provider can observe all pending native work.',
       },
       {
-        signature: 'readonly statSettlesOnAbort: boolean = false',
-        description: 'Whether a settled `stat` owns no unfinished work from that call, including after cancellation, and reports every cleanup failure instead of abort. Providers must opt in only when both guarantees hold. Other operations and work started by other calls are outside this contract. An advertised guarantee continues to cover calls already started even if later revoked.',
-        parameters: [],
-      },
-      {
-        signature: 'readonly readOperationsSettleOnAbort: boolean = false',
-        description: 'Whether a read `open`, its handle\'s `read`, and its `close` settle all work they start and retain actual failures when cancellation races them. A real failure must remain distinguishable even if it equals the signal reason. An advertised guarantee covers calls already started even if revoked; unrelated calls and provider-wide quiescence are not covered.',
-        parameters: [],
-      },
-      {
         signature: 'abstract stat(id: SessionId, options?: SessionPersistenceStatOptions): Promise<SessionPersistenceSnapshot | undefined>',
         description: 'Observe one stored session without reading its event log or taking ownership.\n\nThe snapshot\'s `revision` is an opaque change token comparable only against revisions from the same service instance and session id: equal revisions may be treated as an unchanged log; unequal revisions promise nothing. Write-ownership churn does not change a revision. It exists for derived read-model caches keyed off `stat`/`list`; it plays no part in open, read, or resume.',
         parameters: [{ name: 'id', description: 'the stored session to observe.' }, { name: 'options', description: 'optional cancellation.' }],
@@ -5781,9 +5771,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
-        signature: 'createNodeStreamTransport( peer: PeerScope, beforeOpen: (endpoint: string) => void, options?: NodeStreamTransportOptions, ): NodeStreamTransport',
+        signature: 'createNodeStreamTransport( peer: PeerScope, beforeOpen: (endpoint: string) => void, options?: NodeStreamTransportOptions, projectFailure?: TypertGatewayWireStream[\'failure\'], ): NodeStreamTransport',
         description: 'Create a native Node mux pinned to an externally authenticated Peer. The caller owns authentication, Host/Origin checks, and the Peer\'s lifetime.',
-        parameters: [{ name: 'peer', description: 'fixed live Peer selected by the external carrier.' }, { name: 'beforeOpen', description: 'synchronous guard before each logical-stream dispatch; a throw refuses that stream.' }, { name: 'options', description: 'optional frame limit and pre-allocation logical resource reservation; settlement is synchronous.' }],
+        parameters: [{ name: 'peer', description: 'fixed live Peer selected by the external carrier.' }, { name: 'beforeOpen', description: 'synchronous guard before each logical-stream dispatch; a throw refuses that stream.' }, { name: 'options', description: 'optional frame limit and pre-allocation logical resource reservation; settlement is synchronous.' }, { name: 'projectFailure', description: 'optional pure wire-error projection; omission preserves native messages and cleanup ownership is unchanged.' }],
         returns: 'carrier closed explicitly or when the calling Context unloads.',
       },
       {

@@ -1,7 +1,7 @@
 {
   "counts": {
-    "native_source_files": 199,
-    "non_seam_files": 93,
+    "native_source_files": 196,
+    "non_seam_files": 88,
     "uncentralized_internal_lines": 0
   },
   "imports": [
@@ -10006,12 +10006,12 @@
     },
     {
       "路径": "packages/session/session-persistence-jsonl/src/index.ts",
-      "类别": "云端定制",
-      "原因": "加了静止观察 isQuiescent/settlePreparations（扩展点），同时把 stat/open/read 改成“取消后先等实际 I/O 结算再返回、关闭失败不吞”（改了原生取消语义）；约一半行数是包进 observeRequest 的缩进",
-      "撤销条件": "拆成两份：静止观察留作小扩展点；取消结算加固单独提上游或放弃",
-      "处置": "撤掉",
-      "这一程的状态": "已撤",
-      "changed": false
+      "类别": "扩展点",
+      "原因": "原JSONL实例只读报告在途API、准备、列表及句柄工作；不恢复stat/read私有认证标志，不改I/O失败选择",
+      "撤销条件": "原生提供等价只读观察后撤",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": true
     },
     {
       "路径": "vendor/loader/src/config/entry.ts",
@@ -10123,12 +10123,12 @@
     },
     {
       "路径": "packages/session/session-persistence-jsonl/src/generation.ts",
-      "类别": "云端定制",
-      "原因": "历史日志解码时区分“取消”和“真实 I/O 失败”，解码器关闭失败保留；读文件不再把取消信号传给 fs（改默认）",
-      "撤销条件": "随取消结算加固一起提上游或回退",
-      "处置": "搬进插件",
-      "这一程的状态": "没动",
-      "changed": true
+      "类别": "通用修复",
+      "原因": "取消与I/O或关闭同时失败的通用聚合撤回；读取及迁移恢复目标原生，不改变写入格式",
+      "撤销条件": "无具体跨账号、丢数据或密钥泄露场景，按开发手册默认撤回",
+      "处置": "撤掉",
+      "这一程的状态": "已撤",
+      "changed": false
     },
     {
       "路径": "packages/subagent/subagent/src/index.ts",
@@ -10213,11 +10213,11 @@
     },
     {
       "路径": "packages/session/session-persistence-jsonl/src/storage.ts",
-      "类别": "云端定制",
-      "原因": "句柄静止观察 isQuiescent（扩展点），同时 read 取消后先结算、close 等已准入的读结束（改默认）",
-      "撤销条件": "静止观察保留；其余随取消结算加固处理",
-      "处置": "搬进插件",
-      "这一程的状态": "没动",
+      "类别": "扩展点",
+      "原因": "仅观察原句柄、缓冲及在途Promise；撤回取消错误重写和close额外等待，保持原生读写及关闭结果",
+      "撤销条件": "原生提供等价只读工作快照后撤",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
       "changed": true
     },
     {
@@ -10421,10 +10421,10 @@
     {
       "路径": "packages/session/session-persistence/src/index.ts",
       "类别": "扩展点",
-      "原因": "基类加 isQuiescent（默认 false）、statSettlesOnAbort、readOperationsSettleOnAbort（默认 false）",
+      "原因": "仅保守的isQuiescent只读观察默认false；撤回stat/read私有取消认证字段",
       "撤销条件": "保留",
       "处置": "留作口子",
-      "这一程的状态": "没动",
+      "这一程的状态": "已按新原生重加",
       "changed": true
     },
     {
@@ -10519,12 +10519,12 @@
     },
     {
       "路径": "packages/session/session-persistence-jsonl/src/catalog-migration.ts",
-      "类别": "云端定制",
-      "原因": "子目录补齐时区分取消和真实读失败，校验可带取消信号",
-      "撤销条件": "随取消结算加固一起提上游或回退",
-      "处置": "搬进插件",
-      "这一程的状态": "没动",
-      "changed": true
+      "类别": "通用修复",
+      "原因": "取消与I/O或关闭同时失败的通用聚合撤回；读取及迁移恢复目标原生，不改变写入格式",
+      "撤销条件": "无具体跨账号、丢数据或密钥泄露场景，按开发手册默认撤回",
+      "处置": "撤掉",
+      "这一程的状态": "已撤",
+      "changed": false
     },
     {
       "路径": "packages/subprocess/subprocess/src/types.ts",
@@ -10682,20 +10682,20 @@
     {
       "路径": "packages/session/session-persistence-jsonl/src/zstd-public-decoder.ts",
       "类别": "通用修复",
-      "原因": "解码失败后关闭又失败时两个错误都保留，不再只剩关闭错误",
-      "撤销条件": "提上游",
+      "原因": "取消与I/O或关闭同时失败的通用聚合撤回；读取及迁移恢复目标原生，不改变写入格式",
+      "撤销条件": "无具体跨账号、丢数据或密钥泄露场景，按开发手册默认撤回",
       "处置": "撤掉",
-      "这一程的状态": "没动",
-      "changed": true
+      "这一程的状态": "已撤",
+      "changed": false
     },
     {
       "路径": "packages/session/session-persistence-jsonl/src/zstd-private-decoder.ts",
       "类别": "通用修复",
-      "原因": "同 zstd-public-decoder.ts",
-      "撤销条件": "提上游",
+      "原因": "取消与I/O或关闭同时失败的通用聚合撤回；读取及迁移恢复目标原生，不改变写入格式",
+      "撤销条件": "无具体跨账号、丢数据或密钥泄露场景，按开发手册默认撤回",
       "处置": "撤掉",
-      "这一程的状态": "没动",
-      "changed": true
+      "这一程的状态": "已撤",
+      "changed": false
     },
     {
       "路径": "packages/api/session-controller/src/commands.ts",

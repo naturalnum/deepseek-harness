@@ -170,3 +170,5 @@ Lookup policy is configured per key, so all `agent` or `session` parameters shar
 ### Business ownership
 
 `packages/api` owns transport, call shape, and session lifecycle; a business rule belongs to an independent business package and reaches this layer through a registration surface or projected data. The requirements a change here must satisfy — the four `@Remote` disciplines, the additive-names rule, and the boundary this layer keeps — are owned by [Remote and API rules](defensive-patterns/remote-and-api.md), which is where a review checks them.
+
+The public `TypertGatewayWireStream` face supplies the original stream opening and failure mapping. An externally admitted Node mux may pass a pure `projectFailure` callback to `createNodeStreamTransport`; omission uses the original failure mapping. The embedding caller retains Peer authentication and dispatch admission, and the Native mux retains cleanup ownership.

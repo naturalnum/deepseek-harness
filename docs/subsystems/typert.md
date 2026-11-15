@@ -668,9 +668,10 @@ Resolve strict generated definitions or conservative SRC markers against current
  * @param peer - fixed live Peer selected by the external carrier.
  * @param beforeOpen - synchronous guard before each logical-stream dispatch; a throw refuses that stream.
  * @param options - optional frame limit and pre-allocation logical resource reservation; settlement is synchronous.
+ * @param projectFailure - optional pure wire-error projection; omission preserves native messages and cleanup ownership is unchanged.
  * @returns carrier closed explicitly or when the calling Context unloads.
  */
-createNodeStreamTransport( peer: PeerScope, beforeOpen: (endpoint: string) => void, options?: NodeStreamTransportOptions, ): NodeStreamTransport
+createNodeStreamTransport( peer: PeerScope, beforeOpen: (endpoint: string) => void, options?: NodeStreamTransportOptions, projectFailure?: TypertGatewayWireStream['failure'], ): NodeStreamTransport
 
 /**
  * Check for an active owner Client event stream, the only kind that can answer forwarded waterfalls.
@@ -719,7 +720,7 @@ async invoke(request: InvokeRemoteRequest): Promise<unknown>
 async stream(request: InvokeRemoteRequest): Promise<AsyncIterable<unknown>>
 ```
 
-Types: [NodeStreamTransport](api-gateway.md) · [NodeStreamTransportOptions](api-gateway.md) · [RemoteEventQueueLimits](api-gateway.md)
+Types: [NodeStreamTransport](api-gateway.md) · [NodeStreamTransportOptions](api-gateway.md) · [RemoteEventQueueLimits](api-gateway.md) · [TypertGatewayWireStream](api-gateway.md)
 
 Source: [`packages/api/gateway/src/index.ts`](../../packages/api/gateway/src/index.ts)
 <!-- END GENERATED cordis-surface -->

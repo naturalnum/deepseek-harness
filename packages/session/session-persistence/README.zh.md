@@ -163,3 +163,5 @@ seam 不添加提示词或 schema。恢复会将已存储的表层事件还原�
 无。
 
 </details>
+
+嵌入方可调用 `isQuiescent(maximum)` 只读观察工作；未提供快照的实现默认返回 false。取消采用原生读/stat Promise，不再使用提供方认证布尔。

@@ -163,3 +163,5 @@ These limits define where the seam's guarantees stop. They are current package c
 None.
 
 </details>
+
+Embedding owners may read `isQuiescent(maximum)` without starting work; the default is false for providers without a work snapshot. Cancellation uses the Native read/stat promises, without provider certification booleans.

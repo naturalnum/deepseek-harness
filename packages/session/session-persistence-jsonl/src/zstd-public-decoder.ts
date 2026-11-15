@@ -16,7 +16,6 @@ export class PublicZstdFrameDecoder implements ZstdFrameDecoder {
     if (this.started) throw new Error('Zstandard frame decoder was already started')
     if (this.closed) throw new Error('cannot start a closed Zstandard frame decoder')
     this.started = true
-    let decodeFailure: { readonly error: unknown } | undefined
     try {
       for (const { start, end } of frames) {
         let decoded: Buffer
@@ -29,16 +28,8 @@ export class PublicZstdFrameDecoder implements ZstdFrameDecoder {
         }
         yield decoded
       }
-    } catch (error: unknown) {
-      decodeFailure = { error }
-      throw error
     } finally {
-      try { this.close() } catch (error: unknown) {
-        if (decodeFailure !== undefined) {
-          throw new AggregateError([decodeFailure.error, error], 'Zstandard decode and cleanup failed', { cause: error })
-        }
-        throw error
-      }
+      this.close()
     }
   }
 

@@ -10,7 +10,6 @@ import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import { parseGenerationLogFilename } from './format.ts'
 import type { JsonlCompression } from './format.ts'
 import { JsonlGenerationSourceChangedError, readDecodedJsonlSource } from './generation.ts'
-import { JsonlReadCleanupError, readJsonlIo } from './read-cleanup.ts'
 import type { JsonlPhysicalIdentity } from './generation.ts'
 
 /** Per-parent supplemental facts and the source checks required before serving or publishing them. */
@@ -18,7 +17,7 @@ interface PreparedCatalogFacts {
   readonly facts: readonly SessionFormatJsonObject[]
   readonly failures: readonly { readonly path: string; readonly error: unknown }[]
   /** @returns resolves while every inspected child still has the captured physical revision. */
-  validate(signal?: AbortSignal): Promise<void>
+  validate(): Promise<void>
 }
 
 /**
@@ -43,7 +42,7 @@ export async function prepareCatalogFacts(
     const version = parseGenerationLogFilename(basename(source.path), compression)
     if (version === undefined) throw new SessionFormatUnsupportedMigrationError(`unrecognized historical child generation ${source.path}`)
     const witness: { path: string; identity: JsonlPhysicalIdentity } = {
-      path: source.path, identity: await readJsonlIo(signal, () => stat(source.path, { bigint: true })),
+      path: source.path, identity: await stat(source.path, { bigint: true }),
     }
     witnesses.push(witness)
     const unavailable = { childId: source.header.id, childCreatedAt: source.header.createdAt,
@@ -56,11 +55,7 @@ export async function prepareCatalogFacts(
         }),
       }, signal)
     } catch (error: unknown) {
-      if (error instanceof JsonlReadCleanupError) throw error
-      if (signal.aborted) {
-        if (error === signal.reason) throw error
-        throw new AggregateError([error], 'historical child read failed during cancellation', { cause: error })
-      }
+      signal.throwIfAborted()
       failures.push({ path: source.path, error })
       facts.push(unavailable)
       continue
@@ -85,11 +80,9 @@ export async function prepareCatalogFacts(
   return {
     facts,
     failures,
-    async validate(validationSignal = signal) {
+    async validate() {
       for (const witness of witnesses) {
-        validationSignal.throwIfAborted()
-        const current = await readJsonlIo(validationSignal, () => stat(witness.path, { bigint: true }))
-        validationSignal.throwIfAborted()
+        const current = await stat(witness.path, { bigint: true })
         if (current.dev !== witness.identity.dev || current.ino !== witness.identity.ino
           || current.size !== witness.identity.size || current.mtimeNs !== witness.identity.mtimeNs
           || current.ctimeNs !== witness.identity.ctimeNs) throw new JsonlGenerationSourceChangedError(witness.path)

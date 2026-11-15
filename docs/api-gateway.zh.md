@@ -176,3 +176,5 @@ lookup 策略按 key 配置，因此所有 `agent` 或 `session` 参数共享冷
 ### 业务所有权
 
 `packages/api` 负责传输、调用形态与会话生命周期；业务规则归独立的业务包，经注册面或投影数据接入本层。这里改动必须满足的要求——`@Remote` 的四条纪律、存量名只增不改、以及本层保留的边界——正家是[远程与 API 规则](defensive-patterns/remote-and-api.zh.md)，评审就在那里核对。
+
+公开的 `TypertGatewayWireStream` 提供原流打开与错误映射。外部准入的 Node mux 可向 `createNodeStreamTransport` 传入纯 `projectFailure` 回调；省略时采用原错误映射。嵌入方继续负责 Peer 鉴权和分发准入，原生 mux 继续持有清理责任。

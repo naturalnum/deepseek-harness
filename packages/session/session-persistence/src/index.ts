@@ -193,24 +193,6 @@ export abstract class SessionPersistence extends Service {
   isQuiescent(_maximum: number): boolean { return false }
 
   /**
-   * Whether a settled `stat` owns no unfinished work from that call, including
-   * after cancellation, and reports every cleanup failure instead of abort.
-   * Providers must opt in only when both guarantees hold. Other operations
-   * and work started by other calls are outside this contract. An advertised
-   * guarantee continues to cover calls already started even if later revoked.
-   */
-  readonly statSettlesOnAbort: boolean = false
-
-  /**
-   * Whether a read `open`, its handle's `read`, and its `close` settle all work
-   * they start and retain actual failures when cancellation races them. A real
-   * failure must remain distinguishable even if it equals the signal reason.
-   * An advertised guarantee covers calls already started even if revoked;
-   * unrelated calls and provider-wide quiescence are not covered.
-   */
-  readonly readOperationsSettleOnAbort: boolean = false
-
-  /**
    * Observe one stored session without reading its event log or taking
    * ownership.
    *

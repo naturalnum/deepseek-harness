@@ -179,3 +179,5 @@ These limits define when this backend is a poor fit or needs special operational
 None.
 
 </details>
+
+The existing JSONL backend reports its current API operations, queued listing work, preparation records and retained handles through the read-only `isQuiescent(maximum)` snapshot. Reading and cleanup retain Native failure selection and cancellation behavior.

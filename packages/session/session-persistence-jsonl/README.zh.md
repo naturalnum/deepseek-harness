@@ -179,3 +179,5 @@ JSONL 存储不修改实时请求前缀。只有重建历史、当前 envelope �
 无。
 
 </details>
+
+现有 JSONL 后端通过只读的 `isQuiescent(maximum)` 快照报告在途 API 操作、列表队列、准备记录和保留句柄。读取与清理采用原生的失败选择及取消行为。

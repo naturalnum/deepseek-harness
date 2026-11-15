@@ -312,6 +312,8 @@ class JsonlSessionPersistence extends SessionPersistence {
   private readonly coldLogMemo = new Map<SessionId, StoredLog>()
   /** One joinable decode/migration operation per selected historical Session file revision. */
   private readonly migrationPreparations = new Map<SessionId, MigrationPreparation>()
+  // Cordis call shadows share this holder with the original backend instance.
+  private readonly activity = { operations: 0 }
 
   constructor(ctx: Context, public config: Config, private readonly tracker: JsonlBackendTracker) {
     super(ctx)
@@ -358,6 +360,10 @@ class JsonlSessionPersistence extends SessionPersistence {
    * @returns the owned write handle.
    */
   async create(header: SessionHeader, options?: SessionPersistenceCreateOptions): Promise<SessionHandle> {
+    return this.observe(() => this.createOwned(header, options))
+  }
+
+  private async createOwned(header: SessionHeader, options?: SessionPersistenceCreateOptions): Promise<SessionHandle> {
     options?.signal?.throwIfAborted()
     const snapshot = materializeCreateHeader(header)
     // Fail fast on a seeded/cut mismatch with the exact refusal the header
@@ -386,6 +392,10 @@ class JsonlSessionPersistence extends SessionPersistence {
    * @returns the open handle.
    */
   async open(id: SessionId, access: SessionAccess, options?: SessionPersistenceOpenOptions): Promise<SessionHandle> {
+    return this.observe(() => this.openOwned(id, access, options))
+  }
+
+  private async openOwned(id: SessionId, access: SessionAccess, options?: SessionPersistenceOpenOptions): Promise<SessionHandle> {
     options?.signal?.throwIfAborted()
     await this.ensureRootEncoding()
     options?.signal?.throwIfAborted()
@@ -470,7 +480,22 @@ class JsonlSessionPersistence extends SessionPersistence {
    * @returns resolution once every write handle active at the call has flushed.
    */
   flush(): Promise<void> {
-    return this.tracker.flushAll()
+    return this.observe(() => this.tracker.flushAll())
+  }
+
+  /** Read current Native promise, preparation, listing and retained-handle work without starting I/O.
+   * @param maximum Explicit retained-handle observation bound.
+   * @returns True when the reported Native work is idle within that bound.
+   */
+  override isQuiescent(maximum: number): boolean {
+    return this.activity.operations === 0 && this.migrationPreparations.size === 0
+      && this.listLimit.activeCount === 0 && this.listLimit.pendingCount === 0 && this.tracker.isQuiescent(maximum)
+  }
+
+  private async observe<T>(operation: () => Promise<T>): Promise<T> {
+    this.activity.operations++
+    try { return await operation() }
+    finally { this.activity.operations-- }
   }
 
   /**
@@ -480,7 +505,11 @@ class JsonlSessionPersistence extends SessionPersistence {
    * @returns the snapshot (`sizeBytes` carries the physical artifact size), or
    *   `undefined` when the session does not exist.
    */
-  async stat(
+  async stat(id: SessionId, options?: SessionPersistenceStatOptions): Promise<SessionPersistenceSnapshot | undefined> {
+    return this.observe(() => this.statOwned(id, options))
+  }
+
+  private async statOwned(
     id: SessionId,
     options?: SessionPersistenceStatOptions,
   ): Promise<SessionPersistenceSnapshot | undefined> {
@@ -520,6 +549,10 @@ class JsonlSessionPersistence extends SessionPersistence {
    * @returns one snapshot per session, in no promised order.
    */
   async list(options?: SessionPersistenceListOptions): Promise<readonly SessionPersistenceSnapshot[]> {
+    return this.observe(() => this.listOwned(options))
+  }
+
+  private async listOwned(options?: SessionPersistenceListOptions): Promise<readonly SessionPersistenceSnapshot[]> {
     const signal = options?.signal
     const snapshots: SessionPersistenceSnapshot[] = []
     const listed = new Set<SessionId>()
