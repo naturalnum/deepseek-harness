@@ -188,7 +188,7 @@ it('delivers the final EOF page when Provider completion occurs during its origi
     expect(delivered).toBe(false)
     gate.resolve(undefined)
     await expect(reading).resolves.toMatchObject({ kind: 'page', closed: true, nextCursor: null,
-      entries: expect.arrayContaining([{ name: 'item-000', type: 'file' }]) })
+      entries: Array.from({ length: 64 }, (_, index) => ({ name: `item-${String(index).padStart(3, '0')}`, type: 'file', size: 1 })) })
     expect(h.next).toHaveBeenCalledOnce()
     await expect(h.stream.next()).resolves.toMatchObject({ done: true })
   } finally { gate.resolve(undefined); await reading }
