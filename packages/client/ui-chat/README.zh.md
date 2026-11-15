@@ -131,6 +131,8 @@ Chat Builder 按节点发布 `bottomSource`：节点可见且属于已加载的�
 
 运行状态显示一只鲸鱼，其 APNG 遮罩继承文字颜色。启用减少动态效果或强制颜色模式、或浏览器不支持 alpha 遮罩时，CSS 选择静态 SVG。APNG 是插件样式表引用的[包资源](../AGENTS.md#dependency-declaration)；React 不通过 DOM 样式传递图片数据。
 
+Flow 声明两个仅装饰用的 inline root chain：`conversation.chat.running.mark` 和 `conversation.chat.running.copy`。前者回退到原鲸尾；后者接收普通 duration、静态播报标记、动画状态及原样式类数据，回退到原生本地化文案。两个锚点使用 `span` 与 `display: contents`，不改变布局。文案链位于 TextShimmer 外，嵌入方用原 TextShimmer 绘制普通文本，避免装饰层重复挂载插槽；原计时、断连暂停、holding 隐藏、TextShimmer 与静态 aria-live 播报继续归 Native。
+
 滚动边缘渐隐在 `ResizeObserver` 报告已展开组的布局后初始化；展开组时不会在 layout effect 中立即读取滚动尺寸。
 
 每个组拥有本地 `useDisclosure` 状态，组件保持挂载时，模式切换保留该状态。

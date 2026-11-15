@@ -1,7 +1,7 @@
 {
   "counts": {
-    "native_source_files": 201,
-    "non_seam_files": 82,
+    "native_source_files": 202,
+    "non_seam_files": 79,
     "uncentralized_internal_lines": 0
   },
   "imports": [
@@ -3155,6 +3155,15 @@
     {
       "path": "packages/cloud/pe-cloud-client/src/client/branding.tsx",
       "line": 5,
+      "module": "@deepseek-ai/dsh-client-ui-chat/client",
+      "names": [
+        "(augmentation)"
+      ],
+      "typeOnly": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-client/src/client/branding.tsx",
+      "line": 6,
       "module": "@deepseek-ai/dsh-client-ui-sidebar/client",
       "names": [
         "SidebarBrandMarkOwnerProps"
@@ -3163,16 +3172,17 @@
     },
     {
       "path": "packages/cloud/pe-cloud-client/src/client/branding.tsx",
-      "line": 6,
+      "line": 7,
       "module": "@deepseek-ai/dsh-client-ui-slots",
       "names": [
-        "PropsLocale"
+        "PropsLocale",
+        "PropsRuntime"
       ],
       "typeOnly": true
     },
     {
       "path": "packages/cloud/pe-cloud-client/src/client/branding.tsx",
-      "line": 7,
+      "line": 8,
       "module": "@deepseek-ai/dsh-client-locale/client",
       "names": [
         "(augmentation)"
@@ -3181,10 +3191,11 @@
     },
     {
       "path": "packages/cloud/pe-cloud-client/src/client/branding.tsx",
-      "line": 8,
+      "line": 9,
       "module": "@deepseek-ai/dsh-client-ui-primitives",
       "names": [
-        "LightningMark"
+        "LightningMark",
+        "TextShimmer"
       ],
       "typeOnly": false
     },
@@ -9299,11 +9310,11 @@
     },
     {
       "路径": "packages/client/ui-chat/src/client/apply.ts",
-      "类别": "通用修复",
-      "原因": "分支会话失败时把失败原因回传给界面",
-      "撤销条件": "向上游提交",
-      "处置": "撤掉",
-      "这一程的状态": "没动",
+      "类别": "扩展点",
+      "原因": "仅登记原Flow的运行装饰mark/copy两个inline root chain子槽；旧无消费者fork通知回调撤回",
+      "撤销条件": "原生有默认不变的同等运行装饰位置时改用其入口",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
       "changed": true
     },
     {
@@ -9344,12 +9355,12 @@
     },
     {
       "路径": "packages/client/ui-chat/src/client/chat/RunningStatus.tsx",
-      "类别": "云端定制",
-      "原因": "运行状态图标由鲸尾换成 LightningMark（品牌）",
-      "撤销条件": "同 ChatView.module.css",
-      "处置": "撤掉",
-      "这一程的状态": "已撤",
-      "changed": false
+      "类别": "扩展点",
+      "原因": "仅用可选framework chain座绘制图标和文案，原鲸尾/locale为fallback；原时钟/暂停/holding/aria逻辑保留",
+      "撤销条件": "原生有默认不变的同等运行装饰位置时改用其入口",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": true
     },
     {
       "路径": "packages/client/ui-chat/src/client/chat/RunningWhaleTail.tsx",
@@ -9362,21 +9373,21 @@
     },
     {
       "路径": "packages/client/ui-chat/src/client/contract/slots.ts",
-      "类别": "通用修复",
-      "原因": "分支回调签名带上失败信息",
-      "撤销条件": "随 apply.ts",
-      "处置": "撤掉",
-      "这一程的状态": "没动",
+      "类别": "扩展点",
+      "原因": "仅声明mark/copy槽与framework链渲染座，普通duration owner数据；forkAt恢复原签名",
+      "撤销条件": "原生有默认不变的同等运行装饰位置时改用其入口",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
       "changed": true
     },
     {
       "路径": "packages/client/ui-chat/src/client/locale.ts",
       "类别": "云端定制",
-      "原因": "“深度求索中”改为“处理中”（品牌，改了上游默认文案）；兼新增分支失败文案（通用修复）",
-      "撤销条件": "上游文案注册不允许同名空间重复登记，无法从外部覆盖；需上游给文案覆盖方式，或还原品牌部分",
+      "原因": "PowerEvolve运行文案移Cloud自有字典；无消费者forkFailure文案随旧通知增强撤回，整个文件恢复目标Native",
+      "撤销条件": "当前原生locale精确目标blob；Cloud沿自有chain贡献保全部原文案",
       "处置": "搬进插件",
-      "这一程的状态": "没动",
-      "changed": true
+      "这一程的状态": "已搬",
+      "changed": false
     },
     {
       "路径": "packages/client/ui-chat/tsdown.config.ts",
@@ -11310,6 +11321,15 @@
       "原因": "新增目录分页Remote与原目录列举一致仅所有者可用，不向共享读者开放",
       "撤销条件": "原生包含同等分页接口权限登记时撤回",
       "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": true
+    },
+    {
+      "路径": "packages/client/ui-chat/src/client/chat/ChatFlow.tsx",
+      "类别": "扩展点",
+      "原因": "仅把原framework chain座传给RunningStatus，不改行、时钟及状态数据",
+      "撤销条件": "原生有默认不变的同等运行装饰位置时改用其入口",
+      "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
       "changed": true
     }

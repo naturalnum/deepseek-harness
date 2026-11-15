@@ -97,8 +97,8 @@ export const zh = {
   'chat.retryOlder': '重新加载',
   'chat.historyStart': '已到会话开头',
   'chat.toBottom': '回到底部',
-  'chat.deepDiving': '处理中',
-  'chat.deepDivingFor': '处理中，用时 {duration}…',
+  'chat.deepDiving': '深度求索中',
+  'chat.deepDivingFor': '深度求索中，用时 {duration} ···',
   'chat.turnNavigation.label': '轮次导航',
   'chat.turnNavigation.jump': '跳转到第 {turn} 轮',
   'chat.turnNavigation.jumpLoad': '加载并跳转到第 {turn} 轮',
@@ -125,8 +125,6 @@ export const zh = {
   'settings.transcript.standard': '标准',
   'settings.transcript.detailed': '详细',
   'settings.transcript.verbose': '完全展开',
-  'forkFailure.title': '未能打开分支会话',
-  'forkFailure.description': '分支会话未能打开，可能已经创建。请先检查会话列表，再决定是否重试；当前会话未改变。',
   'fileOpen.title': '无法打开文件',
   'fileOpen.unknown': '无法打开此文件',
   'message.extraBlock': '附加内容块',
@@ -313,8 +311,8 @@ export const en = {
   'chat.retryOlder': 'Retry loading',
   'chat.historyStart': 'Start of conversation',
   'chat.toBottom': 'Back to bottom',
-  'chat.deepDiving': 'Processing',
-  'chat.deepDivingFor': 'Processing for {duration}…',
+  'chat.deepDiving': 'Deep diving',
+  'chat.deepDivingFor': 'Deep diving for {duration} ···',
   'chat.turnNavigation.label': 'Turn navigation',
   'chat.turnNavigation.jump': 'Jump to turn {turn}',
   'chat.turnNavigation.jumpLoad': 'Load and jump to turn {turn}',
@@ -341,8 +339,6 @@ export const en = {
   'settings.transcript.standard': 'Standard',
   'settings.transcript.detailed': 'Detailed',
   'settings.transcript.verbose': 'Verbose',
-  'forkFailure.title': 'Could not open the branch',
-  'forkFailure.description': 'The branch could not be opened. It may already exist. Check the conversation list before trying again; the current conversation has not changed.',
   'fileOpen.title': 'Couldn’t open file',
   'fileOpen.unknown': 'Couldn’t open this file',
   'message.extraBlock': 'Extra content block',
@@ -641,8 +637,6 @@ export const ja = {
   'json.truncated': '… 省略表示、全{total}文字',
   'clock.md': '{m}/{d}',
   'clock.ymd': '{y}-{m}-{d}',
-  'forkFailure.title': '分岐を開けませんでした',
-  'forkFailure.description': '分岐を開けませんでした。すでに作成されている可能性があります。再試行する前に会話一覧を確認してください。現在の会話は変更されていません。',
 } satisfies Record<keyof typeof en, string>
 
 /** Spanish dictionary, checked against the English keys. */
@@ -854,8 +848,6 @@ export const es = {
   'json.truncated': '… truncado, caracteres {total} en total',
   'clock.md': '{m}/{d}',
   'clock.ymd': '{y}-{m}-{d}',
-  'forkFailure.title': 'No se pudo abrir la rama',
-  'forkFailure.description': 'No se pudo abrir la rama. Puede que ya exista. Comprueba la lista de conversaciones antes de reintentar; la conversación actual no ha cambiado.',
 } satisfies Record<keyof typeof en, string>
 
 /** French dictionary, checked against the English keys. */
@@ -1067,8 +1059,6 @@ export const fr = {
   'json.truncated': '… tronqué, nombre total de caractères {total}',
   'clock.md': '{m}/{d}',
   'clock.ymd': '{y}-{m}-{d}',
-  'forkFailure.title': 'Impossible d’ouvrir la branche',
-  'forkFailure.description': 'La branche n’a pas pu être ouverte. Elle existe peut-être déjà. Vérifiez la liste des conversations avant de réessayer ; la conversation actuelle n’a pas changé.',
 } satisfies Record<keyof typeof en, string>
 
 /** German dictionary, checked against the English keys. */
@@ -1280,8 +1270,6 @@ export const de = {
   'json.truncated': '… gekürzt, {total} Zeichen insgesamt',
   'clock.md': '{m}/{d}',
   'clock.ymd': '{y}-{m}-{d}',
-  'forkFailure.title': 'Der Zweig konnte nicht geöffnet werden',
-  'forkFailure.description': 'Der Zweig konnte nicht geöffnet werden. Er ist möglicherweise bereits vorhanden. Prüfe vor einem erneuten Versuch die Gesprächsliste; das aktuelle Gespräch ist unverändert.',
 } satisfies Record<keyof typeof en, string>
 
 /** Russian dictionary, checked against the English keys. */
@@ -1493,8 +1481,6 @@ export const ru = {
   'json.truncated': '… усечено, всего символов {total}',
   'clock.md': '{m}/{d}',
   'clock.ymd': '{y}-{m}-{d}',
-  'forkFailure.title': 'Не удалось открыть ветку',
-  'forkFailure.description': 'Не удалось открыть ветку. Возможно, она уже существует. Перед повторной попыткой проверьте список бесед; текущая беседа не изменилась.',
 } satisfies Record<keyof typeof en, string>
 
 /** Portuguese dictionary, checked against the English keys. */
@@ -1706,6 +1692,4 @@ export const pt = {
   'json.truncated': '… truncado, {total} caracteres no total',
   'clock.md': '{m}/{d}',
   'clock.ymd': '{y}-{m}-{d}',
-  'forkFailure.title': 'Não foi possível abrir a ramificação',
-  'forkFailure.description': 'Não foi possível abrir a ramificação. Pode já existir. Verifique a lista de conversas antes de tentar novamente; a conversa atual não foi alterada.',
 } satisfies Record<keyof typeof en, string>

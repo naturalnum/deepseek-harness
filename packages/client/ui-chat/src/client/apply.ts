@@ -226,6 +226,8 @@ export function apply(ctx: Context): void {
     name: 'conversation.chat.flow', locale: NS, store: chatStore,
     children: {
       'conversation.chat.node': { kind: 'keyed', scope: 'session', inject: CHAT_NODE_INJECT },
+      'conversation.chat.running.mark': { kind: 'chain', scope: 'root', inline: true },
+      'conversation.chat.running.copy': { kind: 'chain', scope: 'root', inline: true },
     },
     inject: (sessionId: SessionId): ChatFlowDataInjected => {
       const binding = ctx.sessions.binding(sessionId)
@@ -301,16 +303,15 @@ export function apply(ctx: Context): void {
             },
             read: () => chatScrollPositions.get(sessionId) ?? null,
           },
-          forkAt: (seq, onFailure) => {
+          forkAt: (seq) => {
             const turn = [...chat.getSnapshot().timeline.turns.values()].find(turn => turn.end?.seq === seq)
             const messageId = turn?.data.get('turn-tail')?.closing?.finalNode.messageId
             ctx.sessions.fork({ sessionId, atSeq: seq, increaseTitle: true, onCreated: (childId) => {
               ctx.get('productAnalytics')?.track('branch_session_click', { session_id: childId, parent_session_id: sessionId, ...messageId === undefined ? {} : { parent_message_id: messageId }, click_position: 'footer' })
             } })
               .then((childId) => { ctx.uiWorkspace.openSession(childId) })
-              .catch((_error: unknown) => {
-                // Creation may precede a title failure; the view reports uncertainty without repeating the fork.
-                onFailure?.()
+              .catch(() => {
+                // Fork or child-title failure leaves the source view unchanged.
               })
           },
         }

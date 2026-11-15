@@ -131,6 +131,8 @@ Running group titles, reasoning previews, tool and command rows, the active retr
 
 The running status shows a whale whose APNG mask inherits the text color. CSS selects the static SVG when reduced motion or forced colors are active, or alpha masks are unsupported. The APNG is a [package asset](../AGENTS.md#dependency-declaration) referenced by the plugin stylesheet; React does not pass image data through DOM styles.
 
+The Flow declares two decorative inline root chains: `conversation.chat.running.mark` and `conversation.chat.running.copy`. The first falls back to the original whale; the second takes plain duration, announcement, active and original class-name data and falls back to Native localized copy. Both anchors use `span` and `display: contents`, preserving layout. The copy chain stays outside TextShimmer; embeddings render plain text through the original TextShimmer without duplicating outlet mounts; Native retains elapsed time, disconnected pause, holding visibility, TextShimmer and the static aria-live announcement.
+
 Scroll-edge fades initialize when `ResizeObserver` reports the open group's layout; opening the group performs no immediate scroll-dimension read in a layout effect.
 
 Each group owns local `useDisclosure` state that survives mode changes while its component stays mounted.

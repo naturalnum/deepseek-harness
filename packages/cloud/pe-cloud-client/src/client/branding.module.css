@@ -1,2 +1,4 @@
 .mark { display: inline-flex; color: #000; }
 .name { font-size: 17px; font-weight: 600; letter-spacing: 0; white-space: nowrap; }
+
+.runningMark { position: relative; display: inline-flex; flex: none; width: calc(14px + var(--dsh-content-font-delta, 0px)); height: calc(14px + var(--dsh-content-font-delta, 0px)); contain: strict; overflow: hidden; }

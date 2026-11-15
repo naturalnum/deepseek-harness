@@ -26,7 +26,7 @@ function isTranscriptEcho(item: PendingInput): boolean {
 export const ChatFlow = memo(function ChatFlow({
   entries, pendingInputs, lastInputTurn, deferCollapse,
   useSession, useChat, useChatNode, useChatNodeBottom, useChatNodeProcess, useChatGroup, usePresentation, useConnectionState,
-  useStore, actions, renderSlot, renderFactorySlot, t, useGroupAction, useGroupHeaderAction,
+  useStore, actions, renderSlot, renderSlotChain, renderFactorySlot, t, useGroupAction, useGroupHeaderAction,
   cwd, openFile, inspectCall, forkAt, loadImage,
 }: ChatFlowSlotProps) {
   const nodeStore = useChat(snapshot => snapshot.nodes)
@@ -94,7 +94,7 @@ export const ChatFlow = memo(function ChatFlow({
   return [
     ...rows, ...leadingRows, ...openingRows,
     ...running || holding ? [<RunningStatus key="running" startTime={runningStartTime} paused={disconnected}
-      holding={holding} t={t} />] : [],
+      holding={holding} t={t} renderSlotChain={renderSlotChain} />] : [],
     ...pendingRows,
   ]
 })

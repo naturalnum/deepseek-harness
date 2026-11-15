@@ -358,7 +358,7 @@ export interface ChatViewInjected {
     save: (position: ChatScrollPosition | null) => void
     read: () => ChatScrollPosition | null
   }
-  forkAt: (seq: number, onFailure?: () => void) => void
+  forkAt: (seq: number) => void
 }
 
 /** Session-owned node sources shared with the view, plus the flow's connection state. */
@@ -381,7 +381,7 @@ export interface ChatFlowOwnerProps extends Pick<ChatNodeOwnerProps,
 /** Full props of the Chat-owned flow renderer. */
 export type ChatFlowSlotProps =
   PropsRuntime<'conversation.chat.flow'>
-  & PropsRenderSlots<'conversation.chat.node'>
+  & PropsRenderSlots<'conversation.chat.node' | 'conversation.chat.running.mark' | 'conversation.chat.running.copy'>
   & PropsRenderFactories
   & PropsStore<ChatStore>
   & InjectFace<ChatFlowDataInjected>
@@ -427,6 +427,20 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 
   interface SlotMap {
+    /** Decorative running mark; the owner retains its original whale as the fallback. */
+    'conversation.chat.running.mark': { kind: 'chain'; scope: 'root'; inline: true }
+    /** Running copy over the original formatted duration; the owner retains its original locale fallback. */
+    'conversation.chat.running.copy': {
+      kind: 'chain'
+      scope: 'root'
+      inline: true
+      owner: {
+        readonly duration: string | undefined
+        readonly announcement: boolean
+        readonly active: boolean
+        readonly className: string | undefined
+      }
+    }
     /** Area-local text gestures and surfaces; each consumer registers its own synchronous admission. */
     'conversation.chat.text-interaction': { kind: 'keyed'; scope: 'session'; owner: TextInteractionSurface }
     /** Language-keyed layers around one Markdown fence in the Chat flow; the content is the plain code block. */
