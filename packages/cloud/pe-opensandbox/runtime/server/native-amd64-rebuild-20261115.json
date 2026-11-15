@@ -1,0 +1,36 @@
+{
+  "schema": "native-amd64-image-rebuild/v1",
+  "platform": "linux/amd64",
+  "deploymentSchema": "pe-opensandbox-root-deployment-v2",
+  "workload": {
+    "manifest": "sha256:32c17c742af43a6d9c89c69441fbc543751af41b0f61bf8294ed00ac3a4df62f",
+    "config": "sha256:0a06b620dfb9fa477e6e136e01786d39ab29be5d68c19a6c975c6a6205023374"
+  },
+  "server": {
+    "manifest": "sha256:e4fc713db05339d41b70215f2ffdbc1c37f8948b92c949eb4cd2c164ce90038a",
+    "config": "sha256:6ab048f3f4553f1e28d702900b41dd3f19fe0bce0a707bda8b5d7114474ea5c4"
+  },
+  "baseManifest": "sha256:866411c135b507754efdf2fda51484be4d3d7d5173ed53cd083106132e710904",
+  "execdManifest": "sha256:ca4ff631193b68ba0a47622773389b054994c77971cf2859c6beacf6cb9314de",
+  "publicInputs": {
+    "nodeVersion": "22.23.2",
+    "pythonVersion": "3.12.13",
+    "nativeAndLockedWheelsArchiveSha256": "e1cf41da7e0e1e523f640a182e8b497061c5df97bfec87aa689f24bcdb128fa3",
+    "originalSixFileOverlaySha256": "1245ad3aa4fdc571d7d960fc40280f58945dcc7ae39e22dd9ba9768bf8f6ecec"
+  },
+  "recipe": {
+    "method": "bounded-container-replay-and-commit",
+    "network": "none",
+    "cpuCores": 2,
+    "memoryMiB": 4096,
+    "pip": [
+      "--no-index",
+      "--require-hashes",
+      "--no-deps",
+      "--only-binary=:all:"
+    ],
+    "overlayChange": "Only NATIVE_AMD64_IMAGE selects the newly built workload; all other six-file overlay source bytes retain the original guard implementation.",
+    "ownership": "Public input archive entries use Root ownership before the existing recipe."
+  },
+  "scope": "Concrete image pair and unchanged original guard; managed execution and authenticated Web acceptance remain deployment checks."
+}
