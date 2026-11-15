@@ -57,7 +57,7 @@ kind: "package-reference"
 
 `listPages(sessionId, path)` 是独立双向流，只有选中的 Provider 与 Native 暴露声明报告 `directoryPaging: true` 时才可用。`ready` 帧提供一个版本和游标；同一流的一次 `credit` 产生一页有界结果及替代游标。只有实际 EOF 才返回 `nextCursor: null` 与 `closed: true`。同一上行流接受 `close`；Host 确认 Native 清理和 slot 结算后，才发不带目录数据的 `closed` 帧。游标不能选择路径、接续另一条流或跨重启保留。
 
-目录变化在确认清理后返回 `workspace-file/directory-changed`；调用方丢弃旧页，从第一页重开。预算、取消或权限停止仅在确认清理后返回 `workspace-file/directory-stopped`。其它终端失败不提供关闭确认。Client 在预览／下载前必须同时加入关闭回执与原流自然终端；本地 dispose 不够。每次交付页面前都重复原 Session、Workspace 和 Peer／Use 检查。
+目录变化在确认清理后返回 `workspace-file/directory-changed`；调用方丢弃旧页，从第一页重开。预算、取消或权限停止仅在确认清理后返回 `workspace-file/directory-stopped`。Provider 在等待下一次 credit 时结束，也只有原 close 成功后才报告停止；关闭未确认仍保持失败。其它终端失败不提供关闭确认。Client 在预览／下载前必须同时加入关闭回执与原流自然终端；本地 dispose 不够。每次交付页面前都重复原 Session、Workspace 和 Peer／Use 检查。
 
 ### 变更流
 
