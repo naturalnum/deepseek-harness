@@ -33,7 +33,7 @@ packages/attachment/attachment-local/src/index.ts	登记	导出三个新错误�
 packages/attachment/attachment-local/src/store.ts	云端定制	暂存写入区分“容量不足、清理未确认、发布未确认”三类错误，关闭句柄和删临时文件的失败不再吞掉（改了默认错误类型）	提上游；或让云端附件存储（已继承 LocalAttachmentStore）自己实现暂存	搬进插件	没动
 packages/attachment/attachment/src/error.ts	扩展点	新错误码 ATTACHMENT_STORAGE_CAPACITY 和可选字段 settlement	保留	留作口子	没动
 packages/boot/app-boot/src/compatibility-preflight.ts	扩展点	prepareProfilePatches 加可选参数 base；空根时走原路径	保留	留作口子	没动
-packages/boot/app-boot/src/index.ts	云端定制	挂载和重载都先读根配置文件，以支持“非空根配置 + 补丁”；重载后先等子项更新再恢复（修竞态）；导出 config-impact 的函数	导出和 awaitUpdate 保留；非空根支持是云端根配置所需，除非云端改回空根配置	搬进插件	没动
+packages/boot/app-boot/src/index.ts	云端定制	保现有公开口子/等待代际；非空Cloud原生Include根的实际保存8目的因plan与重组base编译不一致被拒，现重组读取同原根数据，空根输出不变；不放宽身份/载体guard	原生等价非空根重组可替代后撤；具体保存阻断红目的必须保	必须携带	已按新原生重加
 packages/boot/app-boot/src/profile-context.ts	扩展点	ProfileContext.entryAliases（启动期条目改名）和 normalizeProfileEntryAliases；不设别名时不变	保留	留作口子	没动
 packages/boot/app-boot/src/profile-resolution/service.ts	扩展点	packageOf 加可选参数 fresh：直接读磁盘上的包清单，不动缓存	保留	留作口子	没动
 packages/boot/app-boot/src/profile.ts	扩展点	loadProfileDirectory 加 readOnly 和 bundles 选项；默认仍会清理失效 bundle	保留	留作口子	没动

@@ -404,7 +404,11 @@ async function recompose(
     }
     // The recomposition judges the rows the launch judged, resolved from the file this Include read.
     const parentURL = new URL('.', new URL(includeConfig.path, entry.parent.tree.ctx.baseUrl)).href
-    const prepared = prepareProfilePatches(ctx, patches, parentURL, binName)
+    const base: unknown = yaml.load(readFileSync(new URL(includeConfig.path, entry.parent.tree.ctx.baseUrl), 'utf8'), {
+      schema: entryListSchema,
+    })
+    if (!Array.isArray(base)) throw new Error(`${binName}: profile reload root must be an entry-list array`)
+    const prepared = prepareProfilePatches(ctx, patches, parentURL, binName, base as EntryOptions[])
     applying = true
     const retried = [...new Set([...running, ...withResolution ? [...ctx.loader.entries()].filter(importFailed) : []])]
     // Group.update replaces its data array and attempts every row it still lists, including failed imports.

@@ -115,3 +115,5 @@ Native 默认保留原生成方法 `install` 的名称冲突检查；可选 `Cli
 完成回复的文件呈现归 Cloud。Native 在原 Markdown、mention、文件打开与菜单引擎上只保可选 JSON／select 绑定及原 closing／stream 守卫；原 Native 文件名 regex 和布尔产品开关撤回。Cloud 经原 root 贡献提供产物文件名选择与严格作用域 URI 展示选择。原24个未满足 URI 目的保留在改前基线，归 Cloud 拥有范围修复；Native 默认 DOM 与原图片／路径行为分别核验不变。回调不授予 Host 文件权限，也不证明实际部署页面。
 
 Cloud 已批准插件字段的元组与密钥字典键脱敏策略归自有 `config-redaction`。Native redact 先恢复目标实现，再只重加公共结构类型与可选纯投影回调；省略回调保持原默认、secret role 原生先行。Cloud 对每个子项复用原 walker，不复制遍历引擎。Native schema 文件精确恢复固定目标；Cloud 受保护字段原本就不序列化其 schema/default/value，原真实 ESM 隐私断言继续负责该效果。
+
+非空 Cloud Root 的具体保存阻断保留一项有明确目的的原生修正：重组把实际不可变根行交给原补丁编译器，与受检计划一致。原首次更新探针只发现 config 载体差异，没有重复调用或根键差异；回归归原 Settings 和真实 ESM 插件控制保存目的负责。不放宽原生载体或身份检查，不授权重试任何未知正式事务；其余通用修复仍各自需要具体案例。
