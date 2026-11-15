@@ -411,9 +411,11 @@ class AccountSessionController extends SessionController {
     }
     firstScreenNativeOwner(this.ctx, 'sessionSkillCatalog', target, maximum)
     const binding = target.typertRemote, markers = remoteMethods(target)
+    const selected = markers.filter(marker => marker.method === 'list'), list = selected[0]
     if (binding.service !== target || binding.serviceKey !== 'sessionSkillCatalog' || binding.namespace !== 'skills'
-      || markers.length !== 1 || markers[0]?.method !== 'list' || (markers[0].exportName ?? 'list') !== 'list'
-      || (markers[0].mode ?? 'rpc') !== 'rpc') {
+      || markers.length > maximum || selected.length !== 1 || list === undefined
+      || (list.exportName ?? 'list') !== 'list' || (list.mode ?? 'rpc') !== 'rpc'
+      || markers.some(marker => marker !== list && (marker.exportName ?? marker.method) === 'list')) {
       throw new CloudApiError('cloud/account-unavailable', 'The guarded skill catalog registration changed.')
     }
     return [{ endpoint: 'skills/list', handlerId: 'native:sessionSkillCatalog', guard: 'account-session' }]

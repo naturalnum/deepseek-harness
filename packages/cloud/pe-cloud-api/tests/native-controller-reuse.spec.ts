@@ -28,6 +28,9 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import { CloudApiError } from '../src/errors.ts'
 import { createNativeController, inspectNativeController, type NativeSessionGuards } from '../src/native.ts'
 import { ExposurePolicy } from '../src/exposure.ts'
+import { nativeOriginal } from '../src/native-inventory.ts'
+import { nativeMethodInventoryTests } from './native-method-inventory-fixture.ts'
+import { policyFixture } from '../../pe-cloud-runtime/tests/account-policy-fixture.ts'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface PrincipalMap {
@@ -158,6 +161,29 @@ async function fixture(accountId = 'reuse', firstScreen = false, skills = false)
     ctx, controller, project, outside, binding, lifetime, denied, guards, instances, adapter, invoke, create, assertCurrent, policy, peer,
   }
 }
+
+nativeMethodInventoryTests('skills', [['list', 'list']], async () => {
+  const row = { endpoint: 'skills/list', handlerId: 'native:sessionSkillCatalog', guard: 'account-session' as const }
+  const f = policyFixture([row], { maxHomeBytes: 4096, maxCollectionItems: 16, maxFrameBytes: 65536,
+    maxQueuedEvents: 16, maxQueuedBytes: 131072 }, 'skill-inventory')
+  const graph = await f.start()
+  await graph.ctx.plugin(SkillRegistry)
+  const session = await graph.ctx.sessionController.create({})
+  const catalog = graph.ctx.get('sessionSkillCatalog')
+  if (catalog === undefined) throw new Error('The original native skill catalog is absent')
+  const value = nativeOriginal(catalog) ?? catalog
+  if (!(value instanceof SessionSkillCatalog)) throw new Error('The original native skill catalog changed')
+  return {
+    native: { value, inspect: () => inspectNativeController(graph.ctx.sessionController, graph.binding.recipeVersion, graph.maxEntries) },
+    upstreamPrototype: SessionSkillCatalog.prototype, policy: f.exposureOwner.policy, maximum: graph.maxEntries,
+    admitRpc: endpoint => graph.api.requireRpc(endpoint),
+    async invokeOriginal() {
+      expect(graph.api.requireRpc('skills/list')).toEqual(row)
+      expect(await graph.ctx.typertGateway.invoke({ namespace: 'skills', method: 'list',
+        args: { request: { sessionId: session.sessionId } }, peer: graph.localePeer })).toEqual({ skills: [] })
+    },
+  }
+})
 
 it('dispatches native projections only for a Session admitted by the shared readonly guard', async () => {
   const f = await fixture('projection-owned', true)

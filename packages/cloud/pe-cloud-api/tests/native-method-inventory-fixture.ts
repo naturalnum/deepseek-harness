@@ -11,6 +11,7 @@ interface InventoryFixture {
   readonly upstreamPrototype: object
   readonly policy: ExposurePolicy
   readonly maximum: number
+  readonly admitRpc?: (endpoint: string) => unknown
   invokeOriginal(): Promise<unknown>
 }
 
@@ -79,7 +80,7 @@ export function nativeMethodInventoryTests(
       const call = markers.add('futureInventoryMethod')
       expect(f.native.inspect()).toEqual(expected)
       await f.invokeOriginal()
-      expect(() => f.policy.requireRpc(namespace + '/futureInventoryMethod'))
+      expect(() => (f.admitRpc ?? f.policy.requireRpc.bind(f.policy))(namespace + '/futureInventoryMethod'))
         .toThrow(expect.objectContaining({ code: 'cloud/forbidden' }))
       expect(call).not.toHaveBeenCalled()
     }))
