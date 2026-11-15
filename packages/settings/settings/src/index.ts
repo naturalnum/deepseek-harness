@@ -14,7 +14,7 @@ import { isVolatilePath, plainConfig, projectForm, volatileForm } from './schema
 import type { SettingsNamespace } from './types.ts'
 
 export { redactSecrets } from './redact.ts'
-export type { ConfigSchemaNode, RedactedSecret, RedactedValue } from './redact.ts'
+export type { ConfigSchemaNode, ConfigRedactionExtension, RedactedSecret, RedactedValue } from './redact.ts'
 export type { SettingsNamespace } from './types.ts'
 
 /** One Loader entry's live Config fields. */

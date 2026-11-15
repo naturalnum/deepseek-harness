@@ -48,6 +48,8 @@ The [form projection](src/schema.ts) strips runtime references and ordinary fiel
 
 Secret roles are redacted from values, inherited values, profile overrides, and schema defaults; clients receive presence markers. Path edits preserve fields a client did not receive.
 
+`redactSecrets(schema, value, extension?)` accepts an optional pure container projection. Explicit native secret-role removal runs before the callback; absence keeps the original native walker and its container coverage. A projection returns detached values and relative presence paths, which the original walker prefixes and deduplicates. It does not change Settings descriptors, schema/default projection or saves unless a caller explicitly selects it.
+
 </details>
 
 <a id="further-exploration"></a>

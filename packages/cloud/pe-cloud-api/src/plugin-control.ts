@@ -1,4 +1,5 @@
 /** Catalog-approved plugin selection/configuration through original native writers and the original account save owner. */
+import { redactCloudConfig } from './config-redaction.ts'
 import { nativeOriginal, nativeEntryModule, nativeEntryId, nativeEntryName, nativeEntryConfig, nativeEntryDisabled, nativeEntryOptions, nativeImport, nativeEntryBaseUrl, nativeTreeOwnerId, nativeFiberProvisions, nativeLoaderFiber, nativeCallback } from './native-inventory.ts'
 import { ordinaryConfigPolicy } from './ordinary-config-policy.ts'
 import { AsyncLocalStorage } from 'node:async_hooks'
@@ -6,7 +7,7 @@ import { createHash } from 'node:crypto'
 import { constants, closeSync, fstatSync, lstatSync, openSync, readSync } from 'node:fs'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
 import PluginManager from '@deepseek-ai/dsh-plugin-manager'
-import { applyConfigPathOp, redactSecrets, type ConfigSchemaNode } from '@deepseek-ai/dsh-settings'
+import { applyConfigPathOp, type ConfigSchemaNode } from '@deepseek-ai/dsh-settings'
 import type { PluginInfo, ChangeResult } from '@deepseek-ai/dsh-plugin-manager/types'
 import { createConfigProjector, prepareProfileSelectionUpdate, readProfilePatches, isNativeConfigSchema, LOADER_EXPRESSION_SCHEMA, PluginPackages, type ProfileConfigUpdatePlan } from '@deepseek-ai/dsh-app-boot'
 import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
@@ -480,7 +481,7 @@ export class AccountPluginControl {
         const json: unknown = projection === undefined ? {} : snapshotJsonValue({ ...projection.schema,
           $defs: { ...projection.definitions, loaderExpression: LOADER_EXPRESSION_SCHEMA } })
         const secrets = policy.secret ? [{ path: [], set: value !== undefined }]
-          : policy.readOnlyReason === 'unproven' || policy.volatile ? [] : redactSecrets(leaf, value).secrets
+          : policy.readOnlyReason === 'unproven' || policy.volatile ? [] : redactCloudConfig(leaf, value).secrets
         const detached: unknown = policy.writable && value !== undefined ? pluginLiteralValue(value) : undefined
         if (json === undefined) unavailable()
         fields.push({ path, schema: json as JsonValue, acceptsMissing: projection?.acceptsMissing ?? 'unknown',

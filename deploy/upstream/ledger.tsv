@@ -211,9 +211,9 @@ packages/session/session-persistence-jsonl/src/storage.ts	扩展点	仅观察原
 packages/session/session-persistence-jsonl/src/zstd-private-decoder.ts	通用修复	取消与I/O或关闭同时失败的通用聚合撤回；读取及迁移恢复目标原生，不改变写入格式	无具体跨账号、丢数据或密钥泄露场景，按开发手册默认撤回	撤掉	已撤
 packages/session/session-persistence-jsonl/src/zstd-public-decoder.ts	通用修复	取消与I/O或关闭同时失败的通用聚合撤回；读取及迁移恢复目标原生，不改变写入格式	无具体跨账号、丢数据或密钥泄露场景，按开发手册默认撤回	撤掉	已撤
 packages/session/session-persistence/src/index.ts	扩展点	仅保守的isQuiescent只读观察默认false；撤回stat/read私有取消认证字段	保留	留作口子	已按新原生重加
-packages/settings/settings/src/index.ts	扩展点	update/replace/mutate 透传 control，写入经 configEditor.submitSave，导出 applyConfigPathOp；多数行是缩进变化	保留（透传参数和一个导出）	留作口子	没动
-packages/settings/settings/src/redact.ts	通用修复	脱敏补上“元组”和“字典的键本身是密钥”两种情况；另导出 ConfigSchemaNode 类型	修复提上游；类型导出保留	撤掉	没动
-packages/settings/settings/src/schema.ts	通用修复	随 redact.ts：处理字典键的 schema	随 redact.ts 提上游	撤掉	没动
+packages/settings/settings/src/index.ts	扩展点	update/replace/mutate 透传 control，写入经 configEditor.submitSave，导出 applyConfigPathOp；多数行是缩进变化；仅再导出显式纯脱敏投影类型	保留（透传参数和一个导出）	留作口子	没动
+packages/settings/settings/src/redact.ts	扩展点	原生默认walker恢复目标；仅公开结构类型及可选纯投影回调，tuple和密钥字典键规则已实搬Cloud并复用原引擎	原生提供等价可选容器投影后撤回回调	留作口子	已按新原生重加
+packages/settings/settings/src/schema.ts	通用修复	字典键schema遍历通用增强撤回，本文件精确恢复固定Native目标；Cloud受保护字段不投影其schema/defaults	已撤，Cloud原字段policy先行拒绝不完整容器	撤掉	已撤
 packages/skill/skill-filesystem/src/index.ts	扩展点	加可选的程序化文件来源 FileSystemSkillSource、includeDefaultUserRoots 和一组 bundled* 选项（调用上限、执行环境镜像路径、整包清单）；默认值保持原行为；含一句面向执行环境的提示文本	仅保留当前程序化文件来源；旧部署选项测试按原生当前配置撤回，调用限制和环境说明待迁入我方插件	留作口子	没动
 packages/skill/skill-office/src/index.ts	云端定制	把执行环境说明（guest 路径、Linux soffice/pdftoppm、技术报告目录刷新）写进原生技能提供方；由配置开启，但文本和选项是我方产品专用	原生源码和旧部署选项测试已撤回；云端 Office 技能与 Linux 执行说明待接我方提供方并实测	撤掉	已撤
 packages/skill/skill/src/index.ts	扩展点	加 inspect()（列出全部候选及胜出关系）、SkillPackage 和 candidate.package；skills/change 事件声明移到新文件 types.ts	保留	留作口子	没动

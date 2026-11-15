@@ -17,8 +17,12 @@ import { ConfigSaveCoordinator, ConfigSaveOutcomeUnknown } from '../src/config-s
 import { CloudApiError } from '../src/errors.ts'
 import { bindNativeConfigSaveHook } from '../src/native-save-hook.ts'
 import type { ApprovedConfigurationCatalog, ApprovedConfigurationPlugin } from '../src/types.ts'
-import { APPROVED_PLUGIN_CONTROL as fixed, pluginRequests } from '../src/plugin-json.ts'
+import { APPROVED_PLUGIN_CONTROL as example, pluginRequests } from '../src/plugin-json.ts'
 import type { PluginEditVersion } from '../src/save-hooks.ts'
+// Pin this fixture's approval to the actual manifest it installs; production example data grants no authority.
+const fixed = { ...example, packageVersion: (JSON.parse(readFileSync(
+  new URL('../../../guard/repeat-tool-reminder/package.json', import.meta.url), 'utf8',
+)) as { version: string }).version }
 const limits = { maxProfileBytes: 32768, maxRequestBytes: 2048, maxReplyBytes: 16384, maxVersionBytes: 128 }
 const saveLimits = { maxAccounts: 2, maxRunning: 2, maxQueued: 4, maxQueuedPerAccount: 4,
   maxTrackedOperations: 16, maxTrackedOperationsPerAccount: 8, maxNestedPerOperation: 8, maxWaitersPerAccount: 4 }
@@ -326,6 +330,24 @@ const protectedFixture = {
     union: { token: 'secret-value-union' }, empty: [], ordinary: { label: 'old', values: [1], ref: 'public-ref' } },
   fields: ['scalar', 'object', 'rows', 'dictionary', 'secretKey', 'tuple', 'union', 'empty', 'ordinary'].map(key => [key]).concat([['ancestor', 'child']]),
 }
+
+it('projects real ESM protected metadata with tuple presence and opaque dictionary keys without starting a save', async () => {
+  const f = await fixture(false, protectedFixture), before = f.patch()
+  const fibers = [...f.ctx.loader.entries()].map(entry => [entry, entry.fiber] as const)
+  const current = await f.control.current(second.id, f.check), wire = JSON.stringify(current)
+  expect(wire).not.toContain('secret-value-'); expect(wire).not.toContain('secret-default-')
+  const fields = current.configuration.fields
+  expect(fields.find(field => field.path[0] === 'tuple')).toMatchObject({ schema: {}, writable: false,
+    secrets: [{ path: ['1'], set: true }] })
+  expect(fields.find(field => field.path[0] === 'secretKey')).toMatchObject({ schema: {}, writable: false,
+    secrets: [{ path: [], set: true }] })
+  expect(fields.filter(field => !field.writable).every(field => field.value === undefined)).toBe(true)
+  expect(fields.find(field => field.path[0] === 'ordinary')).toMatchObject({ writable: true,
+    value: { label: 'old', values: [1], ref: 'public-ref' } })
+  expect(f.patch()).toBe(before)
+  for (const [entry, fiber] of fibers) expect(entry.fiber).toBe(fiber)
+  expect(f.barrier.snapshot().failures).toEqual([])
+})
 
 it('redacts real ESM secret values and all container defaults while keeping ordinary object replacement available', async () => {
   const f = await fixture(false, protectedFixture), current = await f.control.current(second.id, f.check)

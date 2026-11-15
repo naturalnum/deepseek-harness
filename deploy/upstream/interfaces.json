@@ -1,7 +1,7 @@
 {
   "counts": {
-    "native_source_files": 190,
-    "non_seam_files": 51,
+    "native_source_files": 189,
+    "non_seam_files": 49,
     "uncentralized_internal_lines": 0
   },
   "imports": [
@@ -961,6 +961,26 @@
         "default as SkillRegistry"
       ],
       "typeOnly": false
+    },
+    {
+      "path": "packages/cloud/pe-cloud-api/src/config-redaction.ts",
+      "line": 2,
+      "module": "@deepseek-ai/dsh-settings",
+      "names": [
+        "redactSecrets"
+      ],
+      "typeOnly": false
+    },
+    {
+      "path": "packages/cloud/pe-cloud-api/src/config-redaction.ts",
+      "line": 3,
+      "module": "@deepseek-ai/dsh-settings",
+      "names": [
+        "ConfigRedactionExtension",
+        "ConfigSchemaNode",
+        "RedactedValue"
+      ],
+      "typeOnly": true
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/config-saves.ts",
@@ -2441,7 +2461,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 7,
+      "line": 8,
       "module": "@deepseek-ai/cordis",
       "names": [
         "FiberState",
@@ -2451,7 +2471,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 8,
+      "line": 9,
       "module": "@deepseek-ai/dsh-plugin-manager",
       "names": [
         "default as PluginManager"
@@ -2460,18 +2480,17 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 9,
+      "line": 10,
       "module": "@deepseek-ai/dsh-settings",
       "names": [
         "applyConfigPathOp",
-        "redactSecrets",
         "ConfigSchemaNode"
       ],
       "typeOnly": false
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 10,
+      "line": 11,
       "module": "@deepseek-ai/dsh-plugin-manager/types",
       "names": [
         "PluginInfo",
@@ -2481,7 +2500,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 11,
+      "line": 12,
       "module": "@deepseek-ai/dsh-app-boot",
       "names": [
         "createConfigProjector",
@@ -2496,7 +2515,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 12,
+      "line": 13,
       "module": "@deepseek-ai/cordis-plugin-loader",
       "names": [
         "Entry"
@@ -2505,7 +2524,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 20,
+      "line": 21,
       "module": "@deepseek-ai/dsh-util-values",
       "names": [
         "snapshotJsonValue",
@@ -7865,7 +7884,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 89,
+      "line": 90,
       "name": "AccountPluginManager",
       "base": "PluginManager",
       "module": "@deepseek-ai/dsh-plugin-manager",
@@ -11198,7 +11217,7 @@
     {
       "路径": "packages/settings/settings/src/index.ts",
       "类别": "扩展点",
-      "原因": "update/replace/mutate 透传 control，写入经 configEditor.submitSave，导出 applyConfigPathOp；多数行是缩进变化",
+      "原因": "update/replace/mutate 透传 control，写入经 configEditor.submitSave，导出 applyConfigPathOp；多数行是缩进变化；仅再导出显式纯脱敏投影类型",
       "撤销条件": "保留（透传参数和一个导出）",
       "处置": "留作口子",
       "这一程的状态": "没动",
@@ -11206,21 +11225,21 @@
     },
     {
       "路径": "packages/settings/settings/src/redact.ts",
-      "类别": "通用修复",
-      "原因": "脱敏补上“元组”和“字典的键本身是密钥”两种情况；另导出 ConfigSchemaNode 类型",
-      "撤销条件": "修复提上游；类型导出保留",
-      "处置": "撤掉",
-      "这一程的状态": "没动",
+      "类别": "扩展点",
+      "原因": "原生默认walker恢复目标；仅公开结构类型及可选纯投影回调，tuple和密钥字典键规则已实搬Cloud并复用原引擎",
+      "撤销条件": "原生提供等价可选容器投影后撤回回调",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
       "changed": true
     },
     {
       "路径": "packages/settings/settings/src/schema.ts",
       "类别": "通用修复",
-      "原因": "随 redact.ts：处理字典键的 schema",
-      "撤销条件": "随 redact.ts 提上游",
+      "原因": "字典键schema遍历通用增强撤回，本文件精确恢复固定Native目标；Cloud受保护字段不投影其schema/defaults",
+      "撤销条件": "已撤，Cloud原字段policy先行拒绝不完整容器",
       "处置": "撤掉",
-      "这一程的状态": "没动",
-      "changed": true
+      "这一程的状态": "已撤",
+      "changed": false
     },
     {
       "路径": "packages/skill/skill-filesystem/src/index.ts",

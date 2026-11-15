@@ -21,10 +21,9 @@ function plainSchema(schema: z): z {
   const walk = (node: z): void => {
     delete node.meta.volatile
     if (node.meta.role === 'secret') { delete node.meta.default; delete node.meta.required }
-    else if (node.meta.default !== undefined) node.meta.default = redactSecrets(node, node.meta.default).value
+    else if (node.meta.default !== undefined) node.meta.default = redactSecrets(node as z<never>, node.meta.default).value
     for (const child of Object.values(node.dict ?? {})) walk(child)
     if (node.inner) walk(node.inner)
-    if (node.sKey) walk(node.sKey)
     for (const child of node.list ?? []) walk(child)
   }
   walk(result)

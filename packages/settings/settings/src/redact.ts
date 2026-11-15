@@ -42,16 +42,27 @@ export interface RedactedValue {
   secrets: RedactedSecret[]
 }
 
+/** Optional pure projection for an embedding's additional container policy; absence keeps the native walker. */
+export type ConfigRedactionExtension = (schema: ConfigSchemaNode, value: unknown) => RedactedValue | undefined
+
 /** Whether a value is a plain data object the walker may recurse into. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function walk(node: ConfigSchemaNode | undefined, value: unknown, path: string[], secrets: RedactedSecret[]): unknown {
+function walk(
+  node: ConfigSchemaNode | undefined, value: unknown, path: string[], secrets: RedactedSecret[],
+  extension?: ConfigRedactionExtension,
+): unknown {
   if (node === undefined) return value
   if (node.meta?.role === 'secret') {
     secrets.push({ path, set: value !== undefined })
     return undefined
+  }
+  const projected = extension?.(node, value)
+  if (projected !== undefined) {
+    for (const secret of projected.secrets) secrets.push({ path: [...path, ...secret.path], set: secret.set })
+    return projected.value
   }
   switch (node.type) {
     case 'object': {
@@ -65,7 +76,7 @@ function walk(node: ConfigSchemaNode | undefined, value: unknown, path: string[]
         }
       }
       for (const [key, child] of Object.entries(properties)) {
-        const stripped = walk(child, source?.[key], [...path, key], secrets)
+        const stripped = walk(child, source?.[key], [...path, key], secrets, extension)
         if (stripped !== undefined) rebuilt[key] = stripped
       }
       return source === undefined && Object.keys(rebuilt).length === 0 ? value : rebuilt
@@ -73,33 +84,21 @@ function walk(node: ConfigSchemaNode | undefined, value: unknown, path: string[]
     case 'dict': {
       if (!isRecord(value)) return value
       const rebuilt: Record<string, unknown> = {}
-      for (const key of Object.keys(value)) {
-        const keySecrets: RedactedSecret[] = []
-        walk(node.sKey, key, path, keySecrets)
-        if (keySecrets.length > 0) {
-          secrets.push({ path, set: true })
-          return undefined // A secret dictionary key must not reappear in a presence-marker path.
-        }
-      }
       for (const [key, entry] of Object.entries(value)) {
-        const stripped = walk(node.inner, entry, [...path, key], secrets)
+        const stripped = walk(node.inner, entry, [...path, key], secrets, extension)
         if (stripped !== undefined) rebuilt[key] = stripped
       }
       return rebuilt
     }
     case 'array': {
       if (!Array.isArray(value)) return value
-      return value.map((entry, index) => walk(node.inner, entry, [...path, String(index)], secrets))
-    }
-    case 'tuple': {
-      if (!Array.isArray(value)) return value
-      return value.map((entry, index) => walk(node.list?.[index], entry, [...path, String(index)], secrets))
+      return value.map((entry, index) => walk(node.inner, entry, [...path, String(index)], secrets, extension))
     }
     case 'union':
     case 'intersect':
-      return (node.list ?? []).reduce((current, child) => walk(child, current, path, secrets), value)
+      return (node.list ?? []).reduce((current, child) => walk(child, current, path, secrets, extension), value)
     case 'transform':
-      return walk(node.inner, value, path, secrets)
+      return walk(node.inner, value, path, secrets, extension)
     default:
       return value
   }
@@ -112,11 +111,14 @@ function walk(node: ConfigSchemaNode | undefined, value: unknown, path: string[]
  * @param schema - live schemastery schema describing the value.
  * @param value - the value to strip; `undefined` yields an empty record with
  *   object-property secret slots still enumerated.
+ * @param extension - optional pure embedding projection; native secret-role removal runs first.
  * @returns the stripped detached value and the ordered secret positions.
  */
-export function redactSecrets(schema: ConfigSchemaNode, value: unknown): RedactedValue {
+export function redactSecrets(
+  schema: ConfigSchemaNode, value: unknown, extension?: ConfigRedactionExtension,
+): RedactedValue {
   const secrets: RedactedSecret[] = []
-  const stripped = walk(schema, value, [], secrets)
+  const stripped = walk(schema, value, [], secrets, extension)
   const positions = new Map<string, RedactedSecret>()
   for (const secret of secrets) {
     const key = JSON.stringify(secret.path)

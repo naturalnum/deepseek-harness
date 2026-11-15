@@ -48,6 +48,8 @@ Settings 启动后、Loader 完成所有条目的加载时，早期版本留在 
 
 秘密角色从实际值、继承值、profile 覆盖值和 schema 默认值中隐藏；客户端接收存在性标记。路径编辑保留客户端未收到的字段。
 
+`redactSecrets(schema, value, extension?)` 接受可选的纯容器投影。原生 secret role 的移除先于回调；省略时保持原 walker 及其原容器覆盖。投影返回分离的值和相对存在路径，原 walker 负责加前缀及去重。只有显式选择该回调的调用方使用投影，Settings 描述、schema/default 投影与保存默认不变。
+
 </details>
 
 <a id="further-exploration"></a>
