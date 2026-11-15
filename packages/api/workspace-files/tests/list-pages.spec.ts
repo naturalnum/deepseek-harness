@@ -82,6 +82,7 @@ async function open(count: number) {
   if (ready.kind !== 'ready') throw new Error('Expected ready')
   return { input, stream, frame, ready, next, close, provider, list, controller, closeEntered,
     holdClose: () => { const held = Promise.withResolvers<undefined>(); gate = held.promise; return held },
+    endNormally: () => { ended.resolve(undefined) },
     change: () => { current = false }, failIdle: (code: 'FS_ABORTED' | 'FS_TOO_LARGE' | 'FS_PERMISSION_DENIED' = 'FS_ABORTED') => {
       ended.reject(new FsError('Original directory enumeration stopped.', code))
     } }
@@ -147,6 +148,50 @@ it('wakes a no-credit wait on the Provider idle terminal and joins cleanup', asy
   h.failIdle()
   await failed
   expect(h.next).not.toHaveBeenCalled(); expect(h.close).toHaveBeenCalled()
+})
+
+it('confirms a no-credit Provider completion only after the original close barrier settles', async () => {
+  const h = await open(129), gate = h.holdClose()
+  let delivered = false
+  const waiting = h.stream.next()
+  void waiting.then(() => { delivered = true }, () => { delivered = true })
+  const failed = expect(waiting).rejects.toMatchObject({ code: 'workspace-file/directory-stopped',
+    details: { path: '.', closed: true, reason: 'unavailable' } })
+  h.endNormally()
+  try {
+    await h.closeEntered.promise
+    expect(delivered).toBe(false)
+    expect(h.next).not.toHaveBeenCalled()
+    gate.resolve(undefined)
+    await failed
+    await expect(h.stream.next()).resolves.toMatchObject({ done: true })
+  } finally { gate.resolve(undefined); await waiting.catch(() => undefined) }
+})
+
+it.each(['FS_IO_ERROR', 'FS_ABORTED'] as const)('retains an unconfirmed %s close after a no-credit Provider completion', async (code) => {
+  const h = await open(129), failure = new FsError('Native closure remains unconfirmed.', code)
+  h.close.mockRejectedValue(failure)
+  const waiting = h.stream.next(), failed = expect(waiting).rejects.toBe(failure)
+  h.endNormally()
+  await failed
+  expect(h.next).not.toHaveBeenCalled()
+  expect(h.close).toHaveBeenCalled()
+})
+
+it('delivers the final EOF page when Provider completion occurs during its original pull', async () => {
+  const h = await open(64), gate = h.holdClose()
+  h.input.send({ kind: 'credit', version: h.ready.version, cursor: h.ready.cursor })
+  let delivered = false
+  const reading = h.frame().then((value) => { delivered = true; return value })
+  try {
+    await h.closeEntered.promise
+    expect(delivered).toBe(false)
+    gate.resolve(undefined)
+    await expect(reading).resolves.toMatchObject({ kind: 'page', closed: true, nextCursor: null,
+      entries: expect.arrayContaining([{ name: 'item-000', type: 'file' }]) })
+    expect(h.next).toHaveBeenCalledOnce()
+    await expect(h.stream.next()).resolves.toMatchObject({ done: true })
+  } finally { gate.resolve(undefined); await reading }
 })
 
 

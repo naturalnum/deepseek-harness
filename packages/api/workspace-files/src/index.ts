@@ -385,15 +385,18 @@ export class WorkspaceFiles extends TypertRemoteService {
           return frame
         }
         let cursor: WorkspaceDirectoryCursor | null = randomUUID() as WorkspaceDirectoryCursor
-        const ended = enumeration.ended.then(() => {
-          throw new RemoteError('gateway/bad-request', 'Directory enumeration ended before the next credit.', {})
-        })
+        const ended = enumeration.ended.then(() => 'ended' as const)
         void ended.catch(() => {})
         yield bounded({ kind: 'ready', path: directoryPath, version: enumeration.version, cursor })
         while (cursor !== null) {
           enumeration.assertCurrent()
           pending = uplink.next()
           const item = await Promise.race([pending, ended, aborted.promise])
+          if (item === 'ended') {
+            await enumeration.close()
+            throw new RemoteError('workspace-file/directory-stopped', 'Directory enumeration stopped. Start a new enumeration to browse again.',
+              { path, closed: true, reason: 'unavailable' })
+          }
           pending = undefined
           enumeration.assertCurrent()
           if (item.done) throw new RemoteError('gateway/bad-request', 'Directory uplink ended before EOF.', {})
