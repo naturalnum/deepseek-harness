@@ -3,17 +3,23 @@ import { createHash } from 'node:crypto'
 import { Worker } from 'node:worker_threads'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { brandString } from '@deepseek-ai/dsh-brand'
+import { Context } from '@deepseek-ai/cordis'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+import { PeAccountRuntime } from '@deepseek-ai/dsh-pe-cloud-runtime/root'
 import { FdMutationFailure, FdWorkerClient } from '../src/worker-client.ts'
 import { FilesFailure } from '../src/error.ts'
 import { createSkillProjectWork, skillCopyReferences, type SkillProjectWork } from '../src/skill-project-work.ts'
+import * as SkillProject from '../src/skill-project-work.ts'
+import { mountRootPool } from '../src/root-lifecycle.ts'
+import { RootStorageOwner } from '../src/storage-owner.ts'
+import type { FilesPoolConfig } from '../src/worker-pool.ts'
 import type { SkillVersion } from '../src/skill-versions.ts'
 
 const signal = () => new AbortController().signal
 const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value))
 const sha = (value: Uint8Array) => createHash('sha256').update(value).digest('hex')
-async function fixture(authorize = true, sameMount = false) {
+async function fixture(authorize = true, sameMount = false, singleInstanceActive?: () => boolean) {
   const worker = new Worker(new URL('./fixtures/skill-exit-worker.mjs', import.meta.url)), client = new FdWorkerClient(worker)
   onTestFinished(async () => { await client.close(); await client.exited; await worker.terminate() })
   await client.ready
@@ -73,6 +79,7 @@ async function fixture(authorize = true, sameMount = false) {
     mutate: async (work, observer) => ({ value: await work(client, observer), release() {} }),
     ...authorize ? { revalidation: [{ workspaceId: workspace.id, recordSha256: oldHash, recordRevision: '1:2:3:4:5',
       get pending() { return committedRevision === undefined }, assertRecord, confirmRecord }] } : {},
+    ...singleInstanceActive === undefined ? {} : { singleInstanceActive },
   }
   return { client, lstat, skillDirectory, list, read, port: createSkillProjectWork(input), input, workspace, binding, lifetime,
     original, version, projection, write,
@@ -285,4 +292,183 @@ it('allows the next original epoch after a numeric-identical revalidation CAS ch
     project: async () => ({ ...first.value.project, rootMountId: '1545' }) })
   await expect(changedMount.prepareProject(f.workspace, () => {}, signal())).rejects.toThrow()
   expect(f.write).toHaveBeenCalledTimes(1)
+})
+
+it('revalidates a first selected workspace without proof while single-instance exclusion is active', async () => {
+  const f = await fixture(false, false, () => true)
+  const currentContext = { ...f.original.sourceContext, mountNamespace: 'mnt:[124]' }
+  vi.spyOn(f.client, 'skillSourceContext').mockResolvedValue(currentContext)
+  const held = await f.port.prepareProject(f.workspace, () => {}, signal())
+  try {
+    const saved: unknown = JSON.parse(new TextDecoder().decode(f.bytes()))
+    expect(saved).toMatchObject({ project: { ...f.original.project, rootMountId: '1544' }, sourceContext: currentContext,
+      metadata: { inode: '19', mountId: '1544' }, skills: { inode: '55', mountId: '1544' },
+      copies: [{ source: f.original.copies[0]!.source, directory: { inode: '56', mountId: '1544' } }] })
+    expect(f.write).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ rootPath: '/private/skill-working-copies' }),
+      expect.any(String), expect.any(String), { kind: 'replaceIfVersion', version: '1:2:3:4:5' }, 8192, expect.any(AbortSignal))
+    expect(f.projection.mock.calls[0]?.[0]).toMatchObject({ metadata: { inode: '19', mountId: '1544' }, expectedCopyInode: '56' })
+    expect(held.value.binding).toBe(f.binding)
+    expect(f.assertRecord).not.toHaveBeenCalled(); expect(f.confirmRecord).not.toHaveBeenCalled()
+  } finally { held.release() }
+})
+
+it('revalidates a record with no skill copies after namespace and mount changes without proof while single-instance exclusion is active', async () => {
+  const f = await fixture(false, false, () => true)
+  const original = { ...f.original, copies: [] }
+  f.setRecord(original)
+  const priorList = f.list.getMockImplementation()!
+  f.list.mockImplementation(async (...args) => args[0].rootPath.endsWith('skill-working-copies') ? priorList(...args) : [])
+  const currentContext = { ...original.sourceContext, mountNamespace: 'mnt:[124]' }
+  vi.spyOn(f.client, 'skillSourceContext').mockResolvedValue(currentContext)
+  const held = await f.port.prepareProject(f.workspace, () => {}, signal())
+  try {
+    expect(JSON.parse(new TextDecoder().decode(f.bytes()))).toEqual({ ...original,
+      project: { ...original.project, rootMountId: '1544' }, sourceContext: currentContext,
+      metadata: { ...original.metadata, mountId: '1544' }, skills: { ...original.skills, mountId: '1544' } })
+    expect(f.write).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ rootPath: '/private/skill-working-copies' }),
+      expect.any(String), expect.any(String), { kind: 'replaceIfVersion', version: '1:2:3:4:5' }, 8192, expect.any(AbortSignal))
+    expect(held.value.binding).toBe(f.binding)
+    expect(f.projection).not.toHaveBeenCalled(); expect(f.sourceRead).not.toHaveBeenCalled()
+    expect(f.assertRecord).not.toHaveBeenCalled(); expect(f.confirmRecord).not.toHaveBeenCalled()
+  } finally { held.release() }
+})
+
+it('revalidates a boot-only change without proof and preserves all directory identities', async () => {
+  const f = await fixture(false, true, () => true)
+  const currentContext = { ...f.original.sourceContext, bootId: '22222222-2222-4222-8222-222222222222' }
+  vi.spyOn(f.client, 'skillSourceContext').mockResolvedValue(currentContext)
+  const held = await f.port.prepareProject(f.workspace, () => {}, signal())
+  try {
+    expect(JSON.parse(new TextDecoder().decode(f.bytes()))).toEqual({ ...f.original, sourceContext: currentContext })
+    expect(f.write).toHaveBeenCalledTimes(1)
+  } finally { held.release() }
+})
+
+it.each([undefined, false] as const)('still requires proof when single-instance exclusion is %s', async (active) => {
+  const f = await fixture(false, false, active === undefined ? undefined : () => active)
+  await expect(f.port.prepareProject(f.workspace, () => {}, signal())).rejects.toMatchObject({
+    outcome: 'not-published', code: 'FS_STALE_VERSION' })
+  expect(f.write).not.toHaveBeenCalled(); expect(f.projection).not.toHaveBeenCalled()
+})
+
+it.each(['rootDevice', 'rootInode', 'rootPath'] as const)('does not forgive a different project %s without proof', async (field) => {
+  const f = await fixture(false, false, () => true)
+  const port = createSkillProjectWork({ ...f.input,
+    project: async () => ({ ...f.original.project, rootMountId: '1544', [field]: field === 'rootPath' ? '/projects/other' : '999' }) })
+  await expect(port.prepareProject(f.workspace, () => {}, signal())).rejects.toMatchObject({
+    outcome: 'not-published', code: 'FS_STALE_VERSION' })
+  expect(f.write).not.toHaveBeenCalled(); expect(f.projection).not.toHaveBeenCalled()
+})
+
+it('retains the unknown failure for an actual copy inode mismatch without proof', async () => {
+  const f = await fixture(false, false, () => true)
+  f.projection.mockResolvedValue({ outcome: 'projected', closed: true, errno: 0, reused: true, copies: 1,
+    metadataDirectory: { ...f.original.metadata, mountId: '1544' }, skillsDirectory: { ...f.original.skills, mountId: '1544' },
+    copyDirectory: { ...f.original.copies[0]!.directory, inode: '57', mountId: '1544' } })
+  await expect(f.port.prepareProject(f.workspace, () => {}, signal())).rejects.toMatchObject({ outcome: 'unknown', code: 'FS_IO_ERROR' })
+  expect(f.write).not.toHaveBeenCalled()
+})
+
+it('does not recover an unfinished association even with single-instance exclusion', async () => {
+  const f = await fixture(false, false, () => true)
+  f.setRecord({ ...f.original, state: 'preparing-copy', pending: f.original.copies[0]!.source })
+  await expect(f.port.prepareProject(f.workspace, () => {}, signal())).rejects.toMatchObject({ outcome: 'unknown', code: 'FS_IO_ERROR' })
+  expect(f.write).not.toHaveBeenCalled(); expect(f.projection).not.toHaveBeenCalled()
+})
+
+it('does not replace a supplied proof whose bound record has changed with single-instance exclusion', async () => {
+  const f = await fixture(true, false, () => true)
+  f.setRecord({ ...f.original, sourceContext: { ...f.original.sourceContext, mountNamespace: 'mnt:[124]' } })
+  await expect(f.port.prepareProject(f.workspace, () => {}, signal())).rejects.toMatchObject({ code: 'FS_STALE_VERSION' })
+  expect(f.write).not.toHaveBeenCalled(); expect(f.assertRecord).not.toHaveBeenCalled()
+})
+
+it('still rejects a namespace change after issuing a parent even when single-instance exclusion is active', async () => {
+  const f = await fixture(false, true, () => true), held = await f.port.prepareProject(f.workspace, () => {}, signal())
+  try {
+    vi.spyOn(f.client, 'skillSourceContext').mockResolvedValue({ ...f.original.sourceContext, mountNamespace: 'mnt:[124]' })
+    await expect(f.port.borrowAll(held.value, signal())).rejects.toMatchObject({ code: 'FS_STALE_VERSION' })
+    await expect(f.port.materialize(held.value, f.version, signal())).rejects.toMatchObject({ code: 'FS_STALE_VERSION' })
+    expect(f.write).not.toHaveBeenCalled()
+  } finally { held.release() }
+})
+
+it('rechecks single-instance exclusion after directory verification and before the original CAS', async () => {
+  let active = true
+  const f = await fixture(false, false, () => active), project = f.projection.getMockImplementation()!
+  f.projection.mockImplementation(async (...args) => { const facts = await project(...args); active = false; return facts })
+  await expect(f.port.prepareProject(f.workspace, () => {}, signal())).rejects.toMatchObject({
+    outcome: 'not-published', code: 'FS_STALE_VERSION' })
+  expect(f.projection).toHaveBeenCalledTimes(1); expect(f.write).not.toHaveBeenCalled()
+})
+
+it('rechecks single-instance exclusion after the skill store write reserve and before the revalidation CAS', async () => {
+  let active = true
+  const f = await fixture(false, false, () => active), directory = f.skillDirectory.getMockImplementation()!
+  f.skillDirectory.mockImplementation(async (...args) => {
+    const facts = await directory(...args)
+    if (args[3] === 'store-verify') active = false
+    return facts
+  })
+  await expect(f.port.prepareProject(f.workspace, () => {}, signal())).rejects.toMatchObject({
+    outcome: 'not-published', code: 'FS_STALE_VERSION' })
+  expect(f.projection).toHaveBeenCalledTimes(1)
+  expect(f.skillDirectory.mock.calls.some(call => call[3] === 'store-read')).toBe(true)
+  expect(f.skillDirectory.mock.calls.some(call => call[3] === 'store-verify')).toBe(true)
+  expect(f.write).not.toHaveBeenCalled(); expect(f.confirmRecord).not.toHaveBeenCalled()
+  expect(f.bytes()).toEqual(encode(f.original))
+})
+
+it.each([undefined, false, true] as const)('passes live runtime exclusion through Root, pool and projection when initially %s', async (initial) => {
+  // Actual Root/pool/issuer wiring; worker support and storage facts are scripted, not Linux or PG evidence.
+  const f = await fixture(false), ctx = new Context(), workers: Worker[] = []
+  let active: boolean | undefined = initial
+  const runtime = new PeAccountRuntime(ctx, { maxMountedAccounts: 1, maxConcurrentMounts: 1, maxConcurrentDrains: 1 })
+  // Undefined models a runtime that does not expose the optional single-instance property.
+  Object.defineProperty(runtime, 'singleInstanceActive', { configurable: true, get: () => active })
+  const storageStart = vi.spyOn(RootStorageOwner.prototype, 'initializeStatic').mockResolvedValue(undefined)
+  const storageCurrent = vi.spyOn(RootStorageOwner.prototype, 'assertRootCurrent').mockImplementation(() => {})
+  const storageIdentity = vi.spyOn(RootStorageOwner.prototype, 'skillStorageIdentity').mockReturnValue({
+    uid: f.input.uid, gid: f.input.gid, projects: f.input.quota,
+    privateDomain: { ...f.input.quota, ...f.input.privateRoot, minimumBytes: '1048576', maximumBytes: '1048576',
+      minimumInodes: '1000', maximumInodes: '1000' } })
+  const projectionSupport = vi.spyOn(FdWorkerClient.prototype, 'supportsSkillProjection', 'get').mockReturnValue(true)
+  const projection = vi.spyOn(SkillProject, 'createSkillProjectWork')
+  onTestFinished(async () => {
+    try { await ctx.fiber.dispose() }
+    finally {
+      await Promise.all(workers.map(worker => worker.terminate()))
+      projection.mockRestore(); projectionSupport.mockRestore(); storageIdentity.mockRestore()
+      storageCurrent.mockRestore(); storageStart.mockRestore()
+    }
+  })
+  const MiB = 1048576
+  const config: FilesPoolConfig = {
+    maxLanes: 1, maxRunning: 1, maxRunningPerLane: 1, maxQueued: 2, maxQueuedPerLane: 2,
+    maxResidentBytes: 64 * MiB, maxResidentBytesPerLane: 32 * MiB, waitTimeoutMs: 5000,
+    workerCount: 1, minimumHealthyWorkers: 1, workerReservationBytes: 128, replyOverheadBytes: 16384,
+    readyTimeoutMs: 5000, drainTimeoutMs: 1000, helperPath: '/not-opened/fd-skill.node',
+    maxReadBytes: 8192, maxPathBytes: 256, maxResolveRetries: 2, readChunkBytes: 128,
+    content: { maxEntries: 16, maxNameBytes: 255, maxReplyBytes: 16384, operationTimeoutMs: 1000 },
+    skillVersions: f.input.sourceLimits, skillProjection: { ...f.input.limits, reservationBytes: 2 * MiB },
+    staticStorage: { planPath: '/not-opened/plan.json', planSha256: '0'.repeat(64),
+      probeHelperPath: '/not-opened/probe.node', probeHelperSha256: '0'.repeat(64), maxProbeAssetBytes: 65536,
+      rootProbeReservationBytes: 2 * MiB, maxPlanBytes: 4096, maxMountInfoBytes: 16384, probeTimeoutMs: 1000 },
+  }
+  await mountRootPool(ctx, config, () => {
+    const worker = new Worker(new URL('./fixtures/skill-exit-worker.mjs', import.meta.url))
+    workers.push(worker); return worker
+  })
+  const pool = ctx.get('peFilesPool'), privateRoot = f.input.privateRoot
+  if (pool === undefined || privateRoot.rootMountId === undefined) throw new Error('Missing mounted fixture pool or private identity')
+  pool.bind(f.binding, f.input.quota, () => {}, { ...privateRoot, rootMountId: privateRoot.rootMountId }).skillProjection()
+  expect(projection).toHaveBeenCalledTimes(1)
+  const readActive = projection.mock.calls[0]?.[0].singleInstanceActive
+  expect(readActive).toBeTypeOf('function')
+  if (readActive === undefined) throw new Error('Root-to-projection single-instance callback is absent')
+  expect(readActive()).toBe(initial === true)
+  active = false; expect(readActive()).toBe(false)
+  active = true; expect(readActive()).toBe(true)
+  active = false; expect(readActive()).toBe(false)
+  active = undefined; expect(readActive()).toBe(false)
 })

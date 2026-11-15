@@ -14,7 +14,8 @@ import { runNativeDelivery, runNativePublishContinuation, saveNativeProjection, 
 import { requireOrdinaryUpdateState, requireOrdinaryRollbackState, startSavedApplication, nativeArguments } from './update.mjs'
 import { createNativeAuthority, nativeAuthorityCommand } from './native-authority.mjs'
 import profileModule from './native-profile.cjs'
-import { nativeUpdate, continueNativePublish } from './native-update.mjs'
+import { nativeUpdate, continueNativePublish, confirmNativePredecessor, deriveNativeSuccessorPair } from './native-update.mjs'
+import { writeBundle } from '../bundle.mjs'
 
 const { NativeRecordStore, NativeDeliveryOwner, requireNativeContinuation, legacyBarrier, publishFdAsset } = stateModule
 const pins = { kind: 'fd-profile', operation: '00000000-0000-4000-8000-000000000001',
@@ -303,6 +304,8 @@ test('the namespace bridge pins current directory and keeper facts and sends onl
   })
   assert.throws(() => authority.reserve(pins), unconfirmed)
   assert.deepEqual(await authority.reserve({ ...pins, kind: 'matching-js' }), { fixture: true })
+  assert.deepEqual(await authority.reserve({ ...pins, kind: 'successor-js' }), { fixture: true })
+  assert.equal(received.value.kind, 'successor-js')
   assert.equal(received.method, 'reserve')
   assert.equal(received.context.unrelated, undefined)
   assert.equal(received.approved.unrelated, undefined)
@@ -921,4 +924,326 @@ test('every downstream continuation unknown retains its actual intent and never 
     if (['start', 'verify'].includes(failed)) assert.equal(fixture.store.read().firstLaunchMayHaveRun, true)
     await assert.rejects(runNativePublishContinuation(request), unconfirmed); assert.equal(fixture.loads(), 1)
   }
+})
+
+
+const jsNames = ['checkPair', 'stop', 'backup', 'install', 'start', 'verify']
+
+async function successorPredecessorFixture() {
+  const metadata = { sourceCommit: 'a'.repeat(40), nodeVersion: '24.19.0', pnpmLockHash: 'a'.repeat(64),
+    externalDependencyHash: 'b'.repeat(64), researchLockHash: 'c'.repeat(64), dependencyHash: 'd'.repeat(64) }
+  const manifest = label => ({ format: 'pe-cloud-update/v1', ...metadata, fixture: label, files: [], managedRoots: [] })
+  const identity = { device: '1', inode: '22', uid: 0, gid: 0, mode: 0o444, nlink: 1 }
+  const asset = { sha256: 'e'.repeat(64), sourceSha256: 'f'.repeat(64), bytes: 143192,
+    maxAssetBytes: 200000, maxPathBytes: 512, parentDevice: '1', parentInode: '3' }
+  const profile = { source: '/opt/dsh-features/pe-cloud-delivery/' + pins.operation + '/native-profile.yml',
+    sha256: 'a'.repeat(64), bytes: 200, identity }
+  const targetAsset = { path: '/opt/dsh-feature-assets/fd-skill-store-v1-' + asset.sha256 + '.node',
+    sha256: asset.sha256, bytes: asset.bytes, mode: 0o444, maxAssetBytes: asset.maxAssetBytes, maxPathBytes: asset.maxPathBytes }
+  const groups = ['original', 'normal', 'compatible'].map(role => ({ role, productRoot: '/opt/dsh-installed-products',
+    manifest: manifest(role), asset: structuredClone(targetAsset), profile: structuredClone(profile) }))
+  const context = { namespaceId: 'mnt:[123]', nodePath: '/dsh-tools/node24',
+    seccompPath: '/opt/dsh-feature-assets/app-seccomp.bpf', holder: { pid: 42, startTicks: '12345', namespaceId: 'mnt:[123]' } }
+  const journal = { path: '/opt/dsh-features/pe-cloud-delivery/' + pins.operation + '/native-record', device: '1', inode: '2' }
+  const plan = { format: 'pe-cloud-local-native-asset/v1', assetFile: '/public/asset.node', asset,
+    assetParent: { path: '/opt/dsh-feature-assets', device: '1', inode: '3' },
+    profile: { target: '/run/dsh-feature-root/profiles/cloud/cordis.patch.yml', maxProfileBytes: 1048576,
+      original: { source: '/opt/dsh-features/profile-original.yml', sha256: '9'.repeat(64), identity },
+      originalHelperPath: '/opt/dsh-feature-assets/old.node' },
+    originalAsset: { path: '/opt/dsh-feature-assets/old.node', sha256: '8'.repeat(64), bytes: 100,
+      mode: 0o555, maxAssetBytes: asset.maxAssetBytes, maxPathBytes: asset.maxPathBytes }, compatibleBundle: '/old/compatible' }
+  const descriptorSha256 = createHash('sha256').update(JSON.stringify({ groups: groups.map(profileModule.tupleSha256),
+    assetSource: asset.sourceSha256, namespaceId: context.namespaceId, holder: context.holder })).digest('hex')
+  const first = { ...pins, descriptorSha256, originalTupleSha256: profileModule.tupleSha256(groups[0]),
+    targetTupleSha256: profileModule.tupleSha256(groups[1]), compatibleTupleSha256: profileModule.tupleSha256(groups[2]) }
+  const root = memoryRoot(), { owner } = await guarded(root, first)
+  for (const name of names) await owner.run(name, async () => {})
+  const record = owner.record
+  const input = { format: 'pe-cloud-local-native-input/v1', operation: pins.operation, plan, groups, descriptorSha256,
+    context, approved: { journal, assetParent: plan.assetParent, asset,
+      profile: { ...plan.profile, candidate: { source: profile.source, sha256: profile.sha256, identity } } },
+    state: { operation: pins.operation, nativeJournal: journal } }
+  const current = { ...context, canStopSafely: true, productReadOnly: true, productBlockReadOnly: true }
+  const authority = { read: () => root.store().read(), observeTuple: async () => record.targetTupleSha256 }
+  return { input, current, root, record, latest: legacyBarrier(record), authority, metadata,
+    previous: { record, installed: groups[1] },
+    controller: { commit: '3'.repeat(40), tree: '4'.repeat(40), programSha256: '5'.repeat(64) } }
+}
+
+async function successorBundleFixture(t, fixture) {
+  const directory = fs.mkdtempSync(join(tmpdir(), 'pe-successor-bundles-'))
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }))
+  const bundles = []
+  for (const label of ['normal', 'compatible']) {
+    const source = join(directory, label + '-source'), bundle = join(directory, label + '-bundle')
+    fs.mkdirSync(join(source, 'apps/web/dist'), { recursive: true })
+    fs.writeFileSync(join(source, 'apps/web/dist/index.html'), 'new actual archive ' + label, { mode: 0o644 })
+    await writeBundle(source, ['apps/web/dist/index.html'], { ...fixture.metadata,
+      sourceCommit: (label === 'normal' ? '1' : '2').repeat(40) }, bundle)
+    bundles.push(bundle)
+  }
+  const successor = { format: 'pe-cloud-local-native-successor/v1', predecessor: {
+    operation: fixture.record.operation, descriptorSha256: fixture.record.descriptorSha256,
+    targetTupleSha256: fixture.record.targetTupleSha256 }, compatibleBundle: bundles[1] }
+  const derive = () => deriveNativeSuccessorPair({ previousInput: fixture.input, previous: fixture.previous,
+    successor, normalBundle: bundles[0], controller: fixture.controller })
+  return { bundles, successor, derive }
+}
+
+function successorPins(derived) {
+  return { kind: 'successor-js', operation: '00000000-0000-4000-8000-000000000002',
+    descriptorSha256: derived.descriptorSha256, originalTupleSha256: derived.pairBinding.groups[0],
+    targetTupleSha256: derived.pairBinding.groups[1], compatibleTupleSha256: derived.pairBinding.groups[2] }
+}
+
+test('the explicit successor input is mutually exclusive and never reopens first delivery or start', async () => {
+  assert.deepEqual(nativeArguments('update', ['/bundle', '--native-successor', '/private/next.json', '--account', 'ordinaryUserB']),
+    { successorFile: '/private/next.json', args: ['/bundle', '--account', 'ordinaryUserB'] })
+  for (const [mode, args] of [['update', ['/bundle', '--native-input', '/one', '--native-successor', '/two']],
+    ['update', ['/bundle', '--native-successor', '/one', '--native-successor', '/two']],
+    ['update', ['/bundle', '--native-successor']], ['rollback', ['--native-successor', '/one']],
+    ['start', ['--native-successor', '/one']], ['continue-native-publish', ['op', '--native-successor', '/one']]]) {
+    assert.throws(() => nativeArguments(mode, args))
+  }
+  for (const request of [{ mode: 'rollback', latest: { format: stateModule.PROJECTION } },
+    { mode: 'update', latest: { format: 'pe-cloud-local-update/v1' } },
+    { mode: 'update', latest: { format: stateModule.PROJECTION }, inputFile: '/must-not-open' }]) {
+    await assert.rejects(nativeUpdate({ bundle: '/must-not-open', args: [], successorFile: '/must-not-open', ...request }),
+      error => unconfirmed(error) && error.phase === 'successor-entry')
+  }
+  await assert.rejects(nativeUpdate({ mode: 'update', bundle: '/must-not-open', args: [], inputFile: '/must-not-open',
+    latest: { format: stateModule.PROJECTION } }), error => unconfirmed(error) && error.phase === 'native-group-already-owned')
+})
+
+test('fresh predecessor confirmation requires exact Root, projection, saved descriptor, namespace and installed FD/profile', async t => {
+  const fixture = await successorPredecessorFixture()
+  const confirm = overrides => confirmNativePredecessor({ ...fixture, ...overrides })
+  assert.deepEqual(await confirm(), fixture.previous)
+  for (const [name, change] of [
+    ['projection phase', value => { value.latest.nativePhase = 'started' }],
+    ['projection directory', value => { value.latest.nativeAuthority.directoryIdentity.inode = '999' }],
+    ['namespace holder', value => { value.current.holder.startTicks = '999' }],
+    ['writable product', value => { value.current.productReadOnly = false }],
+    ['private descriptor', value => { value.input.descriptorSha256 = '9'.repeat(64) }],
+    ['pair manifest', value => { value.input.groups[2].manifest.fixture = 'unapproved' }],
+    ['FD metadata', value => { value.input.approved.asset.bytes++ }],
+    ['sealed profile identity', value => { value.input.approved.profile.candidate.identity.inode = '999' }],
+  ]) await t.test(name, async () => {
+    const value = { latest: structuredClone(fixture.latest), input: structuredClone(fixture.input),
+      current: structuredClone(fixture.current), authority: fixture.authority }
+    change(value)
+    await assert.rejects(confirmNativePredecessor(value), unconfirmed)
+    assert.deepEqual(fixture.root.store().read(), fixture.record)
+  })
+  await assert.rejects(confirm({ authority: { ...fixture.authority, observeTuple: async () => '9'.repeat(64) } }), unconfirmed)
+  const pendingRoot = memoryRoot(), pending = await guarded(pendingRoot)
+  await assert.rejects(confirm({ latest: legacyBarrier(pending.owner.record),
+    authority: { read: () => pending.owner.record, observeTuple: async () => pending.owner.record.targetTupleSha256 } }), unconfirmed)
+})
+
+test('two real archives alone derive the successor pair and its complete predecessor binding', async t => {
+  const fixture = await successorPredecessorFixture(), bundles = await successorBundleFixture(t, fixture)
+  const before = structuredClone(fixture.input), derived = await bundles.derive()
+  assert.equal(derived.groups.length, 3)
+  assert.deepEqual(derived.pairBinding.predecessor, fixture.record)
+  assert.deepEqual(derived.pairBinding.release, { format: 'pe-cloud-native-release/v1', operation: fixture.record.operation })
+  assert.deepEqual(derived.groups.map(group => group.manifest.sourceCommit),
+    [fixture.input.groups[1].manifest.sourceCommit, '1'.repeat(40), '2'.repeat(40)])
+  assert.equal(derived.groups[1].manifest.files.length, 1)
+  for (const group of derived.groups) {
+    assert.deepEqual(group.asset, fixture.previous.installed.asset)
+    assert.deepEqual(group.profile, fixture.previous.installed.profile)
+  }
+  assert.equal(derived.descriptorSha256, stateModule.nativeSuccessorDescriptor(derived.pairBinding))
+  assert.notEqual(derived.descriptorSha256, fixture.record.descriptorSha256)
+  assert.deepEqual(fixture.input, before)
+  for (const change of [input => { input.allowedGroups = [] }, input => { input.predecessor.operation = pins.operation.replace(/1$/, '9') },
+    input => { input.predecessor.descriptorSha256 = '9'.repeat(64) }, input => { input.predecessor.targetTupleSha256 = '9'.repeat(64) }]) {
+    const successor = structuredClone(bundles.successor); change(successor)
+    await assert.rejects(deriveNativeSuccessorPair({ previousInput: fixture.input, previous: fixture.previous,
+      successor, normalBundle: '/must-not-open', controller: fixture.controller }), unconfirmed)
+  }
+  for (const key of ['externalDependencyHash', 'researchLockHash']) {
+    const filename = join(bundles.bundles[1], 'manifest.json'), original = fs.readFileSync(filename)
+    const manifest = JSON.parse(original); manifest[key] = '9'.repeat(64)
+    fs.writeFileSync(filename, JSON.stringify(manifest))
+    await assert.rejects(bundles.derive(), error => unconfirmed(error) && error.phase === 'native-reader-dependencies')
+    fs.writeFileSync(filename, original)
+  }
+  const duplicateManifest = join(bundles.bundles[1], 'manifest.json')
+  const duplicateArchive = join(bundles.bundles[1], 'products.tar.gz')
+  const savedManifest = fs.readFileSync(duplicateManifest), savedArchive = fs.readFileSync(duplicateArchive)
+  const sameProducts = JSON.parse(fs.readFileSync(join(bundles.bundles[0], 'manifest.json')))
+  sameProducts.sourceCommit = '2'.repeat(40)
+  fs.writeFileSync(duplicateManifest, JSON.stringify(sameProducts))
+  fs.copyFileSync(join(bundles.bundles[0], 'products.tar.gz'), duplicateArchive)
+  await assert.rejects(bundles.derive(), error => unconfirmed(error) && error.phase === 'ambiguous-successor-readers')
+  fs.writeFileSync(duplicateManifest, savedManifest); fs.writeFileSync(duplicateArchive, savedArchive)
+  const filename = join(bundles.bundles[1], 'manifest.json'), original = fs.readFileSync(filename)
+  const broken = JSON.parse(original); broken.files[0].sha256 = '0'.repeat(64)
+  fs.writeFileSync(filename, JSON.stringify(broken))
+  await assert.rejects(bundles.derive(), /归档文件与清单不一致/)
+  fs.writeFileSync(filename, original)
+  fs.writeFileSync(join(bundles.bundles[0], 'products.tar.gz'), 'not an archive')
+  await assert.rejects(bundles.derive())
+})
+
+test('the successor gets a new Root responsibility and permits only its exact compatible pair thereafter', async t => {
+  const fixture = await successorPredecessorFixture(), bundles = await successorBundleFixture(t, fixture)
+  const derived = await bundles.derive(), next = successorPins(derived), called = [], projections = []
+  const oldBytes = Buffer.from([...fixture.root.files.values()][0].bytes)
+  let observed = next.originalTupleSha256, confirmations = 0
+  const effects = Object.fromEntries(jsNames.map(name => [name, async () => {
+    called.push(name); if (name === 'install') observed = next.targetTupleSha256
+  }]))
+  effects.observeTuple = async () => observed
+  let record = await runNativeDelivery({ pins: next, successor: derived.pairBinding, authority: memoryRoot().store(), effects,
+    confirmPredecessor: async () => { confirmations++; return (await confirmNativePredecessor(fixture)).record },
+    writeProjection: async value => { projections.push(value); return value }, holdOperation: action => action() })
+  assert.equal(confirmations, 1)
+  assert.equal(record.kind, 'successor-js'); assert.equal(record.phase, 'verified')
+  assert.equal(record.profileMayHaveChanged, false)
+  assert.equal(record.firstLaunchMayHaveRun, true)
+  assert.deepEqual(called, jsNames)
+  assert.equal(projections[0].nativePhase, 'reserved')
+  assert.equal(projections.at(-1).nativePhase, 'verified')
+  assert.throws(() => requireOrdinaryUpdateState(projections.at(-1)), unconfirmed)
+  assert.deepEqual(fixture.root.store().read(), fixture.record)
+  assert.deepEqual([...fixture.root.files.values()][0].bytes, oldBytes)
+  const newInput = { ...structuredClone(fixture.input), operation: record.operation, groups: derived.groups,
+    descriptorSha256: derived.descriptorSha256, pairBinding: derived.pairBinding }
+  newInput.state.operation = record.operation
+  newInput.approved.journal.path = '/opt/dsh-features/pe-cloud-delivery/' + record.operation + '/native-record'
+  newInput.state.nativeJournal = newInput.approved.journal
+  assert.deepEqual((await confirmNativePredecessor({ latest: legacyBarrier(record), input: newInput,
+    current: fixture.current, authority: { read: () => record, observeTuple: async () => observed } })).record, record)
+  for (const [operation, target, compatible] of [
+    ['00000000-0000-4000-8000-000000000003', next.compatibleTupleSha256, next.targetTupleSha256],
+    ['00000000-0000-4000-8000-000000000004', next.targetTupleSha256, next.compatibleTupleSha256],
+  ]) {
+    const previous = record, selected = { ...next, kind: 'matching-js', operation,
+      originalTupleSha256: record.targetTupleSha256, targetTupleSha256: target, compatibleTupleSha256: compatible }
+    effects.install = async () => { observed = target }
+    record = await runNativeDelivery({ pins: selected, authority: memoryRoot().store(), previousAuthority: { read: () => previous },
+      effects, writeProjection: async value => value, holdOperation: action => action() })
+    assert.equal(record.targetTupleSha256, target); assert.equal(record.phase, 'verified')
+    assert.equal(record.descriptorSha256, next.descriptorSha256)
+  }
+  assert.throws(() => requireNativeContinuation(record, observed, fixture.record.targetTupleSha256), unconfirmed)
+})
+
+test('a different pair cannot use legacy matching and a changed predecessor cannot reserve successor ownership', async t => {
+  const fixture = await successorPredecessorFixture(), bundles = await successorBundleFixture(t, fixture)
+  const derived = await bundles.derive(), next = successorPins(derived)
+  for (const variant of ['legacy', 'actual tuple', 'predecessor', 'descriptor', 'FD', 'profile', 'missing fresh check']) {
+    let reserves = 0, actions = 0
+    const root = memoryRoot(), store = root.store(), successor = structuredClone(derived.pairBinding)
+    const request = { pins: { ...next }, successor,
+      authority: { reserve: (...args) => { reserves++; return store.reserve(...args) } },
+      previousAuthority: fixture.authority, confirmPredecessor: async () => fixture.record,
+      effects: { ...Object.fromEntries(jsNames.map(name => [name, async () => { actions++ }])),
+        observeTuple: async () => next.originalTupleSha256 },
+      writeProjection: async value => value, holdOperation: action => action() }
+    if (variant === 'legacy') request.pins.kind = 'matching-js'
+    if (variant === 'actual tuple') request.effects.observeTuple = async () => '9'.repeat(64)
+    if (variant === 'predecessor') successor.predecessor.directoryIdentity.inode = '999'
+    if (variant === 'descriptor') request.pins.descriptorSha256 = '9'.repeat(64)
+    if (variant === 'FD') successor.asset.sha256 = '9'.repeat(64)
+    if (variant === 'profile') successor.profile.identity.inode = '999'
+    if (variant === 'missing fresh check') delete request.confirmPredecessor
+    await assert.rejects(runNativeDelivery(request), unconfirmed, variant)
+    assert.equal(reserves, 0, variant); assert.equal(actions, 0, variant)
+    assert.deepEqual(fixture.root.store().read(), fixture.record)
+  }
+})
+
+test('every successor JS unknown retains the real host lock, blocking projection and exact Root intent',
+  { skip: typeof process.getuid !== 'function' }, async t => {
+  const fixture = await successorPredecessorFixture(), bundles = await successorBundleFixture(t, fixture)
+  const derived = await bundles.derive(), next = successorPins(derived)
+  const expected = ['check-pair-intent', 'stop-intent', 'backup-intent', 'install-intent', 'start-intent', 'verify-intent']
+  for (const [index, fault] of jsNames.entries()) await t.test(fault, async () => {
+    const directory = fs.mkdtempSync(join(tmpdir(), 'pe-successor-unknown-')); fs.chmodSync(directory, 0o700)
+    t.after(() => fs.rmSync(directory, { recursive: true, force: true }))
+    const root = memoryRoot(), called = []
+    let observed = next.originalTupleSha256
+    const effects = { observeTuple: async () => observed }
+    for (const name of jsNames) effects[name] = async () => {
+      called.push(name)
+      if (name === 'install') observed = next.targetTupleSha256
+      if (name === fault) throw new Error('effect outcome lost')
+    }
+    await assert.rejects(runNativeDelivery({ directory, pins: next, successor: derived.pairBinding,
+      authority: root.store(), effects, confirmPredecessor: async () => fixture.record }), unconfirmed)
+    assert.deepEqual(called, jsNames.slice(0, index + 1))
+    assert.equal(root.store().read().phase, expected[index])
+    assert.equal(root.store().read().firstLaunchMayHaveRun, index >= 4)
+    assert.equal(JSON.parse(fs.readFileSync(join(directory, 'latest.json'))).nativePhase, expected[index])
+    assert.equal(fs.existsSync(join(directory, 'operation.lock')), true)
+    assert.equal(fs.existsSync(join(directory, 'native-release-' + next.operation + '.json')), false)
+    await assert.rejects(withNativeOperationLock(directory, next.operation, async () => { called.push('retry') }), unconfirmed)
+    assert.equal(called.includes('retry'), false)
+  })
+})
+
+test('the successor protocol uses a real Linux journal FD and contains a close acknowledgement loss before guarded confirmation',
+  { skip: process.platform !== 'linux' }, async t => {
+  const fixture = await successorPredecessorFixture(), bundles = await successorBundleFixture(t, fixture)
+  const next = successorPins(await bundles.derive())
+  const directory = fs.mkdtempSync(join(tmpdir(), 'pe-successor-fd-')), journal = join(directory, 'journal')
+  fs.chmodSync(directory, 0o700); fs.mkdirSync(journal, { mode: 0o700 })
+  const fd = fs.openSync(journal, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW)
+  t.after(() => { fs.closeSync(fd); fs.rmSync(directory, { recursive: true, force: true }) })
+  // Ownership is simulated for non-root test runners; opens, file/directory syncs, rename and close are actual Linux I/O.
+  let inject = false, writes = 0
+  const writing = new Set()
+  const io = { ...fs, fstatSync(handle) { return Object.assign(fs.fstatSync(handle), { uid: 0, gid: 0 }) },
+    openSync(...args) { const handle = fs.openSync(...args); if (args[1] === 'wx') writing.add(handle); return handle },
+    closeSync(handle) {
+      const wasWriting = writing.delete(handle)
+      fs.closeSync(handle)
+      if (inject && wasWriting) { inject = false; throw new Error('closed, acknowledgement lost') }
+    } }
+  const store = new NativeRecordStore(fd, io)
+  const owner = await NativeDeliveryOwner.reserve(next, store)
+  assert.equal(store.read().kind, 'successor-js')
+  await assert.rejects(withNativeOperationLock(directory, next.operation, async () => {
+    inject = true
+    await owner.guard(async value => { writes++; return saveNativeProjection(directory, value) })
+  }), unconfirmed)
+  assert.equal(owner.unknown, true)
+  assert.equal(writes, 1)
+  assert.equal(JSON.parse(fs.readFileSync(join(journal, 'native-fd.json'))).phase, 'reserved')
+  assert.equal(fs.existsSync(join(journal, 'native-fd-1.pending')), true)
+  assert.equal(fs.existsSync(join(directory, 'operation.lock')), true)
+  let actions = 0
+  await assert.rejects(owner.run('checkPair', async () => { actions++ }), unconfirmed)
+  assert.equal(actions, 0)
+})
+
+test('a verified successor publishes the normal release receipt and preserves the completed predecessor files',
+  { skip: typeof process.getuid !== 'function' }, async t => {
+  const fixture = await successorPredecessorFixture(), bundles = await successorBundleFixture(t, fixture)
+  const derived = await bundles.derive(), next = successorPins(derived)
+  const directory = fs.mkdtempSync(join(tmpdir(), 'pe-successor-release-')); fs.chmodSync(directory, 0o700)
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }))
+  await withNativeOperationLock(directory, fixture.record.operation, async () => fixture.record)
+  const receipt = join(directory, 'native-release-' + fixture.record.operation + '.json')
+  const originalReceipt = fs.readFileSync(receipt)
+  saveNativeProjection(directory, fixture.latest)
+  let observed = next.originalTupleSha256
+  const effects = { ...Object.fromEntries(jsNames.map(name => [name, async () => {}])), observeTuple: async () => observed }
+  effects.install = async () => { observed = next.targetTupleSha256 }
+  const record = await runNativeDelivery({ directory, pins: next, successor: derived.pairBinding,
+    authority: memoryRoot().store(), effects, confirmPredecessor: async () => {
+      requireNativeReleaseComplete(directory, undefined, fixture.record.operation)
+      return fixture.record
+    } })
+  assert.equal(record.phase, 'verified')
+  assert.deepEqual(fs.readFileSync(receipt), originalReceipt)
+  assert.deepEqual(JSON.parse(fs.readFileSync(join(directory, 'latest.json'))), legacyBarrier(record))
+  assert.equal(fs.existsSync(join(directory, 'operation.lock')), false)
+  assert.equal(fs.existsSync(join(directory, 'native-release.pending')), false)
+  assert.doesNotThrow(() => requireNativeReleaseComplete(directory, undefined, record.operation))
+  assert.deepEqual(fixture.root.store().read(), fixture.record)
 })
