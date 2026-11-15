@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { Script } from 'node:vm'
+import { createRequire } from 'node:module'
 import { spawn, spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import stateModule from './native-delivery-state.cjs'
@@ -14,7 +15,7 @@ import { runNativeDelivery, runNativePublishContinuation, saveNativeProjection, 
 import { requireOrdinaryUpdateState, requireOrdinaryRollbackState, startSavedApplication, nativeArguments } from './update.mjs'
 import { createNativeAuthority, nativeAuthorityCommand } from './native-authority.mjs'
 import profileModule from './native-profile.cjs'
-import { nativeUpdate, continueNativePublish, confirmNativePredecessor, deriveNativeSuccessorPair } from './native-update.mjs'
+import { nativeUpdate, continueNativePublish, confirmNativePredecessor, deriveNativeSuccessorPair, requireDirectoryAssetInput, directoryReaderSources, requireSavedAssetPlan } from './native-update.mjs'
 import { writeBundle } from '../bundle.mjs'
 
 const { NativeRecordStore, NativeDeliveryOwner, requireNativeContinuation, legacyBarrier, publishFdAsset } = stateModule
@@ -929,7 +930,7 @@ test('every downstream continuation unknown retains its actual intent and never 
 
 const jsNames = ['checkPair', 'stop', 'backup', 'install', 'start', 'verify']
 
-async function successorPredecessorFixture() {
+async function successorPredecessorFixture(selectedRole = 'normal') {
   const metadata = { sourceCommit: 'a'.repeat(40), nodeVersion: '24.19.0', pnpmLockHash: 'a'.repeat(64),
     externalDependencyHash: 'b'.repeat(64), researchLockHash: 'c'.repeat(64), dependencyHash: 'd'.repeat(64) }
   const manifest = label => ({ format: 'pe-cloud-update/v1', ...metadata, fixture: label, files: [], managedRoots: [] })
@@ -954,8 +955,9 @@ async function successorPredecessorFixture() {
       mode: 0o555, maxAssetBytes: asset.maxAssetBytes, maxPathBytes: asset.maxPathBytes }, compatibleBundle: '/old/compatible' }
   const descriptorSha256 = createHash('sha256').update(JSON.stringify({ groups: groups.map(profileModule.tupleSha256),
     assetSource: asset.sourceSha256, namespaceId: context.namespaceId, holder: context.holder })).digest('hex')
+  const selected = selectedRole === 'compatible' ? 2 : 1, other = selected === 1 ? 2 : 1
   const first = { ...pins, descriptorSha256, originalTupleSha256: profileModule.tupleSha256(groups[0]),
-    targetTupleSha256: profileModule.tupleSha256(groups[1]), compatibleTupleSha256: profileModule.tupleSha256(groups[2]) }
+    targetTupleSha256: profileModule.tupleSha256(groups[selected]), compatibleTupleSha256: profileModule.tupleSha256(groups[other]) }
   const root = memoryRoot(), { owner } = await guarded(root, first)
   for (const name of names) await owner.run(name, async () => {})
   const record = owner.record
@@ -966,7 +968,7 @@ async function successorPredecessorFixture() {
   const current = { ...context, canStopSafely: true, productReadOnly: true, productBlockReadOnly: true }
   const authority = { read: () => root.store().read(), observeTuple: async () => record.targetTupleSha256 }
   return { input, current, root, record, latest: legacyBarrier(record), authority, metadata,
-    previous: { record, installed: groups[1] },
+    previous: { record, installed: groups[selected] },
     controller: { commit: '3'.repeat(40), tree: '4'.repeat(40), programSha256: '5'.repeat(64) } }
 }
 
@@ -1246,4 +1248,542 @@ test('a verified successor publishes the normal release receipt and preserves th
   assert.equal(fs.existsSync(join(directory, 'native-release.pending')), false)
   assert.doesNotThrow(() => requireNativeReleaseComplete(directory, undefined, record.operation))
   assert.deepEqual(fixture.root.store().read(), fixture.record)
+})
+
+
+const sha = bytes => createHash('sha256').update(bytes).digest('hex')
+function directoryConfig() {
+  return { helperPath: '/opt/dsh-feature-assets/fd-abi8.node', maxPathBytes: 256,
+    workerCount: 1, workerReservationBytes: 65536, maxLanes: 2, maxResidentBytes: 134217728,
+    maxResidentBytesPerLane: 67108864, replyOverheadBytes: 4096,
+    content: { maxEntries: 64, maxNameBytes: 255, maxReplyBytes: 1048576, operationTimeoutMs: 5000 } }
+}
+const directoryBudgets = { idleTimeoutMs: 1000, totalTimeoutMs: 30000, maxPages: 8 }
+function directorySpec() {
+  return { nativeProtocol: profileModule.DIRECTORY_PROTOCOL, directoryPaging: { ...directoryBudgets },
+    originalHelperPath: '/opt/dsh-feature-assets/fd-abi8.node',
+    nextHelperPath: '/opt/dsh-feature-assets/fd-skill-store-v1-' + 'a'.repeat(64) + '.node' }
+}
+
+function exposureResolver(t) {
+  const root = fs.mkdtempSync(join(tmpdir(), 'pe-exposure-resolve-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  for (const name of ['dsh-pe-cloud-api', 'dsh-pe-cloud-files']) {
+    const directory = join(root, 'node_modules/@deepseek-ai/' + name)
+    fs.mkdirSync(directory, { recursive: true })
+    fs.writeFileSync(join(directory, 'package.json'), JSON.stringify({ name: '@deepseek-ai/' + name, exports: { './root': './root.cjs' } }))
+    fs.writeFileSync(join(directory, 'root.cjs'), 'throw Error("module resolution must never execute a provider")\n')
+  }
+  const require = createRequire(join(root, 'package.json'))
+  return name => require.resolve(name)
+}
+function directoryPatch() {
+  return [{ insert: [{ id: 'files-root', name: '@deepseek-ai/dsh-pe-cloud-files/root', config: directoryConfig() },
+    { id: 'actual-deployment-exposure', name: '@deepseek-ai/dsh-pe-cloud-api/root', config: {
+      recipeVersion: 'kept-original', rpcEndpoints: [], streamEndpoints: [], exactFetchRoutes: [], allowedSettings: [],
+      approvedConfiguration: { retained: true } } },
+    { id: 'other', config: { helperPath: '/opt/dsh-feature-assets/fd-abi8.node', retained: 'escapes " and \\ stay' } }] }]
+}
+
+test('directory profile resolves a real package export and changes only helper paging and the exact stream', t => {
+  const resolve = exposureResolver(t)
+  for (const indent of [undefined, 2, '\t']) for (const ending of ['', '\n', '\r\n']) {
+    const original = directoryPatch(), text = JSON.stringify(original, null, indent) + ending
+    const result = profileModule.directoryCandidate(text, directorySpec(), resolve, 64)
+    const parsed = JSON.parse(result.bytes)
+    assert.equal(parsed[0].insert[0].config.helperPath, directorySpec().nextHelperPath)
+    assert.deepEqual(parsed[0].insert[0].config.directoryPaging, directoryBudgets)
+    assert.deepEqual(parsed[0].insert[1].config.streamEndpoints, [profileModule.DIRECTORY_STREAM])
+    parsed[0].insert[0].config.helperPath = original[0].insert[0].config.helperPath
+    delete parsed[0].insert[0].config.directoryPaging; parsed[0].insert[1].config.streamEndpoints = []
+    assert.deepEqual(parsed, original)
+    assert.equal(result.facts.originalSha256, sha(text))
+    assert.equal(result.facts.candidateSha256, sha(result.bytes))
+    assert.equal(result.facts.capacity.readerMaxEntries, 64)
+    assert.equal(result.facts.capacity.requiredPagesUpper, 4)
+    assert.ok(result.bytes.toString().endsWith(ending))
+  }
+})
+
+test('directory profile retains an already exact stream and replaces only a strict existing paging object', t => {
+  const patch = directoryPatch(), config = patch[0].insert[0].config
+  config.directoryPaging = { idleTimeoutMs: 9, totalTimeoutMs: 99, maxPages: 8 }
+  patch[0].insert[1].config.streamEndpoints = [{ ...profileModule.DIRECTORY_STREAM }]
+  const text = JSON.stringify(patch, null, 2), result = profileModule.directoryCandidate(text, directorySpec(), exposureResolver(t), 64)
+  assert.equal(JSON.parse(result.bytes)[0].insert[1].config.streamEndpoints.length, 1)
+  assert.deepEqual(JSON.parse(result.bytes)[0].insert[0].config.directoryPaging, directoryBudgets)
+})
+
+test('directory profile rejects ambiguous providers decoded duplicate keys and wrong stream declarations', t => {
+  const resolve = exposureResolver(t)
+  const mutations = [p => { p[0].insert[0].name = '@deepseek-ai/dsh-pe-cloud-api/root' },
+    p => { p[0].insert[0].disabled = true }, p => { p[0].insert[1].disabled = true },
+    p => { p.push({ id: 'actual-deployment-exposure', config: {} }) }, p => { p[0].id = 'unconfirmed-group' },
+    p => p[0].insert.push(structuredClone(p[0].insert[0])),
+    p => p[0].insert.push(structuredClone(p[0].insert[1])), p => p[0].insert.splice(1, 1),
+    p => { p[0].insert[0].config.directoryPaging = { ...directoryBudgets, extra: 1 } },
+    p => { p[0].insert[1].config.streamEndpoints = [{ ...profileModule.DIRECTORY_STREAM, guard: 'account-project' }] },
+    p => { p[0].insert[1].config.streamEndpoints = [{ ...profileModule.DIRECTORY_STREAM, handlerId: 'other' }] },
+    p => { p[0].insert[1].config.streamEndpoints = [{ ...profileModule.DIRECTORY_STREAM }, { ...profileModule.DIRECTORY_STREAM }] },
+    p => { p[0].insert[1].config.rpcEndpoints.push({ ...profileModule.DIRECTORY_STREAM }) }]
+  for (const change of mutations) { const patch = directoryPatch(); change(patch)
+    assert.throws(() => profileModule.directoryCandidate(JSON.stringify(patch), directorySpec(), resolve, 64), e => e.code === 'NATIVE_PROFILE_UNCONFIRMED') }
+  const duplicated = directoryPatch(); duplicated[0].insert[0].config.directoryPaging = { ...directoryBudgets }
+  const text = JSON.stringify(duplicated).replace('"maxPages":8', '"maxPages":8,"maxPages":8')
+  assert.throws(() => profileModule.directoryCandidate(text, directorySpec(), resolve, 64), e => e.code === 'NATIVE_PROFILE_UNCONFIRMED')
+})
+
+test('directory budgets reject absent real reader facts unsafe products incomplete frames and unavailable resident capacity', () => {
+  const config = directoryConfig(), capacity = profileModule.directoryCapacity(config, directoryBudgets, 64)
+  assert.ok(capacity.reservationBytesUpper <= capacity.laneAvailableBytes)
+  assert.ok(capacity.completeFrameBytesUpper <= config.content.maxReplyBytes)
+  for (const budget of [{ ...directoryBudgets, maxPages: 0 }, { ...directoryBudgets, maxPages: 1.5 },
+    { ...directoryBudgets, idleTimeoutMs: 2147483648 }, { ...directoryBudgets, totalTimeoutMs: NaN },
+    { ...directoryBudgets, extra: true }, { idleTimeoutMs: 1, totalTimeoutMs: 2 }, { ...directoryBudgets, maxPages: 3 }]) {
+    assert.throws(() => profileModule.directoryCapacity(config, budget, 64), e => e.code === 'NATIVE_PROFILE_UNCONFIRMED')
+  }
+  for (const change of [c => { delete c.content }, c => { c.content.maxReplyBytes = 128 },
+    c => { c.maxResidentBytesPerLane = 1024 }, c => { c.maxResidentBytes = 65536 },
+    c => { c.content.maxEntries = 2147483647; c.content.maxReplyBytes = 2147483647 }]) {
+    const next = structuredClone(config); change(next)
+    assert.throws(() => profileModule.directoryCapacity(next, { ...directoryBudgets, maxPages: 2147483647 }, 64), e => e.code === 'NATIVE_PROFILE_UNCONFIRMED')
+  }
+  assert.throws(() => profileModule.directoryCapacity(config, directoryBudgets), e => e.code === 'NATIVE_PROFILE_UNCONFIRMED')
+  assert.equal(profileModule.directoryCapacity(config, { ...directoryBudgets, idleTimeoutMs: 30001 }, 64).readerMaxEntries, 64)
+})
+
+function directoryLoader(addonChanges = {}) {
+  const bytes = Buffer.from('component module bytes'), digest = sha(bytes), name = 'fd-skill-store-v1-' + digest + '.node'
+  const stat = { dev: 1, ino: 2, uid: 0, gid: 0, nlink: 1, mode: 0o444, size: bytes.length,
+    mtimeMs: 1, ctimeMs: 1, isFile: () => true, isSymbolicLink: () => false }
+  const io = { constants: fs.constants, lstatSync: path => path.endsWith('.node') ? stat
+    : { uid: 0, mode: 0o555, isSymbolicLink: () => false, isDirectory: () => true },
+    openSync: () => 8, fstatSync: () => stat, closeSync: () => {}, readFileSync: path => typeof path === 'number' ? bytes : '1 0 1:1 / / ro - overlay overlay rw\n' }
+  const addon = { abiVersion: 8, directoryListingVersion: 1, directoryPagingVersion: 1 }
+  for (const key of ['projectMetadataVersion', 'environmentLayoutVersion', 'skillVersionsVersion', 'skillProjectionVersion',
+    'skillBundleVersion', 'skillBundleProjectionVersion', 'skillBundleReclaimVersion']) addon[key] = 1
+  for (const key of ['openAnchor', 'openRead', 'closeRead', 'openMetadata', 'closeAnchor', 'canonicalPath', 'probeKernel',
+    'prepareLeaf', 'removeEmptyLeaf', 'prepareExt4Leaf', 'removeExt4Leaf', 'writeText', 'prepareEnvironmentLayout',
+    'prepareProjectMetadata', 'openPathMetadata', 'verifyContentAnchor', 'listDirectory', 'skillBundleOperation',
+    'projectSkillVersion', 'prepareSkillStore', 'verifySkillStore', 'inspectSkillStore', 'prepareSkillParent',
+    'verifySkillParent', 'prepareSkillVersion', 'retireSkillVersions', 'openDirectoryEnumeration', 'pullDirectoryEnumeration',
+    'closeDirectoryEnumeration']) addon[key] = () => {}
+  Object.assign(addon, addonChanges)
+  let execution
+  const run = nativeProtocol => profileModule.loadPublishedAsset({ name, sha256: digest, identity: { device: '1', inode: '2', bytes: bytes.length } },
+    { nodePath: '/dsh-tools/node24', seccompPath: '/opt/dsh-feature-assets/app-seccomp.bpf', shutdownTimeoutMs: 1234 },
+    { io, nativeProtocol, execute: (command, args, options) => {
+      execution = { command, args, options }; let result
+      const program = args[args.indexOf('-e') + 1]
+      new Script(program).runInNewContext({ require: module => module === 'node:fs' ? { readFileSync: () =>
+        'CapInh:\t0000\nCapPrm:\t0000\nCapEff:\t0000\nCapBnd:\t0000\nCapAmb:\t0000\nNoNewPrivs:\t1\nSeccomp:\t2\n' }
+        : module === 'node:os' ? { release: () => 'actual-test-component' } : addon,
+      process: { platform: 'linux', arch: 'arm64', version: 'v24.19.0', versions: { napi: '10', modules: '137' },
+        getuid: () => 2000, getgid: () => 2000, argv: ['node', '/asset'], report: { getReport: () => ({ header: { glibcVersionRuntime: '2.36' } }) } },
+      console: { log: value => { result = value } } })
+      return result
+    } })
+  return { run, execution: () => execution }
+}
+
+test('directory load selects the complete protocol and retains the original restricted argv and FD policy', () => {
+  const fixture = directoryLoader(), result = fixture.run(profileModule.DIRECTORY_PROTOCOL), call = fixture.execution()
+  assert.equal(result.directoryListingVersion, 1); assert.equal(result.directoryPagingVersion, 1)
+  assert.equal(result.nativeProtocol, profileModule.DIRECTORY_PROTOCOL)
+  assert.equal(call.command, '/usr/bin/env'); assert.equal(call.args.includes('/bin/sh'), false)
+  assert.deepEqual(call.options.stdio, ['ignore', 'pipe', 'pipe', ...Array(8).fill('ignore')])
+  assert.equal(call.options.timeout, 1234); assert.equal(call.options.killSignal, 'SIGTERM'); assert.equal(call.options.maxBuffer, 131072)
+  assert.ok(call.args.includes('--seccomp-filter')); assert.ok(call.args.includes('--no-new-privs'))
+})
+
+test('directory load rejects partial protocols wrong versions and missing original methods without legacy fallback', () => {
+  for (const changes of [{ directoryListingVersion: undefined }, { directoryPagingVersion: undefined },
+    { directoryPagingVersion: 2 }, { abiVersion: 7 }, { skillBundleVersion: 2 }, { inspectSkillStore: undefined },
+    { openDirectoryEnumeration: undefined }, { pullDirectoryEnumeration: undefined }, { closeDirectoryEnumeration: undefined }]) {
+    assert.throws(() => directoryLoader(changes).run(profileModule.DIRECTORY_PROTOCOL))
+  }
+  assert.throws(() => directoryLoader().run(undefined))
+  assert.throws(() => directoryLoader().run('unknown-protocol'), e => e.code === 'NATIVE_PROFILE_UNCONFIRMED')
+  assert.equal(directoryLoader({ directoryListingVersion: undefined, directoryPagingVersion: undefined }).run(undefined).loaded, true)
+})
+
+test('new asset input is explicit strict and cannot reopen first delivery same-FD or legacy continuation', async () => {
+  assert.deepEqual(nativeArguments('update', ['/normal', '--native-asset-successor', '/private/input']),
+    { assetSuccessorFile: '/private/input', args: ['/normal'] })
+  for (const mode of ['start', 'rollback', 'continue-native-publish']) assert.throws(() => nativeArguments(mode, ['/normal', '--native-asset-successor', '/private']))
+  for (const flag of ['--native-input', '--native-successor', '--native-asset-successor']) {
+    assert.throws(() => nativeArguments('update', ['/normal', '--native-asset-successor', '/one', flag, '/two']))
+  }
+  const input = { format: 'pe-cloud-local-native-directory-asset/v1', predecessor: { operation: pins.operation,
+    descriptorSha256: '1'.repeat(64), targetTupleSha256: '2'.repeat(64) }, assetFile: '/public/asset.node',
+    provenanceFile: '/public/asset-provenance.json', sourceManifestFile: '/public/source.sha256', compatibleBundle: '/public/compatible', directoryPaging: directoryBudgets }
+  assert.doesNotThrow(() => requireDirectoryAssetInput(input))
+  assert.throws(() => requireDirectoryAssetInput({ ...input, allowGroups: [] }), unconfirmed)
+  assert.throws(() => requireDirectoryAssetInput({ ...input, nativeProtocol: 'arbitrary' }), unconfirmed)
+  assert.throws(() => requireDirectoryAssetInput({ ...input, assetFile: 'relative' }), unconfirmed)
+  for (const request of [{ mode: 'rollback' }, { mode: 'update', inputFile: '/must-not-open' },
+    { mode: 'update', successorFile: '/must-not-open' }, { mode: 'update', latest: { format: 'ordinary' } }]) {
+    await assert.rejects(nativeUpdate({ mode: 'update', bundle: '/must-not-open', args: [], latest: { format: stateModule.PROJECTION },
+      assetSuccessorFile: '/must-not-open', ...request }), e => unconfirmed(e) && e.phase === 'asset-successor-entry')
+  }
+})
+
+async function directoryBindingFixture(selectedRole = 'normal') {
+  const prior = await successorPredecessorFixture(selectedRole), nextOperation = '00000000-0000-4000-8000-000000000002'
+  const profile = { source: '/opt/dsh-features/pe-cloud-delivery/' + nextOperation + '/native-profile-' + '7'.repeat(64) + '.yml', sha256: '7'.repeat(64), bytes: 600 }
+  const asset = { ...prior.previous.installed.asset, path: '/opt/dsh-feature-assets/fd-skill-store-v1-' + '6'.repeat(64) + '.node', sha256: '6'.repeat(64), bytes: 143776 }
+  const groups = [structuredClone(prior.previous.installed), ...['normal', 'compatible'].map(role => ({
+    ...structuredClone(prior.previous.installed), role, manifest: { ...prior.previous.installed.manifest, fixture: 'directory-' + role }, asset, profile }))]
+  groups[0].role = 'original'
+  const binding = { format: 'pe-cloud-native-directory-asset-binding/v1', predecessor: structuredClone(prior.record),
+    release: { format: 'pe-cloud-native-release/v1', operation: prior.record.operation }, controller: prior.controller,
+    context: prior.input.context, originSha256: 'a'.repeat(64), nativeProtocol: profileModule.DIRECTORY_PROTOCOL,
+    directoryFactsSha256: 'b'.repeat(64), asset, profile, groups: groups.map(profileModule.tupleSha256) }
+  const next = { kind: 'fd-profile', operation: nextOperation, descriptorSha256: stateModule.nativeAssetDescriptor(binding),
+    originalTupleSha256: binding.groups[0], targetTupleSha256: binding.groups[1], compatibleTupleSha256: binding.groups[2] }
+  return { prior, groups, binding, next }
+}
+
+test('new asset binding requires the fresh whole predecessor and all nine original effects', async () => {
+  const fixture = await directoryBindingFixture(), calls = [], root = memoryRoot()
+  let installed = false
+  const effects = Object.fromEntries(names.map(name => [name, async () => { calls.push(name); if (name === 'install') installed = true }]))
+  effects.observeTuple = async () => installed ? fixture.next.targetTupleSha256 : fixture.next.originalTupleSha256
+  const result = await runNativeDelivery({ pins: fixture.next, authority: root.store(), assetSuccessor: fixture.binding,
+    confirmPredecessor: async () => fixture.prior.record, effects, holdOperation: action => action(), writeProjection: value => value })
+  assert.deepEqual(calls, names); assert.equal(result.phase, 'verified'); assert.equal(result.kind, 'fd-profile')
+  for (const alter of [b => { b.originSha256 = 'bad' }, b => { b.nativeProtocol = 'old' }, b => { b.groups.reverse() },
+    b => { b.predecessor = { ...b.predecessor, descriptorSha256: 'd'.repeat(64) } }, b => { b.release.operation = fixture.next.operation }]) {
+    const binding = structuredClone(fixture.binding); alter(binding)
+    assert.throws(() => stateModule.requireNativeAssetSuccessor(fixture.prior.record, fixture.next.originalTupleSha256, fixture.next, binding), unconfirmed)
+  }
+  assert.throws(() => stateModule.requireNativeSuccessor(fixture.prior.record, fixture.next.originalTupleSha256,
+    { ...fixture.next, kind: 'successor-js' }, fixture.binding), unconfirmed)
+})
+
+test('every new asset effect unknown retains its actual intent and never starts dependent work', async () => {
+  const fixture = await directoryBindingFixture()
+  for (const failed of names) {
+    const root = memoryRoot(), calls = []; let installed = false
+    const effects = Object.fromEntries(names.map(name => [name, async () => { calls.push(name)
+      if (name === 'install') installed = true
+      if (name === failed) throw new Error('external action outcome unknown') }]))
+    effects.observeTuple = async () => installed ? fixture.next.targetTupleSha256 : fixture.next.originalTupleSha256
+    await assert.rejects(runNativeDelivery({ pins: fixture.next, authority: root.store(), assetSuccessor: fixture.binding,
+      confirmPredecessor: async () => fixture.prior.record, effects, holdOperation: action => action(), writeProjection: value => value }), unconfirmed)
+    assert.deepEqual(calls, names.slice(0, names.indexOf(failed) + 1))
+    assert.match(root.store().read().phase, /-intent$/)
+  }
+})
+
+test('new asset predecessor failure occurs before reservation and old free never releases a new unknown operation', async t => {
+  const fixture = await directoryBindingFixture(), root = memoryRoot(), directory = fs.mkdtempSync(join(tmpdir(), 'pe-directory-lock-'))
+  fs.chmodSync(directory, 0o700); t.after(() => fs.rmSync(directory, { recursive: true, force: true }))
+  await withNativeOperationLock(directory, fixture.prior.record.operation, async () => fixture.prior.record)
+  const effects = Object.fromEntries(names.map(name => [name, async () => { throw new Error('must not execute') }]))
+  effects.observeTuple = async () => fixture.next.originalTupleSha256
+  await assert.rejects(runNativeDelivery({ directory, pins: fixture.next, authority: root.store(), assetSuccessor: fixture.binding,
+    confirmPredecessor: async () => { throw new Error('fresh predecessor unknown') }, effects }), /fresh predecessor unknown/)
+  assert.throws(() => root.store().read())
+  assert.equal(fs.existsSync(join(directory, 'operation.lock')), true)
+  assert.equal(fs.existsSync(join(directory, 'native-release-' + fixture.next.operation + '.json')), false)
+  assert.doesNotThrow(() => requireNativeReleaseComplete(directory, undefined, fixture.prior.record.operation))
+})
+
+function directorySourceFixture(t) {
+  const root = fs.mkdtempSync(join(tmpdir(), 'pe-directory-source-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  const git = (args, input) => { const value = spawnSync('git', ['-C', root, ...args], { input, encoding: 'utf8' })
+    assert.equal(value.status, 0, value.stderr); return value.stdout.trim() }
+  git(['init', '-q'])
+  const native = ['fd.c', 'skill-project.h', 'skill-versions.h', 'skill-bundles.h'].map(name => ({ path: 'packages/cloud/pe-cloud-files/native/' + name, sha256: sha(name) }))
+  const readers = ['packages/cloud/pe-cloud-files/src/file-worker.ts', 'packages/cloud/pe-cloud-files/src/worker-client.ts',
+    'packages/cloud/pe-cloud-files/src/worker-pool.ts', 'packages/api/workspace-files/src/index.ts',
+    'packages/cloud/pe-cloud-access/src/bootstrap-producer.ts', 'packages/cloud/pe-cloud-runtime/src/account-native-integration.ts',
+    'packages/client/ui-sidebar-files/src/client/directory-pages.ts']
+  for (const row of native) { fs.mkdirSync(join(root, row.path, '..'), { recursive: true }); fs.writeFileSync(join(root, row.path), row.path.split('/').at(-1)) }
+  for (const path of readers) { fs.mkdirSync(join(root, path, '..'), { recursive: true })
+    fs.writeFileSync(join(root, path), (path === 'packages/api/workspace-files/src/index.ts'
+      ? '  static Config: z<Config> = z.object({\n    maxEntries: z.number().step(1).min(1).default(2000),\n  })\n' : '') + 'actual saved fixture reader ' + path) }
+  git(['add', '.']); const tree = git(['write-tree'])
+  const commitText = 'tree ' + tree + '\nauthor Fixture <fixture@example.invalid> 1 +0000\ncommitter Fixture <fixture@example.invalid> 1 +0000\n\nfixture\n'
+  const commit = git(['hash-object', '-t', 'commit', '-w', '--stdin'], commitText)
+  return { root, commit, tree, native }
+}
+
+test('directory reader source proof reads actual product commits and refuses a changed C independently of controller HEAD', t => {
+  const { root, commit, tree, native } = directorySourceFixture(t)
+  const result = directoryReaderSources([{ sourceCommit: commit, nodeVersion: '24.19.0' }], native, root)
+  assert.equal(result[0].sourceCommit, commit); assert.equal(result[0].sourceTree, tree)
+  assert.equal(result[0].files.length, 11)
+  assert.throws(() => directoryReaderSources([{ sourceCommit: commit, nodeVersion: '24.19.0' }],
+    native.map((row, index) => index ? row : { ...row, sha256: '0'.repeat(64) }), root), unconfirmed)
+  assert.throws(() => directoryReaderSources([{ sourceCommit: 'f'.repeat(40), nodeVersion: '24.19.0' }], native, root))
+})
+
+
+test('directory authority preserves the selected protocol budgets facts and bounded program across requests', async () => {
+  const fixture = await successorPredecessorFixture(), facts = { format: 'pe-cloud-directory-profile-facts/v1',
+    nativeProtocol: profileModule.DIRECTORY_PROTOCOL, directoryPaging: directoryBudgets, stream: profileModule.DIRECTORY_STREAM }
+  const approved = structuredClone(fixture.input.approved)
+  Object.assign(approved.profile, { nativeProtocol: profileModule.DIRECTORY_PROTOCOL,
+    directoryPaging: directoryBudgets, directoryFacts: facts })
+  const received = []
+  const authority = await createNativeAuthority({ ...fixture.current, shutdownTimeoutMs: 1234 }, approved, async (command, options) => {
+    assert.ok(Buffer.byteLength(command[2]) < 131071)
+    const request = JSON.parse(options.input); received.push(request)
+    return JSON.stringify(request.method === 'directory-facts' ? facts : { accepted: true })
+  })
+  assert.deepEqual(authority.snapshotApproved().profile.directoryFacts, facts)
+  assert.deepEqual(await authority.readDirectoryFacts(), facts)
+  const sent = received[0].approved.profile
+  assert.equal(sent.nativeProtocol, profileModule.DIRECTORY_PROTOCOL)
+  assert.deepEqual(sent.directoryPaging, directoryBudgets); assert.deepEqual(sent.directoryFacts, facts)
+  assert.equal(sent.original.source, approved.profile.original.source)
+})
+
+test('directory preflight refuses existing asset or provenance paths and propagates an unknown path read', () => {
+  const asset = { sha256: 'a'.repeat(64) }, missing = Object.assign(new Error('absent'), { code: 'ENOENT' })
+  let calls = 0
+  assert.doesNotThrow(() => profileModule.requireUnpublishedDirectoryAsset(asset, { lstatSync() { calls++; throw missing } }))
+  assert.equal(calls, 2)
+  for (const present of [0, 1]) { let index = 0
+    assert.throws(() => profileModule.requireUnpublishedDirectoryAsset(asset, { lstatSync() { if (index++ !== present) throw missing; return {} } }),
+      e => e.code === 'NATIVE_PROFILE_UNCONFIRMED') }
+  assert.throws(() => profileModule.requireUnpublishedDirectoryAsset(asset, { lstatSync() { throw new Error('unknown read') } }), /unknown read/)
+})
+
+test('new asset nine-step responsibility uses a real Linux journal FD and retains a lost close acknowledgement',
+  { skip: process.platform !== 'linux' }, async t => {
+  const fixture = await directoryBindingFixture(), directory = fs.mkdtempSync(join(tmpdir(), 'pe-directory-fd-'))
+  fs.chmodSync(directory, 0o700)
+  const journal = join(directory, 'journal'); fs.mkdirSync(journal, { mode: 0o700 })
+  const fd = fs.openSync(journal, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW)
+  t.after(() => { fs.closeSync(fd); fs.rmSync(directory, { recursive: true, force: true }) })
+  let inject = false; const writes = new Set()
+  // Only owner metadata is projected; actual Linux opens, writes, syncs, renames and closes are used.
+  const io = { ...fs, fstatSync(handle) { return Object.assign(fs.fstatSync(handle), { uid: 0, gid: 0 }) },
+    openSync(...args) { const value = fs.openSync(...args); if (args[1] === 'wx') writes.add(value); return value },
+    closeSync(handle) { const write = writes.delete(handle); fs.closeSync(handle)
+      if (inject && write) { inject = false; throw new Error('actual close acknowledgement unknown') } } }
+  const store = new NativeRecordStore(fd, io), calls = []
+  const effects = Object.fromEntries(names.map(name => [name, async () => { calls.push(name) }]))
+  effects.observeTuple = async () => fixture.next.originalTupleSha256
+  await assert.rejects(runNativeDelivery({ directory, pins: fixture.next, authority: store, assetSuccessor: fixture.binding,
+    confirmPredecessor: async () => { inject = true; return fixture.prior.record }, effects }), unconfirmed)
+  assert.deepEqual(calls, [])
+  assert.equal(fs.existsSync(join(directory, 'operation.lock')), true)
+  assert.equal(fs.existsSync(join(directory, 'native-release-' + fixture.next.operation + '.json')), false)
+})
+
+
+test('saved directory plan remains readable through matching JS and an explicit same-FD successor', async t => {
+  // Component Root metadata is explicit; source commits and subsequent two product archives are real fixture data.
+  const fixture = await directoryBindingFixture(), sources = directorySourceFixture(t)
+  const armSha = 'ab72d61fa50e2c91b34bac7a2b53ee42c4f1a184754592acdc19fc89ff39da3c'
+  const asset = { ...fixture.binding.asset, sha256: armSha, path: '/opt/dsh-feature-assets/fd-skill-store-v1-' + armSha + '.node' }
+  const identity = structuredClone(fixture.prior.previous.installed.profile.identity)
+  for (const group of fixture.groups.slice(1)) { group.asset = asset; group.profile = { ...fixture.binding.profile, identity }
+    group.manifest.sourceCommit = sources.commit }
+  const facts = { format: 'pe-cloud-directory-profile-facts/v1', nativeProtocol: profileModule.DIRECTORY_PROTOCOL,
+    directoryPaging: { ...directoryBudgets }, stream: { ...profileModule.DIRECTORY_STREAM } }
+  const origin = { format: 'pe-cloud-directory-reader-origin/v1', arm: { assetSha256: armSha,
+    provenanceSha256: '05d74360aa303e04b2e013a621acdacab305e0bc37370c2bb02256e7e38655ed',
+    sourceManifestSha256: '52d1081e425a1dc6b44c21c1d4eecb39de50e2e30dff4b07315934600687468f' },
+    nativeSources: sources.native, readerConfigSourceSha256: directoryReaderSources([{ sourceCommit: sources.commit, nodeVersion: '24.19.0' }], sources.native, sources.root)[0].readerConfigSourceSha256,
+    directoryFactsSha256: sha(JSON.stringify(facts)) }
+  const old = fixture.prior.input.plan, installed = fixture.prior.previous.installed
+  const profile = { target: old.profile.target, maxProfileBytes: old.profile.maxProfileBytes,
+    original: { source: installed.profile.source, sha256: installed.profile.sha256, identity }, originalHelperPath: installed.asset.path,
+    nativeProtocol: profileModule.DIRECTORY_PROTOCOL, directoryPaging: { ...directoryBudgets }, directoryFacts: facts }
+  const plan = { format: 'pe-cloud-local-native-directory-plan/v1', assetFile: '/public/arm.node',
+    asset: { ...old.asset, sha256: armSha, bytes: 143776, sourceSha256: '52d1081e425a1dc6b44c21c1d4eecb39de50e2e30dff4b07315934600687468f' }, assetParent: old.assetParent,
+    profile, originalAsset: installed.asset, compatibleBundle: '/public/compatible', origin }
+  assert.doesNotThrow(() => requireSavedAssetPlan(plan))
+  assert.throws(() => requireSavedAssetPlan({ ...plan, profile: { ...profile, directoryPaging: { ...directoryBudgets, extra: true } } }))
+  fixture.binding.asset = asset; fixture.binding.originSha256 = sha(JSON.stringify(origin))
+  fixture.binding.directoryFactsSha256 = sha(JSON.stringify(facts)); fixture.binding.groups = fixture.groups.map(profileModule.tupleSha256)
+  fixture.next = { ...fixture.next, descriptorSha256: stateModule.nativeAssetDescriptor(fixture.binding),
+    originalTupleSha256: fixture.binding.groups[0], targetTupleSha256: fixture.binding.groups[1], compatibleTupleSha256: fixture.binding.groups[2] }
+  const root = memoryRoot(), { owner } = await guarded(root, fixture.next)
+  for (const name of names) await owner.run(name, async () => {})
+  const record = owner.record, journal = { ...fixture.prior.input.approved.journal,
+    path: '/opt/dsh-features/pe-cloud-delivery/' + record.operation + '/native-record' }
+  const input = { format: 'pe-cloud-local-native-input/v1', operation: record.operation, plan, groups: fixture.groups,
+    context: fixture.prior.input.context, descriptorSha256: record.descriptorSha256, assetBinding: fixture.binding,
+    state: { operation: record.operation, nativeJournal: journal }, approved: { journal, assetParent: plan.assetParent, asset: plan.asset,
+      profile: { ...profile, candidate: fixture.groups[1].profile } } }
+  const authority = { read: () => record, observeTuple: async () => record.targetTupleSha256 }
+  const previous = await confirmNativePredecessor({ latest: legacyBarrier(record), input, current: fixture.prior.current, authority, sourceRoot: sources.root })
+  assert.deepEqual(previous.installed.asset, asset)
+  assert.equal(input.plan.profile.original.source, installed.profile.source)
+  // Bind these real archives to the exact fixture source commit, without relabeling any production package.
+  const bundles = []
+  for (const label of ['normal', 'compatible']) {
+    const source = fs.mkdtempSync(join(tmpdir(), 'pe-directory-reader-')), bundle = source + '-bundle'
+    t.after(() => { fs.rmSync(source, { recursive: true, force: true }); fs.rmSync(bundle, { recursive: true, force: true }) })
+    fs.mkdirSync(join(source, 'apps/web/dist'), { recursive: true }); fs.writeFileSync(join(source, 'apps/web/dist/index.html'), label)
+    await writeBundle(source, ['apps/web/dist/index.html'], { ...fixture.prior.metadata, sourceCommit: sources.commit }, bundle)
+    bundles.push(bundle)
+  }
+  const successor = { format: 'pe-cloud-local-native-successor/v1', predecessor: { operation: record.operation,
+    descriptorSha256: record.descriptorSha256, targetTupleSha256: record.targetTupleSha256 }, compatibleBundle: bundles[1] }
+  const derived = await deriveNativeSuccessorPair({ previousInput: input, previous, successor, normalBundle: bundles[0],
+    controller: fixture.prior.controller, sourceRoot: sources.root })
+  assert.deepEqual(derived.groups[1].asset, asset); assert.deepEqual(derived.groups[1].profile, fixture.groups[1].profile)
+  assert.equal(derived.pairBinding.assetSource, plan.asset.sourceSha256)
+  assert.equal(derived.pairBinding.originSha256, sha(JSON.stringify(origin)))
+  assert.equal(derived.pairBinding.directoryFactsSha256, sha(JSON.stringify(facts)))
+  const matching = { ...fixture.next, kind: 'matching-js', operation: '00000000-0000-4000-8000-000000000004',
+    originalTupleSha256: record.targetTupleSha256, targetTupleSha256: record.compatibleTupleSha256, compatibleTupleSha256: record.targetTupleSha256 }
+  let selected = record.targetTupleSha256
+  const effects = Object.fromEntries(jsNames.map(name => [name, async () => { if (name === 'install') selected = matching.targetTupleSha256 }]))
+  effects.observeTuple = async () => selected
+  const switched = await runNativeDelivery({ pins: matching, previousAuthority: authority, authority: memoryRoot().store(), effects,
+    holdOperation: action => action(), writeProjection: value => value })
+  assert.equal(switched.phase, 'verified'); assert.equal(switched.descriptorSha256, record.descriptorSha256)
+  let touched = false
+  assert.throws(() => profileModule.continueNativePublish({ approved: { profile: { nativeProtocol: profileModule.DIRECTORY_PROTOCOL } } }, {},
+    new Proxy({}, { get() { touched = true; throw new Error('must not read old Root') } }), {}, {}), e => e.phase === 'continuation-legacy-profile-only')
+  assert.equal(touched, false)
+})
+
+
+test('directory profile resolves a literal nested exposure group and rejects an overriding parent group', t => {
+  const patch = directoryPatch(), exposure = patch[0].insert.splice(1, 1)[0]
+  patch[0].insert.push({ id: 'root-exposure-group', group: true, config: [exposure] })
+  const result = profileModule.directoryCandidate(JSON.stringify(patch), directorySpec(), exposureResolver(t), 64)
+  assert.deepEqual(JSON.parse(result.bytes)[0].insert.at(-1).config[0].config.streamEndpoints, [profileModule.DIRECTORY_STREAM])
+  patch.push({ id: 'root-exposure-group', config: [] })
+  assert.throws(() => profileModule.directoryCandidate(JSON.stringify(patch), directorySpec(), exposureResolver(t), 64), e => e.code === 'NATIVE_PROFILE_UNCONFIRMED')
+})
+
+
+test('new asset original tuple follows the actually selected compatible predecessor rather than the normal slot', async () => {
+  const fixture = await directoryBindingFixture('compatible')
+  assert.equal(fixture.prior.previous.installed.role, 'compatible')
+  assert.deepEqual(fixture.groups[0].manifest, fixture.prior.previous.installed.manifest)
+  assert.equal(fixture.next.originalTupleSha256, fixture.prior.record.targetTupleSha256)
+  assert.doesNotThrow(() => stateModule.requireNativeAssetSuccessor(fixture.prior.record,
+    fixture.next.originalTupleSha256, fixture.next, fixture.binding))
+})
+
+
+test('directory facts reject selected expression trees before defaults and preserve real literal Config defaults', () => {
+  // The child uses the original source launcher, YAML schema, WorkspaceFiles.Config and resolveConfig.
+  // Only fixed namespace locations and Root/bind metadata are mapped; no alternate facts issuer or reader cap is supplied.
+  const program = String.raw`
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { Script } from 'node:vm';
+const root=process.argv[1],profilePath=process.argv[2],require=createRequire(join(root,'package.json'));
+const yaml=require('js-yaml');
+const {entryListSchema}=await import(pathToFileURL(join(root,'vendor/include/src/index.ts')).href);
+const {resolveConfig}=await import(pathToFileURL(join(root,'vendor/cordis/src/fiber.ts')).href);
+const {default:WorkspaceFiles}=await import(pathToFileURL(join(root,'packages/api/workspace-files/src/index.ts')).href);
+const sha=value=>createHash('sha256').update(value).digest('hex');
+const directory=fs.mkdtempSync(join(tmpdir(),'pe-directory-literal-'));
+let factoryCalls=0,writes=0;
+try {
+ for(const name of ['dsh-pe-cloud-api','dsh-pe-cloud-files']){
+  const folder=join(directory,'node_modules/@deepseek-ai/'+name);fs.mkdirSync(folder,{recursive:true});
+  fs.writeFileSync(join(folder,'package.json'),JSON.stringify({name:'@deepseek-ai/'+name,exports:{'./root':'./root.cjs'}}));
+  fs.writeFileSync(join(folder,'root.cjs'),'throw Error("resolution never activates this fixture provider")\n');
+ }
+ const profileRequire=createRequire(join(directory,'package.json'));
+ const includeRequire=name=>{if(name==='js-yaml')return yaml;if(name==='./lib/index.js')return {entryListSchema};throw Error('unexpected include dependency')};
+ const nativeRequire=name=>{if(name==='@deepseek-ai/dsh-api-workspace-files')return {default:WorkspaceFiles};
+  if(name==='@deepseek-ai/cordis')return {resolveConfig(...args){factoryCalls++;return resolveConfig(...args)}};throw Error('unexpected native dependency')};
+ const mappedRequire=name=>name==='node:module'?{createRequire(anchor){
+  if(anchor==='/run/dsh-feature-root/profiles/cloud/package.json')return profileRequire;
+  if(anchor==='/opt/dsh-installed-products/vendor/include/package.json')return includeRequire;
+  if(anchor==='/opt/dsh-installed-products/packages/cloud/pe-cloud-runtime/package.json')return nativeRequire;
+  throw Error('unexpected namespace module anchor');
+ }}:require(name);
+ const module={exports:{}};
+ new Script('(function(module,exports,require){'+fs.readFileSync(profilePath,'utf8')+'\n})',{filename:profilePath})
+  .runInThisContext()(module,module.exports,mappedRequire);
+ const api=module.exports,source='/opt/dsh-features/literal-profile.yml',target='/run/dsh-feature-root/profiles/cloud/cordis.patch.yml';
+ const protectedPaths=['/run/dsh-feature-root/storage-plan.json','/run/dsh-feature-root/rootDeployment.json',
+  '/run/dsh-feature-root/credentials.json','/run/dsh-feature-root/profiles/cloud/package.json','/opt/dsh-features/account-base.yml'];
+ function patch(){return [{insert:[{id:'files-root',name:'@deepseek-ai/dsh-pe-cloud-files/root',config:{
+  helperPath:'/opt/dsh-feature-assets/fd-abi8.node',maxPathBytes:256,workerCount:1,workerReservationBytes:65536,maxLanes:2,
+  maxResidentBytes:134217728,maxResidentBytesPerLane:67108864,replyOverheadBytes:4096,
+  content:{maxEntries:64,maxNameBytes:255,maxReplyBytes:1048576,operationTimeoutMs:5000}}},
+  {id:'actual-exposure',name:'@deepseek-ai/dsh-pe-cloud-api/root',config:{recipeVersion:'unchanged',rpcEndpoints:[],
+   streamEndpoints:[],exactFetchRoutes:[],allowedSettings:[]}},{id:'unrelated-profile',config:{__jsExpr:'unselected profile data'}}]}]}
+ const expression='(globalThis.__literalExpressionRan = true, { maxEntries: 1 })';
+ const base=config=>JSON.stringify([{id:'reader',name:'pe-cloud-workspace-files',config},
+  {id:'unrelated-account',name:'unrelated-account',config:{__jsExpr:'unselected account data'}}]);
+ function fixture(value,accountBase){
+  const files=new Map(),fds=new Map();let next=30;
+  function put(path,body,ino,credentials=false){const bytes=Buffer.from(body);files.set(path,{bytes,stat:{
+   dev:1,ino,uid:credentials?2000:0,gid:credentials?2000:0,mode:credentials?0o600:0o444,nlink:1,size:bytes.length,
+   mtimeMs:1,ctimeMs:1,isFile:()=>true,isSymbolicLink:()=>false}})}
+  const bytes=JSON.stringify(value);put(source,bytes,2);put(target,bytes,2);
+  protectedPaths.forEach((path,index)=>put(path,path.endsWith('account-base.yml')?accountBase:'{}\n',index+3,path.endsWith('/credentials.json')));
+  const mountinfo=[[source,target],...protectedPaths.filter(path=>!path.endsWith('account-base.yml')).map(path=>[path,path])]
+   .map(([from,to],index)=>(index+1)+' 0 1:1 '+from+' '+to+' ro,nosuid,nodev,noexec - fixture fixture rw').join('\n')+'\n';
+  const io={constants:fs.constants,lstatSync(path){return files.get(path)?.stat??{uid:0,mode:0o555,isSymbolicLink:()=>false,isDirectory:()=>true}},
+   openSync(path){assert.ok(files.has(path));const fd=next++;fds.set(fd,path);return fd},fstatSync(fd){return files.get(fds.get(fd)).stat},
+   closeSync(fd){assert.ok(fds.delete(fd))},readFileSync(path){if(typeof path==='number')return files.get(fds.get(path)).bytes;
+    assert.equal(path,'/proc/self/mountinfo');return mountinfo},writeFileSync(){writes++;throw Error('facts must remain read-only')}};
+  const inputs=api.readProtectedInputs(1048576,io);
+  const spec={target,maxProfileBytes:1048576,original:{source,sha256:sha(bytes),identity:{device:'1',inode:'2',uid:0,gid:0,mode:0o444,nlink:1}},
+   originalHelperPath:'/opt/dsh-feature-assets/fd-abi8.node',nextHelperPath:'/opt/dsh-feature-assets/fd-skill-store-v1-'+'a'.repeat(64)+'.node',
+   nativeProtocol:api.DIRECTORY_PROTOCOL,directoryPaging:{idleTimeoutMs:1000,totalTimeoutMs:30000,maxPages:8},protectedInputs:inputs};
+  return {spec,io,unchanged:[...files.values()].map(file=>sha(file.bytes)),files,fds};
+ }
+ globalThis.__literalExpressionRan=false;
+ const cases=[];
+ cases.push({name:'reader-whole-yaml-tag',account:'- id: reader\n  name: pe-cloud-workspace-files\n  config: !!js '+JSON.stringify(expression)+'\n',factory:0});
+ cases.push({name:'reader-mixed-expression',account:base({maxEntries:64,__jsExpr:expression}),factory:0});
+ cases.push({name:'reader-nested-array-node',account:base({retained:[{nested:{__jsExpr:null}}]}),factory:0});
+ for(const selected of ['files','exposure'])for(const kind of ['whole','mixed','nested']){
+  const value=patch(),index=selected==='files'?0:1;
+  if(kind==='whole')value[0].insert[index].config={__jsExpr:expression};
+  else if(kind==='mixed')value[0].insert[index].config.__jsExpr=expression;
+  else value[0].insert[index].config.retained=[{nested:{__jsExpr:null}}];
+  cases.push({name:selected+'-'+kind,profile:value,account:base({}),factory:1});
+ }
+ let deep={};for(let index=0;index<130;index++)deep={next:deep};
+ cases.push({name:'reader-bounded-depth',account:base(deep),factory:0,phase:'profile-directory-literal-bounds'});
+ cases.push({name:'reader-cycle',account:'- id: reader\n  name: pe-cloud-workspace-files\n  config: &cycle { retained: *cycle }\n',factory:0,phase:'profile-directory-literal-cycle'});
+ const results=[];
+ for(const row of cases){factoryCalls=0;const current=fixture(row.profile??patch(),row.account);
+  assert.throws(()=>api.readDirectoryFacts(current.spec,current.io),error=>error.code==='NATIVE_PROFILE_UNCONFIRMED'
+   &&error.phase===(row.phase??'profile-directory-config-expression'),row.name);
+  assert.equal(factoryCalls,row.factory,row.name);assert.equal(current.fds.size,0,row.name);
+  assert.deepEqual([...current.files.values()].map(file=>sha(file.bytes)),current.unchanged,row.name);
+  assert.equal(globalThis.__literalExpressionRan,false,row.name);results.push(row.name);
+ }
+ factoryCalls=0;const literal=fixture(patch(),base({notes:'__jsExpr is a string here'}));
+ const facts=api.readDirectoryFacts(literal.spec,literal.io);
+ assert.equal(facts.capacity.readerMaxEntries,resolveConfig(WorkspaceFiles,{}).maxEntries);
+ assert.equal(facts.capacity.readerMaxEntries,2000);assert.equal(factoryCalls,1);assert.equal(facts.capacity.pageEntriesUpper,64);
+ assert.equal(literal.fds.size,0);assert.equal(writes,0);assert.equal(globalThis.__literalExpressionRan,false);
+ assert.deepEqual([...literal.files.values()].map(file=>sha(file.bytes)),literal.unchanged);
+ console.log(JSON.stringify({refused:results,literalDefaultFromOriginalConfig:facts.capacity.readerMaxEntries,noExpressionExecuted:true,noWrites:true}));
+}finally{fs.rmSync(directory,{recursive:true,force:true})}
+`
+  const root = fileURLToPath(new URL('../../', import.meta.url))
+  const result = spawnSync(process.execPath, ['--import', 'tsx/esm', '--input-type=module', '-e', program,
+    root, fileURLToPath(new URL('./native-profile.cjs', import.meta.url))], {
+    cwd: root, encoding: 'utf8', timeout: 30000, maxBuffer: 1048576,
+  })
+  assert.equal(result.error, undefined)
+  assert.equal(result.signal, null)
+  assert.equal(result.status, 0, result.stderr)
+  const evidence = JSON.parse(result.stdout)
+  assert.deepEqual(evidence.refused, ['reader-whole-yaml-tag', 'reader-mixed-expression', 'reader-nested-array-node',
+    'files-whole', 'files-mixed', 'files-nested', 'exposure-whole', 'exposure-mixed', 'exposure-nested',
+    'reader-bounded-depth', 'reader-cycle'])
+  assert.equal(evidence.literalDefaultFromOriginalConfig, 2000)
+  assert.equal(evidence.noExpressionExecuted, true)
+  assert.equal(evidence.noWrites, true)
 })

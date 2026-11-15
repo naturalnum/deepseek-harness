@@ -369,13 +369,13 @@ async function start() {
 }
 
 /**
- * Separate one explicit first-delivery or successor-pair descriptor from the original normal command arguments.
+ * Separate one mutually exclusive first-delivery, same-FD pair or new-asset descriptor from normal arguments.
  * @param {string} mode Existing update/start/rollback mode.
  * @param {string[]} args Original arguments after the candidate line has been read.
  * @returns {object} Native descriptor path when supplied, and the remaining original arguments.
  */
 export function nativeArguments(mode, args) {
-  const flags = ['--native-input', '--native-successor']
+  const flags = ['--native-input', '--native-successor', '--native-asset-successor']
   const found = flags.filter(flag => args.includes(flag))
   if (!found.length) return { args }
   const flag = found[0], at = args.indexOf(flag)
@@ -383,7 +383,8 @@ export function nativeArguments(mode, args) {
     || !args[at + 1] || args[at + 1].startsWith('--')) {
     throw new CandidateError('原生交付只接受更新产品包和一份互斥的私有固定输入。')
   }
-  return { [flag === '--native-input' ? 'inputFile' : 'successorFile']: args[at + 1],
+  const inputKey = { '--native-input': 'inputFile', '--native-successor': 'successorFile', '--native-asset-successor': 'assetSuccessorFile' }[flag]
+  return { [inputKey]: args[at + 1],
     args: [...args.slice(0, at), ...args.slice(at + 2)] }
 }
 
@@ -391,9 +392,9 @@ async function main(argv) {
   if (process.versions.node !== '24.19.0') throw new CandidateError('请使用 Node 24.19.0 运行候选更新。')
   const [mode, ...rawArguments] = argv
   const { line, args: lineArgs } = readLineArguments(rawArguments)
-  const { inputFile, successorFile, args } = nativeArguments(mode, lineArgs)
+  const { inputFile, successorFile, assetSuccessorFile, args } = nativeArguments(mode, lineArgs)
   if (mode === '--help' || !mode || args.includes('--help')) {
-    console.log('用法：deploy/local/update <产品包目录> [--line 线名] [私密账号参数] [已有对话参数]\n      首次原生交付可追加 --native-input <私有固定输入>\n      已确认原生组的后继读者对追加 --native-successor <私有后继输入>\n      node deploy/local/update.mjs continue-native-publish <原operation> --line <原调用线>\n      deploy/local/rollback [--line 线名] [相同检查参数]\n      deploy/local/start [--line 线名]\n仅操作本机候选环境；正常停止不确认时停止更新，保留进程始终继续运行。')
+    console.log('用法：deploy/local/update <产品包目录> [--line 线名] [私密账号参数] [已有对话参数]\n      首次原生交付可追加 --native-input <私有固定输入>\n      已确认原生组的后继读者对追加 --native-successor <私有后继输入>\n      更换正式目录资产追加 --native-asset-successor <私有新资产输入>\n      node deploy/local/update.mjs continue-native-publish <原operation> --line <原调用线>\n      deploy/local/rollback [--line 线名] [相同检查参数]\n      deploy/local/start [--line 线名]\n仅操作本机候选环境；正常停止不确认时停止更新，保留进程始终继续运行。')
     return
   }
   if (mode === 'start' && args.length) throw new CandidateError('start 只接受 --line 线名。')
@@ -404,7 +405,7 @@ async function main(argv) {
   try { latest = JSON.parse(await readFile(LATEST, 'utf8')) }
   catch (error) { if (error.code !== 'ENOENT') throw error }
   if (mode === 'continue-native-publish') {
-    if (args.length !== 1 || inputFile !== undefined || successorFile !== undefined || !line) {
+    if (args.length !== 1 || inputFile !== undefined || successorFile !== undefined || assetSuccessorFile !== undefined || !line) {
       throw new CandidateError('发布接续只接受原operation与原调用线。')
     }
     const { continueNativePublish } = await import('./native-update.mjs')
@@ -413,11 +414,11 @@ async function main(argv) {
     return
   }
   if (latest?.format === nativeDeliveryState.PROJECTION) requireNativeReleaseComplete(STATE, undefined, latest.operation)
-  if (inputFile !== undefined || successorFile !== undefined || latest?.format === nativeDeliveryState.PROJECTION) {
+  if (inputFile !== undefined || successorFile !== undefined || assetSuccessorFile !== undefined || latest?.format === nativeDeliveryState.PROJECTION) {
     if (mode === 'update' && !args[0]) throw new CandidateError('缺少产品包目录。')
     const { nativeUpdate } = await import('./native-update.mjs')
     await nativeUpdate({ mode, bundle: args[0], args: mode === 'update' ? args.slice(1) : args,
-      inputFile, successorFile, latest })
+      inputFile, successorFile, assetSuccessorFile, latest })
     console.log('原生匹配组合交付完成，冒烟检查通过')
     return
   }
