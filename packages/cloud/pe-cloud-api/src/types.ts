@@ -1,4 +1,14 @@
 import type { ManagedSkillApiLimits } from './managed-skill-types.ts'
+import type {} from '@deepseek-ai/dsh-skill/types'
+import type {} from '@deepseek-ai/dsh-typert-protocol'
+
+/** The Cloud account event source owns this additional forwarded event. */
+declare module '@deepseek-ai/dsh-typert-protocol' {
+  interface TypertRemoteEventSelection {
+    'skills/change': true
+  }
+}
+
 /** API-owned exposure declarations; native Session and Remote DTOs stay in DSH. */
 export type * from './save-hooks.ts'
 export type * from './skill-types.ts'

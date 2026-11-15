@@ -103,3 +103,5 @@ Agent 预设选择在原 Agent 队列和维护操作中、追加已提交选择�
 公共兜底所有者通过 resource 模块复用原生静态 Request/Response 响应器。WebServer 将明确公共注入行与需要 Peer 的首页来源及原始 tap 分开渲染，原生认证渲染不变。Client Modules 可以明确声明浏览器包，而不激活其 Host 入口，继续检查当前产物修订并沿原图撤回；仅模块声明在浏览器端也保持未激活。
 
 只读导出与表格转换保留原 Native 默认。日志下载仅保原认证 HEAD 与可选导航绑定口，手动下载链接/临时 DOM 挂接等通用增强已撤；浏览器接管并不证明实际保存完成。CSV 双 BOM 及合成尾行通用修复已撤，只读预览不修改原文件字节；Cloud 文件提供方、限额及实际下载绑定保持原有所有者。
+
+附加的 `skills/change` 订阅、共享 API 事件选择、既有受准入约束的账号发送者及原依赖生命周期归 Cloud 持有；Native 事件转发文件恢复默认。Native ui-skill 仅通过 `uiSkillCatalog.invalidate()` 显式控制原缓存；嵌入方未调用时，Native 预设／插件管理／连接重置行为不变。目录读取、取消、Session 引用和 RPC 实际结束仍由原 Native 引擎持有。

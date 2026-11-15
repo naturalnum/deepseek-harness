@@ -54,6 +54,7 @@
     "src/client/management/skills/SampleSkillEditor.tsx",
     "src/client/skill-settings-locales.ts",
     "src/client/skill-settings.ts",
+    "src/client/skill-catalog-refresh.ts",
     "src/client/SkillSettings.tsx",
     "src/client/management/skills/SkillDetailDialog.tsx",
     "src/client/management/skills/SkillImportPanel.tsx",
@@ -188,6 +189,9 @@
     },
     {
       "path": "../../client/ui-sidebar-files"
+    },
+    {
+      "path": "../../client/ui-skill"
     }
   ]
 }

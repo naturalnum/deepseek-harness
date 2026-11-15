@@ -57,7 +57,7 @@ source 不实现任何裁决钩子，也没有引用 codec：pick 落下字面�
 
 ### 注册
 
-`/client` 导出接口只有插件主体（`apply`／`inject`）；source 对象是注册 effect 的内部实现。工具行把 `skill` wire 名称注册进 ui-tool 的 keyed `tool.call.toolview` slot。
+`/client` 导出插件主体（`apply`／`inject`）及 `SkillCatalogCacheControl` 类型。插件通过 `ctx.uiSkillCatalog.invalidate()` 显式控制原缓存：丢弃已落定项、取消待处理读取并通知词典消费者。Native 原有预设、插件管理及连接重置政策不变，不再订阅附加的 `skills/change` 事件；嵌入方可自行持有该订阅并调用控制口。原 Session 引用持续保留至实际 RPC 结束。source 对象仍为注册 effect 的内部实现。工具行把 `skill` wire 名称注册进 ui-tool 的 keyed `tool.call.toolview` slot。
 
 对于已发送文本，插件注册使用调用方已确认 `skillNames`、返回原文中下一个候选的 UserText 匹配器，并拥有 `conversation.user.text.node` 中的 `skill` 条目。renderer 从自身绑定 Session 的 Injection 接收 `openSkill`，委托本 source 的预览操作，而非 Chat owner props。不可交互的预览仍为标签。[UserText](../ui-conversation/README.zh.md#sent-user-text) 拥有求值与节点分发。
 

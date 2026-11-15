@@ -10,6 +10,7 @@ import { installCloudProjects } from './projects.ts'
 import { installCloudFileDownloads } from './downloads.ts'
 import { installCloudModelSettings } from './model-settings.ts'
 import { installCloudSkillSettings } from './skill-settings.ts'
+import { installCloudSkillCatalogRefresh } from './skill-catalog-refresh.ts'
 import { installCloudManagement } from './management/register.tsx'
 import { installCloudServicePreviews } from './service-previews.ts'
 import { installCloudSidebarAccount } from './sidebar-account.ts'
@@ -44,6 +45,7 @@ export function apply(ctx: Context, config: Config): void {
   installCloudServicePreviews(ctx, owner)
   installCloudModelSettings(ctx, owner)
   installCloudSkillSettings(ctx, owner)
+  installCloudSkillCatalogRefresh(ctx)
   installCloudManagement(ctx, owner)
   installCloudAccountManagement(ctx, owner)
   installCloudApprovedSettings(ctx, owner)

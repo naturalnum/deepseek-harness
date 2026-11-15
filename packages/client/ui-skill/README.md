@@ -57,7 +57,7 @@ Each catalog fetch requires an existing retained Client Session and waits for it
 
 ### Registration
 
-The `/client` exports are the plugin body (`apply`/`inject`) only; the source object is internal to the registration effect. The tool row registers the `skill` wire name in ui-tool's keyed `tool.call.toolview` slot.
+The `/client` export includes the plugin body (`apply`/`inject`) and the `SkillCatalogCacheControl` type. The plugin provides `ctx.uiSkillCatalog.invalidate()` over its original cache: explicit invalidation drops settled entries, aborts pending reads and notifies lexicon consumers. Native preset, plugin-manager and connection-reset policies remain unchanged; Native does not subscribe to the additional `skills/change` event. An embedding may own that subscription and invoke the control. The original Session reference remains held until the actual RPC settles. The source object stays internal to the registration effect. The tool row registers the `skill` wire name in ui-tool's keyed `tool.call.toolview` slot.
 
 For sent text, the plugin registers a UserText matcher that returns one next original-text candidate using caller-confirmed `skillNames` and owns the `skill` entry in `conversation.user.text.node`. The renderer receives `openSkill` from its own Session-bound injection and delegates to this source’s preview operation, not to Chat owner props. Non-interactive previews remain labels. [UserText](../ui-conversation/README.md#sent-user-text) owns evaluation and node dispatch.
 

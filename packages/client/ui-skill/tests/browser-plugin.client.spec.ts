@@ -389,10 +389,10 @@ describe('catalog cache', () => {
     expect(payloads).toHaveLength(4)
   })
 
-  it('skills/change drops every native catalog and lexicon until the next single-flight read', async () => {
+  it('keeps the Native event policy until explicit catalog invalidation, then uses the next single-flight read', async () => {
     let rows = CATALOG
     const list = vi.fn<ListFn>(payload => listOk(rows)(payload))
-    const { source, remote } = await bench(list)
+    const { ctx, source, remote } = await bench(list)
     const first = vi.fn(), second = vi.fn()
     source.subscribeLexicon!(proj('s1'), first)
     source.subscribeLexicon!(proj('s2'), second)
@@ -401,6 +401,9 @@ describe('catalog cache', () => {
     first.mockClear(); second.mockClear()
     rows = [{ name: 'installed-skill', description: 'updated catalog', modelInvocable: true }]
     remote.emit('skills/change', [])
+    expect(first).not.toHaveBeenCalled(); expect(second).not.toHaveBeenCalled()
+    expect(source.lexicon!(proj('s1'))).toEqual(CATALOG.map(row => row.name))
+    ctx.uiSkillCatalog.invalidate()
     expect(first).toHaveBeenCalledTimes(1)
     expect(second).toHaveBeenCalledTimes(1)
     expect(source.lexicon!(proj('s1'))).toBeUndefined()
@@ -601,7 +604,7 @@ describe('reference preview', () => {
     expect(list.mock.calls.map(([payload]) => payload)).toEqual([{ sessionId: 'first' }, { sessionId: 'second' }])
   })
 
-  it.each(['reset', 'preset', 'plugin', 'skill', 'dispose'] as const)('cancels a pending preview on %s even if the RPC completes late', async (reason) => {
+  it.each(['reset', 'preset', 'plugin', 'catalog', 'dispose'] as const)('cancels a pending preview on %s even if the RPC completes late', async (reason) => {
     const gate = Promise.withResolvers<ListResult>()
     const { ctx, source, remote, fiber, openResource } = await bench(() => gate.promise)
     const session = proj('preview')
@@ -612,7 +615,7 @@ describe('reference preview', () => {
     if (reason === 'reset') ctx.emit('connection/reset')
     else if (reason === 'preset') remote.emit('agent-preset/selected', [session.sessionId, 'minimal'])
     else if (reason === 'plugin') remote.emit('plugin-manager/changed', [{ reason: 'plugin' }])
-    else if (reason === 'skill') remote.emit('skills/change', [])
+    else if (reason === 'catalog') ctx.uiSkillCatalog.invalidate()
     else await fiber.dispose()
     expect(listener).toHaveBeenCalledTimes(1)
     gate.resolve({ ok: true, value: { skills: rows } })

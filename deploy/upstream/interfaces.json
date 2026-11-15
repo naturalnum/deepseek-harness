@@ -1,7 +1,7 @@
 {
   "counts": {
-    "native_source_files": 198,
-    "non_seam_files": 72,
+    "native_source_files": 196,
+    "non_seam_files": 69,
     "uncentralized_internal_lines": 0
   },
   "imports": [
@@ -2722,7 +2722,25 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/types.ts",
-      "line": 10,
+      "line": 2,
+      "module": "@deepseek-ai/dsh-skill/types",
+      "names": [
+        "(augmentation)"
+      ],
+      "typeOnly": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-api/src/types.ts",
+      "line": 3,
+      "module": "@deepseek-ai/dsh-typert-protocol",
+      "names": [
+        "(augmentation)"
+      ],
+      "typeOnly": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-api/src/types.ts",
+      "line": 20,
       "module": "@deepseek-ai/dsh-credentials",
       "names": [
         "CredentialRef"
@@ -2731,7 +2749,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/types.ts",
-      "line": 11,
+      "line": 21,
       "module": "@deepseek-ai/dsh-llm/types",
       "names": [
         "LlmProviderInfo",
@@ -2741,7 +2759,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/types.ts",
-      "line": 12,
+      "line": 22,
       "module": "@deepseek-ai/dsh-settings/types",
       "names": [
         "SettingsDescribeValue"
@@ -4335,6 +4353,24 @@
       "module": "@deepseek-ai/cordis",
       "names": [
         "Context"
+      ],
+      "typeOnly": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-client/src/client/skill-catalog-refresh.ts",
+      "line": 2,
+      "module": "@deepseek-ai/cordis",
+      "names": [
+        "Context"
+      ],
+      "typeOnly": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-client/src/client/skill-catalog-refresh.ts",
+      "line": 3,
+      "module": "@deepseek-ai/dsh-client-ui-skill/client",
+      "names": [
+        "(augmentation)"
       ],
       "typeOnly": true
     },
@@ -9967,11 +10003,11 @@
     },
     {
       "路径": "packages/client/ui-skill/src/client/index.ts",
-      "类别": "通用修复",
-      "原因": "收到 skills/change 远端事件时清空技能目录缓存",
-      "撤销条件": "缓存在包内部；向上游提交",
-      "处置": "撤掉",
-      "这一程的状态": "没动",
+      "类别": "扩展点",
+      "原因": "仅原目录缓存显式invalidate控制口；skills/change事件政策移Cloud，原Native preset/plugin-manager/reset及缓存/真实RPC结算引擎保留",
+      "撤销条件": "原生提供同等显式缓存失效口时替换；未调用时默认与目标一致",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
       "changed": true
     },
     {
@@ -10985,11 +11021,11 @@
     {
       "路径": "packages/api/remotes/src/remote-events.ts",
       "类别": "功能增强",
-      "原因": "把 skills/change 加进转发给界面的事件清单：技能目录变化后界面自动刷新",
-      "撤销条件": "保留；或提上游",
-      "处置": "撤掉",
-      "这一程的状态": "没动",
-      "changed": true
+      "原因": "附加skills/change转发及客户端选择声明移Cloud；既有account first-screen event source已按原能力复查发送，Native文件恢复固定目标",
+      "撤销条件": "已撤回Native通用事件政策；Cloud继续由原账号事件所有者发送",
+      "处置": "搬进插件",
+      "这一程的状态": "已搬",
+      "changed": false
     },
     {
       "路径": "packages/ptc-runtime/ptc-runtime-node/src/index.ts",
@@ -11030,11 +11066,11 @@
     {
       "路径": "packages/api/remotes/src/client/index.ts",
       "类别": "登记",
-      "原因": "引入技能事件的类型声明，让界面能订阅 skills/change",
-      "撤销条件": "随 remote-events.ts 处理",
-      "处置": "撤掉",
-      "这一程的状态": "没动",
-      "changed": true
+      "原因": "附加skills/change转发及客户端选择声明移Cloud；既有account first-screen event source已按原能力复查发送，Native文件恢复固定目标",
+      "撤销条件": "已撤回Native通用事件政策；Cloud继续由原账号事件所有者发送",
+      "处置": "搬进插件",
+      "这一程的状态": "已搬",
+      "changed": false
     },
     {
       "路径": "scripts/product-package-policy.ts",

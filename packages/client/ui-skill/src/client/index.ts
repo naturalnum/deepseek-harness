@@ -20,8 +20,7 @@
  * prewarms the session's key; a preset switch drops that one key (the
  * catalog is the preset's, and a blank session may switch after the warm);
  * plugin-manager/changed clears everything — a manager operation may add or
- * remove providers any session's catalog reads; skills/change clears every
- * catalog after native registry or provider invalidation; connection/reset clears
+ * remove providers any session's catalog reads; connection/reset clears
  * everything — the host catalog may differ across generations. A shared
  * in-flight fetch deliberately outlives any single menu interaction: closing
  * the menu must not kill the prewarm other consumers will hit, so it carries
@@ -66,6 +65,19 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** The dedicated skill tool row's copy. */
     skill: SkillKey
+  }
+}
+
+/** Explicit embedding control over this plugin's original catalog cache. */
+export interface SkillCatalogCacheControl {
+  /** Drop cached catalogs and abort original pending reads; their real settlement remains with the original Session owner. */
+  invalidate(): void
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** Optional embedding calls preserve the Native default invalidation policy when absent. */
+    uiSkillCatalog: SkillCatalogCacheControl
   }
 }
 
@@ -161,6 +173,8 @@ export function apply(ctx: ClientContext): void {
     for (const key of [...fetches.keys()]) invalidate(key)
   }
 
+  ctx.provide('uiSkillCatalog', { invalidate: clearAll })
+
   // The bound translate resolves against the registered dictionaries with the
   // locale service's own fallback ladder; candidate-time reads stay plain text.
   const t = ctx.locale.bind(NS)
@@ -254,7 +268,6 @@ export function apply(ctx: ClientContext): void {
   // naming what changed, and a switched plugin may register providers in the
   // global layer every session reads, so each one drops every cached catalog.
   ctx.remote.$on('plugin-manager/changed', clearAll)
-  ctx.remote.$on('skills/change', clearAll)
   ctx.on('connection/reset', clearAll)
   ctx.effect(() => {
     const unregister = inputTriggers.registerSource(source)
