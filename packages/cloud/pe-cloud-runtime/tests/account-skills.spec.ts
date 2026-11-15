@@ -2,7 +2,7 @@
 import { mkdirSync } from 'node:fs'
 import { join, posix } from 'node:path'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import { CloudAccountFiles, FdMutationFailure, type SkillBundleVersion, type SkillVersion, type SkillVersionId } from '@deepseek-ai/dsh-pe-cloud-files'
+import { CloudAccountFiles, FdMutationFailure, type SkillBundleVersion, type SkillBundleSource, type SkillVersionSource, type SkillVersion, type SkillVersionId } from '@deepseek-ai/dsh-pe-cloud-files'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { prepareAccountSkillResources } from '../src/account-skills.ts'
@@ -23,6 +23,11 @@ async function fixture(sessionId = 'skill-caller') {
 function descriptor(binding: SkillVersion['binding']): SkillVersion {
   return Object.freeze({ binding, id: brandString<SkillVersionId>('00000000-0000-4000-8000-000000000001'),
     skillSha256: '0'.repeat(64), resourceSha256: '1'.repeat(64), skillBytes: 1, resourceBytes: 1 })
+}
+
+function sourceFor(version: SkillVersion): SkillVersionSource {
+  return { version, readText: async () => { throw new Error('No rejected source read belongs to this fixture') },
+    readBytes: async () => { throw new Error('No rejected source read belongs to this fixture') } }
 }
 
 it('rejects standing Contexts, cwd-only inputs and copied Agent ids before project I/O', async () => {
@@ -80,7 +85,8 @@ it('rechecks native membership after the real projectFor await before asking for
     await installed.workspace.detachSession(f.agent.id)
     return installed
   })
-  await expect(f.feature.materialize(descriptor(f.graph.binding), { scope: f.agent, cwd: f.owner.project }))
+  const version = descriptor(f.graph.binding)
+  await expect(f.feature.materialize(version, { scope: f.agent, cwd: f.owner.project }, sourceFor(version)))
     .rejects.toMatchObject({ code: 'cloud/forbidden' })
   expect(f.project).toHaveBeenCalledOnce()
   expect(f.parent).not.toHaveBeenCalled()
@@ -88,14 +94,15 @@ it('rechecks native membership after the real projectFor await before asking for
 
 it('rejects missing original files projection after actual caller and project selection without returning resource guidance', async () => {
   const f = await fixture()
-  await expect(f.feature.materialize(descriptor(f.graph.binding), { scope: f.agent, cwd: f.owner.project }))
+  const version = descriptor(f.graph.binding)
+  await expect(f.feature.materialize(version, { scope: f.agent, cwd: f.owner.project }, sourceFor(version)))
     .rejects.toMatchObject({ code: 'files/prerequisite-missing' })
   expect(f.project).toHaveBeenCalledOnce()
   expect(f.parent).toHaveBeenCalledOnce()
 })
 
 /** The original Loader/Agent/policy remains real; only Linux projection I/O and its issued result settlement are scripted. */
-async function bundleResourceFixture() {
+async function bundleResourceFixture(existingCopy = false) {
   const f = await fixture()
   const version: SkillBundleVersion = Object.freeze({ binding: f.graph.binding,
     id: brandString<SkillVersionId>('00000000-0000-4000-8000-000000000002'), format: 'bundle-tree-v1',
@@ -115,58 +122,69 @@ async function bundleResourceFixture() {
     metadataDirectory: parent.metadataDirectory, skillsDirectory: parent.skillsDirectory,
     copyDirectory: { ...metadata, inode: '13' },
   }
-  const releaseParent = vi.fn(), releaseCopy = vi.fn(), releaseOperation = vi.fn()
+  const source: SkillBundleSource = { version: lease, files: lease.files, directories: lease.directories,
+    readText: async () => 'fixture', readBytes: async () => Uint8Array.of(1) }
+  const releaseParent = vi.fn(), releaseOperation = vi.fn()
   f.parent.mockResolvedValue({ value: parent, release: releaseParent })
   vi.spyOn(f.graph.files, 'assertSkillProjectGrant').mockImplementation((value) => { expect(value).toBe(parent) })
-  const materialize = vi.spyOn(f.graph.files, 'materializeBundleVersion').mockImplementation(async (project, source) => {
-    expect(project).toBe(parent); expect(source).toBe(lease)
-    return { value: copy, release: releaseCopy }
+  const materialize = vi.spyOn(f.graph.files, 'materializeWorkspaceSkill').mockImplementation(async (project, selected, snapshot, current) => {
+    expect(project.workspace).toBe(f.graph.files.project().workspace); expect(selected).toBe(parent)
+    expect(snapshot).toBe(source); current()
+    return `.skills/${version.id}`
   })
-  const operation = Object.freeze({ project: parent, copies: [copy] })
-  const borrow = vi.spyOn(f.graph.files, 'borrowBundleWorkingCopies').mockImplementation(async (project, copies) => {
-    expect(project).toBe(parent); expect(copies).toEqual([copy])
+  const operation = Object.freeze({ project: parent, copies: existingCopy ? [copy] : [] })
+  const borrow = vi.spyOn(f.graph.files, 'borrowAllBundleWorkingCopies').mockImplementation(async (project) => {
+    expect(project).toBe(parent)
     return { value: operation, release: releaseOperation }
   })
   vi.spyOn(f.graph.files, 'assertBundleOperationCopies').mockImplementation((value) => { expect(value).toBe(operation) })
-  return { ...f, version, lease, copy, releaseParent, releaseCopy, releaseOperation, materialize, borrow }
+  return { ...f, version, lease, source, copy, releaseParent, releaseOperation, materialize, borrow }
 }
 
-it('[managed-skills] forwards the exact source operation lease and accepts its files-canonicalized full-tree copy after original admission', async () => {
+it('[managed-skills] forwards the exact live source to the original Workspace publication after admission', async () => {
   const f = await bundleResourceFixture()
   expect(f.lease).not.toBe(f.version)
   expect(() => { f.feature.assertCaller({ scope: { id: f.agent.id }, cwd: f.owner.project }) }).toThrow()
   expect(f.materialize).not.toHaveBeenCalled()
-  const resources = await f.feature.materialize(f.lease, { scope: f.agent, cwd: f.owner.project })
+  const resources = await f.feature.materialize(f.lease, { scope: f.agent, cwd: f.owner.project }, f.source)
   if (resources.resourceBase?.kind !== 'directory' || resources.path === undefined) throw new Error('Missing actual resource guidance')
-  expect(posix.normalize(resources.resourceBase.path)).toBe(`${f.owner.project}/.pe/skills/${f.version.id}/`)
-  expect(posix.normalize(resources.path)).toBe(`${f.owner.project}/.pe/skills/${f.version.id}/SKILL.md`)
-  expect(f.materialize).toHaveBeenCalledTimes(1); expect(f.borrow).toHaveBeenCalledTimes(1)
-  expect(f.releaseParent).toHaveBeenCalledTimes(1); expect(f.releaseCopy).toHaveBeenCalledTimes(1)
-  expect(f.releaseOperation).toHaveBeenCalledTimes(1)
+  expect(posix.normalize(resources.resourceBase.path)).toBe(`${f.owner.project}/.skills/${f.version.id}/`)
+  expect(posix.normalize(resources.path)).toBe(`${f.owner.project}/.skills/${f.version.id}/SKILL.md`)
+  expect(f.materialize).toHaveBeenCalledOnce(); expect(f.borrow).toHaveBeenCalledOnce()
+  expect(f.releaseParent).toHaveBeenCalledOnce(); expect(f.releaseOperation).toHaveBeenCalledOnce()
 })
 
-it('[managed-skills] keeps the original parent through a cancelled observer until actual bundle materialization settles', async () => {
+it('[managed-skills] keeps existing protected copies and user edits on their original execution borrow', async () => {
+  const f = await bundleResourceFixture(true)
+  const resources = await f.feature.materialize(f.lease, { scope: f.agent, cwd: f.owner.project }, f.source)
+  if (resources.resourceBase?.kind !== 'directory') throw new Error('Missing legacy resources')
+  expect(posix.normalize(resources.resourceBase.path)).toBe(`${f.owner.project}/.pe/skills/${f.version.id}/`)
+  expect(f.materialize).not.toHaveBeenCalled()
+  expect(f.borrow).toHaveBeenCalledOnce(); expect(f.releaseOperation).toHaveBeenCalledOnce()
+  expect(f.releaseParent).toHaveBeenCalledOnce()
+})
+
+it('[managed-skills] keeps the original parent through a cancelled observer until actual Workspace publication settles', async () => {
   const f = await bundleResourceFixture(), observer = new AbortController()
-  const entered = Promise.withResolvers<undefined>(), actual = Promise.withResolvers<Awaited<ReturnType<CloudAccountFiles['materializeBundleVersion']>>>()
-  onTestFinished(() => { actual.resolve({ value: f.copy, release: f.releaseCopy }) })
-  f.materialize.mockImplementation(async (_parent, version, signal) => {
-    expect(version).toBe(f.lease); expect(signal).not.toBe(observer.signal)
+  const entered = Promise.withResolvers<undefined>(), actual = Promise.withResolvers<string>()
+  onTestFinished(() => { actual.resolve(`.skills/${f.version.id}`) })
+  f.materialize.mockImplementation(async (_project, _parent, source, _current, signal) => {
+    expect(source).toBe(f.source); expect(signal).not.toBe(observer.signal)
     entered.resolve(undefined); return actual.promise
   })
-  const pending = f.feature.materialize(f.lease, { scope: f.agent, cwd: f.owner.project, signal: observer.signal })
+  const pending = f.feature.materialize(f.lease, { scope: f.agent, cwd: f.owner.project, signal: observer.signal }, f.source)
   const rejected = expect(pending).rejects.toThrow('observer left')
   await entered.promise; observer.abort(new Error('observer left'))
-  expect(f.releaseParent).not.toHaveBeenCalled(); expect(f.releaseCopy).not.toHaveBeenCalled()
-  expect(f.borrow).not.toHaveBeenCalled()
-  actual.resolve({ value: f.copy, release: f.releaseCopy }); await rejected
-  expect(f.releaseCopy).toHaveBeenCalledTimes(1); expect(f.releaseParent).toHaveBeenCalledTimes(1)
-  expect(f.borrow).not.toHaveBeenCalled()
+  expect(f.releaseParent).not.toHaveBeenCalled()
+  expect(f.releaseOperation).toHaveBeenCalledOnce()
+  actual.resolve(`.skills/${f.version.id}`); await rejected
+  expect(f.releaseParent).toHaveBeenCalledOnce()
 })
 
-it.each(['not-published', 'unknown'] as const)('[managed-skills] retains actual parent responsibility according to bundle mutation outcome %s', async (outcome) => {
+it.each(['not-published', 'unknown'] as const)('[managed-skills] retains original parent responsibility for Workspace publication outcome %s', async (outcome) => {
   const f = await bundleResourceFixture(), failure = new FdMutationFailure(outcome, 'FS_IO_ERROR')
   f.materialize.mockRejectedValueOnce(failure)
-  await expect(f.feature.materialize(f.lease, { scope: f.agent, cwd: f.owner.project })).rejects.toBe(failure)
+  await expect(f.feature.materialize(f.lease, { scope: f.agent, cwd: f.owner.project }, f.source)).rejects.toBe(failure)
   expect(f.releaseParent).toHaveBeenCalledTimes(outcome === 'not-published' ? 1 : 0)
-  expect(f.borrow).not.toHaveBeenCalled(); expect(f.releaseCopy).not.toHaveBeenCalled()
+  expect(f.releaseOperation).toHaveBeenCalledOnce()
 })

@@ -5,7 +5,7 @@ import { FsError, FsTargetKey, FsVersion, type FsTarget } from '@deepseek-ai/dsh
 import { FileSystemSkillProvider, type FileSystemSkillReader, type FileSystemSkillSource,
   type FileSystemSkillResources } from '@deepseek-ai/dsh-skill-filesystem'
 import type { SkillProviderControl, SkillViewOptions } from '@deepseek-ai/dsh-skill'
-import type { SkillVersion, SkillVersionPort } from '@deepseek-ai/dsh-pe-cloud-files'
+import type { SkillVersion, SkillVersionPort, SkillVersionSource } from '@deepseek-ai/dsh-pe-cloud-files'
 import { FdMutationFailure } from '@deepseek-ai/dsh-pe-cloud-files'
 import { CloudApiError } from './errors.ts'
 import { ConfigSaveOutcomeUnknown } from './config-saves.ts'
@@ -14,9 +14,11 @@ import { ConfigSaveOutcomeUnknown } from './config-saves.ts'
  * Complete projection after admission by the original graph adapter.
  * @param version Exact files-issued immutable version.
  * @param options Original lookup scope and cancellation.
+ * @param source Original bounded source borrow, retained through resource publication.
  * @returns Complete caller-usable resource guidance after actual files work settles.
  */
-export type SkillResourceMaterializer = (version: SkillVersion, options: SkillViewOptions) => Promise<FileSystemSkillResources>
+export type SkillResourceMaterializer = (version: SkillVersion, options: SkillViewOptions,
+  source: SkillVersionSource) => Promise<FileSystemSkillResources>
 
 /** Original account guards precede source I/O; complete projection rechecks that same caller after awaits. */
 export interface SkillResourcePreparation {
@@ -80,7 +82,7 @@ export function skillProviderFor(ctx: Context, control: SkillProviderControl, po
           }
           return consume({ files, materialize: (_directory, options) => materialize === undefined
             ? Promise.reject(new FsError('Account skill project resources are unavailable.', 'FS_PERMISSION_DENIED'))
-            : materialize(snapshot.version, options) })
+            : materialize(snapshot.version, options, snapshot) })
         }, options.signal ?? version.binding.lifetime)
         try { return result.value } finally { result.release() }
       } catch (error) {

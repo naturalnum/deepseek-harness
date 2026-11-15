@@ -6,7 +6,7 @@ import { FsError, FsTargetKey, FsVersion, type FsTarget } from '@deepseek-ai/dsh
 import { FileSystemSkillProvider, type FileSystemSkillReader, type FileSystemSkillSource,
   type FileSystemSkillResources } from '@deepseek-ai/dsh-skill-filesystem'
 import type { SkillProviderControl, SkillViewOptions } from '@deepseek-ai/dsh-skill'
-import type { SkillBundleLimits, SkillBundlePort, SkillBundleVersion } from '@deepseek-ai/dsh-pe-cloud-files'
+import type { SkillBundleLimits, SkillBundlePort, SkillBundleVersion, SkillBundleSource } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { ManagedSkillApiLimits } from './managed-skill-types.ts'
 
 /** Original live Agent/project admission, independent from standing discovery or workspace selection. */
@@ -16,9 +16,10 @@ export interface ManagedSkillResourcePreparation {
   /**
    * @param version Exact operation-scoped files-issued lease from the active source callback.
    * @param options Original admitted native caller.
+   * @param source Original complete source borrow, held through resource publication.
    * @returns Complete projected resources.
    */
-  materialize(version: SkillBundleVersion, options: SkillViewOptions): Promise<FileSystemSkillResources>
+  materialize(version: SkillBundleVersion, options: SkillViewOptions, source: SkillBundleSource): Promise<FileSystemSkillResources>
 }
 
 /** Explicit trusted assembly; Root supplies the installed files policy and original workspace guard. */
@@ -91,7 +92,7 @@ export function managedSkillProviderFor(ctx: Context, control: SkillProviderCont
         }
         return consume({ files, materialize: (_directory, lookup) => resources === undefined
           ? Promise.reject(new FsError('Account skill project resources are unavailable.', 'FS_PERMISSION_DENIED'))
-          : resources.materialize(snapshot.version, lookup) })
+          : resources.materialize(snapshot.version, lookup, snapshot) })
       }, options.signal ?? version.binding.lifetime)
       try { return held.value } finally { held.release() }
     },

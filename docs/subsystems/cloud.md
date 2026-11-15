@@ -697,6 +697,16 @@ withModelKeyPeerUse<T>(peer: PeerScope, consume: (use: AccountUse, assertCurrent
  */
 readOperationCurrent(peer: PeerScope, binding: AccountBinding, endpoint: string): boolean
 
+/**
+ * Retain the original authenticated stream through its native work.
+ * @param peer Exact original invocation Peer.
+ * @param binding Original installed account binding.
+ * @param endpoint Exact admitted stream endpoint.
+ * @param signal Original stream and native-work cancellation.
+ * @returns Current checks owned by the same original ingress and Peer/Use.
+ */
+captureStreamCurrent(peer: PeerScope, binding: AccountBinding, endpoint: string, signal: AbortSignal): () => void
+
 /** Delegate a guarded configuration handoff to the same original login/Peer owner.
  * @param peer Exact native invocation Peer.
  * @param consume Factory-owned exclusive update, without another login or state authority.
@@ -1230,6 +1240,17 @@ exportBundle(version: SkillBundleVersion, signal: AbortSignal): Promise<Resident
 materializeBundleVersion(project: SkillProjectGrant, version: SkillBundleVersion, signal: AbortSignal): Promise<ResidentResult<SkillBundleWorkingCopy>>
 
 /**
+ * Publish ordinary project resources while retaining the original source and active parent admission.
+ * @param project Exact projectFor result for the live caller's Workspace.
+ * @param parent Original actively borrowed parent; this does not consume another persistent association.
+ * @param source Live immutable source snapshot, retained by its original Provider callback.
+ * @param authorized Original Agent/project recheck, including after actual I/O.
+ * @param signal Actual copy settlement; observer cancellation must join this operation.
+ * @returns Relative complete writable resource directory; existing user modifications are preserved.
+ */
+async materializeWorkspaceSkill(project: AccountFilesProject, parent: SkillProjectGrant, source: SkillVersionSource | SkillBundleSource, authorized: () => void, signal: AbortSignal): Promise<string>
+
+/**
  * Fix the actual skills parent before allocation, without creating any sandbox or binding an environment slot.
  * @param project Exact installed/projectFor object after Root's actual native caller selection.
  * @param signal Cancellation leaves all actual I/O with the original files lane.
@@ -1451,7 +1472,7 @@ async createProject(use: AccountUse, title: string | undefined, signal: AbortSig
 async withInstructionReaders<T>( workspace: Workspace, reservedBytes: number, build: (readers: InstructionReadReaders, control: AbortSignal) => Promise<T>, signal: AbortSignal, ): Promise<ResidentResult<T>>
 ```
 
-Types: [AccountRemoteServerStore](cloud.md#remote-server-management) · [FileAttachmentRef](attachment.md) · [LocalAttachmentStore](../../packages/attachment/attachment-local/README.md) · [RemoteStoreLimits](cloud.md#remote-server-management) · [SkillBundleInput](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillBundleOperationCopies](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillBundleSource](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillBundleVersion](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillBundleWorkingCopy](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillCatalog](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillCatalogChange](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillCatalogCommit](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillOperationCopies](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillProjectGrant](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillVersion](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillVersionPort](../../packages/cloud/pe-cloud-files/README.md#understand-the-implementation) · [SkillWorkingCopyGrant](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [Workspace](workspace.md) · [WorkspaceUploadResult](../../packages/cloud/pe-cloud-files/README.md#workspace-transfers) · [WorkspaceUploadSource](../../packages/cloud/pe-cloud-files/README.md#workspace-transfers)
+Types: [AccountRemoteServerStore](cloud.md#remote-server-management) · [FileAttachmentRef](attachment.md) · [LocalAttachmentStore](../../packages/attachment/attachment-local/README.md) · [RemoteStoreLimits](cloud.md#remote-server-management) · [SkillBundleInput](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillBundleOperationCopies](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillBundleSource](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillBundleVersion](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillBundleWorkingCopy](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillCatalog](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillCatalogChange](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillCatalogCommit](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillOperationCopies](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillProjectGrant](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillVersion](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillVersionPort](../../packages/cloud/pe-cloud-files/README.md#understand-the-implementation) · [SkillVersionSource](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [SkillWorkingCopyGrant](../../packages/cloud/pe-cloud-files/README.md#use-this-package) · [Workspace](workspace.md) · [WorkspaceUploadResult](../../packages/cloud/pe-cloud-files/README.md#workspace-transfers) · [WorkspaceUploadSource](../../packages/cloud/pe-cloud-files/README.md#workspace-transfers)
 
 Source: [`packages/cloud/pe-cloud-files/src/account-service.ts`](../../packages/cloud/pe-cloud-files/src/account-service.ts)
 
