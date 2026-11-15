@@ -223,4 +223,4 @@ fetch 正文已被捕获 signal 的同一个取消原因置为 errored 时，按
 
 </details>
 
-本插件的原生代理身份及内部集成读取集中在 `src/native-internals.ts`；现有效果、授权及资源所有者保持原样。
+本插件的原生代理身份及内部集成读取集中在 `src/native-internals.ts`；现有效果、授权及资源所有者保持原样。 插件管理数据及权限类型由自有插件持有；向原生Plugins tab及detail插槽的贡献继续要求账号准入，不开放Host管理方法。

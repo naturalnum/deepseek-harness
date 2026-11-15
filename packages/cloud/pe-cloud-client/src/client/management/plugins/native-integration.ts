@@ -1,7 +1,7 @@
-/** Account-scoped data source for the original native plugin manager page. */
+/** Account-scoped Native plugin metadata and approved control source owned by Cloud. */
 import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import type { PluginManagerIntegration, PluginsSubject } from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
+import type { PluginsSubject } from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import type { PluginManagerSnapshot } from '@deepseek-ai/dsh-pe-cloud-api/types'
 import type { PreparedCloudPage } from '../../prepared-page.ts'
 import { ClientFailure } from '../../errors.ts'
@@ -9,10 +9,38 @@ import { preparePagePluginEdit } from './page-plugin-edit.ts'
 import type { AccountPluginId } from './types.ts'
 
 /** Plugin source plus the exact approved configuration lookup for native detail slots. */
-export interface CloudNativePluginIntegration extends PluginManagerIntegration {
+export interface CloudNativePluginIntegration {
+  /** Whether package installation controls are available. */
+  readonly install: boolean
+  /** Read the current account catalog and refresh its admitted controls.
+   * @returns Original Native bundle and plugin metadata selected by the account API.
+   */
+  read(): Promise<Pick<PluginManagerSnapshot, 'bundles' | 'plugins'>>
+  /** Check current bundle selection permission.
+   * @param name Original Native bundle name.
+   * @returns Whether the current account may change its selection.
+   */
+  canSetBundle(name: string): boolean
+  /** Check current entry activation permission.
+   * @param id Original Native entry id.
+   * @returns Whether the current account may change its activation.
+   */
+  canSetEntry(id: string): boolean
+  /** Submit an admitted bundle selection.
+   * @param name Original Native bundle name.
+   * @param enabled Requested selection.
+   */
+  setBundle(name: string, enabled: boolean): Promise<void>
+  /** Submit an admitted entry activation.
+   * @param id Original Native entry id.
+   * @param enabled Requested activation.
+   */
+  setEntry(id: string, enabled: boolean): Promise<void>
   /** Resolve a displayed native subject only when one approved configuration target matches. */
   configurationId(subject: PluginsSubject): AccountPluginId | undefined
 }
+
+declare module '@deepseek-ai/cordis' { interface Context { pluginManagerIntegration: CloudNativePluginIntegration } }
 
 /** Connect native display to the guarded Cloud manager without exposing native manager RPCs.
  * @param owner Original account page fiber.

@@ -223,4 +223,4 @@ The cloud client consumes the existing access binding types through the package'
 
 </details>
 
-Native proxy identity and private integration reads for this plugin are collected in `src/native-internals.ts`; existing effect, authorization and resource owners remain unchanged.
+Native proxy identity and private integration reads for this plugin are collected in `src/native-internals.ts`; existing effect, authorization and resource owners remain unchanged. The Cloud plugin owns its plugin-management data and permission types. Its contributions to the original Plugins tab and detail slots retain account admission and grant no Host management methods.

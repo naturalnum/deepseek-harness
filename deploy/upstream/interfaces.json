@@ -1,7 +1,7 @@
 {
   "counts": {
-    "native_source_files": 196,
-    "non_seam_files": 87,
+    "native_source_files": 194,
+    "non_seam_files": 85,
     "uncentralized_internal_lines": 0
   },
   "imports": [
@@ -3550,7 +3550,6 @@
       "line": 4,
       "module": "@deepseek-ai/dsh-client-ui-plugin-manager/client",
       "names": [
-        "PluginManagerIntegration",
         "PluginsSubject"
       ],
       "typeOnly": true
@@ -9403,20 +9402,20 @@
     {
       "路径": "packages/client/ui-plugin-manager/src/client/index.ts",
       "类别": "登记",
-      "原因": "导出 PluginManagerIntegration 类型",
-      "撤销条件": "随 manager-store.ts",
-      "处置": "撤掉",
-      "这一程的状态": "没动",
-      "changed": true
+      "原因": "账号私有数据源类型及Context声明移到pe-cloud-client；撤掉原生侧专用类型导出",
+      "撤销条件": "Native UI无该私有类型消费者",
+      "处置": "搬进插件",
+      "这一程的状态": "已搬",
+      "changed": false
     },
     {
       "路径": "packages/client/ui-plugin-manager/src/client/locales.ts",
       "类别": "云端定制",
-      "原因": "“此操作受限”文案",
-      "撤销条件": "随 PluginManagerPage.tsx",
-      "处置": "搬进插件",
-      "这一程的状态": "没动",
-      "changed": true
+      "原因": "撤掉没有消费方的actionRestricted字典项；保留自有插件页和原生配置插槽登记",
+      "撤销条件": "当前Native页面未读取这些字典键",
+      "处置": "撤掉",
+      "这一程的状态": "已撤",
+      "changed": false
     },
     {
       "路径": "packages/client/ui-plugin-manager/src/client/manager-store.ts",
