@@ -65,10 +65,18 @@ const nativeSuppliers = [...armSuppliers, {
   sessionDirectories: true,
 }] as const
 
-const suppliers = [...nativeSuppliers, {
+const priorAmd64Suppliers = [...nativeSuppliers, {
   schema: 'pe-opensandbox-root-deployment-v2',
   workloadImageDigest: 'sha256:4b7497e321629c90db04a8105865ca9f932beedeb67239cb22e68ed1a66dc360',
   serverImageDigest: 'sha256:28e4ebc841f3bc9b09f5cbfce8ce289522d259daa95f2b9ca152786ca8b5de0b',
+  platform: 'amd64', execdImageDigest: 'sha256:ca4ff631193b68ba0a47622773389b054994c77971cf2859c6beacf6cb9314de',
+  sessionDirectories: true,
+}] as const
+
+const suppliers = [...priorAmd64Suppliers, {
+  schema: 'pe-opensandbox-root-deployment-v2',
+  workloadImageDigest: 'sha256:32c17c742af43a6d9c89c69441fbc543751af41b0f61bf8294ed00ac3a4df62f',
+  serverImageDigest: 'sha256:e4fc713db05339d41b70215f2ffdbc1c37f8948b92c949eb4cd2c164ce90038a',
   platform: 'amd64', execdImageDigest: 'sha256:ca4ff631193b68ba0a47622773389b054994c77971cf2859c6beacf6cb9314de',
   sessionDirectories: true,
 }] as const
@@ -78,6 +86,7 @@ it('retains the original suppliers and permits only the exact built v2 superset 
   expect(qualifiedSupplierTuples.slice(0, 7)).toEqual(previous)
   expect(qualifiedSupplierTuples.slice(0, 8)).toEqual(armSuppliers)
   expect(qualifiedSupplierTuples.slice(0, 9)).toEqual(nativeSuppliers)
+  expect(qualifiedSupplierTuples.slice(0, 10)).toEqual(priorAmd64Suppliers)
   expect(qualifiedSupplierTuples).toEqual(suppliers)
   expect(NATIVE_AMD64_WORKLOAD_IMAGE_DIGEST).toBe(suppliers[8].workloadImageDigest)
   expect(NATIVE_AMD64_SERVER_IMAGE_DIGEST).toBe(suppliers[8].serverImageDigest)
@@ -134,6 +143,8 @@ it('uses one fixed bootstrap payload for every exact reviewed supplier', async (
 })
 
 it.each([
+  [suppliers[10], 'sha256:0a06b620dfb9fa477e6e136e01786d39ab29be5d68c19a6c975c6a6205023374',
+    'sha256:6ab048f3f4553f1e28d702900b41dd3f19fe0bce0a707bda8b5d7114474ea5c4'],
   [nativeSuppliers[8], 'sha256:9bd266bc2a847a977395c5ccfd5cfa73fecdf9fc7322b18aebf9b27be0c0b87b',
     'sha256:79b40881f084d1252e6f247409678668a50278685fc8200928495a30fbde0ced'],
   [suppliers[9], 'sha256:b555c2337af0b7997c465542044723d507fba142533f450f39b1ed5908e2c6b7',
