@@ -18,6 +18,8 @@ import { WebServer } from '@deepseek-ai/dsh-host-webserver'
 import * as NativeConnection from '@deepseek-ai/dsh-client-connection'
 import { CloudIngress } from '@deepseek-ai/dsh-pe-cloud-access/src/ingress.ts'
 import { BetterAuthAccess } from '@deepseek-ai/dsh-pe-cloud-access/src/auth.ts'
+import { PeAuthService } from '@deepseek-ai/dsh-pe-cloud-access/src/auth-root.ts'
+import CredentialsLocal from '@deepseek-ai/dsh-credentials-local'
 import type { AccessConfig } from '@deepseek-ai/dsh-pe-cloud-access/types'
 import type { AuthIngressConfig } from '@deepseek-ai/dsh-pe-cloud-access/src/root-config.ts'
 import { LinuxFilesPool, type PoolReadPort } from '@deepseek-ai/dsh-pe-cloud-files/src/worker-pool.ts'
@@ -81,7 +83,7 @@ import type { PeerId, PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 import type { AccountBinding, AccountId, AccountMountInput, OwnerEpoch } from '../src/types.ts'
 import type { FileReadTiming } from '../src/file-read-timing.ts'
 import { textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
-import { accessConfig, ingressConfig, carrier } from '../../pe-cloud-access/tests/ingress-fixture.ts'
+import { accessConfig, ingressConfig, carrier, rootConfig as authRootConfig } from '../../pe-cloud-access/tests/ingress-fixture.ts'
 
 /** Real Node HTTP parser and bridge over an in-process socket pair; no listener or network. */
 class ReadFixtureSocket extends Socket {
@@ -2386,7 +2388,7 @@ it.each(['session', 'workspace', 'peer'] as const)(
 // This original integration entry consumes an already-built native helper; it never compiles C or supplies worker-ready replies.
 it.skipIf(process.platform !== 'linux' || process.env.FD_HELPER === undefined || process.env.PE_ACCESS_POSTGRES_CONFIG === undefined)
   .each(['exposure', 'login'] as const)(
-    'opens directory pages from the actual bootstrap route and retains its original capture through %s revocation', async (revoked) => {
+    'opens directory pages from the actual bootstrap route through PeAuthService and retains its original capture through %s revocation', async (revoked) => {
       const helper = process.env.FD_HELPER, postgres = process.env.PE_ACCESS_POSTGRES_CONFIG
       if (helper === undefined || postgres === undefined) throw new Error('Original native helper and dedicated access PG inputs are required')
       const database: unknown = JSON.parse(readFileSync(postgres, 'utf8'))
@@ -2400,9 +2402,10 @@ it.skipIf(process.platform !== 'linux' || process.env.FD_HELPER === undefined ||
       const pool = new pg.Pool({ host: database.host, port: database.port, user: database.user,
         password: database.password, database: database.databases.access, max: 2, connectionTimeoutMillis: 1000, query_timeout: 2000 })
       const settings = { ...accessConfig(), sessionRecheckMs: 60000, authCheckTimeoutMs: 5000, peerCloseTimeoutMs: 3000 }
-      const access: { ingress?: CloudIngress } = {}
+      const access: { ingress?: CloudIngress; service?: PeAuthService } = {}
+      const secret = `directory-bootstrap-${randomUUID()}-${randomUUID()}`
       const requestId = brandString<Branded<'pe-request-id'>>('native-directory-bootstrap')
-      const auth = await BetterAuthAccess.create(settings, pool, `directory-bootstrap-${randomUUID()}-${randomUUID()}`,
+      const auth = await BetterAuthAccess.create(settings, pool, secret,
         async (login) => { await access.ingress?.invalidateLogin(login) })
       cleanups.push(async () => { await auth.close(); if (!pool.ended) await pool.end() })
       await (await auth.planMigrations(requestId)).runMigrations()
@@ -2422,13 +2425,13 @@ it.skipIf(process.platform !== 'linux' || process.env.FD_HELPER === undefined ||
         firstScreen: true, bootstrapInventory: true, nativeFiles: true, nativeDirectoryHelper: helper,
         auditedFileCalls: true, auditedFileBytes: true, auditedFileList: true, auditedFilePages: true,
         captureStreamCurrent: (caller, binding, endpoint, signal) => {
-          const invocation = caller.invocation, ingress = access.ingress
-          if (invocation === undefined || ingress === undefined) throw new Error('Original directory invocation owner is absent')
+          const invocation = caller.invocation, service = access.service
+          if (invocation === undefined || service === undefined) throw new Error('Original directory invocation owner is absent')
           expect(invocation.service).toBe('workspaceFiles')
           expect(invocation.request.namespace).toBe('workspaceFiles')
           expect(invocation.request.method).toBe('listPages')
           expect(endpoint).toBe('workspaceFiles/listPages')
-          const current = ingress.captureStreamCurrent(invocation.peer, binding, endpoint,
+          const current = service.captureStreamCurrent(invocation.peer, binding, endpoint,
             signal === undefined ? invocation.signal : AbortSignal.any([invocation.signal, signal]))
           captures.push({ peer: invocation.peer, binding, current })
           return current
@@ -2462,12 +2465,28 @@ it.skipIf(process.platform !== 'linux' || process.env.FD_HELPER === undefined ||
       })
       const web = new WebServer(f.root, { host: '127.0.0.1', port: 0 })
       const routes = vi.spyOn(web, 'register'), upgrades = vi.spyOn(web, 'registerUpgrade')
-      const ingress = new CloudIngress(f.root, settings, { ...ingressConfig(), requestTimeoutMs: 10000,
-        maxRequestBodyBytes: 65536, maxBootstrapResponseBytes: 65536, maxFrameBytes: 65536 }, auth,
-      { web, runtime, recipeVersion: binding.recipeVersion, exposure: f.root.peExposure, assertAuthenticationCurrent() {} })
-      access.ingress = ingress
-      cleanups.push(async () => { await ingress.closeActual() })
-      await ingress.install()
+      vi.spyOn(runtime, 'registerIngressClose').mockImplementation(owner =>
+        f.root.effect(() => () => owner.closeActual(), 'fixture: retain actual authentication close'))
+      const credentialDirectory = realpathSync(mkdtempSync(join(tmpdir(), 'directory-auth-root-')))
+      directories.push(credentialDirectory)
+      const credentialPath = join(credentialDirectory, 'credentials.json')
+      writeFileSync(credentialPath, JSON.stringify({ version: 1, refs: {
+        [settings.authSecretRef]: secret, INGRESS_TEST_DB_PASSWORD: database.password,
+      } }), { mode: 0o600 })
+      await f.root.plugin(CredentialsLocal, { path: credentialPath, watch: false })
+      const service = await PeAuthService.mountRoot(f.root, { ...authRootConfig(), ...settings,
+        database: { ...authRootConfig().database, host: database.host, port: database.port,
+          user: database.user, database: database.databases.access },
+        ingress: { ...ingressConfig(), requestTimeoutMs: 10000,
+          maxRequestBodyBytes: 65536, maxBootstrapResponseBytes: 65536, maxFrameBytes: 65536 },
+      })
+      cleanups.push(async () => { await service.close() })
+      expect(f.root.get('peAuth')).toBeInstanceOf(PeAuthService)
+      expect(service.observe().phase).toBe('initialized')
+      const ingress: unknown = Reflect.get(service, 'ingress')
+      if (!(ingress instanceof CloudIngress)) throw new Error('Original Root ingress was not installed')
+      access.ingress = ingress; access.service = service
+      const captureRoot = vi.spyOn(service, 'captureStreamCurrent')
       const route = routes.mock.calls.find(([row]) => row.path === '/cloud/bootstrap')?.[0]
       if (route === undefined) throw new Error('Original bootstrap route was not registered')
       const input = carrier('/cloud/bootstrap', 'GET', ['Cookie', cookie])
@@ -2553,6 +2572,7 @@ it.skipIf(process.platform !== 'linux' || process.env.FD_HELPER === undefined ||
       }
       const first = await page('closed-directory')
       const firstCapture = captures[0]
+      expect(captureRoot).toHaveBeenCalled()
       if (firstCapture === undefined) throw new Error('Original stream capture is absent')
       for (const captured of captures) {
         expect(captured.peer).toBe(firstCapture.peer)
@@ -2590,7 +2610,10 @@ it.skipIf(process.platform !== 'linux' || process.env.FD_HELPER === undefined ||
       await vi.waitFor(() => { expect(f.inspectFiles()?.busy).toBe(0) })
       expect(borrow).toHaveBeenCalledTimes(borrows)
       expect(native.listPages).toBe(WorkspaceFiles.prototype.listPages)
-      await ingress.closeActual()
+      await service.close()
+      expect(service.observe().phase).toBe('closed')
+      expect(() => service.captureStreamCurrent(firstCapture.peer, binding, 'workspaceFiles/listPages',
+        new AbortController().signal)).toThrow()
       expect(releasePeer).toHaveBeenCalledOnce()
       expect(releaseRequest).toHaveBeenCalledTimes(acquire.mock.calls.length)
     }, 30000,
