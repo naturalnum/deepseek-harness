@@ -453,9 +453,12 @@ function requireNativeContinuation(record, observedTupleSha256, requestedTupleSh
  * @returns {string} Descriptor SHA-256; malformed, unverified or ambiguous inputs are refused.
  */
 function nativeSuccessorDescriptor(binding) {
-  const fields = ['format', 'predecessor', 'release', 'controller', 'context', 'assetSource', 'asset', 'profile', 'groups']
+  const directory = binding?.format === 'pe-cloud-native-directory-successor-pair/v1'
+  const fields = ['format', 'predecessor', 'release', 'controller', 'context', 'assetSource', 'asset', 'profile', 'groups',
+    ...(directory ? ['originSha256', 'directoryFactsSha256'] : [])]
   if (!binding || !isDeepStrictEqual(Object.keys(binding).sort(), fields.sort())
-    || binding.format !== 'pe-cloud-native-successor-pair/v1'
+    || !directory && binding.format !== 'pe-cloud-native-successor-pair/v1'
+    || directory && (!HASH.test(binding.originSha256) || !HASH.test(binding.directoryFactsSha256))
     || !HASH.test(binding.assetSource) || !Array.isArray(binding.groups) || binding.groups.length !== 3
     || !binding.groups.every(value => typeof value === 'string' && HASH.test(value))
     || new Set(binding.groups).size !== 3 || !binding.asset || !binding.profile || !binding.context) {
@@ -517,6 +520,57 @@ function requireNativeSuccessor(record, observedTupleSha256, pins, binding) {
   }
 }
 
+/** Digest a newly derived asset/profile responsibility; legacy same-FD descriptors stay separate. */
+function nativeAssetDescriptor(binding) {
+  const exact = (value, keys) => value && !Array.isArray(value) && isDeepStrictEqual(Object.keys(value).sort(), keys.sort())
+  if (!exact(binding, ['format', 'predecessor', 'release', 'controller', 'context', 'originSha256',
+    'nativeProtocol', 'directoryFactsSha256', 'asset', 'profile', 'groups'])
+    || binding.format !== 'pe-cloud-native-directory-asset-binding/v1'
+    || binding.nativeProtocol !== 'directory-enumeration-v1'
+    || !HASH.test(binding.originSha256) || !HASH.test(binding.directoryFactsSha256)
+    || !Array.isArray(binding.groups) || binding.groups.length !== 3 || !binding.groups.every(value => HASH.test(value))
+    || new Set(binding.groups).size !== 3
+    || !exact(binding.controller, ['commit', 'tree', 'programSha256'])
+    || ![binding.controller.commit, binding.controller.tree].every(value => /^[a-f0-9]{40}$/.test(value))
+    || !HASH.test(binding.controller.programSha256)
+    || !exact(binding.context, ['namespaceId', 'nodePath', 'seccompPath', 'holder'])
+    || !exact(binding.context.holder, ['pid', 'startTicks', 'namespaceId'])
+    || !/^mnt:\[[0-9]+\]$/.test(binding.context.namespaceId)
+    || binding.context.holder.namespaceId !== binding.context.namespaceId
+    || !Number.isSafeInteger(binding.context.holder.pid) || binding.context.holder.pid < 1
+    || !/^[0-9]+$/.test(binding.context.holder.startTicks)
+    || binding.context.nodePath !== '/dsh-tools/node24' || binding.context.seccompPath !== '/opt/dsh-feature-assets/app-seccomp.bpf'
+    || !exact(binding.asset, ['path', 'sha256', 'bytes', 'mode', 'maxAssetBytes', 'maxPathBytes'])
+    || !HASH.test(binding.asset.sha256) || binding.asset.path !== '/opt/dsh-feature-assets/fd-skill-store-v1-' + binding.asset.sha256 + '.node'
+    || binding.asset.mode !== 0o444 || !Number.isSafeInteger(binding.asset.bytes) || binding.asset.bytes < 1
+    || !Number.isSafeInteger(binding.asset.maxAssetBytes) || binding.asset.bytes > binding.asset.maxAssetBytes
+    || !Number.isSafeInteger(binding.asset.maxPathBytes) || Buffer.byteLength(binding.asset.path) > binding.asset.maxPathBytes
+    || !exact(binding.profile, ['source', 'sha256', 'bytes']) || !HASH.test(binding.profile.sha256)
+    || !Number.isSafeInteger(binding.profile.bytes) || binding.profile.bytes < 1 || binding.profile.bytes > 1048576
+    || !/^\/opt\/dsh-features\/pe-cloud-delivery\/[a-f0-9-]{36}\/native-profile-[a-f0-9]{64}\.yml$/.test(binding.profile.source)) {
+    throw new NativeDeliveryUnconfirmed('asset-successor-descriptor')
+  }
+  requireRecord(binding.predecessor)
+  if (binding.predecessor.phase !== 'verified' || binding.groups[0] !== binding.predecessor.targetTupleSha256
+    || !isDeepStrictEqual(binding.release, { format: 'pe-cloud-native-release/v1', operation: binding.predecessor.operation })) {
+    throw new NativeDeliveryUnconfirmed('asset-successor-predecessor')
+  }
+  return createHash('sha256').update(JSON.stringify(binding)).digest('hex')
+}
+
+/** Only a fresh verified predecessor can establish a new nine-step asset/profile responsibility. */
+function requireNativeAssetSuccessor(record, observed, pins, binding) {
+  requirePins(pins)
+  requireNativeContinuation(record, observed, record.targetTupleSha256)
+  const descriptor = nativeAssetDescriptor(binding)
+  if (pins.kind !== 'fd-profile' || pins.operation === record.operation || pins.descriptorSha256 === record.descriptorSha256
+    || binding.profile.source !== '/opt/dsh-features/pe-cloud-delivery/' + pins.operation + '/native-profile-' + binding.profile.sha256 + '.yml'
+    || !isDeepStrictEqual(record, binding.predecessor) || pins.descriptorSha256 !== descriptor
+    || !isDeepStrictEqual(binding.groups, [pins.originalTupleSha256, pins.targetTupleSha256, pins.compatibleTupleSha256])) {
+    throw new NativeDeliveryUnconfirmed('different-asset-successor-group')
+  }
+}
+
 module.exports = { FORMAT, PROJECTION, NativeDeliveryOwner, NativeRecordStore, NativeDeliveryUnconfirmed,
   legacyBarrier, requireOrdinaryUpdateState, requireNativeContinuation, requireNativePins: requirePins,
-  requireNativePublishIntent, inspectPublishedFdAsset, publishFdAsset, nativeSuccessorDescriptor, requireNativeSuccessor }
+  requireNativePublishIntent, inspectPublishedFdAsset, publishFdAsset, nativeSuccessorDescriptor, requireNativeSuccessor, nativeAssetDescriptor, requireNativeAssetSuccessor }

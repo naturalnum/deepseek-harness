@@ -50,7 +50,21 @@
 
 新描述符绑定完整前驱、释放身份、原 namespace/keeper、同一 FD/profile 与两份新 manifest 派生的 tuple；新操作在独立 Root 目录取得新责任，旧记录和旧私有输入保持原样。旧入口阻挡确认后才沿原 checkPair、停止、备份、安装、受限启动、就绪和冒烟检查，起前与验后都检查准确新 tuple。未知保存、关闭或效果保留锁和实际阶段，不重试、重复启动或自动回退。完成后仍用原释放护栏；后续无新描述符的互切和 rollback 只认新 pair，旧 pair 不自动成为可回退组。
 
-发布新模块后，控制器先使用现行 Node、UID 2000、零能力、no-new-privileges 和原 seccomp 条件加载模块，确认本单线导出，再正常停止原应用。加载子进程由Node显式禁止继承管理员FD，按固定argv直接启动，不依赖shell解释多位FD关闭语法。此步骤不调用账号或文件操作；当前应用不因加载失败而停止。新模块、候选 profile 和责任记录独立保留，现有文件不覆盖、不删除。
+### 更换正式目录资产与 profile
+
+已验证并正常释放的原生组需要更换为正式目录资产时，在正常 `update <真实普通包>` 后追加 `--native-asset-successor '<0600私有JSON>'`。它与前两个原生参数互斥，仅用于 update。输入固定包含 format=`pe-cloud-local-native-directory-asset/v1`、predecessor（operation、descriptorSha256、targetTupleSha256）、assetFile、provenanceFile、sourceManifestFile、compatibleBundle，以及 directoryPaging 的 idleTimeoutMs、totalTimeoutMs、maxPages。后三值必须显式选择为 1 至 2147483647 的整数；不接受配置正文、任意选择器、允许组、版本字典或其它字段。
+
+此入口只复用已审正式三宏编译的 143776 字节目录/技能 ARM 原件及原 provenance、source.sha256，不重编或重标旧包。两份正常产品包通过原 verifyBundle，四 C 和读者来源从各包真实 sourceCommit 的 Git 对象读取，记录 tree、blob、摘要及依赖闭包；控制器自己的提交不代替产品来源。对应产品源对象必须先经原正常源交付流程到件，缺失时在新 stage 前停止。只有 deploy 控制源改变且产品闭包实核相同，可复用已经真实产出的两正常包及其原 sourceCommit，不为控制器新提交再打包或改标签。
+
+原 Root 的完整 verified 记录、释放、私有输入、实际已安装组及 namespace/holder 在新准备前和 reserve 前重新确认。新 original 取当前选中组的真实 FD/profile，保原资产父身份和全部上限；新资产路径及来源旁件已存在时拒绝，不覆盖或认领。新操作、新 journal 和 assetBinding 单独承担原 fd-profile 九步，不能借用只换 JS 的 successor-js，也不重开旧操作。两份新包、原正式资产来源、精确协议、三个预算、stream、容量和候选 profile 摘要共同绑定；资产旁件的 sourceSha256 继续是原四 C 清单摘要；新读者/配置派生回执另有 originSha256。后续普通互切与同 FD 后继仍核这些来源，目录同 FD pair 使用单独固定格式承诺 origin 与 facts 摘要，旧 pair 的固定字段和三组同 FD/profile 条件不放宽。
+
+正常有界 facts/preview 只读取已确认当前 profile 与五个固定保护输入。它通过正常包解析关系定位 profile 内唯一 Exposure Root 提供者；实际提供者位置不在支持的 JSON insert 配置中、来自受保护 account-base 继承项、重复或表达式均在 stage 前拒绝。WorkspaceFiles 的实际 maxEntries 从原 account-base 中唯一 `pe-cloud-workspace-files` 提供者，按原 entryListSchema 和原 Native Config 的 resolveConfig 正常解析；不猜测数字。当前与两份新产品源的 Config 声明必须逐字节相同，实际默认若由该原工厂提供也留来源承诺；三个新分页预算始终必须显式给定，不设默认或执行预算表达式。配置仅替换唯一 files-root helperPath、严格三键 directoryPaging 及精确 `workspaceFiles/listPages` / `native:workspaceFiles` / `account-session` stream，保 recipeVersion 与其余原字节，完整逆变换须还原原件。五保护输入保持原值，不要求维护者手工修改配置后再继续。
+
+容量预览沿原 content、实际 reader maxEntries、worker/root/lane/技能保留量和完整帧上界检查安全整数、lookahead、JSON 名字转义及有限页数；未能在原限额内覆盖验收目录时拒绝，不提高任何限额。新 loader 精确要求原七版本/方法、ABI8、listing1、paging1 及三个枚举方法，保原 UID/GID、零能力、NNP、seccomp、FD3–10 禁止继承、argv/输出/超时限制。真实受限 require、Node/N-API/libc/内核身份与原只读 openat2 探针另留回执，不能以静态 ELF 顶替目标加载或实际分页。
+
+未知加载、关闭、发布、绑定、启动或释放仍保新责任/intent/锁，停止后续，不自动回退或重试。原 continue-native-publish 只接受原旧格式，不接续本新资产格式。慢读 idle 沿原停止语义等待旧流 closed 及实际结算，随后显式新建流从第一页重读，不自动续旧 cursor；完整目标 worker、普通九项和 Web 验收仍分别需要真实结果。
+
+发布新模块后，控制器先使用现行 Node、UID 2000、零能力、no-new-privileges 和原 seccomp 条件加载模块，确认本单线导出，再正常停止原应用。加载子进程由Node显式禁止继承管理员FD，按固定argv直接启动，不依赖shell解释多位FD关闭语法。此步骤核固定导出及目录协议的只读内核探针，不签发账号或工作区读权；当前应用不因加载失败而停止。新模块、候选 profile 和责任记录独立保留，现有文件不覆盖、不删除。
 
 ## 同一未确认发布的一次接续
 
