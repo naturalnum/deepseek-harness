@@ -35,6 +35,8 @@ interface WebBootEntry {
   immediately?: boolean
   /** Non-baseline module specifiers this row requests; omitted when it requests none. */
   external?: string[]
+  /** False supplies the module without activating a Cordis plugin; omission and true activate normally. */
+  activate?: boolean
 }
 ```
 

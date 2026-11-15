@@ -12,8 +12,8 @@
   en: 17d46435a0d460ac
   zh: c1c2429679ec32eb
 /deepseek-ai-dsh-pe-cloud-api/table-of-contents:
-  en: a8e7d53f3edff9f7
-  zh: 5011b40e3182d6f8
+  en: 09edd6d3b547d60a
+  zh: 8f16f37110c1d8be
 /deepseek-ai-dsh-pe-cloud-api/use-this-package:
   en: 05f977cb2bbb1381
   zh: 8c509418d2c76cc9
@@ -36,8 +36,11 @@
   en: f9682b2d053887c1
   zh: b0dc565f45a90147
 /deepseek-ai-dsh-pe-cloud-api/workspace-http-transfers/optional-account-http-mcp-assembly:
-  en: 25799efa0f957cbf
-  zh: 8df672e376d5341a
+  en: f533f46ab1cf4010
+  zh: ccb61ca1b3d12dbd
+/deepseek-ai-dsh-pe-cloud-api/native-inventory:
+  en: 07acf4413148de15
+  zh: fb025e899d15a14b
 /deepseek-ai-dsh-pe-cloud-api/model-experience:
   en: 215e7ba838619b7b
   zh: 215e7ba838619b7b
@@ -51,11 +54,11 @@
   en: 677c9acba0bdd54b
   zh: 682e9ec98443a710
 /deepseek-ai-dsh-pe-cloud-api/model-experience/model-call-admission/kv-cache-effect:
-  en: c2673268041c5aed
+  en: c955e994cc2a86a4
   zh: c7bd5b655e47a2e4
 /deepseek-ai-dsh-pe-cloud-api/known-limitations-and-deferred-work:
   en: 7365929a45662230
   zh: 414ffb4183f2c30e
 /deepseek-ai-dsh-pe-cloud-api/known-limitations-and-deferred-work/dev-note:
   en: 31a51b8d252180e0
-  zh: 2403f2ad63c46262
+  zh: bc2c367d29cb101a

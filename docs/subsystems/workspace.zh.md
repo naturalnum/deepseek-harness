@@ -111,6 +111,9 @@ interface Workspace {
    * Live directory check, uncached: whether {@link path} currently exists and
    * is a directory. A missing directory never mutates the record — the
    * directory may only be temporarily moved.
+   * An injected metadata provider rejects unavailable observations, including
+   * a closed graph; the default Node backend retains its missing-dir behavior
+   * for filesystem errors.
    * @returns `'ok'` when the directory exists, `'missing-dir'` otherwise.
    */
   status(): Promise<'ok' | 'missing-dir'>

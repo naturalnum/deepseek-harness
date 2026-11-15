@@ -9,8 +9,17 @@
   en: 6cc2cd9ced70bb09
   zh: 1c0e6cb4ba2ed637
 /tool-schema-catalog/tool-package-map:
-  en: 1bec3e5c70eae394
-  zh: 922d507fa65ae319
+  en: 27e2897348a925ce
+  zh: 6912f10dfcd5a6c2
+/tool-schema-catalog/deepseek-ai-dsh-remote-server-cloud:
+  en: f66d2c09ce8f8e59
+  zh: f66d2c09ce8f8e59
+/tool-schema-catalog/deepseek-ai-dsh-remote-server-cloud/remote-exec:
+  en: 14ebe2769b8eb4c7
+  zh: 145701c271f314b2
+/tool-schema-catalog/deepseek-ai-dsh-remote-server-cloud/remote-server-info:
+  en: f79993d6e867c493
+  zh: 7ed469497a6880ab
 /tool-schema-catalog/deepseek-ai-dsh-plugin-manager:
   en: e0143916bb634762
   zh: e0143916bb634762

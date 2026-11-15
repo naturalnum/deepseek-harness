@@ -169,7 +169,7 @@ Bootstrap 仅将 `workspaceFiles/listPages` 作为逻辑流接纳，要求 handl
 | 源码 | 职责 |
 | --- | --- |
 | [bootstrap.ts](src/bootstrap.ts) | 严格有界的 C-11 解码器及独立只读元数据。 |
-| [bootstrap-producer.ts](src/bootstrap-producer.ts)、[bootstrap-inventory.ts](src/bootstrap-inventory.ts) | 原图断言、实际 Loader/包清单和有界 C11 投影。 |
+| [bootstrap-producer.ts](src/bootstrap-producer.ts)、[native-internals.ts](src/native-internals.ts) | 原图断言、实际 Loader/包清单和有界 C11 投影。 |
 | [config-schema.ts](src/config-schema.ts) | 浏览器安全的结构配置 schema。 |
 | [auth.ts](src/auth.ts) | 真实库调用、固定登录复查及实际工作保留。 |
 | [peers.ts](src/peers.ts) | 内部登录 Peer、独立借用、原生载体和清理保留。 |

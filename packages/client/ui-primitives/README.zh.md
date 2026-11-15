@@ -140,6 +140,7 @@ kind: "package-library"
 -----
 
 <a id="understand-the-implementation"></a>
+
 显式设置 `standaloneFileLinks` 后，已完成回复里只含简单文件名的列表项复用同一个作用域 `openFile` 回调。默认和流式渲染保留普通文本，路径、命令和 URL 不在此范围。
 
 ## 理解实现

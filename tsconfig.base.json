@@ -572,7 +572,6 @@
       "@deepseek-ai/dsh-session-format-v3-to-v4": ["./packages/session/session-format-v3-to-v4/src"],
       "@deepseek-ai/dsh-session-log-deepseek": ["./packages/session/session-log-deepseek/src"],
       "@deepseek-ai/dsh-session-log-export": ["./packages/session-query/session-log-export/src"],
-      "@deepseek-ai/dsh-session-log-export/registration": ["./packages/session-query/session-log-export/src/registration.ts"],
       "@deepseek-ai/dsh-session-persistence": ["./packages/session/session-persistence/src"],
       "@deepseek-ai/dsh-session-persistence-jsonl": ["./packages/session/session-persistence-jsonl/src"],
       "@deepseek-ai/dsh-session-projection": ["./packages/session/session-projection/src"],

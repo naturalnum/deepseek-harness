@@ -1,6 +1,6 @@
 ---
 description: "源自 dsh-remote-server 的账户隔离基础能力，明确云端职责及原生审批行为。"
-kind: "package-library"
+kind: "package-reference"
 ---
 
 # @deepseek-ai/dsh-remote-server-cloud

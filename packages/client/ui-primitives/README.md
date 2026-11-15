@@ -140,6 +140,7 @@ The atoms cannot read the application locale, so every piece of user-facing copy
 -----
 
 <a id="understand-the-implementation"></a>
+
 With `standaloneFileLinks`, completed filename-only list items use the same scoped `openFile` callback. The default and streaming renders stay plain text; paths, commands, and URLs are excluded.
 
 ## Understand the implementation

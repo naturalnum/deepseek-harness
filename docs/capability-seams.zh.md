@@ -9,6 +9,28 @@
 
 ```mermaid
 flowchart LR
+  pkg_pe_cloud_api["pe-cloud-api"]
+  svc_cloudModelKey["ctx.cloudModelKey<br/>Account model-key editing"]
+  svc_cloudPlugins["ctx.cloudPlugins<br/>Approved account plugin controls"]
+  pkg_pe_cloud_client["pe-cloud-client"]
+  pkg_pe_cloud_runtime["pe-cloud-runtime"]
+  svc_cloudProjects["ctx.cloudProjects<br/>Account project metadata"]
+  svc_cloudRemoteServers["ctx.cloudRemoteServers<br/>Account remote-server management"]
+  svc_cloudMcpConnections["ctx.cloudMcpConnections<br/>Account HTTP MCP management"]
+  svc_cloudSkills["ctx.cloudSkills<br/>Account skill installation management"]
+  svc_peAccount["ctx.peAccount<br/>Installed account generation"]
+  pkg_pe_cloud_files["pe-cloud-files"]
+  pkg_pe_opensandbox["pe-opensandbox"]
+  pkg_pe_account_instructions["pe-account-instructions"]
+  svc_peAccountExecution["ctx.peAccountExecution<br/>Account execution port"]
+  svc_peAccountInstructions["ctx.peAccountInstructions<br/>Account instruction sources"]
+  svc_peAccountRuntime["ctx.peAccountRuntime<br/>Account Context lifecycle"]
+  pkg_pe_cloud_access["pe-cloud-access"]
+  svc_peAuth["ctx.peAuth<br/>Cloud account authentication"]
+  svc_peCloudApi["ctx.peCloudApi<br/>Account native API assembly"]
+  svc_peCloudFiles["ctx.peCloudFiles<br/>Account file operations"]
+  svc_peExposure["ctx.peExposure<br/>Cloud endpoint exposure policy"]
+  svc_peSandboxCoordinator["ctx.peSandboxCoordinator<br/>Cloud session execution ownership"]
   pkg_action_cards["action-cards"]
   svc_actionCards["ctx.actionCards<br/>Optional action cards"]
   pkg_creation_recommendations["creation-recommendations"]
@@ -411,6 +433,21 @@ flowchart LR
   pkg_message_feedback --> svc_messageFeedback
   pkg_office_kit --> svc_officeKit
   pkg_otel --> svc_otel
+  pkg_pe_account_instructions --> svc_peAccountInstructions
+  pkg_pe_cloud_access --> svc_peAuth
+  pkg_pe_cloud_api --> svc_cloudMcpConnections
+  pkg_pe_cloud_api --> svc_cloudModelKey
+  pkg_pe_cloud_api --> svc_cloudPlugins
+  pkg_pe_cloud_api --> svc_cloudProjects
+  pkg_pe_cloud_api --> svc_cloudRemoteServers
+  pkg_pe_cloud_api --> svc_cloudSkills
+  pkg_pe_cloud_api --> svc_peCloudApi
+  pkg_pe_cloud_api --> svc_peExposure
+  pkg_pe_cloud_files --> svc_peCloudFiles
+  pkg_pe_cloud_runtime --> svc_peAccount
+  pkg_pe_cloud_runtime --> svc_peAccountRuntime
+  pkg_pe_opensandbox --> svc_peAccountExecution
+  pkg_pe_opensandbox --> svc_peSandboxCoordinator
   pkg_permission_presets --> svc_permissionPresets
   pkg_plan_mode --> svc_planMode
   pkg_plugin_manager --> svc_pluginManager
@@ -508,6 +545,18 @@ flowchart LR
   svc_browserUse --> pkg_experimental_browser_use_playwright_mcp
   svc_browserUse --> pkg_experimental_browser_use_stagehand_native
   svc_clientModules --> pkg_client_hmr
+  svc_cloudMcpConnections --> pkg_pe_cloud_client
+  svc_cloudMcpConnections --> pkg_pe_cloud_runtime
+  svc_cloudModelKey --> pkg_pe_cloud_api
+  svc_cloudPlugins --> pkg_pe_cloud_client
+  svc_cloudPlugins --> pkg_pe_cloud_runtime
+  svc_cloudProjects --> pkg_pe_cloud_api
+  svc_cloudProjects --> pkg_pe_cloud_runtime
+  svc_cloudRemoteServers --> pkg_pe_cloud_client
+  svc_cloudRemoteServers --> pkg_pe_cloud_runtime
+  svc_cloudSkills --> pkg_pe_cloud_api
+  svc_cloudSkills --> pkg_pe_cloud_client
+  svc_cloudSkills --> pkg_pe_cloud_runtime
   svc_compaction --> pkg_compaction_basic
   svc_computerUse --> pkg_experimental_computer_use_cua_driver_mcp
   svc_computerUse --> pkg_experimental_computer_use_cua_driver_native
@@ -545,6 +594,27 @@ flowchart LR
   svc_officeKit --> pkg_tool_office
   svc_otel --> pkg_host_product_telemetry_otel
   svc_otel --> pkg_session_telemetry_otel
+  svc_peAccount --> pkg_pe_account_instructions
+  svc_peAccount --> pkg_pe_cloud_api
+  svc_peAccount --> pkg_pe_cloud_files
+  svc_peAccount --> pkg_pe_opensandbox
+  svc_peAccountExecution --> pkg_pe_cloud_api
+  svc_peAccountExecution --> pkg_pe_cloud_runtime
+  svc_peAccountInstructions --> pkg_pe_account_instructions
+  svc_peAccountRuntime --> pkg_pe_cloud_access
+  svc_peAccountRuntime --> pkg_pe_cloud_api
+  svc_peAuth --> pkg_pe_cloud_access
+  svc_peAuth --> pkg_pe_cloud_runtime
+  svc_peCloudApi --> pkg_pe_cloud_access
+  svc_peCloudApi --> pkg_pe_cloud_runtime
+  svc_peCloudFiles --> pkg_pe_account_instructions
+  svc_peCloudFiles --> pkg_pe_cloud_api
+  svc_peCloudFiles --> pkg_pe_cloud_runtime
+  svc_peCloudFiles --> pkg_pe_opensandbox
+  svc_peExposure --> pkg_pe_cloud_access
+  svc_peExposure --> pkg_pe_cloud_runtime
+  svc_peSandboxCoordinator --> pkg_pe_cloud_api
+  svc_peSandboxCoordinator --> pkg_pe_cloud_runtime
   svc_pluginManager --> pkg_plugin_manager
   svc_pluginManager --> pkg_ui_settings_plugin_inventory
   svc_pluginMarket --> pkg_client_ui_plugin_market
@@ -656,6 +726,21 @@ flowchart LR
 
 | ctx 键 | 角色 | 所属包 | 实现 | 直接消费方 | 配套插件 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- |
+| `ctx.cloudModelKey` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | 通过原 Peer Use 和原生配置保存所有者提供获准的账号模型密钥 RPC。 |
+| `ctx.cloudPlugins` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-client`](../packages/cloud/pe-cloud-client), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | 将固定插件编辑接入原 Peer 准入、账号保存和原生配置应用。 |
+| `ctx.cloudProjects` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | 将原生 Workspace 操作接入已安装的账号文件所有者与获准项目根。 |
+| `ctx.cloudRemoteServers` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-client`](../packages/cloud/pe-cloud-client), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | 使用原认证 Peer、私有文件和凭据及保存所有者；执行仍由原生 Session 工具负责。 |
+| `ctx.cloudMcpConnections` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-client`](../packages/cloud/pe-cloud-client), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | 使用原账号 Peer、私有凭据及官方原生 MCP 客户端，并明确 HTTP 和发现上限。 |
+| `ctx.cloudSkills` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api), [`pe-cloud-client`](../packages/cloud/pe-cloud-client), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | 通过原 Peer 准入、账号保存及文件所有者的目录和版本 CAS，管理账号技能安装与完整技能包。 |
+| `ctx.peAccount` | `core` | [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api), [`pe-cloud-files`](../packages/cloud/pe-cloud-files), [`pe-opensandbox`](../packages/cloud/pe-opensandbox), [`pe-account-instructions`](../packages/cloud/pe-account-instructions) | - | 为一个独立账号 Context 携带不可变账号绑定及其生命周期。 |
+| `ctx.peAccountExecution` | `service` | [`pe-opensandbox`](../packages/cloud/pe-opensandbox) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | 只提供原 Root 签发的账号能力；关闭模式拒绝原生执行。 |
+| `ctx.peAccountInstructions` | `service` | [`pe-account-instructions`](../packages/cloud/pe-account-instructions) | - | [`pe-account-instructions`](../packages/cloud/pe-account-instructions) | - | 通过原账号文件所有者读取有界私有及项目指令快照。 |
+| `ctx.peAccountRuntime` | `core` | [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | [`pe-cloud-access`](../packages/cloud/pe-cloud-access), [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | 负责账号挂载、当前代际准入及保留参与方的清理责任。 |
+| `ctx.peAuth` | `service` | [`pe-cloud-access`](../packages/cloud/pe-cloud-access) | - | [`pe-cloud-access`](../packages/cloud/pe-cloud-access), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | 通过 Root 所有的 BetterAuth 及账号所有者选择解析认证请求。 |
+| `ctx.peCloudApi` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-access`](../packages/cloud/pe-cloud-access), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | 在开放清单约束下，审核并调用精确已安装账号图上的原生端点。 |
+| `ctx.peCloudFiles` | `service` | [`pe-cloud-files`](../packages/cloud/pe-cloud-files) | - | [`pe-cloud-api`](../packages/cloud/pe-cloud-api), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime), [`pe-opensandbox`](../packages/cloud/pe-opensandbox), [`pe-account-instructions`](../packages/cloud/pe-account-instructions) | - | 负责有作用域的项目和私有文件访问、有界 worker 请求及会话环境库。 |
+| `ctx.peExposure` | `service` | [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | [`pe-cloud-access`](../packages/cloud/pe-cloud-access), [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime) | - | 在账号发布前验证明确的原生端点清单和精确 HTTP 路由声明。 |
+| `ctx.peSandboxCoordinator` | `seam` | [`pe-opensandbox`](../packages/cloud/pe-opensandbox) | [`pe-opensandbox`](../packages/cloud/pe-opensandbox) | [`pe-cloud-runtime`](../packages/cloud/pe-cloud-runtime), [`pe-cloud-api`](../packages/cloud/pe-cloud-api) | - | 负责分配元数据、已签发账号端口、进程范围及实际停止证据；提供方继续保留未知工作的责任。 |
 | `ctx.actionCards` | `service` | [`action-cards`](../packages/experimental/action-cards) | - | [`creation-recommendations`](../packages/experimental/creation-recommendations), [`client-ui-action-cards`](../packages/experimental/client-ui-action-cards) | - | 负责卡片工具、卡片状态、用户操作和状态通知；各卡片种类注册自己的动作和处理器。 |
 | `ctx.pluginRecommendations` | `service` | [`plugin-recommendations`](../packages/experimental/plugin-recommendations) | - | [`client-ui-plugin-recommendations`](../packages/experimental/client-ui-plugin-recommendations) | - | 读取官方插件卡片的当前目录文本，并在用户点击后通过配置插件管理器启用该插件。 |
 | `ctx.deepseekChatImport` | `service` | [`deepseek-chat-import`](../packages/experimental/deepseek-chat-import) | - | - | - | 提供仅 owner 可用的上传路由，把 DeepSeek 会话导出的每个对话导入为一个会话，并提供浏览器先行检查的上传上限。 |

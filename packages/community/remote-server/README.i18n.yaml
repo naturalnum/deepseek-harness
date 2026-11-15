@@ -3,8 +3,8 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/community/remote-server/README.md
 /:
-  en: 35d69a7628fc94bd
-  zh: ec81af08a9793988
+  en: 18fbbe20b35be8d5
+  zh: 7577ebda4a7875ea
 /deepseek-ai-dsh-remote-server-cloud:
   en: 8446595fe680456c
   zh: ea66d1dab5aa4131

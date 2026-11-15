@@ -17,6 +17,7 @@ Trusted account plugins can call `sessionProject(actualSession)` to reuse Runtim
 - [Use this package](#use-this-package)
 - [Understand the implementation](#understand-the-implementation)
 - [Further Exploration](#further-exploration)
+- [Native inventory](#native-inventory)
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
@@ -213,6 +214,11 @@ The optional [workspace upload consumer](src/workspace-upload.ts) requires an ex
 
 `AccountMcpConnections` mounts only the official `dsh-mcp-client` in the original account context. It restores enabled account-private definitions, joins client replacement and disposal, and checks account/Agent admission around MCP calls. Probes use a separate native registration scope. Counts and probe results read the exact native instance’s owned registrations, independently of tool-name prefixes. A successful test reapplies only an unchanged saved enabled connection with omitted headers and no account-registered tools, in the original save turn after confirmed old-client teardown. Explicit headers, edited definitions, disabled connections and new forms remain probe-only. HTTP and HTTPS endpoints are accepted; stdio and OAuth are not provided. Runtime policy requires explicit positive `maxIncomingResponseBytes` (up to 64 MiB) and `listMaxPages` (up to 64). These select the [official client’s pre-parse HTTP and SDK pagination limits](../../mcp/mcp-client/README.md); `limits.maxReplyBytes` separately bounds management replies and does not bound remote HTTP bodies. `prepareCloudMcpConnections` optionally adds the authenticated `cloudMcpConnections/action` Remote: list, save, enable/disable, remove and isolated connection test. Headers are credential input only; returned metadata includes an epoch revision and discovery count. One original account save turn owns each mutation through native client application. Version or duplicate-name refusals publish nothing. The original native lifecycle observer keeps unconfirmed transport closure retained and prevents replacement. Probe failure is contained inside its native dependency scope; request, actual login Peer and account cancellation are joined before awaiting external work. Unconfirmed probe cleanup remains an unknown save outcome. Explicit empty headers remove the native credential record; omitted headers retain it. Persisted enabled clients restore in the native tool-preparation waterfall before the step’s immutable tool selection, so cold accounts need no prior settings visit. Non-Agent prompt inspection does not initiate restoration. Actual Cloud deployment and browser acceptance require their separate integration evidence.
 
+<a id="native-inventory"></a>
+## Native inventory
+
+Native proxy-target reads and the Gateway method identity comparison are centralized in `src/native-inventory.ts`. Its implementation-registry iterator filters to the current account root before accounting; the configured bound and duplicate/provider checks remain unchanged. Unreviewed Native methods remain outside the selected exposure policy. The Session skill catalog accepts additional Native Remote methods within its existing bound. It requires one unchanged `list` marker and implementation and rejects another method exported as `list`; only the reviewed `skills/list` endpoint is exposed. Live Session catalog reads enter the admitted Agent’s initiator scope in the Cloud subclass before calling Native; cold reads retain Native observation without Agent activation.
+
 <a id="model-experience"></a>
 ## Model Experience
 
@@ -229,8 +235,6 @@ The package adds zero request tokens.
 #### KV Cache effect
 
 The guard preserves request content and any reusable prefix; provider cache availability remains provider-owned.
-
-Native proxy-target reads and the Gateway method identity comparison are centralized in `src/native-inventory.ts`. Its implementation-registry iterator filters to the current account root before accounting; the configured bound and duplicate/provider checks remain unchanged. Unreviewed Native methods remain outside the selected exposure policy. The Session skill catalog accepts additional Native Remote methods within its existing bound. It requires one unchanged `list` marker and implementation and rejects another method exported as `list`; only the reviewed `skills/list` endpoint is exposed. Live Session catalog reads enter the admitted Agent’s initiator scope in the Cloud subclass before calling Native; cold reads retain Native observation without Agent activation.
 
 ## Known Limitations and Deferred Work
 

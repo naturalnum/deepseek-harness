@@ -102,6 +102,10 @@ interface SubprocessStdio {
 interface SubprocessSpawnSpec {
   /** Executable and arguments; `argv[0]` is the program. Never shell-interpreted here. */
   argv: readonly string[]
+  /** Native consumer’s resolved per-call policy, including approved escalation.
+   * Remote providers enforce it at signed prepare; local consumers already wrap argv.
+   */
+  sandboxPolicy?: SandboxExecutionPolicy | undefined
   /** Working directory for the child. */
   cwd: string
   /** Per-stream stdio dispositions. */
@@ -156,6 +160,13 @@ interface SubprocessHandle {
   readonly control: Duplex | undefined
   /** Offset-based readers for collect-mode streams (also readable after exit). */
   readonly collected: SubprocessCollectedOutputs
+  /**
+   * End this consumer's collected-output ownership and request any remaining provider cleanup.
+   * Call after copying required output; subsequent handle/output access may reject. Optional providers
+   * otherwise retain their existing ownership policy. This is not a process-stop or capacity-release receipt:
+   * actual range and I/O settlement remain provider-owned, including unknown or cancelled work.
+   */
+  releaseCollected?(): void
   /** Resolves with spawned-command exit facts; rejects for spawn or provider failures. */
   readonly done: Promise<SubprocessOutcome>
   /**

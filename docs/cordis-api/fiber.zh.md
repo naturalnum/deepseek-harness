@@ -36,7 +36,7 @@ effect(execute: () => Effect, label?: string): AsyncDisposable<Promise<void>>
 
 **返回**一个用于撤销该作用的清理函数，并在清理完成后结算。
 
-[源码](../../vendor/cordis/src/fiber.ts#L421)
+[源码](../../vendor/cordis/src/fiber.ts#L422)
 
 ### ctx.fiber
 
@@ -154,7 +154,7 @@ get name()
 
 插件的显示名称，继承自最近的具名祖先；如果不存在，则为 `'root'`。
 
-[源码](../../vendor/cordis/src/fiber.ts#L342)
+[源码](../../vendor/cordis/src/fiber.ts#L343)
 
 ### fiber.assertActive()
 
@@ -172,7 +172,7 @@ assertActive()
 
 **返回**：fiber 仍处于活动状态时不返回任何内容。
 
-[源码](../../vendor/cordis/src/fiber.ts#L357)
+[源码](../../vendor/cordis/src/fiber.ts#L358)
 
 ### fiber.effect(execute, label?)
 
@@ -203,7 +203,7 @@ effect(execute: () => Effect, label?: string): AsyncDisposable<Promise<void>>
 
 **返回**一个用于撤销该作用的清理函数，并在清理完成后结算。
 
-[源码](../../vendor/cordis/src/fiber.ts#L421)
+[源码](../../vendor/cordis/src/fiber.ts#L422)
 
 ### fiber.getEffects()
 
@@ -220,7 +220,29 @@ getEffects()
 
 **返回**：每个带标签的活动作用对应一棵 `EffectMeta` 树。
 
-[源码](../../vendor/cordis/src/fiber.ts#L574)
+[源码](../../vendor/cordis/src/fiber.ts#L575)
+
+### fiber.configMutationRevision
+
+```ts cordis-catalog
+/** Attempted raw/config mutations, including candidates rejected before the update waterfall. */
+get configMutationRevision(): number
+```
+
+尝试过的 raw/config 修改计数，包括在 update 瀑布调用前被拒绝的候选。
+
+[源码](../../vendor/cordis/src/fiber.ts#L650)
+
+### fiber.dependencies
+
+```ts cordis-catalog
+/** Current resolved service dependencies; the returned array is detached from the internal store. */
+get dependencies(): readonly Impl[]
+```
+
+当前已解析的服务依赖；返回的数组与内部存储分离。
+
+[源码](../../vendor/cordis/src/fiber.ts#L653)
 
 ### fiber.rawConfig
 
@@ -232,7 +254,7 @@ get rawConfig(): unknown
 
 保留供下次激活使用的原始输入，不执行表达式求值或验证。
 
-[源码](../../vendor/cordis/src/fiber.ts#L649)
+[源码](../../vendor/cordis/src/fiber.ts#L656)
 
 ### fiber.effectiveConfig
 
@@ -247,7 +269,7 @@ get effectiveConfig(): unknown
 
 传给插件激活过程或最近一次成功保留实例的更新的对象。候选配置求值不发布结果；volatile 更新保留其中的引用。激活前为 undefined，卸载后仍可读取；需要运行中实例的调用方还应检查 `state`。
 
-[源码](../../vendor/cordis/src/fiber.ts#L664)
+[源码](../../vendor/cordis/src/fiber.ts#L672)
 
 ### fiber.resolveConfig(config)
 
@@ -270,7 +292,7 @@ resolveConfig(config: unknown): unknown
 
 **返回**候选配置的解析结果，保留 schema 返回对象的身份。
 
-[源码](../../vendor/cordis/src/fiber.ts#L676)
+[源码](../../vendor/cordis/src/fiber.ts#L684)
 
 ### fiber.await()
 
@@ -288,7 +310,7 @@ async await()
 
 **返回**：进入稳定状态后的此 fiber。
 
-[源码](../../vendor/cordis/src/fiber.ts#L754)
+[源码](../../vendor/cordis/src/fiber.ts#L762)
 
 ### fiber.restart()
 
@@ -306,7 +328,7 @@ dispose 此插件，并立即使用其当前配置重新加载。
 
 **返回**一个在重新加载完成后兑现的 promise。
 
-[源码](../../vendor/cordis/src/fiber.ts#L768)
+[源码](../../vendor/cordis/src/fiber.ts#L776)
 
 ### fiber.update(config, noSave?)
 
@@ -328,7 +350,7 @@ update(config: any, noSave = false): Awaitable<void>
 
 **返回** 可等待的更新或重启结果；同步监听器处理更新时为 undefined。
 
-[源码](../../vendor/cordis/src/fiber.ts#L783)
+[源码](../../vendor/cordis/src/fiber.ts#L791)
 
 ## Effect
 

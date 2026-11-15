@@ -169,7 +169,7 @@ The fixed preview GET joins that same registry through a private carrier callbac
 | Source | Responsibility |
 | --- | --- |
 | [bootstrap.ts](src/bootstrap.ts) | Strict bounded C-11 decoder and detached read-only metadata. |
-| [bootstrap-producer.ts](src/bootstrap-producer.ts), [bootstrap-inventory.ts](src/bootstrap-inventory.ts) | Original graph assertions, actual Loader/package inventory and bounded C11 projection. |
+| [bootstrap-producer.ts](src/bootstrap-producer.ts), [native-internals.ts](src/native-internals.ts) | Original graph assertions, actual Loader/package inventory and bounded C11 projection. |
 | [config-schema.ts](src/config-schema.ts) | Browser-safe structural configuration schema. |
 | [auth.ts](src/auth.ts) | Real library calls, fixed-login rechecks and actual-work retention. |
 | [peers.ts](src/peers.ts) | Internal login Peer, independent borrow, native carriers and retained cleanup. |

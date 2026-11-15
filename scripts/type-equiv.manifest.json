@@ -2946,6 +2946,16 @@
       "doc": "docs/subsystems/forge.md",
       "symbol": "ForgeViewedRequest",
       "source": "packages/experimental/forge/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/cloud.md",
+      "symbol": "ApprovedModelKeyBinding",
+      "source": "packages/cloud/pe-cloud-api/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/cloud.md",
+      "symbol": "ApprovedModelKeyConfiguration",
+      "source": "packages/cloud/pe-cloud-api/src/types.ts"
     }
   ]
 }

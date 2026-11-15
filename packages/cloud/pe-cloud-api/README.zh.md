@@ -17,6 +17,7 @@ kind: "package-reference"
 - [使用本包](#use-this-package)
 - [理解实现](#understand-the-implementation)
 - [进一步探索](#further-exploration)
+- [原生清单](#native-inventory)
 - [模型体验](#model-experience)
 - [已知限制与后续工作](#known-limitations-and-deferred-work)
 - [开发备注](#dev-note)
@@ -213,6 +214,12 @@ Root 可通过 `native.workspaceTransfers` 显式设置 `maxFileBytes`、`maxFil
 
 `AccountMcpConnections` 仅在原账户上下文挂载官方 `dsh-mcp-client`，恢复启用的账户私有定义，等待客户端替换与销毁，并在 MCP 调用前后检查账户和 Agent 准入。探测使用独立的原生注册作用域。注册计数和探测结果读取该原生实例实际拥有的注册，不按工具名前缀推断归属。只有已保存、启用、省略请求头且账号注册工具为零的连接，在定义仍匹配且测试成功时，才于原保存回合确认旧客户端关闭后重新应用该连接。显式请求头、编辑过的定义、停用连接和新表单仍只做探测。支持 HTTP 与 HTTPS；不提供 stdio 和 OAuth。运行策略要求显式正整数 `maxIncomingResponseBytes`（最高 64 MiB）和 `listMaxPages`（最高 64），用于选择[官方客户端解析前 HTTP 限制及 SDK 分页限制](../../mcp/mcp-client/README.zh.md)；`limits.maxReplyBytes` 仅独立限制管理回复，不限制远端 HTTP 正文。`prepareCloudMcpConnections` 可选安装经账号鉴权的 `cloudMcpConnections/action` Remote，提供列表、保存、启停、移除及隔离连接测试。请求头仅作为凭据输入；返回元数据包含代际修订值和发现工具数。每次修改由原账户单个保存回合负责到原生客户端应用完成，版本冲突或重名拒绝不发生写入。原生生命周期观察口保留未确认的传输关闭责任并阻止替换。探测失败在原生依赖作用域内收容，等待外部工作前合并请求、真实登录 Peer 与账号取消信号；探测清理未确认时仍保留未知保存结果。显式空请求头会删除原生凭据记录，省略请求头则保留。持久化的启用连接在原生工具准备 waterfall 中恢复，早于步骤的不可变工具选择；冷账号无需先访问设置页。非 Agent 的提示词检查不会启动恢复。真实 Cloud 部署及浏览器验收仍需单独的集成证据。
 
+<a id="native-inventory"></a>
+## 原生清单
+
+原生代理目标读取及 Gateway 方法身份比对集中在 `src/native-inventory.ts`。其中实现登记表遍历先筛选当前账号根再计数；配置上限及重复项、提供者检查保持原样。未经审核的原生方法仍不在选定的开放策略中。 Session 技能目录在原有上限内接受新增 Native Remote 方法；它要求唯一且未变的 `list` 标记和实现，并拒绝其他方法以 `list` 导出；只公开已审核的 `skills/list` 端点。 活跃会话目录读取由Cloud子类进入获准Agent的发起作用域后调用Native；冷历史读取保留原生观察，不激活Agent。
+
+<a id="model-experience"></a>
 ## Model Experience
 
 ### Model-call admission
@@ -254,8 +261,6 @@ Root 可通过 `native.workspaceTransfers` 显式设置 `maxFileBytes`、`maxFil
 包随现有 Remote 产物发布生成的 Remote Client 声明映射和本包 `src` 文件。已安装的客户端可从 Remote 声明导航到 Host 实现；原 Typert 生成器在写入任何产物前校验产物清单。
 
 </details>
-
-原生代理目标读取及 Gateway 方法身份比对集中在 `src/native-inventory.ts`。其中实现登记表遍历先筛选当前账号根再计数；配置上限及重复项、提供者检查保持原样。未经审核的原生方法仍不在选定的开放策略中。 Session 技能目录在原有上限内接受新增 Native Remote 方法；它要求唯一且未变的 `list` 标记和实现，并拒绝其他方法以 `list` 导出；只公开已审核的 `skills/list` 端点。 活跃会话目录读取由Cloud子类进入获准Agent的发起作用域后调用Native；冷历史读取保留原生观察，不激活Agent。
 
 Loader 条目元数据、已安装 Fiber 的回调与 Schema、原模块导入及日志 Fiber 解引用也经此适配文件读取。插件管理、凭据策略和授权仍由现有实现负责。
 

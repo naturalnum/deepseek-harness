@@ -1,6 +1,6 @@
 ---
 description: "Account-scoped primitives derived from dsh-remote-server, with explicit cloud ownership and native approval behavior."
-kind: "package-library"
+kind: "package-reference"
 ---
 
 # @deepseek-ai/dsh-remote-server-cloud

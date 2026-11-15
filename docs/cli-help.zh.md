@@ -42,6 +42,8 @@ Options:
                                  shipped profile template
   --patch <path>                 extra patch-list overlay applied after the
                                  profile layer (repeatable)
+  --shutdown-timeout-ms <ms>     wait for profile disposal before forced exit
+                                 (default: 5000 milliseconds)
   --dump-config                  print the composed profile tree and exit
   --dump-config-schema           print JSON Schema for profile entries and
                                  patches without mounting
