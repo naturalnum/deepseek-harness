@@ -10,7 +10,7 @@ import {
   IconDarkOutlineMedium, IconFollowsystemOutlineMedium, IconLightOutlineMedium,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ThemePreference, ThemeSaveState } from '../theme-settings.ts'
+import type { ThemePreference } from '../theme-settings.ts'
 import type { ThemeKey } from './locales.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { createAppearanceRowStore } from './settings-store.ts'
@@ -34,11 +34,6 @@ const CUBES: readonly { id: ThemePreference; labelKey: ThemeKey; Icon: typeof Ic
   { id: 'system', labelKey: 'appearance.system', Icon: IconFollowsystemOutlineMedium },
 ]
 
-const SAVE_COPY: Record<Exclude<ThemeSaveState, 'idle'>, ThemeKey> = {
-  loading: 'save.loading', readonly: 'save.readonly', saving: 'save.saving',
-  saved: 'save.saved', refused: 'save.refused', unknown: 'save.unknown',
-}
-
 /**
  * Render the Appearance row.
  * @param props - composed slot props.
@@ -46,9 +41,6 @@ const SAVE_COPY: Record<Exclude<ThemeSaveState, 'idle'>, ThemeKey> = {
  */
 export function AppearanceRow({ t, setTheme, useStore }: AppearanceRowComponentProps) {
   const preference = useStore(s => s.preference)
-  const saveState = useStore(s => s.saveState)
-  const disabled = saveState === 'loading' || saveState === 'readonly' || saveState === 'saving' || saveState === 'unknown'
-  const failed = saveState === 'refused' || saveState === 'unknown'
   return (
     <div className={css.group}>
       <div className={css.title}>{t('appearance.title')}</div>
@@ -59,7 +51,6 @@ export function AppearanceRow({ t, setTheme, useStore }: AppearanceRowComponentP
             type="button"
             className={clsx(css.themeCube, preference === id && css.selected)}
             aria-pressed={preference === id}
-            disabled={disabled}
             onClick={() => { setTheme(id) }}
           >
             <Icon />
@@ -67,9 +58,6 @@ export function AppearanceRow({ t, setTheme, useStore }: AppearanceRowComponentP
           </button>
         ))}
       </div>
-      <p className={clsx(css.feedback, failed && css.failure)} role={failed ? 'alert' : 'status'}>
-        {saveState === 'idle' ? '' : t(SAVE_COPY[saveState])}
-      </p>
     </div>
   )
 }

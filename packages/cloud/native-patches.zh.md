@@ -63,7 +63,7 @@ Gateway `inspectInvocation` 将既有严格/SRC 解析器作为只读 Host 检�
 
 原生[文件发现](../fs/tool-fs-search/src/glob.ts)把六个 VCS 名称聚合为两条排除模式，保留目录剪枝及从 VCS 元数据目录本身或内部开始搜索时的排除行为。完整调用使用 9 个 argv 元素，显式指定路径时为 11 个，符合原有 16 元素 Cloud 命令上限。执行、输出收集和排序仍由 Native 拥有。
 
-原生[主题设置](../client/ui-theme/README.zh.md)将原 Host 写入结果与调色板预览分开投影。外观行在加载、保存及写入结果未确认期间禁用选择；只有 Host 接受更改才显示已保存。当前共享布尔写入结果无法区分所有拒绝与结构化传输失败，因此 false 与 Promise 拒绝均保留为未确认且不重放。原生设置排序、持久化与取消行为不变；刷新仍可能取消尚未获得回执的写入。
+原生[主题设置](../client/ui-theme/README.zh.md)保留原调色板预览及设置写入路径。附加的通用保存反馈状态、文案及选择禁用政策已撤回；调色板预览不能证明 Host 已持久化。排序、拒绝、取消和未知结果仍归原设置所有者持有，Cloud 账号持久化继续绑定原页面。
 
 Native Chat 保留原[装饰性运行指示器](../client/ui-chat/src/client/chat/RunningWhaleTail.tsx)，动态效果与无障碍行为由[Chat 包](../client/ui-chat/README.zh.md)定义。FileUploads Schema 在插件激活前规范化省略的配置；原回执/接收容量仍保持有限。
 

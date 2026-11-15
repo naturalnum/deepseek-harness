@@ -98,11 +98,11 @@ packages/client/ui-sidebar/src/client/SidebarRoot.module.css	云端定制	“新
 packages/client/ui-sidebar/src/client/SidebarRoot.tsx	云端定制	“新建会话”按钮换图标和结构（同上）	同上	撤掉	已撤
 packages/client/ui-skill/src/client/index.ts	扩展点	仅原目录缓存显式invalidate控制口；skills/change事件政策移Cloud，原Native preset/plugin-manager/reset及缓存/真实RPC结算引擎保留	原生提供同等显式缓存失效口时替换；未调用时默认与目标一致	留作口子	已按新原生重加
 packages/client/ui-theme/src/client/AppearanceRow.module.css	通用修复	外观保存反馈的样式	随 ui-theme/src/client/index.ts	撤掉	已撤
-packages/client/ui-theme/src/client/AppearanceRow.tsx	通用修复	保存中、只读、未确认时禁用主题按钮并显示状态	同上	撤掉	没动
-packages/client/ui-theme/src/client/index.ts	通用修复	主题写入区分已保存、被拒、未确认，不再把失败当成功	向上游提交	撤掉	没动
-packages/client/ui-theme/src/client/locales.ts	通用修复	保存状态文案	同上	撤掉	没动
-packages/client/ui-theme/src/client/settings-store.ts	通用修复	行状态里增加 saveState	同上	撤掉	没动
-packages/client/ui-theme/src/theme-settings.ts	通用修复	ThemeSaveState 类型	同上	撤掉	没动
+packages/client/ui-theme/src/client/AppearanceRow.tsx	通用修复	按三问撤回附加主题保存状态/文案/禁用政策并精确恢复目标Native；Cloud无getSaveState消费者，原ScopedSettingsHost持久化/实际拒绝与未知责任不改	已撤；外观不再显示额外保存反馈，预览不证明Host持久化	撤掉	已撤
+packages/client/ui-theme/src/client/index.ts	通用修复	按三问撤回附加主题保存状态/文案/禁用政策并精确恢复目标Native；Cloud无getSaveState消费者，原ScopedSettingsHost持久化/实际拒绝与未知责任不改	已撤；外观不再显示额外保存反馈，预览不证明Host持久化	撤掉	已撤
+packages/client/ui-theme/src/client/locales.ts	通用修复	按三问撤回附加主题保存状态/文案/禁用政策并精确恢复目标Native；Cloud无getSaveState消费者，原ScopedSettingsHost持久化/实际拒绝与未知责任不改	已撤；外观不再显示额外保存反馈，预览不证明Host持久化	撤掉	已撤
+packages/client/ui-theme/src/client/settings-store.ts	通用修复	按三问撤回附加主题保存状态/文案/禁用政策并精确恢复目标Native；Cloud无getSaveState消费者，原ScopedSettingsHost持久化/实际拒绝与未知责任不改	已撤；外观不再显示额外保存反馈，预览不证明Host持久化	撤掉	已撤
+packages/client/ui-theme/src/theme-settings.ts	通用修复	按三问撤回附加主题保存状态/文案/禁用政策并精确恢复目标Native；Cloud无getSaveState消费者，原ScopedSettingsHost持久化/实际拒绝与未知责任不改	已撤；外观不再显示额外保存反馈，预览不证明Host持久化	撤掉	已撤
 packages/client/ui-tool/src/client/contract/slots.ts	云端定制	仅压缩工具槽重复说明以满足原127行报告预算；保原槽语义、成员和默认行为，不抬预算	原生说明在现有报告预算内通过时可撤回	搬进插件	已按新原生重加
 packages/client/ui-trajectory/src/client/duration-store.ts	扩展点	“显示耗时”偏好走页面存储端口	上游若提供页面级默认存储端口，本文件不用改	留作口子	没动
 packages/client/ui-trajectory/src/client/index.ts	扩展点	把 clientPersistence 传给两个偏好 store	同上	留作口子	没动

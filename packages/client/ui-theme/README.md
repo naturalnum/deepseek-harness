@@ -25,7 +25,7 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Appearance feedback ships in zh, en, ja, es, fr, de, ru and pt for loading, read-only, saving, saved, refused and unconfirmed writes; the original Host save state selects the message.
+Appearance follows the Native palette preview and original settings write path. The palette preview does not confirm Host persistence; the original settings owner retains write refusal, cancellation and unknown outcomes. The additional save-status messages and choice-disabling policy have been withdrawn.
 
 Users switch the color scheme, font sizes, and fonts from rows in Settings (General section); the choices persist across restarts in every authenticated browser. Feature plugins consume the current snapshot through `ctx.theme` and read the `--dsw-*` tokens in CSS; they do not manage theme state themselves.
 

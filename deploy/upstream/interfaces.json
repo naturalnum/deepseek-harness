@@ -1,7 +1,7 @@
 {
   "counts": {
-    "native_source_files": 196,
-    "non_seam_files": 69,
+    "native_source_files": 191,
+    "non_seam_files": 64,
     "uncentralized_internal_lines": 0
   },
   "imports": [
@@ -10022,47 +10022,47 @@
     {
       "路径": "packages/client/ui-theme/src/client/AppearanceRow.tsx",
       "类别": "通用修复",
-      "原因": "保存中、只读、未确认时禁用主题按钮并显示状态",
-      "撤销条件": "同上",
+      "原因": "按三问撤回附加主题保存状态/文案/禁用政策并精确恢复目标Native；Cloud无getSaveState消费者，原ScopedSettingsHost持久化/实际拒绝与未知责任不改",
+      "撤销条件": "已撤；外观不再显示额外保存反馈，预览不证明Host持久化",
       "处置": "撤掉",
-      "这一程的状态": "没动",
-      "changed": true
+      "这一程的状态": "已撤",
+      "changed": false
     },
     {
       "路径": "packages/client/ui-theme/src/client/index.ts",
       "类别": "通用修复",
-      "原因": "主题写入区分已保存、被拒、未确认，不再把失败当成功",
-      "撤销条件": "向上游提交",
+      "原因": "按三问撤回附加主题保存状态/文案/禁用政策并精确恢复目标Native；Cloud无getSaveState消费者，原ScopedSettingsHost持久化/实际拒绝与未知责任不改",
+      "撤销条件": "已撤；外观不再显示额外保存反馈，预览不证明Host持久化",
       "处置": "撤掉",
-      "这一程的状态": "没动",
-      "changed": true
+      "这一程的状态": "已撤",
+      "changed": false
     },
     {
       "路径": "packages/client/ui-theme/src/client/locales.ts",
       "类别": "通用修复",
-      "原因": "保存状态文案",
-      "撤销条件": "同上",
+      "原因": "按三问撤回附加主题保存状态/文案/禁用政策并精确恢复目标Native；Cloud无getSaveState消费者，原ScopedSettingsHost持久化/实际拒绝与未知责任不改",
+      "撤销条件": "已撤；外观不再显示额外保存反馈，预览不证明Host持久化",
       "处置": "撤掉",
-      "这一程的状态": "没动",
-      "changed": true
+      "这一程的状态": "已撤",
+      "changed": false
     },
     {
       "路径": "packages/client/ui-theme/src/client/settings-store.ts",
       "类别": "通用修复",
-      "原因": "行状态里增加 saveState",
-      "撤销条件": "同上",
+      "原因": "按三问撤回附加主题保存状态/文案/禁用政策并精确恢复目标Native；Cloud无getSaveState消费者，原ScopedSettingsHost持久化/实际拒绝与未知责任不改",
+      "撤销条件": "已撤；外观不再显示额外保存反馈，预览不证明Host持久化",
       "处置": "撤掉",
-      "这一程的状态": "没动",
-      "changed": true
+      "这一程的状态": "已撤",
+      "changed": false
     },
     {
       "路径": "packages/client/ui-theme/src/theme-settings.ts",
       "类别": "通用修复",
-      "原因": "ThemeSaveState 类型",
-      "撤销条件": "同上",
+      "原因": "按三问撤回附加主题保存状态/文案/禁用政策并精确恢复目标Native；Cloud无getSaveState消费者，原ScopedSettingsHost持久化/实际拒绝与未知责任不改",
+      "撤销条件": "已撤；外观不再显示额外保存反馈，预览不证明Host持久化",
       "处置": "撤掉",
-      "这一程的状态": "没动",
-      "changed": true
+      "这一程的状态": "已撤",
+      "changed": false
     },
     {
       "路径": "packages/client/ui-tool/src/client/contract/slots.ts",
