@@ -23,6 +23,7 @@ const bounds = { maxHomeBytes: 4096, maxCollectionItems: 16, maxFrameBytes: 6553
 const fileRpc = ['read', 'stat', 'list', 'readBytes'].map(method => ({ endpoint: `workspaceFiles/${method}`,
   handlerId: 'native:workspaceFiles', guard: 'account-session' as const }))
 const changes = { endpoint: 'workspaceFiles/changes', handlerId: 'native:workspaceFiles', guard: 'account-session' as const }
+const pages = { endpoint: 'workspaceFiles/listPages', handlerId: 'native:workspaceFiles', guard: 'account-session' as const }
 const projection = { endpoint: 'session/projections', handlerId: 'native:sessionController', guard: 'account-session' as const }
 
 async function fixture(rpc: readonly EndpointExposure[] = [], streams: readonly EndpointExposure[] = [],
@@ -148,6 +149,36 @@ it('keeps preview disabled for a partial selected group while still requiring co
   const f = await fixture(fileRpc.slice(0, -1), [changes]), result = await f.produce()
   expect(JSON.parse(result.body)).toMatchObject({ capabilities: { filePreview: { state: 'disabled', reason: 'not-approved' } } })
   expect(f.content).toHaveBeenCalled()
+})
+
+it('audits the exact directory page stream and withdraws its bootstrap when the original stream audit rejects', async () => {
+  const f = await fixture(fileRpc, [changes, pages]), result = await f.produce()
+  expect(f.auditedStream).toHaveBeenCalledWith(pages.endpoint)
+  expect(JSON.parse(result.body)).toMatchObject({ capabilities: { filePreview: { state: 'available' } } })
+  const original = f.auditedStream.getMockImplementation()
+  f.auditedStream.mockImplementation((endpoint) => {
+    if (endpoint === pages.endpoint) throw new CloudApiError('cloud/account-unavailable', 'Original directory stream was withdrawn.')
+    if (original === undefined) throw new Error('Original stream audit missing')
+    return original(endpoint)
+  })
+  expect(result.assertCurrent).toThrow('Original directory stream was withdrawn.')
+})
+
+it.each([
+  { ...pages, guard: 'authenticated-account' as const },
+  { ...pages, guard: 'account-project' as const },
+  { ...pages, handlerId: 'native:other' },
+  { ...pages, endpoint: 'workspaceFiles/listPagesMore' },
+])('rejects an unreviewed directory page declaration before its owner audit: %j', async (row) => {
+  const f = await fixture(fileRpc, [changes, row])
+  await expect(f.produce()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+  expect(f.auditedStream).not.toHaveBeenCalledWith(row.endpoint)
+})
+
+it('rejects the directory page stream selected as unary', async () => {
+  const f = await fixture([...fileRpc, pages], [changes])
+  await expect(f.produce()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+  expect(f.auditedRpc).not.toHaveBeenCalledWith(pages.endpoint)
 })
 
 it.each(['cloudProjects/delete', 'workspaceFiles/write', 'workspaceFiles/readMore', 'workspaceFiles/changes'])(

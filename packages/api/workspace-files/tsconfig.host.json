@@ -12,6 +12,7 @@
     "src/search.ts"
   ],
   "references": [
+    { "path": "../../util/brand" },
     {
       "path": "../../../vendor/cordis"
     },

@@ -7,7 +7,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomUUID } from 'node:crypto'
 import { Context, FiberState } from '@deepseek-ai/cordis'
 import { boot } from '@deepseek-ai/dsh-app-boot'
-import { FsTargetKey, FsVersion, type FsTarget } from '@deepseek-ai/dsh-fs'
+import { FsError, FsTargetKey, FsVersion, type FsTarget } from '@deepseek-ai/dsh-fs'
 import SessionStore from '@deepseek-ai/dsh-session'
 import { loadBaselineInstructions } from '@deepseek-ai/dsh-agent-instructions'
 import Storage from '@deepseek-ai/dsh-storage'
@@ -26,8 +26,9 @@ import type { AccountFileSelection } from '../src/text-project.ts'
 import type { FdContentLimits, FdWorkerInput } from '../src/worker-protocol.ts'
 
 const contentLimits: FdContentLimits = Object.freeze({ maxEntries: 8, maxNameBytes: 64, maxReplyBytes: 8192, operationTimeoutMs: 3000 })
+const pagingLimits = Object.freeze({ idleTimeoutMs: 3000, totalTimeoutMs: 10000, maxPages: 64 })
 
-async function fixture(mode = 'normal', abiVersion = 7, waitTimeoutMs = 3000, content?: FdContentLimits) {
+async function fixture(mode = 'normal', abiVersion = 7, waitTimeoutMs = 3000, content?: FdContentLimits, directoryPaging?: FdWorkerInput['directoryPaging']) {
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'text-project-')))
   const projects = join(home, 'projects'), project = join(projects, 'default-workspace')
   mkdirSync(project, { recursive: true })
@@ -47,10 +48,12 @@ async function fixture(mode = 'normal', abiVersion = 7, waitTimeoutMs = 3000, co
     readyTimeoutMs: 2000, drainTimeoutMs: 20, helperPath: '/test-only/not-loaded.node',
     maxReadBytes: 64, maxPathBytes: 1024, maxResolveRetries: 2, readChunkBytes: 2,
     ...content === undefined ? {} : { content },
+    ...directoryPaging === undefined ? {} : { directoryPaging },
   }, (input) => {
     workerInputs.push(input)
     const worker = new Worker(new URL('./fixtures/text-worker.mjs', import.meta.url),
-      { workerData: { mode, gate, abiVersion: mode === 'content-mixed' && workerInputs.length === 2 ? 7 : abiVersion, content: input.content } })
+      { workerData: { mode, gate, abiVersion: mode === 'content-mixed' && workerInputs.length === 2 ? 7 : abiVersion,
+        content: input.content, directoryPaging: input.directoryPaging } })
     workers.push(worker)
     return worker
   })
@@ -121,6 +124,113 @@ it('rejects ungranted native patch/delete/move before dispatch while retaining o
   expect(readFileSync(join(test.project, 'kept.txt'), 'utf8')).toBe('kept')
   expect(() => statSync(join(test.project, 'destination.txt'))).toThrow()
   expect([...test.counters]).toEqual(before)
+})
+
+it('separates actual page EOF/slot completion from the original retained result reservation', async () => {
+  const test = await fixture('normal', 8, 3000, contentLimits, pagingLimits)
+  for (let index = 0; index < 17; index++) writeFileSync(join(test.project, `item-${index}`), 'x')
+  const current = vi.fn()
+  const scope = { workspace: test.workspace, assertCurrent: () => {}, directoryPagingAllowed: true as const,
+    directoryPagingCurrent: current }
+  const target = await test.selected(scope, () => test.fs.resolve('.'))
+  expect(await test.selected(scope, () => test.fs.listDirectory(target))).toMatchObject({ truncated: true, directoryPaging: true })
+  const enumeration = await test.selected(scope, () => test.fs.openDirectory(target, 64))
+  try {
+    expect(test.pool.inspect().work.running).toBe(1)
+    expect(test.pool.inspect().work.residentBytes).toBeGreaterThan(0)
+    const pages = [await enumeration.next(), await enumeration.next(), await enumeration.next()]
+    expect(pages.map(page => page.entries.length)).toEqual([8, 8, 1])
+    expect(pages.map(page => [page.eof, page.closed])).toEqual([[false, false], [false, false], [true, true]])
+    expect(new Set(pages.flatMap(page => page.entries.map(entry => entry.name))).size).toBe(17)
+    expect(pages.every(page => page.version === enumeration.version)).toBe(true)
+    expect(current).toHaveBeenCalled()
+    expect(test.pool.inspect().work.running).toBe(0)
+    expect(test.pool.inspect().work.residentBytes).toBeGreaterThan(0)
+  } finally { await enumeration.close() }
+  expect(test.pool.inspect().work).toMatchObject({ running: 0, pending: 0, residentBytes: 0 })
+})
+
+it('joins the native close barrier before releasing either the slot or original page reservation', async () => {
+  const test = await fixture('paging-block-close', 8, 3000, contentLimits, pagingLimits)
+  const scope = { workspace: test.workspace, assertCurrent: () => {}, directoryPagingAllowed: true as const,
+    directoryPagingCurrent: () => {} }
+  const target = await test.selected(scope, () => test.fs.resolve('.'))
+  const enumeration = await test.selected(scope, () => test.fs.openDirectory(target, 8))
+  let settled = false
+  const closing = enumeration.close().then(() => { settled = true })
+  try {
+    await vi.waitFor(() => { expect(Atomics.load(test.counters, 1)).toBe(1) })
+    expect(settled).toBe(false)
+    expect(test.pool.inspect().work.running).toBe(1)
+    expect(test.pool.inspect().work.residentBytes).toBeGreaterThan(0)
+    expect(() => enumeration.assertCurrent()).toThrow()
+    test.release(); await closing
+    expect(test.pool.inspect().work).toMatchObject({ running: 0, pending: 0, residentBytes: 0 })
+  } finally { test.release(); await closing }
+})
+
+it('rechecks captured stream authority before another native page dispatch after a pause', async () => {
+  const test = await fixture('normal', 8, 3000, contentLimits, pagingLimits)
+  for (let index = 0; index < 17; index++) writeFileSync(join(test.project, `item-${index}`), 'x')
+  let allowed = true
+  const scope = { workspace: test.workspace, assertCurrent: () => {}, directoryPagingAllowed: true as const,
+    directoryPagingCurrent: () => { if (!allowed) throw new FsError('Original stream revoked.', 'FS_PERMISSION_DENIED') } }
+  const target = await test.selected(scope, () => test.fs.resolve('.'))
+  const enumeration = await test.selected(scope, () => test.fs.openDirectory(target, 8))
+  await enumeration.next()
+  expect(Atomics.load(test.counters, 3)).toBe(1)
+  allowed = false
+  await expect(enumeration.next()).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  expect(Atomics.load(test.counters, 3)).toBe(1)
+  await enumeration.close()
+  expect(test.pool.inspect().work).toMatchObject({ running: 0, pending: 0, residentBytes: 0 })
+})
+
+it('cancels an idle no-credit enumeration through actual closure and original pool settlement', async () => {
+  const test = await fixture('normal', 8, 3000, contentLimits, pagingLimits), control = new AbortController()
+  const scope = { workspace: test.workspace, assertCurrent: () => {}, directoryPagingAllowed: true as const,
+    directoryPagingCurrent: () => {} }
+  const target = await test.selected(scope, () => test.fs.resolve('.'))
+  const enumeration = await test.selected(scope, () => test.fs.openDirectory(target, 8, control.signal))
+  control.abort()
+  await enumeration.close()
+  expect(Atomics.load(test.counters, 3)).toBe(0)
+  expect(test.pool.inspect().work).toMatchObject({ running: 0, pending: 0, residentBytes: 0 })
+})
+
+it('does not disclose or emulate paging when the selected pool lacks the actual optional capability', async () => {
+  const test = await fixture('paging-unavailable', 8, 3000, contentLimits, pagingLimits)
+  const scope = { workspace: test.workspace, assertCurrent: () => {}, directoryPagingAllowed: true as const,
+    directoryPagingCurrent: () => {} }
+  const target = await test.selected(scope, () => test.fs.resolve('.'))
+  expect(await test.selected(scope, () => test.fs.listDirectory(target))).not.toHaveProperty('directoryPaging')
+  await expect(test.selected(scope, () => test.fs.openDirectory(target, 8))).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  expect(Atomics.load(test.counters, 3)).toBe(0)
+})
+
+it('admits the last allowed page and refuses a further scan when the total page budget is exhausted', async () => {
+  const test = await fixture('normal', 8, 3000, contentLimits, { ...pagingLimits, maxPages: 1 })
+  for (let index = 0; index < 17; index++) writeFileSync(join(test.project, `item-${index}`), 'x')
+  const scope = { workspace: test.workspace, assertCurrent: () => {}, directoryPagingAllowed: true as const,
+    directoryPagingCurrent: () => {} }
+  const target = await test.selected(scope, () => test.fs.resolve('.'))
+  const enumeration = await test.selected(scope, () => test.fs.openDirectory(target, 8))
+  expect(await enumeration.next()).toMatchObject({ eof: false, closed: false, entries: expect.any(Array) })
+  await expect(enumeration.next()).rejects.toMatchObject({ code: 'FS_TOO_LARGE' })
+  expect(Atomics.load(test.counters, 3)).toBe(1)
+  await enumeration.close()
+  expect(test.pool.inspect().work).toMatchObject({ running: 0, pending: 0, residentBytes: 0 })
+})
+
+it('distinguishes actual worker/slot exit from unconfirmed Native closure', async () => {
+  const test = await fixture('paging-close-unknown', 8, 3000, contentLimits, pagingLimits)
+  const scope = { workspace: test.workspace, assertCurrent: () => {}, directoryPagingAllowed: true as const,
+    directoryPagingCurrent: () => {} }
+  const target = await test.selected(scope, () => test.fs.resolve('.'))
+  const enumeration = await test.selected(scope, () => test.fs.openDirectory(target, 8))
+  await expect(enumeration.close()).rejects.toMatchObject({ code: 'FS_IO_ERROR', cause: { code: 'FS_IO_ERROR' } })
+  await vi.waitFor(() => { expect(test.pool.inspect().work).toMatchObject({ running: 0, pending: 0, residentBytes: 0 }) })
+  await expect(enumeration.close()).rejects.toMatchObject({ code: 'FS_IO_ERROR', cause: { code: 'FS_IO_ERROR' } })
 })
 
 it('bounds Native discovery at the original Workspace root and rejects stale selection', async () => {
@@ -426,7 +536,7 @@ it('requires actual ABI8 handshakes and forwards every explicit content capacity
   expect(() => { test.port.assertContentAvailable() }).toThrow('retired')
 })
 
-it.each(['no-config', 'content-mixed'])('rejects ABI8 capability mismatch before mounting the FS: %s', async (mode) => {
+it.each(['no-config', 'content-mixed', 'content-no-directory'])('rejects ABI8 capability mismatch before mounting the FS: %s', async (mode) => {
   await expect(fixture(mode, 8, 3000, mode === 'no-config' ? undefined : contentLimits))
     .rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
 })
@@ -477,6 +587,54 @@ it.each(['entries', 'name', 'reply'])('rejects the entire directory reply at the
   writeFileSync(join(test.project, 'aa'), 'x')
   if (kind === 'entries') writeFileSync(join(test.project, 'b'), 'x')
   await expect(test.fs.listDir(root)).rejects.toMatchObject({ code: 'FS_TOO_LARGE' })
+  expect(test.pool.inspect().work).toMatchObject({ pending: 0, residentBytes: 0 })
+})
+
+it.each([0, 7, 8, 9, 17])('keeps bounded completeness explicit for %i children without changing full-list semantics', async (count) => {
+  const test = await fixture('normal', 8, 3000, contentLimits), root = await test.fs.resolve('.')
+  for (let index = 0; index < count; index++) writeFileSync(join(test.project, `file-${String(index).padStart(2, '0')}`), 'x')
+  const listing = await test.fs.listDirectory(root)
+  expect(listing.entries).toHaveLength(Math.min(count, contentLimits.maxEntries))
+  expect(listing.truncated).toBe(count > contentLimits.maxEntries)
+  const names = listing.entries.map(entry => entry.name)
+  expect(names).toEqual([...names].sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b))))
+  for (const entry of listing.entries) {
+    expect(test.fs.contains(root, entry.target)).toBe(true)
+    expect(await test.fs.readBytes(entry.target, undefined, 1)).toEqual(new Uint8Array([120]))
+  }
+  if (listing.truncated) await expect(test.fs.listDir(root)).rejects.toMatchObject({ code: 'FS_TOO_LARGE' })
+  else expect((await test.fs.listDir(root)).map(entry => entry.name)).toEqual(names)
+  expect(test.pool.inspect().work).toMatchObject({ pending: 0, residentBytes: 0 })
+})
+
+it('returns a marked byte-bounded subset and rejects an individually unfit entry', async () => {
+  const oneEntry = 128 + 512 + 6
+  const test = await fixture('normal', 8, 3000, { ...contentLimits, maxReplyBytes: oneEntry })
+  const root = await test.fs.resolve('.')
+  writeFileSync(join(test.project, 'a'), 'x'); writeFileSync(join(test.project, 'b'), 'x')
+  expect(await test.fs.listDirectory(root)).toMatchObject({ entries: [{ type: 'file', size: 1 }], truncated: true })
+  await expect(test.fs.listDir(root)).rejects.toMatchObject({ code: 'FS_TOO_LARGE' })
+  const tooSmall = await fixture('normal', 8, 3000, { ...contentLimits, maxReplyBytes: oneEntry - 1 })
+  writeFileSync(join(tooSmall.project, 'a'), 'x')
+  await expect(tooSmall.fs.listDirectory(await tooSmall.fs.resolve('.'))).rejects.toMatchObject({ code: 'FS_TOO_LARGE' })
+  expect(test.pool.inspect().work).toMatchObject({ pending: 0, residentBytes: 0 })
+  expect(tooSmall.pool.inspect().work).toMatchObject({ pending: 0, residentBytes: 0 })
+})
+
+it.each(['generation', 'selection'])('rejects a partial listing after its original %s expires during I/O', async (kind) => {
+  const test = await fixture('content-block', 8, 3000, contentLimits)
+  for (let index = 0; index <= contentLimits.maxEntries; index++) writeFileSync(join(test.project, String(index)), 'x')
+  let active = true
+  const scope = { workspace: test.workspace, assertCurrent() { if (!active) throw new Error('listing selection expired') } }
+  const root = await test.selected(scope, () => test.fs.resolve('.'))
+  const pending = test.selected(scope, () => test.fs.listDirectory(root))
+  const rejected = expect(pending).rejects.toThrow(kind === 'generation' ? 'retired' : 'listing selection expired')
+  await vi.waitFor(() => { expect(Atomics.load(test.counters, 1)).toBe(1) })
+  expect(test.pool.inspect().work.residentBytes).toBeGreaterThan(0)
+  if (kind === 'generation') test.stale()
+  else active = false
+  test.release()
+  await rejected
   expect(test.pool.inspect().work).toMatchObject({ pending: 0, residentBytes: 0 })
 })
 
@@ -532,9 +690,9 @@ it('keeps list targets and raw reads on their captured original project and scop
   expect(test.pool.inspect().work).toMatchObject({ pending: 0, residentBytes: 0 })
 })
 
-it('retains a cancelled listing reservation until its actual worker reply and closure', async () => {
+it.each(['listDir', 'listDirectory'] as const)('retains a cancelled %s reservation until its actual worker reply and closure', async (method) => {
   const test = await fixture('content-block', 8, 3000, contentLimits), root = await test.fs.resolve('.')
-  const controller = new AbortController(), pending = test.fs.listDir(root, controller.signal)
+  const controller = new AbortController(), pending = test.fs[method](root, controller.signal)
   const rejected = expect(pending).rejects.toMatchObject({ code: 'FS_ABORTED' })
   await vi.waitFor(() => { expect(Atomics.load(test.counters, 1)).toBe(1) })
   const retained = test.pool.inspect().work.residentBytes
@@ -672,7 +830,7 @@ it('requires the original target and same preparation identity from a fresh sele
   expect(count()).toBe(0)
 })
 
-it.each(['readText', 'streamText', 'writeText', 'readBytes', 'readByteRange', 'listDir', 'lstat', 'editText',
+it.each(['readText', 'streamText', 'writeText', 'readBytes', 'readByteRange', 'listDir', 'listDirectory', 'lstat', 'editText',
   'patchText', 'deleteFile', 'moveFile', 'watch', 'fileUrl', 'contains', 'early-processPath'])
 ('denies preparation %s without worker I/O', async (method) => {
   const test = await fixture('normal', 8, 3000, contentLimits), { scope } = directoryPreparation(test)
@@ -685,6 +843,7 @@ it.each(['readText', 'streamText', 'writeText', 'readBytes', 'readByteRange', 'l
     if (method === 'readBytes') return test.fs.readBytes(target, undefined, 1)
     if (method === 'readByteRange') return test.fs.readByteRange(target, { offset: 0, length: 1 })
     if (method === 'listDir') return test.fs.listDir(target)
+    if (method === 'listDirectory') return test.fs.listDirectory(target)
     if (method === 'lstat') return test.fs.lstat(test.project, { cwd: test.project })
     if (method === 'editText') return test.fs.editText(target, { oldString: 'old', newString: 'new', replaceAll: false })
     if (method === 'patchText') return test.fs.patchText(target, [])
@@ -773,10 +932,11 @@ it('reports a missing ancestor as native not-found without weakening project iso
   await expect(test.fs.resolve('/outside-project/skills')).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
 })
 
-it('publishes the Office catalog with scoped default roots and notices new workspace skills', async () => {
+it('publishes the Office catalog with an isolated workspace skill root and notices new skills', async () => {
   const test = await fixture('normal', 8, 3000, contentLimits)
   await test.graph.plugin(SkillRegistry)
-  await test.graph.plugin(SkillFileSystem, { dshHome: '/outside-test-scope/dsh', agentsHome: '/outside-test-scope/agents', includeDefaultRoots: false })
+  await test.graph.plugin(SkillFileSystem, { dshHome: '/outside-test-scope/dsh', agentsHome: '/outside-test-scope/agents',
+    includeDefaultRoots: false, customSkillDirs: [join(test.project, '.agents/skills')] })
   await test.graph.plugin(Office)
   const first = await test.graph.skills.snapshot({ cwd: test.project })
   expect(first.complete).toBe(true)
@@ -784,9 +944,7 @@ it('publishes the Office catalog with scoped default roots and notices new works
   const root = join(test.project, '.agents/skills')
   mkdirSync(root, { recursive: true })
   writeFileSync(join(root, 'new-skill.md'), '---\nname: new-skill\ndescription: Test\n---\nHello')
-  const deadline = Date.now() + 5000
-  while (!(await test.graph.skills.snapshot({ cwd: test.project })).skills.some(skill => skill.name === 'new-skill')) {
-    if (Date.now() >= deadline) throw new Error('New workspace skill was not discovered')
-    await new Promise(resolve => setTimeout(resolve, 50))
-  }
+  await vi.waitFor(async () => {
+    expect((await test.graph.skills.snapshot({ cwd: test.project })).skills.some(skill => skill.name === 'new-skill')).toBe(true)
+  }, { timeout: 2000 })
 })

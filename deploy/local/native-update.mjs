@@ -43,6 +43,194 @@ function requireAssetPlan(plan) {
     || plan.asset.maxPathBytes !== plan.originalAsset.maxPathBytes) throw new NativeDeliveryUnconfirmed('native-asset-input')
 }
 
+const DIRECTORY_INPUT = 'pe-cloud-local-native-directory-asset/v1'
+const DIRECTORY_PLAN = 'pe-cloud-local-native-directory-plan/v1'
+const ARM_SHA = 'ab72d61fa50e2c91b34bac7a2b53ee42c4f1a184754592acdc19fc89ff39da3c'
+const ARM_PROVENANCE_SHA = '05d74360aa303e04b2e013a621acdacab305e0bc37370c2bb02256e7e38655ed'
+const ARM_SOURCE_SHA = '52d1081e425a1dc6b44c21c1d4eecb39de50e2e30dff4b07315934600687468f'
+const NATIVE_PATHS = ['fd.c', 'skill-project.h', 'skill-versions.h', 'skill-bundles.h']
+const READER_PATHS = ['packages/cloud/pe-cloud-files/src/file-worker.ts', 'packages/cloud/pe-cloud-files/src/worker-client.ts',
+  'packages/cloud/pe-cloud-files/src/worker-pool.ts', 'packages/api/workspace-files/src/index.ts',
+  'packages/cloud/pe-cloud-access/src/bootstrap-producer.ts', 'packages/cloud/pe-cloud-runtime/src/account-native-integration.ts',
+  'packages/client/ui-sidebar-files/src/client/directory-pages.ts']
+
+/**
+ * Accept only explicit artifact paths, predecessor identity and the original three budgets.
+ * @param {object} input Private new-asset request; protocol and selectors are code-owned.
+ * @returns {void} Rejects extra fields and invalid budgets before environment discovery.
+ */
+export function requireDirectoryAssetInput(input) {
+  exactFields(input, ['format', 'predecessor', 'assetFile', 'provenanceFile', 'sourceManifestFile', 'compatibleBundle', 'directoryPaging'])
+  exactFields(input.predecessor, ['operation', 'descriptorSha256', 'targetTupleSha256'])
+  if (input.format !== DIRECTORY_INPUT || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(input.predecessor.operation)
+    || !['descriptorSha256', 'targetTupleSha256'].every(key => /^[a-f0-9]{64}$/.test(input.predecessor[key]))
+    || !['assetFile', 'provenanceFile', 'sourceManifestFile', 'compatibleBundle'].every(key =>
+      typeof input[key] === 'string' && input[key] === resolve(input[key]) && !input[key].includes('\0'))) {
+    throw new NativeDeliveryUnconfirmed('directory-asset-input')
+  }
+  profileModule.directoryPaging(input.directoryPaging)
+}
+
+function publicArtifact(filename, maximum) {
+  let fd, bytes, failure
+  try {
+    fd = fs.openSync(filename, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW)
+    const before = fs.fstatSync(fd)
+    if (!before.isFile() || before.nlink !== 1 || before.size < 1 || before.size > maximum) {
+      throw new NativeDeliveryUnconfirmed('directory-artifact-file')
+    }
+    bytes = fs.readFileSync(fd)
+    const after = fs.fstatSync(fd), view = fs.lstatSync(filename)
+    if (bytes.length !== before.size || before.dev !== after.dev || before.ino !== after.ino
+      || before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs
+      || view.isSymbolicLink() || view.dev !== after.dev || view.ino !== after.ino) {
+      throw new NativeDeliveryUnconfirmed('directory-artifact-changed')
+    }
+  } catch (error) { failure = error }
+  if (fd !== undefined) try { fs.closeSync(fd) } catch (error) { failure = failure === undefined ? error : new AggregateError([failure, error], 'artifact read and close failed') }
+  if (failure !== undefined) throw new NativeDeliveryUnconfirmed('directory-artifact-read', failure)
+  return bytes
+}
+
+function directoryArtifacts(input) {
+  const asset = publicArtifact(input.assetFile, 143776), raw = publicArtifact(input.provenanceFile, 32768)
+  const source = publicArtifact(input.sourceManifestFile, 4096)
+  if (asset.length !== 143776 || digest(asset) !== ARM_SHA || digest(raw) !== ARM_PROVENANCE_SHA || digest(source) !== ARM_SOURCE_SHA) {
+    throw new NativeDeliveryUnconfirmed('directory-arm-origin')
+  }
+  const provenance = JSON.parse(raw), rows = source.toString('utf8').trimEnd().split('\n').map(row => row.match(/^([a-f0-9]{64})  ([a-z.-]+)$/))
+  if (rows.length !== 4 || rows.some((row, index) => !row || row[2] !== NATIVE_PATHS[index])
+    || provenance.sha256 !== ARM_SHA || provenance.bytes !== 143776
+    || provenance.target !== 'linux-arm64-glibc' || provenance.simulation_macros.length !== 0
+    || !isDeepStrictEqual(provenance.production_macros, ['DSH_FD_TEXT_ABI', 'DSH_FD_CONTENT_ABI', 'DSH_FD_SKILL_ABI'])) {
+    throw new NativeDeliveryUnconfirmed('directory-arm-provenance')
+  }
+  return { asset, arm: { assetSha256: ARM_SHA, bytes: asset.length, provenanceSha256: digest(raw),
+    sourceManifestSha256: digest(source), sourceCommit: provenance.source_commit, sourceTree: provenance.source_tree,
+    builderImage: provenance.builder_image_id, baseImage: provenance.base_image_id,
+    recipeManifestSha256: provenance.recipe_manifest_sha256, productionMacros: provenance.production_macros },
+  nativeSources: rows.map(row => ({ path: 'packages/cloud/pe-cloud-files/native/' + row[2], sha256: row[1] })) }
+}
+
+function readerConfigDeclarationSha(bytes) {
+  const text = bytes.toString('utf8'), start = text.indexOf('  static Config: z<Config> = z.object({')
+  const end = start < 0 ? -1 : text.indexOf('\n  })', start)
+  if (start < 0 || end < 0) throw new NativeDeliveryUnconfirmed('directory-reader-config-source')
+  return digest(Buffer.from(text.slice(start, end + 5)))
+}
+
+function installedReaderConfigSha(manifest) {
+  if (!/^[a-f0-9]{40}$/.test(manifest.sourceCommit)) throw new NativeDeliveryUnconfirmed('directory-installed-reader-source')
+  try { return readerConfigDeclarationSha(execFileSync('git', ['--no-replace-objects', '-C', ROOT, 'show',
+    manifest.sourceCommit + ':packages/api/workspace-files/src/index.ts'], { maxBuffer: 1048576, stdio: ['ignore', 'pipe', 'pipe'] })) }
+  catch (error) { throw new NativeDeliveryUnconfirmed('directory-installed-reader-config', error) }
+}
+
+/**
+ * Read each product bundle's actual source commit and unchanged four C inputs.
+ * @param {object[]} manifests Manifests returned by the normal archive verifier.
+ * @param {object[]} nativeSources Exact original four sources admitted from the frozen ARM manifest.
+ * @param {string} sourceRoot Omitted uses the normal controller repository; supplied uses another source object store only.
+ * @returns {object[]} Real commit/tree/blob/SHA observations; this function issues no Root authority.
+ */
+export function directoryReaderSources(manifests, nativeSources, sourceRoot = ROOT) {
+  const git = args => {
+    try { return execFileSync('git', ['--no-replace-objects', '-C', sourceRoot, ...args], { maxBuffer: 4 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'pipe'], env: { PATH: process.env.PATH, GIT_TERMINAL_PROMPT: '0' } }) }
+    catch (error) { throw new NativeDeliveryUnconfirmed('directory-reader-source-unavailable', error) }
+  }
+  return manifests.map(manifest => {
+    if (!/^[a-f0-9]{40}$/.test(manifest.sourceCommit) || manifest.nodeVersion !== '24.19.0') {
+      throw new NativeDeliveryUnconfirmed('directory-reader-source')
+    }
+    const commit = git(['rev-parse', '--verify', manifest.sourceCommit + '^{commit}']).toString().trim()
+    const tree = git(['rev-parse', manifest.sourceCommit + '^{tree}']).toString().trim()
+    if (commit !== manifest.sourceCommit || !/^[a-f0-9]{40}$/.test(tree)) throw new NativeDeliveryUnconfirmed('directory-reader-commit')
+    let readerConfigSourceSha256
+    const files = [...nativeSources.map(row => row.path), ...READER_PATHS].map(path => {
+      const bytes = git(['show', manifest.sourceCommit + ':' + path])
+      if (path === 'packages/api/workspace-files/src/index.ts') readerConfigSourceSha256 = readerConfigDeclarationSha(bytes)
+      const expected = nativeSources.find(row => row.path === path)
+      if (expected && digest(bytes) !== expected.sha256) throw new NativeDeliveryUnconfirmed('directory-reader-four-c')
+      return { path, blob: createHash('sha1').update(Buffer.concat([Buffer.from('blob ' + bytes.length + '\0'), bytes])).digest('hex'), sha256: digest(bytes) }
+    })
+    return { sourceCommit: commit, sourceTree: tree, readerConfigSourceSha256, files }
+  })
+}
+
+/**
+ * Read the two distinct saved plan formats without widening legacy exact fields.
+ * @param {object} plan Previously derived private asset plan.
+ * @returns {void} Rejects inconsistent origin, profile protocol and budget commitments.
+ */
+export function requireSavedAssetPlan(plan) {
+  if (plan?.format !== DIRECTORY_PLAN) return requireAssetPlan(plan)
+  exactFields(plan, ['format', 'assetFile', 'asset', 'assetParent', 'profile', 'originalAsset', 'compatibleBundle', 'origin'])
+  exactFields(plan.profile, ['target', 'maxProfileBytes', 'original', 'originalHelperPath', 'nativeProtocol', 'directoryPaging', 'directoryFacts'])
+  const { nativeProtocol, directoryPaging, directoryFacts, ...legacyProfile } = plan.profile
+  const { origin, ...legacy } = plan
+  requireAssetPlan({ ...legacy, format: 'pe-cloud-local-native-asset/v1', profile: legacyProfile })
+  profileModule.directoryPaging(directoryPaging)
+  if (nativeProtocol !== profileModule.DIRECTORY_PROTOCOL || origin?.format !== 'pe-cloud-directory-reader-origin/v1'
+    || origin.arm?.assetSha256 !== ARM_SHA || origin.arm?.provenanceSha256 !== ARM_PROVENANCE_SHA
+    || origin.arm?.sourceManifestSha256 !== ARM_SOURCE_SHA || !/^[a-f0-9]{64}$/.test(origin.readerConfigSourceSha256) || plan.asset.sha256 !== ARM_SHA || plan.asset.bytes !== 143776
+    || plan.asset.sourceSha256 !== ARM_SOURCE_SHA
+    || digest(JSON.stringify(directoryFacts)) !== origin.directoryFactsSha256
+    || directoryFacts?.format !== 'pe-cloud-directory-profile-facts/v1' || directoryFacts.nativeProtocol !== nativeProtocol
+    || !isDeepStrictEqual(directoryPaging, directoryFacts.directoryPaging)
+    || !isDeepStrictEqual(directoryFacts.stream, profileModule.DIRECTORY_STREAM)) {
+    throw new NativeDeliveryUnconfirmed('saved-directory-asset-plan')
+  }
+}
+
+/**
+ * Derive immutable source/asset data and actual bounded profile facts before a new stage.
+ * @param {object} request Verified predecessor, saved controller, explicit input and real normal bundle.
+ * @returns {Promise<object>} New strict plan, verified manifests and unchanged formal ARM bytes; no publication.
+ */
+export async function deriveDirectoryAsset({ input, previousInput, previous, normalBundle, controller, current }) {
+  requireDirectoryAssetInput(input)
+  if (!isDeepStrictEqual({ namespaceId: current.namespaceId, nodePath: current.nodePath, seccompPath: current.seccompPath,
+    holder: current.holder }, previousInput.context)) throw new NativeDeliveryUnconfirmed('directory-facts-generation-changed')
+  if (!isDeepStrictEqual(input.predecessor, { operation: previous.record.operation,
+    descriptorSha256: previous.record.descriptorSha256, targetTupleSha256: previous.record.targetTupleSha256 })) {
+    throw new NativeDeliveryUnconfirmed('directory-predecessor-mismatch')
+  }
+  const normalManifest = await verifyBundle(resolve(normalBundle)), compatibleManifest = await verifyBundle(input.compatibleBundle)
+  for (const manifest of [normalManifest, compatibleManifest]) {
+    if (manifest.externalDependencyHash !== previous.installed.manifest.externalDependencyHash
+      || manifest.researchLockHash !== previous.installed.manifest.researchLockHash) throw new NativeDeliveryUnconfirmed('native-reader-dependencies')
+  }
+  const products = [normalManifest, compatibleManifest].map(m => JSON.stringify(m.files.map(row =>
+    ({ path: row.path, mode: row.mode, size: row.size, sha256: row.sha256 })).sort((a, b) => a.path.localeCompare(b.path))))
+  if (products[0] === products[1]) throw new NativeDeliveryUnconfirmed('directory-ambiguous-readers')
+  const artifacts = directoryArtifacts(input), readers = directoryReaderSources([normalManifest, compatibleManifest], artifacts.nativeSources)
+  const readerConfigSourceSha256 = installedReaderConfigSha(previous.installed.manifest)
+  if (readers.some(row => row.readerConfigSourceSha256 !== readerConfigSourceSha256)) throw new NativeDeliveryUnconfirmed('directory-reader-config-changed')
+  const prior = previousInput.plan, installed = previous.installed
+  if (installed.asset.sha256 === ARM_SHA || installed.asset.maxAssetBytes < artifacts.asset.length) {
+    throw new NativeDeliveryUnconfirmed('directory-new-asset-required')
+  }
+  const asset = { ...prior.asset, sha256: ARM_SHA, bytes: artifacts.asset.length, sourceSha256: ARM_SOURCE_SHA }
+  const profile = { target: prior.profile.target, maxProfileBytes: prior.profile.maxProfileBytes,
+    original: { source: installed.profile.source, sha256: installed.profile.sha256, identity: structuredClone(installed.profile.identity) },
+    originalHelperPath: installed.asset.path,
+    nativeProtocol: profileModule.DIRECTORY_PROTOCOL, directoryPaging: profileModule.directoryPaging(input.directoryPaging) }
+  const approved = { ...structuredClone(previousInput.approved), asset,
+    profile: { ...profile, nextHelperPath: '/opt/dsh-feature-assets/fd-skill-store-v1-' + ARM_SHA + '.node' } }
+  const authority = await createNativeAuthority(current, approved)
+  await authority.readProtectedInputs()
+  const facts = await authority.readDirectoryFacts()
+  profile.directoryFacts = facts
+  const origin = { format: 'pe-cloud-directory-reader-origin/v1', arm: artifacts.arm, nativeSources: artifacts.nativeSources,
+    readers, readerConfigSourceSha256, directoryFactsSha256: digest(JSON.stringify(facts)) }
+  const plan = { format: DIRECTORY_PLAN, assetFile: input.assetFile, asset, assetParent: structuredClone(prior.assetParent),
+    profile, originalAsset: structuredClone(installed.asset), compatibleBundle: input.compatibleBundle, origin }
+  requireSavedAssetPlan(plan)
+  return { plan, assetBytes: artifacts.asset, normalManifest, compatibleManifest, controller,
+    protectedInputs: authority.snapshotApproved().profile.protectedInputs }
+}
+
 function privateInput(filename, withMetadata = false) {
   const fd = fs.openSync(filename, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW)
   let value, failure
@@ -268,10 +456,11 @@ function currentNativeContext(snapshot) {
 /**
  * Confirm a saved pair against a fresh Root record and the actual sealed installation, without preparing a stage.
  * @param {object} request Exact host projection/private input, current namespace facts and original Root authority.
+ * sourceRoot omission uses the saved controller repository; an explicit repository supplies source data only.
  * @returns {Promise<object>} Complete verified predecessor and its installed group; mismatch performs no mutation.
  */
-export async function confirmNativePredecessor({ latest, input, current, authority }) {
-  requireAssetPlan(input.plan)
+export async function confirmNativePredecessor({ latest, input, current, authority, sourceRoot = ROOT }) {
+  requireSavedAssetPlan(input.plan)
   const groups = input.groups
   if (!isDeepStrictEqual(input.approved?.asset, input.plan.asset)
     || !isDeepStrictEqual(input.approved?.assetParent, input.plan.assetParent)) {
@@ -294,11 +483,27 @@ export async function confirmNativePredecessor({ latest, input, current, authori
   if (!isDeepStrictEqual(latest, stateModule.legacyBarrier(record))
     || input.descriptorSha256 !== record.descriptorSha256) throw new NativeDeliveryUnconfirmed('previous-authority-mismatch')
   let descriptorSha256
-  if (input.pairBinding === undefined) {
+  if (input.assetBinding !== undefined) {
+    if (input.pairBinding !== undefined || input.plan.format !== DIRECTORY_PLAN) throw new NativeDeliveryUnconfirmed('saved-asset-binding-format')
+    descriptorSha256 = stateModule.nativeAssetDescriptor(input.assetBinding)
+    const b = input.assetBinding
+    if (!isDeepStrictEqual(b.groups, groups.map(tupleSha256)) || !isDeepStrictEqual(b.context, context)
+      || b.originSha256 !== digest(JSON.stringify(input.plan.origin))
+      || b.directoryFactsSha256 !== digest(JSON.stringify(input.plan.profile.directoryFacts))
+      || !isDeepStrictEqual(b.asset, groups[1].asset) || !isDeepStrictEqual(groups[1].asset, groups[2].asset)
+      || !isDeepStrictEqual(b.profile, { source: groups[1].profile.source, sha256: groups[1].profile.sha256, bytes: groups[1].profile.bytes })) {
+      throw new NativeDeliveryUnconfirmed('saved-asset-binding')
+    }
+  } else if (input.pairBinding === undefined) {
     descriptorSha256 = digest(JSON.stringify({ groups: groups.map(tupleSha256), assetSource: input.plan.asset.sourceSha256,
       namespaceId: context.namespaceId, holder: context.holder }))
   } else {
     descriptorSha256 = stateModule.nativeSuccessorDescriptor(input.pairBinding)
+    if (input.plan.format === DIRECTORY_PLAN && (input.pairBinding.format !== 'pe-cloud-native-directory-successor-pair/v1'
+      || input.pairBinding.originSha256 !== digest(JSON.stringify(input.plan.origin))
+      || input.pairBinding.directoryFactsSha256 !== digest(JSON.stringify(input.plan.profile.directoryFacts)))) {
+      throw new NativeDeliveryUnconfirmed('saved-directory-successor-origin')
+    }
     if (!isDeepStrictEqual(input.pairBinding.groups, groups.map(tupleSha256))
       || !isDeepStrictEqual(input.pairBinding.context, context)
       || input.pairBinding.assetSource !== input.plan.asset.sourceSha256
@@ -325,15 +530,23 @@ export async function confirmNativePredecessor({ latest, input, current, authori
     || !isDeepStrictEqual(selection(installed.profile), selection(input.approved.profile.candidate))) {
     throw new NativeDeliveryUnconfirmed('native-installed-fd-profile')
   }
+  if (input.plan.format === DIRECTORY_PLAN) {
+    for (const key of ['target', 'maxProfileBytes', 'original', 'originalHelperPath', 'nativeProtocol', 'directoryPaging', 'directoryFacts']) {
+      if (!isDeepStrictEqual(input.plan.profile[key], input.approved.profile[key])) throw new NativeDeliveryUnconfirmed('saved-directory-profile-authority')
+    }
+    const readers = directoryReaderSources(groups.slice(1).map(group => group.manifest), input.plan.origin.nativeSources, sourceRoot)
+    if (readers.some(row => row.readerConfigSourceSha256 !== input.plan.origin.readerConfigSourceSha256)) throw new NativeDeliveryUnconfirmed('saved-directory-reader-config')
+  }
   return { record, installed }
 }
 
 /**
  * Derive three observable groups exclusively from two verified product archives and the confirmed predecessor.
+ * Source objects use the saved controller repository unless an explicit read-only source repository is supplied.
  * @param {object} request Confirmed predecessor/private inputs, explicit successor identity and real normal bundle path.
  * @returns {Promise<object>} New immutable pair binding and manifests; no Root or host record is changed.
  */
-export async function deriveNativeSuccessorPair({ previousInput, previous, successor, normalBundle, controller }) {
+export async function deriveNativeSuccessorPair({ previousInput, previous, successor, normalBundle, controller, sourceRoot = ROOT }) {
   requireSuccessorInput(successor)
   if (!isDeepStrictEqual(successor.predecessor, { operation: previous.record.operation,
     descriptorSha256: previous.record.descriptorSha256, targetTupleSha256: previous.record.targetTupleSha256 })) {
@@ -350,6 +563,10 @@ export async function deriveNativeSuccessorPair({ previousInput, previous, succe
       throw new NativeDeliveryUnconfirmed('native-reader-dependencies')
     }
   }
+  if (previousInput.plan.format === DIRECTORY_PLAN) {
+    const readers = directoryReaderSources([normal, compatible], previousInput.plan.origin.nativeSources, sourceRoot)
+    if (readers.some(row => row.readerConfigSourceSha256 !== previousInput.plan.origin.readerConfigSourceSha256)) throw new NativeDeliveryUnconfirmed('successor-directory-reader-config')
+  }
   const groups = [
     { ...structuredClone(previous.installed), role: 'original' },
     { ...structuredClone(previous.installed), role: 'normal', manifest: normal },
@@ -365,32 +582,39 @@ export async function deriveNativeSuccessorPair({ previousInput, previous, succe
     context: structuredClone(previousInput.context), assetSource: previousInput.plan.asset.sourceSha256,
     asset: structuredClone(previous.installed.asset), profile: structuredClone(previous.installed.profile),
     groups: groups.map(tupleSha256) }
+  if (previousInput.plan.format === DIRECTORY_PLAN) Object.assign(pairBinding, { format: 'pe-cloud-native-directory-successor-pair/v1',
+    originSha256: digest(JSON.stringify(previousInput.plan.origin)),
+    directoryFactsSha256: digest(JSON.stringify(previousInput.plan.profile.directoryFacts)) })
   return { groups, pairBinding, descriptorSha256: stateModule.nativeSuccessorDescriptor(pairBinding),
     normalManifest: normal, compatibleManifest: compatible }
 }
 
 /**
- * Install the fixed FD/profile, switch an approved pair, or explicitly derive a same-FD/profile successor pair.
- * @param {object} request Normal command with mutually exclusive first-delivery/successor input; absent uses the saved pair.
+ * Install the fixed FD/profile, switch an approved pair, or derive an explicit same-FD pair or new-asset successor.
+ * @param {object} request Normal command with mutually exclusive first-delivery/same-FD/new-asset input; absent uses the saved pair.
  * @returns {Promise<object>} Verified new responsibility; any unknown action retains the operation lock without recovery.
  */
-export async function nativeUpdate({ mode, bundle, args, inputFile, successorFile, latest }) {
+export async function nativeUpdate({ mode, bundle, args, inputFile, successorFile, assetSuccessorFile, latest }) {
   if (!['update', 'rollback'].includes(mode)) throw new NativeDeliveryUnconfirmed('native-start-requires-owner')
-  const initial = inputFile !== undefined, successorRequested = successorFile !== undefined
+  const initial = inputFile !== undefined, successorRequested = successorFile !== undefined, assetRequested = assetSuccessorFile !== undefined
+  if (assetRequested && (initial || successorRequested || mode !== 'update' || !bundle || latest?.format !== PROJECTION)) {
+    throw new NativeDeliveryUnconfirmed('asset-successor-entry')
+  }
   if (successorRequested && (initial || mode !== 'update' || !bundle || latest?.format !== PROJECTION)) {
     throw new NativeDeliveryUnconfirmed('successor-entry')
   }
   if (initial && latest?.format === PROJECTION) throw new NativeDeliveryUnconfirmed('native-group-already-owned')
   if (!initial && latest?.format !== PROJECTION) throw new NativeDeliveryUnconfirmed('native-state-missing')
-  let plan, previousInput, savedPrevious, previous, successor, successorSaved, derived, previousAuthority, controller
+  let plan, previousInput, savedPrevious, previous, successor, successorSaved, derived, previousAuthority, controller, assetInput, assetSaved, directoryDerived
   const readPrevious = async () => {
     requireNativeReleaseComplete(STATE, undefined, latest.operation)
     if (!isDeepStrictEqual(privateInput(join(STATE, 'latest.json')), latest)
       || !isDeepStrictEqual(privateInput(join(STATE, latest.operation + '.native.json'), true), savedPrevious)
-      || successorRequested && !isDeepStrictEqual(privateInput(resolve(successorFile), true), successorSaved)) {
+      || successorRequested && !isDeepStrictEqual(privateInput(resolve(successorFile), true), successorSaved)
+      || assetRequested && !isDeepStrictEqual(privateInput(resolve(assetSuccessorFile), true), assetSaved)) {
       throw new NativeDeliveryUnconfirmed('latest-or-input-changed-before-operation')
     }
-    if (successorRequested && !isDeepStrictEqual(controllerSource(), controller)) {
+    if ((successorRequested || assetRequested) && !isDeepStrictEqual(controllerSource(), controller)) {
       throw new NativeDeliveryUnconfirmed('successor-controller-changed')
     }
     const current = currentNativeContext(await inspectCandidate())
@@ -421,27 +645,36 @@ export async function nativeUpdate({ mode, bundle, args, inputFile, successorFil
       requireSuccessorInput(successor)
       controller = controllerSource()
     }
+    if (assetRequested) {
+      assetSaved = privateInput(resolve(assetSuccessorFile), true); assetInput = assetSaved.value
+      requireDirectoryAssetInput(assetInput); controller = controllerSource()
+    }
     // No new operation, private save or Root stage before this read-only confirmation.
     previous = await readPrevious()
     plan = structuredClone(previousInput.plan)
+    if (assetRequested) {
+      directoryDerived = await deriveDirectoryAsset({ input: assetInput, previousInput, previous, normalBundle: bundle,
+        controller, current: currentNativeContext(await inspectCandidate()) })
+      plan = directoryDerived.plan
+    }
     if (successorRequested) {
       derived = await deriveNativeSuccessorPair({ previousInput, previous, successor, normalBundle: bundle, controller })
       plan.compatibleBundle = successor.compatibleBundle
     }
   }
   const selectedBundle = mode === 'rollback' ? resolve(plan.compatibleBundle) : resolve(bundle)
-  const manifest = derived?.normalManifest ?? await verifyBundle(selectedBundle)
-  const normalManifest = derived?.normalManifest ?? (initial ? manifest : previousInput.groups[1].manifest)
-  const compatibleManifest = derived?.compatibleManifest ?? (initial ? await verifyBundle(resolve(plan.compatibleBundle))
+  const manifest = directoryDerived?.normalManifest ?? derived?.normalManifest ?? await verifyBundle(selectedBundle)
+  const normalManifest = directoryDerived?.normalManifest ?? derived?.normalManifest ?? (initial ? manifest : previousInput.groups[1].manifest)
+  const compatibleManifest = directoryDerived?.compatibleManifest ?? derived?.compatibleManifest ?? (initial ? await verifyBundle(resolve(plan.compatibleBundle))
     : previousInput.groups[2].manifest)
   if (normalManifest.externalDependencyHash !== compatibleManifest.externalDependencyHash
     || normalManifest.researchLockHash !== compatibleManifest.researchLockHash) {
     throw new NativeDeliveryUnconfirmed('native-reader-dependencies')
   }
-  if (!initial && !successorRequested && ![normalManifest, compatibleManifest].some(value => isDeepStrictEqual(value, manifest))) {
+  if (!initial && !successorRequested && !assetRequested && ![normalManifest, compatibleManifest].some(value => isDeepStrictEqual(value, manifest))) {
     throw new NativeDeliveryUnconfirmed('unapproved-js-group')
   }
-  let assetBytes
+  let assetBytes = directoryDerived?.assetBytes
   if (initial) {
     assetBytes = fs.readFileSync(resolve(plan.assetFile))
     if (assetBytes.length !== plan.asset.bytes || digest(assetBytes) !== plan.asset.sha256) {
@@ -454,6 +687,14 @@ export async function nativeUpdate({ mode, bundle, args, inputFile, successorFil
       throw new NativeDeliveryUnconfirmed('latest-changed-before-operation')
     }
     if (!initial) await readPrevious()
+    if (assetRequested) {
+      const fresh = await deriveDirectoryAsset({ input: assetInput, previousInput, previous, normalBundle: bundle,
+        controller, current: currentNativeContext(await inspectCandidate()) })
+      if (!isDeepStrictEqual(fresh.plan, directoryDerived.plan) || !fresh.assetBytes.equals(assetBytes)
+        || !isDeepStrictEqual(fresh.normalManifest, normalManifest) || !isDeepStrictEqual(fresh.compatibleManifest, compatibleManifest)) {
+        throw new NativeDeliveryUnconfirmed('directory-input-changed-before-prepare')
+      }
+    }
     const privateState = { format: 'pe-cloud-local-native-input/v1', operation, plan }
     const save = state => saveNativeInput(STATE, operation, { ...privateState, state })
     const smokeArgs = args.length ? args : previousInput?.state.smokeArgs ?? args
@@ -465,41 +706,56 @@ export async function nativeUpdate({ mode, bundle, args, inputFile, successorFil
       throw new NativeDeliveryUnconfirmed('native-generation-changed')
     }
     if (!initial) requireProductOnlyRollback(state)
-    const approved = initial ? { journal: state.nativeJournal, assetParent: plan.assetParent,
+    const approved = initial || assetRequested ? { journal: state.nativeJournal, assetParent: plan.assetParent,
       asset: plan.asset, profile: plan.profile } : { ...previousInput.approved, journal: state.nativeJournal }
     const authority = await createNativeAuthority(current, approved)
-    let groups, descriptorSha256, pairBinding
-    if (initial) {
+    let groups, descriptorSha256, pairBinding, assetBinding
+    if (initial || assetRequested) {
       await authority.readProtectedInputs()
+      if (assetRequested) {
+        const facts = await authority.readDirectoryFacts()
+        if (!isDeepStrictEqual(facts, plan.profile.directoryFacts)) throw new NativeDeliveryUnconfirmed('directory-facts-changed-before-reserve')
+      }
       const candidate = await authority.previewProfile({ operation })
       Object.assign(approved, authority.snapshotApproved())
       const targetAsset = { path: '/opt/dsh-feature-assets/fd-skill-store-v1-' + plan.asset.sha256 + '.node',
         sha256: plan.asset.sha256, bytes: plan.asset.bytes, mode: 0o444,
         maxAssetBytes: plan.asset.maxAssetBytes, maxPathBytes: plan.asset.maxPathBytes }
-      groups = [{ role: 'original', productRoot: '/opt/dsh-installed-products', manifest: latest.manifest,
+      groups = [{ role: 'original', productRoot: '/opt/dsh-installed-products', manifest: assetRequested ? previous.installed.manifest : latest.manifest,
         asset: plan.originalAsset, profile: plan.profile.original },
       { role: 'normal', productRoot: '/opt/dsh-installed-products', manifest: normalManifest,
         asset: targetAsset, profile: candidate },
       { role: 'compatible', productRoot: '/opt/dsh-installed-products', manifest: compatibleManifest,
         asset: targetAsset, profile: candidate }]
-      descriptorSha256 = digest(JSON.stringify({ groups: groups.map(tupleSha256), assetSource: plan.asset.sourceSha256,
+      if (assetRequested) {
+        assetBinding = { format: 'pe-cloud-native-directory-asset-binding/v1', predecessor: structuredClone(previous.record),
+          release: { format: 'pe-cloud-native-release/v1', operation: previous.record.operation },
+          controller: { commit: controller.commit, tree: controller.tree, programSha256: controller.programSha256 },
+          context: structuredClone(previousInput.context), originSha256: digest(JSON.stringify(plan.origin)),
+          nativeProtocol: plan.profile.nativeProtocol, directoryFactsSha256: digest(JSON.stringify(plan.profile.directoryFacts)),
+          asset: structuredClone(targetAsset), profile: { source: candidate.source, sha256: candidate.sha256, bytes: candidate.bytes },
+          groups: groups.map(tupleSha256) }
+        descriptorSha256 = stateModule.nativeAssetDescriptor(assetBinding)
+      } else descriptorSha256 = digest(JSON.stringify({ groups: groups.map(tupleSha256), assetSource: plan.asset.sourceSha256,
         namespaceId: current.namespaceId, holder: current.holder }))
     } else {
       groups = structuredClone(derived?.groups ?? previousInput.groups)
       descriptorSha256 = derived?.descriptorSha256 ?? previousInput.descriptorSha256
       pairBinding = derived?.pairBinding ?? previousInput.pairBinding
+      assetBinding = successorRequested ? undefined : previousInput.assetBinding
     }
     const normal = groups[1], compatible = groups[2]
     const target = isDeepStrictEqual(manifest, normal.manifest) ? normal : compatible
     const originalTupleSha256 = initial ? tupleSha256(groups[0]) : previous.record.targetTupleSha256
-    const pins = { kind: initial ? 'fd-profile' : successorRequested ? 'successor-js' : 'matching-js',
+    const pins = { kind: initial || assetRequested ? 'fd-profile' : successorRequested ? 'successor-js' : 'matching-js',
       operation, descriptorSha256, originalTupleSha256, targetTupleSha256: tupleSha256(target),
       compatibleTupleSha256: tupleSha256(target === normal ? compatible : normal) }
     state.nativeOriginalTupleSha256 = pins.originalTupleSha256
     Object.assign(privateState, { context: { namespaceId: current.namespaceId, nodePath: current.nodePath,
       seccompPath: current.seccompPath, holder: current.holder }, approved, groups, descriptorSha256 })
     if (pairBinding !== undefined) privateState.pairBinding = pairBinding
-    if (successorRequested) privateState.controller = controller
+    if (assetBinding !== undefined) privateState.assetBinding = assetBinding
+    if (successorRequested || assetRequested) privateState.controller = controller
     const persist = () => save(state)
     const effects = nativeUpdateEffects(state, {
       observeTuple: () => authority.observeTuple(groups),
@@ -527,6 +783,7 @@ export async function nativeUpdate({ mode, bundle, args, inputFile, successorFil
     await persist()
     return runNativeDelivery({ directory: STATE, pins, authority, previousAuthority, effects,
       successor: successorRequested ? pairBinding : undefined,
+      assetSuccessor: assetRequested ? assetBinding : undefined,
       confirmPredecessor: async () => (await readPrevious()).record,
       holdOperation: action => action() })
   })

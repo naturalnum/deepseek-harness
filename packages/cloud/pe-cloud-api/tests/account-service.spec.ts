@@ -257,11 +257,15 @@ it('constructs one unchanged WorkspaceFiles through the actual Loader, inventori
   expect(inventory.rpcEndpoints.map(row => row.endpoint).sort()).toEqual([
     'workspaceFiles/list', 'workspaceFiles/read', 'workspaceFiles/readBytes', 'workspaceFiles/stat',
   ])
-  expect(inventory.streamEndpoints).toEqual([{ endpoint: 'workspaceFiles/changes', handlerId: 'native:workspaceFiles', guard: 'account-session' }])
+  expect(inventory.streamEndpoints).toEqual([
+    { endpoint: 'workspaceFiles/listPages', handlerId: 'native:workspaceFiles', guard: 'account-session' },
+    { endpoint: 'workspaceFiles/changes', handlerId: 'native:workspaceFiles', guard: 'account-session' },
+  ])
   f.api.audit(inventory)
   f.businessCurrent.mockImplementation(() => {})
   expect(f.api.requireRpc('workspaceFiles/stat').guard).toBe('account-session')
   expect(f.api.requireStream('workspaceFiles/changes').guard).toBe('account-session')
+  expect(() => f.api.requireStream('workspaceFiles/listPages')).toThrow()
   const path = join(f.ctx.sandboxPolicy.workspaceRoot, 'native.txt')
   writeFileSync(path, 'original native contents\n')
   const sessionId = SessionId('workspace-files-local-component')

@@ -41,3 +41,32 @@ it('cancels the bounded preflight and joins it before disposal returns', async (
   expect(await result).toEqual({ kind: 'cancelled' })
   expect(f.click).not.toHaveBeenCalled()
 })
+
+it('joins the original directory close before preflight and refuses unknown closure', async () => {
+  const f = fixture(), gate = Promise.withResolvers<undefined>()
+  const releaseDirectory = vi.fn(async () => { await gate.promise })
+  const owner = new CloudFileDownload({ ...f.input, releaseDirectory })
+  const result = owner.save()
+  try {
+    expect(releaseDirectory).toHaveBeenCalledWith(f.input.sessionId)
+    expect(f.fetch).not.toHaveBeenCalled()
+    expect(f.click).not.toHaveBeenCalled()
+    gate.reject(new Error('Host closure unknown'))
+    expect(await result).toMatchObject({ kind: 'failed' })
+    expect(f.fetch).not.toHaveBeenCalled()
+    expect(f.click).not.toHaveBeenCalled()
+  } finally { gate.resolve(undefined); await owner.dispose() }
+})
+
+it('keeps a download cancelled when its directory closes after occurrence disposal starts', async () => {
+  const f = fixture(), gate = Promise.withResolvers<undefined>()
+  const owner = new CloudFileDownload({ ...f.input, releaseDirectory: async () => { await gate.promise } })
+  const result = owner.save(), disposing = owner.dispose()
+  try {
+    expect(f.fetch).not.toHaveBeenCalled()
+    gate.resolve(undefined)
+    expect(await result).toEqual({ kind: 'cancelled' })
+    expect(f.fetch).not.toHaveBeenCalled()
+    expect(f.click).not.toHaveBeenCalled()
+  } finally { gate.resolve(undefined); await disposing }
+})

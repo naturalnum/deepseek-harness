@@ -1,3 +1,4 @@
+import type { OpenDirectoryPages } from '../src/client/directory-pages.ts'
 // @vitest-environment jsdom
 /** The files page and its tree, over controlled directory watches and deferred listings. */
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
@@ -30,6 +31,41 @@ function names(root: HTMLElement): string[] {
 }
 
 describe('FilesBody', () => {
+  it('replaces the page and opens the original Native preview only after confirmed closure', async () => {
+    const gate = Promise.withResolvers<undefined>(), ended = Promise.withResolvers<undefined>()
+    const openPages = vi.fn<OpenDirectoryPages>(() => ({ ended: ended.promise,
+      close: async () => { await gate.promise; ended.resolve(undefined) },
+      next: async () => ({ entries: [{ name: 'item-129.txt', type: 'file' }], truncated: true,
+        directoryPaging: true, page: { number: 3, more: true } }),
+    }))
+    onTestFinished(() => { gate.resolve(undefined); ended.resolve(undefined) })
+    const f = mountBody(ROOT, { openPages })
+    await act(() => f.script.watches.ready(ROOT))
+    await act(() => f.script.settle({ ok: true, value: { ...ROOT_LEVEL, truncated: true, directoryPaging: true } }))
+    await act(async () => { fireEvent.click(f.view.getByRole('button', { name: zh['page.browse'] })) })
+    expect(openPages).toHaveBeenCalledOnce()
+    expect(names(f.view.container)).toEqual([`${ROOT}/item-129.txt`])
+    fireEvent.click(f.view.getByRole('button', { name: 'item-129.txt' }))
+    expect(f.tabActions.openResource).not.toHaveBeenCalled()
+    await act(async () => { gate.resolve(undefined); await gate.promise })
+    expect(f.tabActions.openResource).toHaveBeenCalledWith(fileAddressFor(SESSION, ROOT, `${ROOT}/item-129.txt`), { paneId: PANE })
+  })
+
+  it('reports unknown directory closure and keeps the Native preview closed', async () => {
+    const ended = Promise.withResolvers<undefined>()
+    const openPages = vi.fn<OpenDirectoryPages>(() => ({ ended: ended.promise,
+      close: async () => { throw new RemoteError('workspace-file/directory-close-unconfirmed', 'No Host acknowledgement', { path: ROOT }) },
+      next: async () => ({ ...ROOT_LEVEL, directoryPaging: true, page: { number: 1, more: true } }),
+    }))
+    onTestFinished(() => { ended.resolve(undefined) })
+    const f = mountBody(ROOT, { openPages })
+    await act(() => f.script.watches.ready(ROOT))
+    await act(() => f.script.settle({ ok: true, value: { ...ROOT_LEVEL, directoryPaging: true } }))
+    await act(async () => { fireEvent.click(f.view.getByRole('button', { name: zh['page.browse'] })) })
+    await act(async () => { fireEvent.click(f.view.getByRole('button', { name: 'README.md' })) })
+    expect(f.tabActions.openResource).not.toHaveBeenCalled()
+    expect(f.view.getByText(zh['error.directoryCloseFailed'])).toBeTruthy()
+  })
   it('displays the effective file-tree refresh accelerator', async () => {
     const { view, script } = mountBody(ROOT, { refreshShortcut: { id: 'page.refresh' as never, label: 'Refresh', aliases: [],
       binding: null, keys: ['Ctrl', 'R'], aria: 'Control+R', modified: true, conflicts: [], issue: null } })

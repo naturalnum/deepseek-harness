@@ -1,5 +1,6 @@
 /** Native preview action adapter: only the actual session-scope seat selects the Session. */
 import type { ReactElement } from 'react'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
@@ -11,6 +12,7 @@ import type {} from './download/locales.ts'
 /** Stable page/declaration inputs supplied by the Cordis-owned installer. */
 export interface FileDownloadActionInjected {
   readonly signal: AbortSignal
+  readonly releaseDirectory: (sessionId: SessionId) => Promise<void>
   readonly maxFileBytes: number
   readonly fetch: FileUploadFetch
   readonly navigationUrl: (path: string) => string
@@ -28,7 +30,8 @@ export type FileDownloadActionProps = PropsRuntime<'sidebar.right.tab.document.a
 export function FileDownloadAction(props: FileDownloadActionProps): ReactElement {
   return <FileDownloadButton sessionId={props.sessionId}
     resourceAddress={sessionFileAddress(props.sessionId, props.absolutePath)}
-    signal={props.signal} fetch={props.fetch} navigationUrl={props.navigationUrl} maxFileBytes={props.maxFileBytes}
+    releaseDirectory={props.releaseDirectory} signal={props.signal} fetch={props.fetch}
+    navigationUrl={props.navigationUrl} maxFileBytes={props.maxFileBytes}
     labels={{ download: props.t('download'), pending: props.t('pending'), cancel: props.t('cancel'),
       cancelled: props.t('cancelled'), started: props.t('started'), failed: props.t('failed'),
       tooLarge: props.t('tooLarge'), invalid: props.t('invalid') }} />

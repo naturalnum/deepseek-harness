@@ -23,7 +23,37 @@
 #include <time.h>
 #endif
 
-typedef struct { int anchor; int reader; uint64_t mount_id; } owned_fds;
+#ifdef DSH_FD_CONTENT_ABI
+typedef struct {
+  DIR *directory;
+  char *root;
+  char *path;
+  char *pending;
+  struct stat initial;
+  uint64_t mount_id;
+  uint32_t max_entries, max_bytes, max_name, dots;
+  char version[256];
+} directory_enumeration;
+#endif
+
+typedef struct {
+  int anchor;
+  int reader;
+  uint64_t mount_id;
+#ifdef DSH_FD_CONTENT_ABI
+  directory_enumeration *enumeration;
+  int enumeration_close_unknown;
+#endif
+} owned_fds;
+
+static int directory_busy(const owned_fds *owned) {
+#ifdef DSH_FD_CONTENT_ABI
+  return owned->enumeration != NULL || owned->enumeration_close_unknown;
+#else
+  (void)owned;
+  return 0;
+#endif
+}
 
 static int mount_identity(int fd, uint64_t expected) {
   struct statx observed;
@@ -97,7 +127,7 @@ static napi_value open_anchor(napi_env env, napi_callback_info info) {
   napi_value args[4], result;
   uint64_t device, inode, mount_id;
   owned_fds *owned = state(env);
-  if (!owned || owned->anchor != -1) return fail(env, EINVAL);
+  if (!owned || directory_busy(owned) || owned->anchor != -1) return fail(env, EINVAL);
   if (napi_get_cb_info(env, info, &count, args, NULL, NULL) != napi_ok || count != 4) return fail(env, EINVAL);
   char *path = text(env, args[0]);
   if (!path || path[0] != '/' || !decimal(env, args[1], &device) || !decimal(env, args[2], &inode) || !decimal(env, args[3], &mount_id)) {
@@ -138,7 +168,7 @@ static napi_value open_read(napi_env env, napi_callback_info info) {
   size_t count = 1;
   napi_value args[1], result;
   owned_fds *owned = state(env);
-  if (!owned || owned->anchor < 0 || owned->reader >= 0) return fail(env, EINVAL);
+  if (!owned || directory_busy(owned) || owned->anchor < 0 || owned->reader >= 0) return fail(env, EINVAL);
   if (napi_get_cb_info(env, info, &count, args, NULL, NULL) != napi_ok || count != 1) return fail(env, EINVAL);
   char *path = text(env, args[0]);
   if (!path || path[0] == '/') { free(path); return fail(env, EINVAL); }
@@ -161,7 +191,7 @@ static napi_value close_read(napi_env env, napi_callback_info info) {
   (void)info;
   owned_fds *owned = state(env);
   napi_value result;
-  if (!owned || owned->reader < 0) return fail(env, EINVAL);
+  if (!owned || directory_busy(owned) || owned->reader < 0) return fail(env, EINVAL);
   int fd = owned->reader;
   owned->reader = -1;
   if (close(fd) != 0) return fail(env, errno);
@@ -173,7 +203,7 @@ static napi_value open_metadata(napi_env env, napi_callback_info info) {
   size_t count = 1;
   napi_value args[1], result;
   owned_fds *owned = state(env);
-  if (!owned || owned->anchor < 0 || owned->reader >= 0) return fail(env, EINVAL);
+  if (!owned || directory_busy(owned) || owned->anchor < 0 || owned->reader >= 0) return fail(env, EINVAL);
   if (napi_get_cb_info(env, info, &count, args, NULL, NULL) != napi_ok || count != 1) return fail(env, EINVAL);
   char *path = text(env, args[0]);
   if (!path || path[0] == '/') { free(path); return fail(env, EINVAL); }
@@ -199,7 +229,7 @@ static napi_value close_anchor(napi_env env, napi_callback_info info) {
   (void)info;
   owned_fds *owned = state(env);
   napi_value result;
-  if (!owned || owned->anchor < 0 || owned->reader >= 0) return fail(env, EINVAL);
+  if (!owned || directory_busy(owned) || owned->anchor < 0 || owned->reader >= 0) return fail(env, EINVAL);
   int fd = owned->anchor;
   owned->anchor = -1;
   owned->mount_id = 0;
@@ -239,7 +269,7 @@ static napi_value canonical_path(napi_env env, napi_callback_info info) {
   napi_value args[2], result;
   double extent;
   owned_fds *owned = state(env);
-  if (!owned || owned->anchor < 0 || owned->reader < 0) return fail(env, EINVAL);
+  if (!owned || directory_busy(owned) || owned->anchor < 0 || owned->reader < 0) return fail(env, EINVAL);
   if (napi_get_cb_info(env, info, &count, args, NULL, NULL) != napi_ok || count != 2
     || napi_get_value_double(env, args[1], &extent) != napi_ok
     || !(extent >= 1 && extent <= 16384) || extent != (uint32_t)extent) return fail(env, EINVAL);
@@ -388,7 +418,7 @@ static napi_value write_text(napi_env env, napi_callback_info info) {
   void *content = NULL, *cancel_data = NULL;
   double maximum;
   owned_fds *owned = state(env);
-  if (!owned || owned->anchor < 0 || owned->reader != -1
+  if (!owned || directory_busy(owned) || owned->anchor < 0 || owned->reader != -1
     || napi_get_cb_info(env, info, &count, args, NULL, NULL) != napi_ok || count != 8
     || napi_get_typedarray_info(env, args[3], &type, &length, &content, &backing, &offset) != napi_ok || type != napi_uint8_array
     || napi_get_value_double(env, args[4], &maximum) != napi_ok || !(maximum >= 1 && maximum <= 2147483646) || maximum != (uint32_t)maximum
@@ -589,7 +619,7 @@ static napi_value leaf_operation(napi_env env, napi_callback_info info, int remo
   napi_value args[9], result;
   void *backing = NULL;
   owned_fds *owned = state(env);
-  if (!owned || owned->anchor >= 0 || owned->reader >= 0) return fail(env, EINVAL);
+  if (!owned || directory_busy(owned) || owned->anchor >= 0 || owned->reader >= 0) return fail(env, EINVAL);
   if (napi_create_arraybuffer(env, 64, &backing, &result) != napi_ok) return fail(env, ENOMEM);
   unsigned char *frame = backing;
   memset(frame, 0, 64);
@@ -748,7 +778,7 @@ static napi_value open_path_metadata(napi_env env, napi_callback_info info) {
   size_t count = 1;
   napi_value args[1], result;
   owned_fds *owned = state(env);
-  if (!owned || owned->anchor < 0 || owned->reader >= 0
+  if (!owned || directory_busy(owned) || owned->anchor < 0 || owned->reader >= 0
     || napi_get_cb_info(env, info, &count, args, NULL, NULL) != napi_ok || count != 1) return fail(env, EINVAL);
   char *path = text(env, args[0]);
   if (!path || path[0] == '/') { free(path); return fail(env, EINVAL); }
@@ -778,7 +808,7 @@ static napi_value verify_content_anchor(napi_env env, napi_callback_info info) {
   size_t count = 1;
   napi_value args[1], result;
   owned_fds *owned = state(env);
-  if (!owned || owned->anchor < 0
+  if (!owned || directory_busy(owned) || owned->anchor < 0
     || napi_get_cb_info(env, info, &count, args, NULL, NULL) != napi_ok || count != 1) return fail(env, EINVAL);
   char *root = text(env, args[0]);
   if (!root || root[0] != '/') { free(root); return fail(env, EINVAL); }
@@ -837,7 +867,7 @@ static napi_value list_directory(napi_env env, napi_callback_info info) {
   napi_typedarray_type type;
   void *cancel = NULL;
   owned_fds *owned = state(env);
-  if (!owned || owned->anchor < 0 || owned->reader >= 0
+  if (!owned || directory_busy(owned) || owned->anchor < 0 || owned->reader >= 0
     || napi_get_cb_info(env, info, &count, args, NULL, NULL) != napi_ok || count != 7
     || !content_number(env, args[2], &max_entries) || !content_number(env, args[3], &max_bytes)
     || !content_number(env, args[4], &max_name) || max_name > 16384 || !content_number(env, args[5], &timeout)
@@ -847,7 +877,8 @@ static napi_value list_directory(napi_env env, napi_callback_info info) {
   int error = 0, close_unknown = 0, fd = -1, child = -1;
   DIR *directory = NULL;
   uint64_t start = 0, deadline = 0, charged = 128;
-  uint32_t length = 0;
+  uint32_t length = 0, dots = 0;
+  bool truncated = false;
   if (!root || root[0] != '/' || !path || path[0] == '/') { error = EINVAL; goto done; }
   error = content_clock(&start); if (error) goto done;
   deadline = start + (uint64_t)timeout * 1000000ULL;
@@ -867,11 +898,19 @@ static napi_value list_directory(napi_env env, napi_callback_info info) {
     errno = 0;
     struct dirent *row = readdir(directory);
     if (!row) { error = errno; break; }
-    if (!strcmp(row->d_name, ".") || !strcmp(row->d_name, "..")) continue;
+    if (!strcmp(row->d_name, ".") || !strcmp(row->d_name, "..")) {
+      if (++dots > 2) { error = EIO; goto done; }
+      continue;
+    }
+    if (length >= max_entries) { truncated = true; break; }
     size_t name_length = strlen(row->d_name);
     /* Six bytes per raw name byte covers JSON escaping; 512 covers all metadata and delimiters. */
     uint64_t charge = 512ULL + 6ULL * name_length;
-    if (length >= max_entries || name_length > max_name || charged + charge > max_bytes) { error = EFBIG; goto done; }
+    if (name_length > max_name) { error = EFBIG; goto done; }
+    if (charged + charge > max_bytes) {
+      if (length == 0) { error = EFBIG; goto done; }
+      truncated = true; break;
+    }
     charged += charge;
     struct open_how child_how = {0};
     child_how.flags = O_PATH | O_NOFOLLOW | O_CLOEXEC;
@@ -906,7 +945,211 @@ done:
   if (fd >= 0 && close(fd) != 0) close_unknown = 1;
   if (close_unknown) return content_close_failure(env);
   if (error) return fail(env, error);
-  return entries;
+  napi_value result, completeness;
+  if (napi_create_object(env, &result) != napi_ok
+    || napi_get_boolean(env, truncated, &completeness) != napi_ok
+    || napi_set_named_property(env, result, "entries", entries) != napi_ok
+    || napi_set_named_property(env, result, "truncated", completeness) != napi_ok) return fail(env, EIO);
+  return result;
+}
+
+/* This is the only retirement path for a retained enumeration and its anchor. */
+static int retire_enumeration(owned_fds *owned) {
+  directory_enumeration *enumeration = owned->enumeration;
+  owned->enumeration = NULL;
+  int unknown = owned->enumeration_close_unknown;
+  if (enumeration) {
+    if (enumeration->directory && closedir(enumeration->directory) != 0) unknown = 1;
+    free(enumeration->root);
+    free(enumeration->path);
+    free(enumeration->pending);
+    free(enumeration);
+  }
+  if (retire_close(&owned->reader)) unknown = 1;
+  if (retire_close(&owned->anchor)) unknown = 1;
+  owned->mount_id = 0;
+  owned->enumeration_close_unknown = unknown;
+  return unknown;
+}
+
+static int enumeration_mount(int fd, uint64_t *mount) {
+  struct statx observed;
+  if (statx(fd, "", AT_EMPTY_PATH | AT_STATX_SYNC_AS_STAT, STATX_MNT_ID, &observed) != 0) return errno;
+  if (!(observed.stx_mask & STATX_MNT_ID)) return EOPNOTSUPP;
+  *mount = observed.stx_mnt_id;
+  return 0;
+}
+
+static int verify_enumeration(owned_fds *owned, int *close_unknown) {
+  directory_enumeration *enumeration = owned->enumeration;
+  int error = verify_content_root(owned, enumeration->root, close_unknown);
+  if (error == ENOENT || error == ENOTDIR || error == EXDEV || error == ELOOP) error = ESTALE;
+  if (error || *close_unknown) return error;
+  struct stat observed;
+  if (fstat(dirfd(enumeration->directory), &observed) != 0) return errno;
+  const struct stat *initial = &enumeration->initial;
+  if (observed.st_dev != initial->st_dev || observed.st_ino != initial->st_ino
+    || observed.st_mtim.tv_sec != initial->st_mtim.tv_sec || observed.st_mtim.tv_nsec != initial->st_mtim.tv_nsec
+    || observed.st_ctim.tv_sec != initial->st_ctim.tv_sec || observed.st_ctim.tv_nsec != initial->st_ctim.tv_nsec) return ESTALE;
+  error = mount_identity(dirfd(enumeration->directory), enumeration->mount_id);
+  if (error) return error == EXDEV ? ESTALE : error;
+  struct open_how how = {0};
+  how.flags = O_PATH | O_DIRECTORY | O_CLOEXEC;
+  how.resolve = RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_XDEV;
+  int named = (int)syscall(SYS_openat2, owned->anchor, enumeration->path, &how, sizeof(how));
+  if (named < 0) return errno == ENOENT || errno == ENOTDIR || errno == EXDEV || errno == ELOOP ? ESTALE : errno;
+  error = same_identity(dirfd(enumeration->directory), named);
+  if (!error) error = mount_identity(named, enumeration->mount_id);
+  if (close(named) != 0) *close_unknown = 1;
+  return error == EXDEV ? ESTALE : error;
+}
+
+static int enumeration_control(napi_env env, napi_value milliseconds, napi_value value, uint64_t *deadline, int32_t **cancel) {
+  uint32_t timeout;
+  napi_typedarray_type type;
+  napi_value backing;
+  size_t length = 0, offset = 0;
+  void *data = NULL;
+  if (!content_number(env, milliseconds, &timeout)
+    || napi_get_typedarray_info(env, value, &type, &length, &data, &backing, &offset) != napi_ok
+    || type != napi_int32_array || length != 1) return EINVAL;
+  uint64_t start = 0;
+  int error = content_clock(&start);
+  if (error) return error;
+  *deadline = start + (uint64_t)timeout * 1000000ULL;
+  *cancel = data;
+  return content_running(*cancel, *deadline);
+}
+
+static napi_value open_directory_enumeration(napi_env env, napi_callback_info info) {
+  napi_value args[7], result;
+  size_t count = 7;
+  owned_fds *owned = state(env);
+  if (!owned || directory_busy(owned) || owned->anchor < 0 || owned->reader >= 0
+    || napi_get_cb_info(env, info, &count, args, NULL, NULL) != napi_ok || count != 7) return fail(env, EINVAL);
+  directory_enumeration *enumeration = calloc(1, sizeof(*enumeration));
+  if (!enumeration) return fail(env, ENOMEM);
+  owned->enumeration = enumeration;
+  int error = 0, close_unknown = 0, fd = -1;
+  int32_t *cancel = NULL;
+  uint64_t deadline = 0;
+  enumeration->root = text(env, args[0]);
+  enumeration->path = text(env, args[1]);
+  if (!enumeration->root || enumeration->root[0] != '/' || !enumeration->path || enumeration->path[0] == '/'
+    || !content_number(env, args[2], &enumeration->max_entries)
+    || !content_number(env, args[3], &enumeration->max_bytes)
+    || !content_number(env, args[4], &enumeration->max_name) || enumeration->max_name > 16384) { error = EINVAL; goto failed; }
+  error = enumeration_control(env, args[5], args[6], &deadline, &cancel); if (error) goto failed;
+  error = verify_content_root(owned, enumeration->root, &close_unknown); if (error || close_unknown) goto failed;
+  struct open_how how = {0};
+  how.flags = O_RDONLY | O_DIRECTORY | O_NONBLOCK | O_CLOEXEC;
+  how.resolve = RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_XDEV;
+  fd = (int)syscall(SYS_openat2, owned->anchor, enumeration->path, &how, sizeof(how));
+  if (fd < 0) { error = errno; goto failed; }
+  enumeration->directory = fdopendir(fd);
+  if (!enumeration->directory) { error = errno; goto failed; }
+  fd = -1;
+  if (fstat(dirfd(enumeration->directory), &enumeration->initial) != 0) { error = errno; goto failed; }
+  error = enumeration_mount(dirfd(enumeration->directory), &enumeration->mount_id); if (error) goto failed;
+  const struct stat *initial = &enumeration->initial;
+  int length = snprintf(enumeration->version, sizeof(enumeration->version), "%ju:%ju:%" PRIu64 ":%jd:%ld:%jd:%ld",
+    (uintmax_t)initial->st_dev, (uintmax_t)initial->st_ino, enumeration->mount_id,
+    (intmax_t)initial->st_mtim.tv_sec, initial->st_mtim.tv_nsec, (intmax_t)initial->st_ctim.tv_sec, initial->st_ctim.tv_nsec);
+  if (length < 1 || (size_t)length >= sizeof(enumeration->version)) { error = EIO; goto failed; }
+  error = verify_enumeration(owned, &close_unknown); if (error || close_unknown) goto failed;
+  error = content_running(cancel, deadline); if (error) goto failed;
+  if (napi_create_string_utf8(env, enumeration->version, NAPI_AUTO_LENGTH, &result) != napi_ok) { error = EIO; goto failed; }
+  return result;
+failed:
+  if (fd >= 0 && close(fd) != 0) close_unknown = 1;
+  if (close_unknown) owned->enumeration_close_unknown = 1;
+  if (retire_enumeration(owned)) return content_close_failure(env);
+  return fail(env, error);
+}
+
+static napi_value pull_directory_enumeration(napi_env env, napi_callback_info info) {
+  napi_value args[2], entries, entry, name, result, value;
+  size_t count = 2;
+  owned_fds *owned = state(env);
+  if (!owned || !owned->enumeration || owned->enumeration_close_unknown || owned->anchor < 0 || owned->reader >= 0
+    || napi_get_cb_info(env, info, &count, args, NULL, NULL) != napi_ok || count != 2) return fail(env, EINVAL);
+  directory_enumeration *enumeration = owned->enumeration;
+  int error = 0, close_unknown = 0, child = -1;
+  uint64_t deadline = 0, charged = 512;
+  int32_t *cancel = NULL;
+  uint32_t length = 0;
+  bool eof = false;
+  error = enumeration_control(env, args[0], args[1], &deadline, &cancel); if (error) goto failed;
+  error = verify_enumeration(owned, &close_unknown); if (error || close_unknown) goto failed;
+  if (napi_create_array(env, &entries) != napi_ok) { error = EIO; goto failed; }
+  while (1) {
+    error = content_running(cancel, deadline); if (error) goto failed;
+    const char *candidate = enumeration->pending;
+    if (!candidate) {
+      errno = 0;
+      struct dirent *row = readdir(enumeration->directory);
+      if (!row) { error = errno; if (error) goto failed; eof = true; break; }
+      if (!strcmp(row->d_name, ".") || !strcmp(row->d_name, "..")) {
+        if (++enumeration->dots > 2) { error = EIO; goto failed; }
+        continue;
+      }
+      candidate = row->d_name;
+    }
+    size_t name_length = strlen(candidate);
+    if (name_length > enumeration->max_name) { error = EFBIG; goto failed; }
+    uint64_t charge = 512ULL + 6ULL * name_length;
+    if (length >= enumeration->max_entries || charged + charge > enumeration->max_bytes) {
+      if (length == 0) { error = EFBIG; goto failed; }
+      if (!enumeration->pending) {
+        enumeration->pending = strdup(candidate);
+        if (!enumeration->pending) { error = ENOMEM; goto failed; }
+      }
+      break;
+    }
+    struct open_how how = {0};
+    how.flags = O_PATH | O_NOFOLLOW | O_CLOEXEC;
+    how.resolve = RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_XDEV;
+    child = (int)syscall(SYS_openat2, dirfd(enumeration->directory), candidate, &how, sizeof(how));
+    if (child < 0) { error = errno == ENOENT ? ESTALE : errno; goto failed; }
+    struct stat observed;
+    if (fstat(child, &observed) != 0) { error = errno; goto failed; }
+    if (S_ISREG(observed.st_mode) && observed.st_nlink != 1) { error = EPERM; goto failed; }
+    error = content_metadata(env, &observed, &entry); if (error) goto failed;
+    if (napi_create_buffer_copy(env, name_length, candidate, NULL, &name) != napi_ok
+      || napi_set_named_property(env, entry, "nameBytes", name) != napi_ok
+      || napi_set_element(env, entries, length, entry) != napi_ok) { error = EIO; goto failed; }
+    if (retire_close(&child)) { close_unknown = 1; goto failed; }
+    free(enumeration->pending); enumeration->pending = NULL;
+    charged += charge;
+    length++;
+  }
+  error = verify_enumeration(owned, &close_unknown); if (error || close_unknown) goto failed;
+  error = content_running(cancel, deadline); if (error) goto failed;
+  if (charged > enumeration->max_bytes) { error = EFBIG; goto failed; }
+  if (napi_create_object(env, &result) != napi_ok
+    || napi_set_named_property(env, result, "entries", entries) != napi_ok
+    || napi_create_string_utf8(env, enumeration->version, NAPI_AUTO_LENGTH, &value) != napi_ok
+    || napi_set_named_property(env, result, "version", value) != napi_ok
+    || napi_get_boolean(env, eof, &value) != napi_ok
+    || napi_set_named_property(env, result, "eof", value) != napi_ok
+    || napi_set_named_property(env, result, "closed", value) != napi_ok) { error = EIO; goto failed; }
+  if (eof && retire_enumeration(owned)) return content_close_failure(env);
+  return result;
+failed:
+  if (retire_close(&child)) close_unknown = 1;
+  if (close_unknown) owned->enumeration_close_unknown = 1;
+  if (retire_enumeration(owned)) return content_close_failure(env);
+  return fail(env, error);
+}
+
+static napi_value close_directory_enumeration(napi_env env, napi_callback_info info) {
+  (void)info;
+  napi_value result;
+  owned_fds *owned = state(env);
+  if (!owned || owned->reader >= 0) return fail(env, EINVAL);
+  if (retire_enumeration(owned)) return content_close_failure(env);
+  napi_get_undefined(env, &result);
+  return result;
 }
 
 /* Independent fixed-.pe capability; existing ABI8 methods and workspace-leaf restrictions are unchanged. */
@@ -931,7 +1174,7 @@ static napi_value prepare_project_metadata(napi_env env, napi_callback_info info
   size_t count = 10, length = 0, offset = 0;
   napi_value args[10], backing, array, cancel_backing;
   owned_fds *owned = state(env);
-  if (!owned || owned->anchor >= 0 || owned->reader >= 0) return fail(env, EBUSY);
+  if (!owned || directory_busy(owned) || owned->anchor >= 0 || owned->reader >= 0) return fail(env, EBUSY);
   void *memory = NULL, *cancel_data = NULL;
   if (napi_create_arraybuffer(env, 96, &memory, &backing) != napi_ok
     || napi_create_typedarray(env, napi_uint8_array, 96, backing, 0, &array) != napi_ok) return fail(env, ENOMEM);
@@ -1052,7 +1295,7 @@ static napi_value prepare_environment_layout(napi_env env, napi_callback_info in
   size_t count = 10, length = 0, offset = 0;
   napi_value args[10], backing, array, cancel_backing;
   owned_fds *owned = state(env);
-  if (!owned || owned->anchor >= 0 || owned->reader >= 0) return fail(env, EBUSY);
+  if (!owned || directory_busy(owned) || owned->anchor >= 0 || owned->reader >= 0) return fail(env, EBUSY);
   void *memory = NULL, *cancel_data = NULL;
   if (napi_create_arraybuffer(env, 256, &memory, &backing) != napi_ok
     || napi_create_typedarray(env, napi_uint8_array, 256, backing, 0, &array) != napi_ok) return fail(env, ENOMEM);
@@ -1170,6 +1413,9 @@ static void cleanup(napi_env env, void *data, void *hint) {
   (void)env;
   (void)hint;
   owned_fds *owned = data;
+#ifdef DSH_FD_CONTENT_ABI
+  if (owned->enumeration) retire_enumeration(owned);
+#endif
   if (owned->reader >= 0) close(owned->reader);
   if (owned->anchor >= 0) close(owned->anchor);
   free(owned);
@@ -1181,6 +1427,10 @@ static napi_value init(napi_env env, napi_value exports) {
   owned->anchor = -1;
   owned->reader = -1;
   owned->mount_id = 0;
+#ifdef DSH_FD_CONTENT_ABI
+  owned->enumeration = NULL;
+  owned->enumeration_close_unknown = 0;
+#endif
   if (napi_set_instance_data(env, owned, cleanup, NULL) != napi_ok) { free(owned); return fail(env, EIO); }
   napi_property_descriptor methods[] = {
 #ifdef DSH_FD_SKILL_ABI
@@ -1200,6 +1450,9 @@ static napi_value init(napi_env env, napi_value exports) {
     {"openPathMetadata", NULL, open_path_metadata, NULL, NULL, NULL, napi_default, NULL},
     {"verifyContentAnchor", NULL, verify_content_anchor, NULL, NULL, NULL, napi_default, NULL},
     {"listDirectory", NULL, list_directory, NULL, NULL, NULL, napi_default, NULL},
+    {"openDirectoryEnumeration", NULL, open_directory_enumeration, NULL, NULL, NULL, napi_default, NULL},
+    {"pullDirectoryEnumeration", NULL, pull_directory_enumeration, NULL, NULL, NULL, napi_default, NULL},
+    {"closeDirectoryEnumeration", NULL, close_directory_enumeration, NULL, NULL, NULL, napi_default, NULL},
 #endif
 #ifdef DSH_FD_TEXT_ABI
     {"writeText", NULL, write_text, NULL, NULL, NULL, napi_default, NULL},
@@ -1223,6 +1476,8 @@ static napi_value init(napi_env env, napi_value exports) {
   napi_create_uint32(env, 1, &metadata_version);
   napi_set_named_property(env, exports, "projectMetadataVersion", metadata_version);
   napi_set_named_property(env, exports, "environmentLayoutVersion", metadata_version);
+  napi_set_named_property(env, exports, "directoryListingVersion", metadata_version);
+  napi_set_named_property(env, exports, "directoryPagingVersion", metadata_version);
 #elif defined(DSH_FD_TEXT_ABI)
   napi_create_uint32(env, 7, &abi);
 #else

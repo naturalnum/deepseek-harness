@@ -50,6 +50,10 @@ Native `FileSystem.supportsTextEdit` 声明提供方是否实现文本编辑；C
 
 Native `FileSystem.scopeRoot` 提供可选的调用者作用域发现元数据。Cloud 文件系统返回原受保护 Workspace target；原生 agent-instructions 在该边界停止项目标记发现，并保留失败语义。无界 Native provider 继续使用既有搜索，所有文件系统授权仍由原 provider 持有。
 
+Native `FileSystem.listDirectory` 增加带完整性标记的 `FsDirectoryListing { entries, truncated }`，`listDir` 仍完整返回或失败。默认实现包装原提供方完整结果，保留 Local 和 SSH 行为。仅 Native WorkspaceFiles 列表消费该结果，将提供方截断与既有答案上限合并，沿用面板提示。Cloud 有界提供方要求 helper 真实报告 `directoryListingVersion: 1`，才准入整组内容能力；完整方法拒绝部分结果。本次不增加分页游标或跨请求保留的目录描述符。
+
+Native 可选 `FileSystem.openDirectory` 为 `WorkspaceFiles.listPages` 提供 Provider 枚举。每次 credit 与页面交付都复核原 Peer／Entry／已持有 Use。同一上行流携带 close，实际 Native 清理与 slot 结算后才发关闭回执。Files face 只保留一页，原预览／下载先等回执与原流终端；关闭未知时阻止依赖动作。独立 helper 能力 `directoryPagingVersion: 1` 和显式配置保留旧 helper 及 Local／SSH 路径。
+
 Native `skill-filesystem.includeDefaultUserRoots` 允许部署在启用默认根目录时排除默认用户技能根目录。默认值为 true，保持原生发现行为；显式设为 false 仍保留项目根目录和显式配置的根目录。当宿主用户根目录位于账号授权范围之外时，Cloud profile 需要显式设置该选项。
 
 Native 内置技能提供方接收可选部署调用上限：`skill-office.invocation` 与 `skill-filesystem.bundledInvocation`。Cloud 可展示完整不可变包供检查和下载，同时在执行环境合格前关闭模型和用户调用。文件系统上限不会启用来源已关闭的调用入口，也不影响其他根目录；省略配置时保留 Native 行为。原技能消费者执行调用策略，包字节保持原样。

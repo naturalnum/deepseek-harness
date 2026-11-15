@@ -15,6 +15,30 @@ const LEVEL: DirLevel = {
 }
 
 describe('createFilesStore', () => {
+  it('replaces the current page and drops off-page descendants without retaining wire tokens', () => {
+    const store = createFilesStore().create(), { actions } = store
+    actions.start(PANE, ROOT)
+    actions.loaded(PANE, ROOT, { ...LEVEL, directoryPaging: true, page: { number: 1, more: true } })
+    actions.toggled(PANE, `${ROOT}/src`)
+    actions.loaded(PANE, `${ROOT}/src`, LEVEL)
+    actions.loaded(PANE, ROOT, { entries: [{ name: 'last.txt', type: 'file' }], truncated: false,
+      directoryPaging: true, page: { number: 3, more: false } })
+    const tree = store.getSnapshot().byPane[PANE]!.tree!
+    expect(Object.keys(tree.levels)).toEqual([ROOT])
+    expect(tree.expanded).toEqual([ROOT])
+    expect(tree.levels[ROOT]).toEqual({ kind: 'ready', level: { entries: [{ name: 'last.txt', type: 'file' }],
+      truncated: false, directoryPaging: true, page: { number: 3, more: false } } })
+  })
+
+  it('discards stale entries and descendants when the Host requires a version restart', () => {
+    const store = createFilesStore().create(), { actions } = store
+    actions.start(PANE, ROOT); actions.loaded(PANE, ROOT, LEVEL)
+    actions.toggled(PANE, `${ROOT}/src`); actions.loaded(PANE, `${ROOT}/src`, LEVEL)
+    const failure = new RemoteError('workspace-file/directory-changed', 'changed', { path: ROOT, closed: true })
+    actions.invalidated(PANE, ROOT, failure)
+    expect(store.getSnapshot().byPane[PANE]?.tree).toMatchObject({ expanded: [ROOT], levels: { [ROOT]: { kind: 'failed', failure } } })
+    expect(Object.keys(store.getSnapshot().byPane[PANE]!.tree!.levels)).toEqual([ROOT])
+  })
   it('mints an independent instance per call', () => {
     const first = createFilesStore().create()
     const second = createFilesStore().create()

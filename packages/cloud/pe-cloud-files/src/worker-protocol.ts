@@ -3,6 +3,7 @@ import type { SkillSourceContext, SkillProjectionLimits } from './skill-projecti
 import type { SkillBundleLimits } from './skill-bundles.ts'
 import type { SkillVersionLimits } from './skill-versions.ts'
 import type { OperationId } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 import type { FsErrorCode } from '@deepseek-ai/dsh-fs'
 import type { FsWriteIntent } from '@deepseek-ai/dsh-fs'
 import type { DirectoryCreatedIdentity } from './directory-responsibility.ts'
@@ -178,6 +179,8 @@ export interface FdWorkerInput {
   readonly skillVersions?: SkillVersionLimits
   readonly skillProjection?: SkillProjectionLimits
   readonly content?: FdContentLimits
+  /** Omission disables retained enumeration, independently of ordinary content reads. */
+  readonly directoryPaging?: FdDirectoryPagingLimits
   readonly storageProbe?: StaticStorageConfig
   /** Omission disables the separate companion; no capability is inferred from ABI8. */
   readonly staging?: FdStagingWorkerInput
@@ -267,6 +270,13 @@ export interface FdContentLimits {
   readonly operationTimeoutMs: number
 }
 
+/** Explicit positive lifetime budgets for one retained enumeration; there are no implicit defaults. */
+export interface FdDirectoryPagingLimits {
+  readonly idleTimeoutMs: number
+  readonly totalTimeoutMs: number
+  readonly maxPages: number
+}
+
 /** Final-component nofollow metadata; observing a symlink grants no read authority. */
 export interface FdPathMetadata {
   readonly identity: string
@@ -279,6 +289,58 @@ export interface FdPathMetadata {
 export interface FdDirectoryEntry extends FdPathMetadata {
   readonly name: string
 }
+
+/** Closed-operation directory result; completeness is required even for an empty directory. */
+export interface FdDirectoryListing {
+  /** Bounded nofollow metadata, sorted only within this returned subset. */
+  readonly entries: readonly FdDirectoryEntry[]
+  /** True when enumeration stopped before observing every direct child. */
+  readonly truncated: boolean
+}
+
+/** Identity and nanosecond metadata of the same held native directory; callers never parse it. */
+export type FdDirectoryVersion = Branded<'FdDirectoryVersion'>
+
+/**
+ * Admit the bounded native directory identity and metadata token without interpreting it as authority.
+ * @param value Untrusted native or private worker token.
+ * @returns The admitted opaque token, or undefined for malformed metadata.
+ */
+export function parseFdDirectoryVersion(value: unknown): FdDirectoryVersion | undefined {
+  return typeof value === 'string' && value.length <= 255
+    && /^\d{1,20}:\d{1,20}:\d{1,20}:-?\d{1,20}:\d{1,9}:-?\d{1,20}:\d{1,9}$/.test(value)
+    ? brandString<FdDirectoryVersion>(value) : undefined
+}
+
+/** One native enumeration owns its original worker slot until actual finish. */
+export type FdDirectoryEnumerationRequest =
+  | {
+    readonly kind: 'directory-open'
+    readonly id: OperationId
+    readonly root: FdRootIdentity
+    readonly relativePath: string
+    readonly maxEntries: number
+    readonly maxBytes: number
+    readonly cancel: SharedArrayBuffer
+  }
+  | { readonly kind: 'directory-pull'; readonly id: OperationId; readonly sequence: number }
+  | { readonly kind: 'directory-close'; readonly id: OperationId }
+
+/** One page is either still owned or EOF with native descriptor closure confirmed. */
+export type FdDirectoryPage = {
+  readonly version: FdDirectoryVersion
+  /** UTF-8 byte-sorted entries in this page, without a global directory ordering promise. */
+  readonly entries: readonly FdDirectoryEntry[]
+} & (
+  | { readonly eof: false; readonly closed: false }
+  | { readonly eof: true; readonly closed: true }
+)
+
+/** Native completion facts; a browser cursor and peer authorization never enter this private protocol. */
+export type FdDirectoryEnumerationReply =
+  | { readonly kind: 'directory-ready'; readonly id: OperationId; readonly version: FdDirectoryVersion }
+  | { readonly kind: 'directory-page'; readonly id: OperationId; readonly sequence: number; readonly page: FdDirectoryPage }
+  | { readonly kind: 'directory-closed'; readonly id: OperationId; readonly version: FdDirectoryVersion; readonly closed: true }
 
 /** ABI8-only read commands; complete reply bytes include names and metadata. */
 export type FdContentRequest = {
@@ -366,10 +428,15 @@ export interface FdStreamControl {
 
 /** Success follows FD closure except stream-ready/chunk, which retain actual operation ownership. */
 export type FdWorkerReply =
+  | FdDirectoryEnumerationReply
   | FdStageReply
   | {
     readonly kind: 'ready'
     readonly abiVersion: 6 | 7 | 8
+    /** Actual native completeness capability required by the whole content group. */
+    readonly directoryListingVersion?: 1
+    /** Actual optional native enumeration support and explicit worker lifetime limits. */
+    readonly directoryPagingVersion?: 1
     readonly storageProbeVersion?: 1
     readonly stagingAbiVersion?: 1
     readonly projectMetadataVersion?: 1
@@ -388,7 +455,7 @@ export type FdWorkerReply =
   | { readonly kind: 'skill-prepare-reply'; readonly id: OperationId; readonly frame: Uint8Array<ArrayBuffer> }
   | { readonly kind: 'environment-layout-reply'; readonly id: OperationId; readonly frame: Uint8Array<ArrayBuffer> }
   | { readonly kind: 'lstat-reply'; readonly id: OperationId; readonly metadata: FdPathMetadata | undefined }
-  | { readonly kind: 'list-reply'; readonly id: OperationId; readonly entries: readonly FdDirectoryEntry[] }
+  | { readonly kind: 'list-reply'; readonly id: OperationId; readonly listing: FdDirectoryListing }
   | { readonly kind: 'range-reply'; readonly id: OperationId; readonly bytes: Uint8Array<ArrayBuffer> }
   | { readonly kind: 'text-write-reply'; readonly id: OperationId; readonly result: FdTextWriteResult }
   | {

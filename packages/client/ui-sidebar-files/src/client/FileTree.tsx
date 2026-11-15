@@ -47,6 +47,11 @@ export interface TreeEntry {
 
 /** What the caller knows about one directory's listing besides its entries; every field is optional. */
 export interface TreeDirectoryState {
+  /** Optional caller-owned note and action under this directory's entries. */
+  readonly note?: string
+  /** Optional labeled action; disabled defaults to false. */
+  readonly action?: { readonly label: string; readonly disabled?: boolean }
+
   /** The listing is not known yet; the directory shows a loading line instead of its entries. */
   readonly loading?: true
   /** Why the directory could not be listed, already localized; the entries known so far still show. */
@@ -64,6 +69,9 @@ export interface TreeDirectoryState {
 
 /** The `sidebar.files.tree` Factory's input: data and callbacks only. */
 export interface FileTreeInput {
+  /** Invoke the action supplied in a directory's state. @param path - directory key. */
+  readonly onDirectoryAction?: ((path: string) => void) | undefined
+
   /** The root's key; the root itself has no row and its entries are always shown. */
   readonly root: string
   /**
@@ -293,6 +301,11 @@ function Level({ path, tree }: { path: string; tree: TreeContext }): ReactNode {
       )}
       {order.map(index => level[index]).filter(node => node !== undefined)
         .map(node => <Entry key={node.entry.path} node={node} tree={tree} />)}
+      {(state?.note !== undefined || state?.action !== undefined) && <li className={css.note} data-files-row="paging">
+        {state.note !== undefined && <span>{state.note} </span>}
+        {state.action !== undefined && tree.input.onDirectoryAction !== undefined && <button type="button"
+          disabled={state.action.disabled === true} onClick={() => { tree.input.onDirectoryAction?.(path) }}>{state.action.label}</button>}
+      </li>}
       {state?.truncated === true && <li className={css.note} data-files-row="truncated">{t('truncated')}</li>}
     </>
   )

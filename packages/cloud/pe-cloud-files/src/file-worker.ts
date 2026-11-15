@@ -13,7 +13,8 @@ import { constants, openSync, closeSync, readlinkSync, fstatSync, readSync } fro
 import { isAbsolute } from 'node:path'
 import { parentPort, workerData } from 'node:worker_threads'
 import type { FdTaskRequest, FdWorkerInput, FdWorkerReply, FdMetadata, FdDirectoryRequest, FdLeafRequest, FdTextWriteRequest,
-  FdContentLimits, FdContentRequest, FdPathMetadata, FdDirectoryEntry } from './worker-protocol.ts'
+  FdContentLimits, FdContentRequest, FdPathMetadata, FdDirectoryEntry, FdDirectoryEnumerationRequest,
+  FdDirectoryVersion, FdDirectoryPage, FdDirectoryPagingLimits } from './worker-protocol.ts'
 import type { OperationId } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { FsErrorCode } from '@deepseek-ai/dsh-fs'
 import { FsVersion } from '@deepseek-ai/dsh-fs'
@@ -23,7 +24,7 @@ import { createStorageWorker, storageRequest } from './storage-worker.ts'
 import type { StaticStorageConfig } from './storage-types.ts'
 import { loadStagingNative, StagingFailure } from './staging-native.ts'
 import type { StagingFacts, StagingTransaction } from './staging-native.ts'
-import { parseEnvironmentLayoutFrame, parseProjectMetadataFrame, validStageName } from './worker-protocol.ts'
+import { parseEnvironmentLayoutFrame, parseProjectMetadataFrame, validStageName, parseFdDirectoryVersion } from './worker-protocol.ts'
 import type { FdStagingWorkerInput, FdStageRequest, FdProjectMetadataRequest, FdEnvironmentLayoutRequest } from './worker-protocol.ts'
 import { observeFileWorkerFailure, type FileWorkerStartupStage } from './worker-startup-observation.ts'
 
@@ -33,6 +34,12 @@ interface LinuxFdHelper {
   readonly skillBundleReclaimVersion?: 1
   readonly skillBundleOperation?: BundleNativeOperation
   readonly abiVersion: 6 | 7 | 8
+  readonly directoryListingVersion?: 1
+  readonly directoryPagingVersion?: 1
+  openDirectoryEnumeration?(this: void, rootPath: string, relativePath: string, maxEntries: number, maxBytes: number,
+    maxNameBytes: number, timeoutMs: number, cancel: Int32Array<SharedArrayBuffer>): unknown
+  pullDirectoryEnumeration?(this: void, timeoutMs: number, cancel: Int32Array<SharedArrayBuffer>): unknown
+  closeDirectoryEnumeration?(this: void): void
   readonly projectMetadataVersion?: 1
   readonly skillProjectionVersion?: 1
   prepareSkillStore?(this: void, path: string, device: string, inode: string, mountId: string, uid: number, gid: number,
@@ -89,6 +96,12 @@ interface LinuxFdHelper {
 
 function isHelper(value: unknown): value is LinuxFdHelper {
   return record(value) && (value.abiVersion === 6 || value.abiVersion === 7 || value.abiVersion === 8)
+    && (value.directoryListingVersion === undefined || value.directoryListingVersion === 1 && value.abiVersion === 8)
+    && (value.directoryPagingVersion === undefined ? value.openDirectoryEnumeration === undefined
+      && value.pullDirectoryEnumeration === undefined && value.closeDirectoryEnumeration === undefined
+      : value.directoryPagingVersion === 1 && value.directoryListingVersion === 1 && value.abiVersion === 8
+        && typeof value.openDirectoryEnumeration === 'function' && typeof value.pullDirectoryEnumeration === 'function'
+        && typeof value.closeDirectoryEnumeration === 'function')
     && (value.skillBundleVersion === undefined ? value.skillBundleOperation === undefined
       && value.skillBundleProjectionVersion === undefined && value.skillBundleReclaimVersion === undefined
       : value.abiVersion === 8 && value.skillBundleVersion === 1 && value.skillBundleProjectionVersion === 1
@@ -155,6 +168,7 @@ function input(value: unknown): FdWorkerInput {
     ...value.skillProjection === undefined ? {} : { skillProjection: checkedProjectionLimits(value.skillProjection) },
     ...value.skillVersions === undefined ? {} : { skillVersions: checkedSkillLimits(value.skillVersions) },
     ...value.content === undefined ? {} : { content: contentLimits(value.content, value.maxPathBytes) },
+    ...value.directoryPaging === undefined ? {} : { directoryPaging: pagingLimits(value.directoryPaging, value.content) },
     maxReadBytes: value.maxReadBytes, maxPathBytes: value.maxPathBytes,
     maxResolveRetries: value.maxResolveRetries, readChunkBytes: value.readChunkBytes,
     ...value.storageProbe === undefined ? {} : { storageProbe: storageConfig(value.storageProbe) },
@@ -243,6 +257,17 @@ function contentLimits(value: unknown, maxPathBytes: number): FdContentLimits {
     operationTimeoutMs: value.operationTimeoutMs }
 }
 
+function pagingLimits(value: unknown, content: unknown): FdDirectoryPagingLimits {
+  if (!record(value) || Object.keys(value).length !== 3 || !record(content)
+    || typeof content.maxEntries !== 'number' || typeof content.maxReplyBytes !== 'number'
+    || ['idleTimeoutMs', 'totalTimeoutMs', 'maxPages'].some(key => typeof value[key] !== 'number'
+      || !Number.isSafeInteger(value[key]) || value[key] < 1 || value[key] > 2_147_483_647)
+    || typeof value.idleTimeoutMs !== 'number' || typeof value.totalTimeoutMs !== 'number' || typeof value.maxPages !== 'number'
+    || !Number.isSafeInteger(value.maxPages * content.maxEntries)
+    || !Number.isSafeInteger(value.maxPages * content.maxReplyBytes)) throw new WorkerFailure('FS_PERMISSION_DENIED')
+  return { idleTimeoutMs: value.idleTimeoutMs, totalTimeoutMs: value.totalTimeoutMs, maxPages: value.maxPages }
+}
+
 function storageConfig(value: unknown): StaticStorageConfig {
   if (!record(value) || typeof value.planPath !== 'string' || typeof value.planSha256 !== 'string'
     || typeof value.probeHelperPath !== 'string' || typeof value.probeHelperSha256 !== 'string'
@@ -281,6 +306,12 @@ function helper(path: string): LinuxFdHelper {
   const removeExt4Leaf = loaded.removeExt4Leaf
   return {
     abiVersion: loaded.abiVersion,
+    ...loaded.directoryListingVersion === undefined ? {} : { directoryListingVersion: loaded.directoryListingVersion },
+    ...loaded.directoryPagingVersion !== 1 || loaded.openDirectoryEnumeration === undefined
+      || loaded.pullDirectoryEnumeration === undefined || loaded.closeDirectoryEnumeration === undefined
+      ? {} : { directoryPagingVersion: 1 as const,
+        openDirectoryEnumeration: loaded.openDirectoryEnumeration, pullDirectoryEnumeration: loaded.pullDirectoryEnumeration,
+        closeDirectoryEnumeration: loaded.closeDirectoryEnumeration },
     ...loaded.skillBundleVersion !== 1 || loaded.skillBundleOperation === undefined ? {} : {
       skillBundleVersion: 1, skillBundleProjectionVersion: 1, skillBundleReclaimVersion: 1,
       skillBundleOperation: loaded.skillBundleOperation,
@@ -558,6 +589,29 @@ function contentRequest(value: unknown, limits: FdWorkerInput): FdContentRequest
   return { ...shared, kind: 'range', offset: value.offset, length: value.length, maxBytes: base.maxBytes }
 }
 
+function directoryEntries(rows: readonly unknown[], maxNameBytes: number, running: () => void): FdDirectoryEntry[] {
+  const entries: FdDirectoryEntry[] = rows.map((row: unknown) => {
+    running()
+    if (!record(row) || !(row.nameBytes instanceof Uint8Array) || row.nameBytes.byteLength > maxNameBytes
+      || typeof row.identity !== 'string' || !/^\d{1,20}:\d{1,20}$/.test(row.identity)
+      || typeof row.version !== 'string' || !/^-?\d{1,30}(?::-?\d{1,30}){4}$/.test(row.version)
+      || !row.version.startsWith(row.identity + ':')
+      || typeof row.size === 'number' && Number(row.version.split(':')[2]) !== row.size
+      || !['file', 'directory', 'symlink', 'other'].includes(String(row.type))
+      || (row.type === 'file' || row.type === 'symlink'
+        ? typeof row.size !== 'number' || !Number.isSafeInteger(row.size) || row.size < 0
+        : row.size !== undefined)) throw new AnchorCloseFailure('Invalid native directory metadata')
+    let name: string
+    try { name = new TextDecoder('utf-8', { fatal: true }).decode(row.nameBytes) }
+    catch (_error) { throw new WorkerFailure('FS_IO_ERROR') }
+    if (!name || name === '.' || name === '..' || /[/\\\0]/.test(name)) throw new WorkerFailure('FS_PERMISSION_DENIED')
+    return { name, identity: row.identity, version: row.version, type: row.type as FdPathMetadata['type'],
+      ...typeof row.size === 'number' ? { size: row.size } : {} }
+  })
+  entries.sort((a, b) => { running(); return Buffer.compare(Buffer.from(a.name), Buffer.from(b.name)) })
+  return entries
+}
+
 function closeContentRead(native: LinuxFdHelper): void {
   try { native.closeRead() } catch (error) { throw new AnchorCloseFailure('Content FD close is unconfirmed', { cause: error }) }
 }
@@ -566,7 +620,7 @@ function contentOperation(native: LinuxFdHelper, request: FdContentRequest, limi
   let opened = false
   try {
     const config = limits.content
-    if (native.abiVersion !== 8 || config === undefined || native.openPathMetadata === undefined
+    if (native.abiVersion !== 8 || native.directoryListingVersion !== 1 || config === undefined || native.openPathMetadata === undefined
       || native.listDirectory === undefined || native.verifyContentAnchor === undefined) throw new WorkerFailure('FS_PERMISSION_DENIED')
     const deadline = performance.now() + config.operationTimeoutMs
     const running = (): void => {
@@ -579,29 +633,14 @@ function contentOperation(native: LinuxFdHelper, request: FdContentRequest, limi
     opened = true
     let reply: FdWorkerReply
     if (request.kind === 'list') {
-      const rows = native.listDirectory(request.root.rootPath, request.relativePath, request.maxEntries,
+      const listing = native.listDirectory(request.root.rootPath, request.relativePath, request.maxEntries,
         request.maxBytes, config.maxNameBytes, Math.max(1, Math.ceil(deadline - performance.now())), new Int32Array(request.cancel))
-      if (!Array.isArray(rows) || rows.length > request.maxEntries) throw new AnchorCloseFailure('Unbounded native directory reply')
-      const entries: FdDirectoryEntry[] = rows.map((row: unknown) => {
-        running()
-        if (!record(row) || !(row.nameBytes instanceof Uint8Array) || row.nameBytes.byteLength > config.maxNameBytes
-          || typeof row.identity !== 'string' || !/^\d{1,20}:\d{1,20}$/.test(row.identity)
-          || typeof row.version !== 'string' || !/^-?\d{1,30}(?::-?\d{1,30}){4}$/.test(row.version)
-          || !row.version.startsWith(row.identity + ':')
-          || typeof row.size === 'number' && Number(row.version.split(':')[2]) !== row.size
-          || !['file', 'directory', 'symlink', 'other'].includes(String(row.type))
-          || (row.type === 'file' || row.type === 'symlink'
-            ? typeof row.size !== 'number' || !Number.isSafeInteger(row.size) || row.size < 0
-            : row.size !== undefined)) throw new AnchorCloseFailure('Invalid native directory metadata')
-        let name: string
-        try { name = new TextDecoder('utf-8', { fatal: true }).decode(row.nameBytes) }
-        catch (_error) { throw new WorkerFailure('FS_IO_ERROR') }
-        if (!name || name === '.' || name === '..' || /[/\\\0]/.test(name)) throw new WorkerFailure('FS_PERMISSION_DENIED')
-        return { name, identity: row.identity, version: row.version, type: row.type as FdPathMetadata['type'],
-          ...typeof row.size === 'number' ? { size: row.size } : {} }
-      })
-      entries.sort((a, b) => { running(); return Buffer.compare(Buffer.from(a.name), Buffer.from(b.name)) })
-      reply = { kind: 'list-reply', id: request.id, entries }
+      if (!record(listing) || Object.keys(listing).length !== 2 || !Array.isArray(listing.entries)
+        || typeof listing.truncated !== 'boolean' || listing.entries.length > request.maxEntries
+        || listing.truncated && listing.entries.length === 0) throw new AnchorCloseFailure('Invalid native directory completeness')
+      const rows = listing.entries
+      const entries = directoryEntries(rows, config.maxNameBytes, running)
+      reply = { kind: 'list-reply', id: request.id, listing: { entries, truncated: listing.truncated } }
     } else {
       let fd: number | undefined, attempts = 0
       try {
@@ -828,6 +867,58 @@ function start(): void {
     sourceReceived: boolean
   }
   let activeStage: ActiveStage | undefined
+  type ActiveDirectory = {
+    readonly request: Extract<FdDirectoryEnumerationRequest, { kind: 'directory-open' }>
+    readonly version: FdDirectoryVersion
+    readonly deadline: number
+    readonly totalTimer: ReturnType<typeof setTimeout>
+    idleTimer: ReturnType<typeof setTimeout>
+    pages: number
+  }
+  let activeDirectory: ActiveDirectory | undefined
+  let endedDirectoryId: OperationId | undefined
+  const clearDirectory = (state: ActiveDirectory): void => {
+    clearTimeout(state.idleTimer)
+    clearTimeout(state.totalTimer)
+    activeDirectory = undefined
+    endedDirectoryId = state.request.id
+  }
+  const directoryFailure = (error: unknown): WorkerFailure => {
+    if (record(error) && error.code === 'DSH_FD_CLOSE') {
+      throw new AnchorCloseFailure('Directory descriptor close is unconfirmed', { cause: error })
+    }
+    if (error instanceof AnchorCloseFailure) throw error
+    if (error instanceof WorkerFailure) return error
+    const code = record(error) && typeof error.code === 'string' ? error.code : 'EIO'
+    return new WorkerFailure(code === 'ESTALE' ? 'FS_STALE_VERSION'
+      : code === 'EFBIG' ? 'FS_TOO_LARGE' : code === 'ECANCELED' || code === 'ETIMEDOUT' ? 'FS_ABORTED'
+        : failure(error).code, code)
+  }
+  const closeDirectoryNative = (): void => {
+    try {
+      if (native.closeDirectoryEnumeration === undefined) throw new Error('Missing native enumeration closure')
+      native.closeDirectoryEnumeration()
+    } catch (error) { throw new AnchorCloseFailure('Directory descriptor close is unconfirmed', { cause: error }) }
+  }
+  const postDirectory = (reply: FdWorkerReply, maxBytes: number): void => {
+    if (Buffer.byteLength(JSON.stringify(reply)) > maxBytes) { port.close(); return }
+    port.postMessage(reply)
+  }
+  const endDirectory = (error?: unknown): void => {
+    const state = activeDirectory
+    if (state === undefined) throw new Error('Directory enumeration has no owned operation')
+    const observed = error === undefined ? undefined : directoryFailure(error)
+    closeDirectoryNative()
+    clearDirectory(state)
+    postDirectory(observed === undefined
+      ? { kind: 'directory-closed', id: state.request.id, version: state.version, closed: true }
+      : { kind: 'reply', id: state.request.id, ok: false, ...failure(observed) }, state.request.maxBytes)
+  }
+  const expireDirectory = (id: OperationId): void => {
+    if (activeDirectory?.request.id !== id) return
+    Atomics.store(new Int32Array(activeDirectory.request.cancel), 0, 1)
+    endDirectory(new WorkerFailure('FS_ABORTED', 'ETIMEDOUT'))
+  }
   let endedStageId: FdTaskRequest['id'] | undefined
   const postStage = (reply: FdWorkerReply): void => {
     if (limits.staging === undefined || Buffer.byteLength(JSON.stringify(reply)) > limits.staging.maxReplyBytes) {
@@ -880,6 +971,89 @@ function start(): void {
       : { kind: 'reply', id: request.id, ok: false, ...failure(error) } satisfies FdWorkerReply)
   }
   port.on('message', (raw: unknown) => {
+    if (activeDirectory !== undefined) {
+      const state = activeDirectory, config = limits.directoryPaging, content = limits.content
+      if (config === undefined || content === undefined || !record(raw) || raw.id !== state.request.id
+        || !((raw.kind === 'directory-close' && Object.keys(raw).length === 2)
+          || (raw.kind === 'directory-pull' && Object.keys(raw).length === 3 && raw.sequence === state.pages))) {
+        endDirectory(new WorkerFailure('FS_IO_ERROR')); port.close(); return
+      }
+      if (raw.kind === 'directory-close') { endDirectory(); return }
+      clearTimeout(state.idleTimer)
+      try {
+        const running = (): void => {
+          if (Atomics.load(new Int32Array(state.request.cancel), 0) !== 0 || performance.now() >= state.deadline) {
+            throw new WorkerFailure('FS_ABORTED')
+          }
+        }
+        running()
+        if (state.pages >= config.maxPages) throw new WorkerFailure('FS_TOO_LARGE')
+        if (native.pullDirectoryEnumeration === undefined) throw new WorkerFailure('FS_PERMISSION_DENIED')
+        const sequence = state.pages++
+        const value = native.pullDirectoryEnumeration(Math.max(1, Math.ceil(Math.min(content.operationTimeoutMs,
+          state.deadline - performance.now()))), new Int32Array(state.request.cancel))
+        if (!record(value) || Object.keys(value).length !== 4 || value.version !== state.version
+          || !Array.isArray(value.entries) || value.entries.length > state.request.maxEntries || typeof value.eof !== 'boolean'
+          || value.closed !== value.eof || !value.eof && value.entries.length === 0) {
+          throw new AnchorCloseFailure('Invalid native directory page or closure facts')
+        }
+        const entries = directoryEntries(value.entries, content.maxNameBytes, running)
+        running()
+        const page: FdDirectoryPage = value.eof
+          ? { entries, version: state.version, eof: true, closed: true }
+          : { entries, version: state.version, eof: false, closed: false }
+        const reply: FdWorkerReply = { kind: 'directory-page', id: state.request.id, sequence, page }
+        if (Buffer.byteLength(JSON.stringify(reply)) > state.request.maxBytes) throw new WorkerFailure('FS_TOO_LARGE')
+        if (page.eof) clearDirectory(state)
+        else state.idleTimer = setTimeout(() => expireDirectory(state.request.id), config.idleTimeoutMs)
+        port.postMessage(reply)
+      } catch (error) { endDirectory(error) }
+      return
+    }
+    if (record(raw) && raw.kind === 'directory-close' && raw.id === endedDirectoryId && Object.keys(raw).length === 2) return
+    if (record(raw) && typeof raw.kind === 'string' && raw.kind.startsWith('directory-')) {
+      if (raw.kind !== 'directory-open' || active !== undefined || activeStage !== undefined) { port.close(); return }
+      const config = limits.directoryPaging, content = limits.content
+      try {
+        if (config === undefined || content === undefined || native.directoryPagingVersion !== 1
+          || native.openDirectoryEnumeration === undefined || native.closeDirectoryEnumeration === undefined
+          || Object.keys(raw).length !== 7 || !record(raw.root)
+          || Object.keys(raw.root).some(key => !['rootPath', 'rootDevice', 'rootInode', 'rootMountId'].includes(key))) {
+          throw new WorkerFailure('FS_PERMISSION_DENIED')
+        }
+        const parsed = contentRequest({ ...raw, kind: 'list' }, limits)
+        if (parsed.kind !== 'list') throw new WorkerFailure('FS_IO_ERROR')
+        const request: Extract<FdDirectoryEnumerationRequest, { kind: 'directory-open' }> = { ...parsed, kind: 'directory-open' }
+        const deadline = performance.now() + config.totalTimeoutMs
+        native.openAnchor(request.root.rootPath, request.root.rootDevice, request.root.rootInode, request.root.rootMountId ?? '0')
+        let version: unknown
+        try {
+          version = native.openDirectoryEnumeration(request.root.rootPath, request.relativePath, request.maxEntries,
+            request.maxBytes, content.maxNameBytes, Math.max(1, Math.ceil(Math.min(content.operationTimeoutMs,
+              deadline - performance.now()))), new Int32Array(request.cancel))
+          if (parseFdDirectoryVersion(version) === undefined) {
+            throw new AnchorCloseFailure('Invalid native directory version')
+          }
+          if (Atomics.load(new Int32Array(request.cancel), 0) !== 0 || performance.now() >= deadline) {
+            throw new WorkerFailure('FS_ABORTED')
+          }
+        } catch (error) { closeDirectoryNative(); throw error }
+        const opaque = parseFdDirectoryVersion(version)
+        if (opaque === undefined) throw new AnchorCloseFailure('Invalid native directory version')
+        const reply: FdWorkerReply = { kind: 'directory-ready', id: request.id, version: opaque }
+        if (Buffer.byteLength(JSON.stringify(reply)) > request.maxBytes) { closeDirectoryNative(); throw new WorkerFailure('FS_TOO_LARGE') }
+        activeDirectory = { request, version: opaque, deadline, pages: 0,
+          idleTimer: setTimeout(() => expireDirectory(request.id), config.idleTimeoutMs),
+          totalTimer: setTimeout(() => expireDirectory(request.id), Math.max(1, Math.ceil(deadline - performance.now()))) }
+        port.postMessage(reply)
+      } catch (error) {
+        const observed = directoryFailure(error)
+        if (typeof raw.id !== 'string' || !/^[a-f0-9-]{36}$/.test(raw.id) || content === undefined) { port.close(); return }
+        endedDirectoryId = raw.id as OperationId
+        postDirectory({ kind: 'reply', id: endedDirectoryId, ok: false, ...failure(observed) }, content.maxReplyBytes)
+      }
+      return
+    }
     if (record(raw) && raw.kind === 'stage-begin') {
       if (active !== undefined || activeStage !== undefined) { port.close(); return }
       let request: Extract<FdStageRequest, { kind: 'stage-begin' }>
@@ -1228,6 +1402,8 @@ function start(): void {
     }
   })
   port.postMessage({ kind: 'ready', abiVersion: native.abiVersion, ...storage === undefined ? {} : { storageProbeVersion: 1 as const },
+    ...native.directoryListingVersion === undefined ? {} : { directoryListingVersion: native.directoryListingVersion },
+    ...native.directoryPagingVersion !== 1 || limits.directoryPaging === undefined ? {} : { directoryPagingVersion: 1 as const },
     ...native.projectMetadataVersion === undefined ? {} : { projectMetadataVersion: native.projectMetadataVersion },
     ...native.environmentLayoutVersion === undefined ? {} : { environmentLayoutVersion: native.environmentLayoutVersion },
     ...native.skillProjectionVersion === undefined ? {} : { skillProjectionVersion: native.skillProjectionVersion },

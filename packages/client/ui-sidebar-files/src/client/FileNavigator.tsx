@@ -167,7 +167,7 @@ function SearchFailure({ failure, onRetry, t }: {
  */
 export function FileNavigator({
   useTabInfo, page, onOpen, sessionId, useSessions, useStore, actions, useRowWidth, useCanOpen, useSearchPreferences,
-  attach, placeBeside, hold, toggle, scrolled, bodyDrawn, currentDrawn, navigatorDrawn,
+  attach, placeBeside, hold, toggle, scrolled, bodyDrawn, currentDrawn, navigatorDrawn, nextPage, releaseDirectory,
   setQuery, toggleSearch, retrySearch, setSearchPreferences, searchDrawn, t, renderFactorySlot, useContextMenu,
 }: FactoryComponentPropsOf<'sidebar.files.navigator'>): ReactNode {
   const { tab, panel } = useTabInfo()
@@ -255,13 +255,24 @@ export function FileNavigator({
       root: treeRootOf(tree.root),
       expanded: tree.expanded,
       onToggle: (entry: TreeEntry) => { toggle(paneId, parentOf(tree, entry.path), entry.path, tree.expanded) },
-      onOpen: (entry: TreeEntry) => { onOpen(fileAddressFor(sessionId, tree.root, entry.path)) },
+      onOpen: (entry: TreeEntry) => {
+        const open = (): void => { if (!tab.signal.aborted) onOpen(fileAddressFor(sessionId, tree.root, entry.path)) }
+        const closed = releaseDirectory()
+        if (closed === undefined) open()
+        else void closed.then(open, () => { /* The face retains and reports the unconfirmed directory. */ })
+      },
+      onDirectoryAction: (path: string) => {
+        const absolute = path === treeRootOf(tree.root) ? tree.root : path
+        const level = tree.levels[absolute]
+        nextPage(paneId, absolute, tab.signal, level?.kind === 'failed' || level?.kind === 'ready'
+          && (level.level.page?.stopped === true || level.failure?.code === 'workspace-file/directory-stopped'))
+      },
       canOpen: (entry: TreeEntry) => canOpen(fileAddressFor(sessionId, tree.root, entry.path)),
       rowTriggerProps: (entry: TreeEntry, kind: 'file' | 'directory') => getTriggerProps(kind === 'directory'
         ? { kind, value: { sessionId, path: entry.path } }
         : { kind, value: { sessionId, path: entry.path, paneId } }),
     }
-  }, [tree, paneId, sessionId, toggle, canOpen, onOpen, getTriggerProps])
+  }, [tree, paneId, sessionId, toggle, canOpen, onOpen, getTriggerProps, nextPage, releaseDirectory, tab.signal])
   // The results keep their own expansion; every other gesture acts as on the tree.
   const resultView = useMemo(() => view === undefined || resultTree === undefined ? undefined : {
     ...view,

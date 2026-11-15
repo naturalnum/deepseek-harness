@@ -4,6 +4,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-gateway/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar-files/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/client'
 import type { CloudBootstrap } from '@deepseek-ai/dsh-pe-cloud-access/types'
 import { FileDownloadAction, type FileDownloadActionInjected } from './FileDownloadAction.tsx'
@@ -58,6 +59,11 @@ export function installCloudFileDownloads(ctx: Context, page: FileDownloadPage):
         }
         const injected: FileDownloadActionInjected = {
           signal, maxFileBytes: maximum,
+          releaseDirectory: async (sessionId) => {
+            current()
+            await owner.parallel('sidebar-files/release-directory', sessionId)
+            current()
+          },
           fetch: (path, init) => { current(); return fetch(path, init) },
           navigationUrl: (path) => { current(); return page.lifetime.transport.navigationUrl(path) },
         }

@@ -31,6 +31,9 @@ export function failureLine(t: TranslateNS<'sidebarFiles'>, failure: RemoteFailu
     case 'workspace-file/not-found': return t('error.notFound')
     case 'workspace-file/outside-workspace': return t('error.outsideWorkspace')
     case 'workspace-file/not-directory': return t('error.notDirectory')
+    case 'workspace-file/directory-changed': return t('error.directoryChanged')
+    case 'workspace-file/directory-stopped': return t('error.directoryStopped')
+    case 'workspace-file/directory-close-unconfirmed': return t('error.directoryCloseFailed')
     // Carrier and unclassified host failures reach the reader as themselves:
     // this tree knows nothing useful to add to a transport-level message.
     default: return t('error.unavailable', { message: failure.message })
@@ -107,11 +110,27 @@ export function workspaceDirectories(
   for (const [path, level] of Object.entries(levels)) {
     const key = keyOf(path)
     if (level.kind === 'loading') directories[key] = { loading: true }
-    else if (level.kind === 'failed') directories[key] = { failure: failureLine(t, level.failure) }
+    else if (level.kind === 'failed') directories[key] = { failure: failureLine(t, level.failure),
+      ...level.failure.code === 'workspace-file/directory-changed' ? { action: { label: t('page.restart') } } : {} }
     else {
-      const state: { failure?: string; truncated?: true; omitted?: 'hidden' } = {}
+      const state: {
+        failure?: string
+        truncated?: true
+        omitted?: 'hidden'
+        note?: string
+        action?: { label: string; disabled?: boolean }
+      } = {}
       if (level.failure !== undefined) state.failure = failureLine(t, level.failure)
       if (level.level.truncated) state.truncated = true
+      if (level.level.directoryPaging === true) {
+        const page = level.level.page
+        if (page !== undefined) state.note = t('page.number', { number: page.number })
+        if (page === undefined || page.more || page.stopped === true) state.action = {
+          label: level.level.pagingPending === true ? t('loading') : page?.stopped === true
+            || level.failure?.code === 'workspace-file/directory-stopped' ? t('page.restart') : page === undefined ? t('page.browse') : t('page.next'),
+          disabled: level.level.pagingPending === true,
+        }
+      }
       if (level.level.entries.length > 0 && drawnEntries(level.level, showHidden).length === 0) state.omitted = 'hidden'
       directories[key] = state
     }

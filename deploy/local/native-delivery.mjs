@@ -279,7 +279,7 @@ export async function runNativePublishContinuation({ directory, pins, authority,
  * @param {object} input Pinned operation, Root authority, fixed lifecycle effects and private state directory.
  * @returns {Promise<object>} Root-confirmed verified record; any unknown effect stops without recovery or retry.
  */
-export async function runNativeDelivery({ directory, pins, authority, effects, previousAuthority, successor, confirmPredecessor,
+export async function runNativeDelivery({ directory, pins, authority, effects, previousAuthority, successor, assetSuccessor, confirmPredecessor,
   writeProjection = value => saveNativeProjection(directory, value),
   holdOperation = action => withNativeOperationLock(directory, pins.operation, action) }) {
   requireNativePins(pins)
@@ -287,12 +287,16 @@ export async function runNativeDelivery({ directory, pins, authority, effects, p
     : ['publish', 'stop', 'backup', 'install', 'unbind', 'bind', 'seal', 'start', 'verify']
   if (!['fd-profile', 'matching-js', 'successor-js'].includes(pins.kind)
     || pins.kind === 'successor-js' && (typeof confirmPredecessor !== 'function' || !successor)
+    || assetSuccessor !== undefined && (pins.kind !== 'fd-profile' || typeof confirmPredecessor !== 'function')
     || names.some(name => typeof effects[name] !== 'function') || typeof effects.observeTuple !== 'function') {
     throw new NativeDeliveryUnconfirmed('missing-fixed-effect')
   }
   return holdOperation(async () => {
     // Observe the installed group inside the same operation lock as its next state transition.
-    if (pins.kind === 'successor-js') {
+    if (assetSuccessor !== undefined) {
+      const previous = await confirmPredecessor()
+      stateModule.requireNativeAssetSuccessor(previous, await effects.observeTuple(), pins, assetSuccessor)
+    } else if (pins.kind === 'successor-js') {
       const previous = await confirmPredecessor()
       requireNativeSuccessor(previous, await effects.observeTuple(), pins, successor)
     } else if (pins.kind === 'matching-js') {

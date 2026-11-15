@@ -66,6 +66,7 @@ const nativeStreams: Readonly<Record<string, Pick<EndpointExposure, 'handlerId' 
   '$events': { handlerId: 'native:typertGateway', guard: 'authenticated-account' },
   'userQuestions/attachWait': { handlerId: 'native:userQuestions', guard: 'account-session' },
   [fileStreamEndpoint]: { handlerId: 'native:workspaceFiles', guard: 'account-session' },
+  'workspaceFiles/listPages': { handlerId: 'native:workspaceFiles', guard: 'account-session' },
 }
 
 function selectedNative(row: EndpointExposure, expected: Readonly<Record<string, Pick<EndpointExposure, 'handlerId' | 'guard'>>>): boolean {

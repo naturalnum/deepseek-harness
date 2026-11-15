@@ -289,3 +289,31 @@ it('carries the file tree path and pane into its menu gesture', async () => {
 
   } finally { await h.fiber.dispose() }
 })
+
+it('closes only the requesting Session original faces and retains their unknown close failure', async () => {
+  const h = await boot()
+  try {
+    const page = h.registered.find(entry => entry.name === 'sidebar.right.pane.tab')!
+    const instance = page.store!.create(SESSION)
+    const face = page.inject!(SESSION, instance.actions) as FilesInjected
+    const other = 'another-session' as SessionId
+    const otherInstance = page.store!.create(other)
+    const otherFace = page.inject!(other, otherInstance.actions) as FilesInjected
+    const close = vi.spyOn(face, 'releaseDirectory').mockRejectedValue(new Error('Host close unknown'))
+    const otherClose = vi.spyOn(otherFace, 'releaseDirectory')
+    const release = face.placeBeside('file-preview' as TabId)
+    const releaseAgain = face.placeBeside('second-preview' as TabId)
+    const releaseOther = otherFace.placeBeside('other-preview' as TabId)
+    try {
+      await expect(h.ctx.parallel('sidebar-files/release-directory', SESSION)).rejects.toMatchObject({
+        errors: [expect.objectContaining({ message: 'Host close unknown' })],
+      })
+      expect(close).toHaveBeenCalledOnce()
+      expect(otherClose).not.toHaveBeenCalled()
+      close.mockResolvedValue(undefined)
+      await h.ctx.parallel('sidebar-files/release-directory', SESSION)
+      expect(close).toHaveBeenCalledTimes(2)
+    } finally { release(); releaseAgain(); releaseOther() }
+  } finally { await h.fiber.dispose() }
+  expect(await h.ctx.parallel('sidebar-files/release-directory', SESSION)).toBeUndefined()
+})

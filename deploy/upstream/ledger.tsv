@@ -86,8 +86,8 @@ packages/client/ui-sidebar-documentpreview/src/client/index.ts	通用修复	整�
 packages/client/ui-sidebar-documentpreview/src/client/rpc.ts	通用修复	文件提供方一次读不完时改为 32KB 窗口分段读取并校验一致性（由云端文件提供方的单次上限触发，逻辑通用）	读取路径在包内部；向上游提交	撤掉	没动
 packages/client/ui-sidebar-files/src/client/FilesBody.module.css	云端定制	上传进度、新建文件夹等样式	随 FilesBody.tsx	撤掉	已撤
 packages/client/ui-sidebar-files/src/client/FilesBody.tsx	云端定制	文件侧栏新增上传、下载、新建文件夹按钮和进度（有开关：未提供 workspaceFileManagement 时不显示）	上游已有 sidebar.right.tab.files.actions 插槽，但只给根目录路径；上游把“当前选中目录”和“刷新”加进插槽属性后可整体搬进 pe-cloud-client	撤掉	已撤
-packages/client/ui-sidebar-files/src/client/face.ts	扩展点	把 management 和上传完成订阅传给界面	同上	撤掉	已撤
-packages/client/ui-sidebar-files/src/client/index.ts	扩展点	读取可选的 workspaceFileManagement，并在上传完成后刷新文件树	同上	撤掉	已撤
+packages/client/ui-sidebar-files/src/client/face.ts	扩展点	原上传管理定制保持撤回；将已交付目录分页接到新版Native导航器和原Remote流，不复制旧文件树	同上	留作口子	已按新原生重加
+packages/client/ui-sidebar-files/src/client/index.ts	扩展点	原上传管理定制保持撤回；将已交付目录分页接到新版Native导航器和原Remote流，不复制旧文件树	同上	留作口子	已按新原生重加
 packages/client/ui-sidebar-files/src/client/locales.ts	云端定制	上传、下载、新建文件夹文案	同上	搬进插件	没动
 packages/client/ui-sidebar-right/src/client/index.ts	扩展点	取 clientPersistence 并传给侧栏控制器和 store	上游若提供页面级默认存储端口，本文件不用改	留作口子	没动
 packages/client/ui-sidebar-right/src/client/persistence.ts	扩展点	侧栏布局读写走页面存储端口	同上；直接用 localStorage 的代码需上游改成走端口	留作口子	没动
@@ -103,7 +103,7 @@ packages/client/ui-theme/src/client/index.ts	通用修复	主题写入区分已�
 packages/client/ui-theme/src/client/locales.ts	通用修复	保存状态文案	同上	撤掉	没动
 packages/client/ui-theme/src/client/settings-store.ts	通用修复	行状态里增加 saveState	同上	撤掉	没动
 packages/client/ui-theme/src/theme-settings.ts	通用修复	ThemeSaveState 类型	同上	撤掉	没动
-packages/client/ui-tool/src/client/contract/slots.ts	云端定制	已撤回旧注释改写；为现有client catalog报告123行预算，仅将上游原注释四行排为三行，完整词序标点和TS结构不变	原注释换行可在现有报告预算内通过，或上游吸收该纯排版；相关正式检查通过且本文件相对上游无差异。	搬进插件	没动
+packages/client/ui-tool/src/client/contract/slots.ts	云端定制	仅压缩工具槽重复说明以满足原127行报告预算；保原槽语义、成员和默认行为，不抬预算	原生说明在现有报告预算内通过时可撤回	搬进插件	已按新原生重加
 packages/client/ui-trajectory/src/client/duration-store.ts	扩展点	“显示耗时”偏好走页面存储端口	上游若提供页面级默认存储端口，本文件不用改	留作口子	没动
 packages/client/ui-trajectory/src/client/index.ts	扩展点	把 clientPersistence 传给两个偏好 store	同上	留作口子	没动
 packages/client/ui-trajectory/src/client/string-wrapping-store.ts	扩展点	“字符串换行”偏好走页面存储端口	同上	留作口子	没动
@@ -175,7 +175,7 @@ packages/session/session-persistence-jsonl/src/catalog-migration.ts	通用修复
 packages/subprocess/subprocess/src/types.ts	扩展点	spawn 规格可选 sandboxPolicy；句柄可选 releaseCollected	保留	留作口子	没动
 packages/session-query/session-log-export/src/client/index.ts	扩展点	可选服务 sessionLogDownloadIntegration：由应用提供带登录态的 fetch 和下载地址绑定	保留	留作口子	没动
 packages/schedule/schedule/src/runtime.ts	扩展点	投递前后调用可选的准入回调；加 isIdle	保留	留作口子	没动
-packages/fs/fs/src/index.ts	扩展点	文件系统基类加 supportsTextEdit（默认 true）和 scopeRoot（默认 undefined）	保留	留作口子	没动
+packages/fs/fs/src/index.ts	扩展点	文件系统默认扩展：supportsTextEdit=true、scopeRoot缺省；完整listing包装不改原结果，openDirectory缺省拒绝，不仿造全量分页	原生提供等价公开接口后改用原生	留作口子	已按新原生重加
 packages/core/system-prompt/src/index.ts	扩展点	新增瀑布事件 system-prompt/prepare，组装提示词前先等监听者；无监听者时直接继续	保留	留作口子	没动
 packages/context/agent-instructions/src/files.ts	扩展点	找项目根时在 fs.scopeRoot() 给出的边界处停下；默认提供方无边界时不变	保留	留作口子	没动
 packages/session-query/session-query/src/config.ts	扩展点	两个新错误类 SessionQuerySettledStatAbortError、SessionQuerySettledReadAbortError；当前原生观察器不消费旧清理认证助手/异常类，生产代码无调用；撤回通用取消认证要求及其专用分支测试	随取消结算加固一起提上游或回退	撤掉	已撤
@@ -212,7 +212,7 @@ packages/session-query/session-query/src/index.ts	登记	导出两个新错误�
 packages/api/remotes/src/remote-events.ts	功能增强	把 skills/change 加进转发给界面的事件清单：技能目录变化后界面自动刷新	保留；或提上游	撤掉	没动
 packages/ptc-runtime/ptc-runtime-node/src/index.ts	扩展点	把已解析的沙箱策略随 spawn 规格传给子进程提供方；本地提供方不读它	保留	撤掉	已撤
 packages/attachment/attachment-local/src/index.ts	登记	导出三个新错误类	随 store.ts 处理	撤掉	没动
-packages/api/workspace-files/src/index.ts	通用修复	随 changes.ts：把调用方的 fs 传进去	随 changes.ts 提上游	撤掉	没动
+packages/api/workspace-files/src/index.ts	功能增强	保留用户已交目录功能的显式partial列表与原流credit/close消费者；旧changes的caller-FS参数仍待独立三问，不认作纯口子	原生提供等价有界列表和分页消费接口后撤回；旧watch改动另按实际账号安全场景处置	必须携带	已按新原生重加
 packages/terminal/terminal-bash/src/index.ts	扩展点	终端 spawn 规格带上已解析的沙箱策略	保留	留作口子	没动
 packages/api/remotes/src/client/index.ts	登记	引入技能事件的类型声明，让界面能订阅 skills/change	随 remote-events.ts 处理	撤掉	没动
 scripts/product-package-policy.ts	纯登记	`:19-26` 把 8 个包登记为 `category: 'optional'`；产品包分类检查要求每个包有分类	上游支持不需本地改脚本的自有包分类登记入口，8包分类仍完整受正式检查且原脚本可无差异恢复；须相关正式检查通过且该脚本相对上游无差异。	撤掉	已撤
@@ -241,3 +241,11 @@ packages/host/frontend-static/src/index.ts	扩展点	将原静态资源函数提
 packages/mcp/mcp-client/src/generation.ts	扩展点	显式字节预算才包装原 SDK HTTP fetch 并持有读者关闭；省略保持原生传输	原生提供等价 fetch 和关闭注入口后把预算实现搬自有插件	必须携带	已验证
 packages/schedule/schedule/src/types.ts	扩展点	可选 targetSessionId 在计数和分页前限定既有 Session 目标；省略保留原生全目标列表	原生提供等价 Session 过滤后撤回	留作口子	已按新原生重加
 vendor/loader/src/config/tree.ts	扩展点	可选 updateGuard 在 create/remove/update 的身份和行变动前检查命令，避免配置保存中途树变动	原生提供等价的树命令准备检查后撤回	必须携带	已按新原生重加
+packages/api/workspace-files/src/types.ts	扩展点	原生目录分页Remote DTO和流；只有所选提供方及账号清单开放时使用	原生提供同等公开接口后改用原生	留作口子	已按新原生重加
+packages/client/ui-sidebar-files/src/client/FileNavigator.tsx	扩展点	接目录分页到新版Native面板共享导航器；只有提供方声明分页能力时显示/调用，普通提供方行为保持	原生提供同等公开接口后改用原生	留作口子	已按新原生重加
+packages/client/ui-sidebar-files/src/client/FileTree.tsx	扩展点	接目录分页到新版Native面板共享导航器；只有提供方声明分页能力时显示/调用，普通提供方行为保持	原生提供同等公开接口后改用原生	留作口子	已按新原生重加
+packages/client/ui-sidebar-files/src/client/directory-node.ts	扩展点	接目录分页到新版Native面板共享导航器；只有提供方声明分页能力时显示/调用，普通提供方行为保持	原生提供同等公开接口后改用原生	留作口子	已按新原生重加
+packages/client/ui-sidebar-files/src/client/store.ts	扩展点	接目录分页到新版Native面板共享导航器；只有提供方声明分页能力时显示/调用，普通提供方行为保持	原生提供同等公开接口后改用原生	留作口子	已按新原生重加
+packages/client/ui-sidebar-files/src/client/workspace-tree.ts	扩展点	接目录分页到新版Native面板共享导航器；只有提供方声明分页能力时显示/调用，普通提供方行为保持	原生提供同等公开接口后改用原生	留作口子	已按新原生重加
+packages/fs/fs/src/types.ts	扩展点	目录分页的提供方接口及有界结果；默认提供方不声明分页，原listDir保留	原生提供同等公开接口后改用原生	留作口子	已按新原生重加
+packages/experimental/liveshare/src/endpoint-classification.ts	登记	新增目录分页Remote与原目录列举一致仅所有者可用，不向共享读者开放	原生包含同等分页接口权限登记时撤回	必须携带	已按新原生重加

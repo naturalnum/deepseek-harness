@@ -1,7 +1,8 @@
 /** One account file provider; each target captures the trusted caller's exact registered project and anchor. */
 import type { Context } from '@deepseek-ai/cordis'
-import FileSystem, { FsError, FsTargetKey, FsVersion } from '@deepseek-ai/dsh-fs'
-import type { FsTarget, FsInfo, FsWriteIntent, FsWriteOutcome, FsDirEntry, FsPathInfo, FsEditOutcome } from '@deepseek-ai/dsh-fs'
+import FileSystem, { FsError, FsTargetKey, FsVersion, FsDirectoryVersion } from '@deepseek-ai/dsh-fs'
+import type { FsTarget, FsInfo, FsWriteIntent, FsWriteOutcome, FsDirEntry, FsDirectoryListing, FsDirectoryEnumeration,
+  FsDirectoryPage, FsPathInfo, FsEditOutcome } from '@deepseek-ai/dsh-fs'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import { posix } from 'node:path'
@@ -12,7 +13,7 @@ import { nativeReadFailure } from './read-only.ts'
 import { DirectoryMetadataFailure } from './directory-error.ts'
 import { FdTextWriteFailure } from './worker-client.ts'
 import type { ResidentResult } from './work-queue.ts'
-import type { FdDirectoryEntry, FdPathMetadata } from './worker-protocol.ts'
+import type { FdDirectoryListing, FdDirectoryPage, FdDirectoryVersion, FdPathMetadata } from './worker-protocol.ts'
 import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 
@@ -20,6 +21,20 @@ import type {} from '@deepseek-ai/dsh-sandbox-policy'
 export interface NativeTextFileSystemConstructor {
   new(ctx: Context): FileSystem
   readonly inject: readonly string[]
+}
+
+/** Original queue ownership: native close, worker completion and retained page bytes settle separately. */
+export interface TextDirectoryEnumeration {
+  readonly maxReplyBytes: number
+  readonly ready: Promise<FdDirectoryVersion>
+  /** Native operation completion; failure wakes a consumer waiting for its next credit. */
+  readonly ended: Promise<void>
+  readonly closed: Promise<void>
+  /** Original worker slot and queue running ownership have settled; the result still retains page bytes. */
+  readonly settled: Promise<void>
+  pull(): Promise<FdDirectoryPage>
+  /** Caller drops its current page first; completion joins the original slot and releases its result reservation. */
+  close(): Promise<void>
 }
 
 /** Package-private input issued on the original lane for an exact selected native Workspace. */
@@ -33,7 +48,9 @@ export interface TextProjectBackend {
   canonicalPath(path: string, signal?: AbortSignal): Promise<string>
   readText(path: string, signal?: AbortSignal): Promise<ResidentResult<string>>
   lstat(path: string, signal?: AbortSignal): Promise<ResidentResult<FdPathMetadata | undefined>>
-  listDir(path: string, signal?: AbortSignal): Promise<ResidentResult<readonly FdDirectoryEntry[]>>
+  listDir(path: string, signal?: AbortSignal): Promise<ResidentResult<FdDirectoryListing>>
+  /** Absent when explicit configuration or any original slot's real optional capability is unavailable. */
+  readonly enumerateDirectory?: (path: string, maxEntries: number, signal?: AbortSignal) => Promise<TextDirectoryEnumeration>
   readBytes(path: string, maxBytes: number, signal?: AbortSignal): Promise<ResidentResult<Uint8Array>>
   readByteRange(path: string, range: { offset: number; length: number }, signal?: AbortSignal): Promise<ResidentResult<Uint8Array>>
   writeText(path: string, content: string, expected?: FsWriteIntent, signal?: AbortSignal): Promise<ResidentResult<FsWriteOutcome>>
@@ -57,6 +74,10 @@ export interface AccountFileSelection {
   readonly workspace: Workspace
   /** Original native Session policy, checked by the provider immediately before a mutation. */
   readonly assertMutationPolicy?: (policy?: SandboxExecutionPolicy) => void
+  /** Trusted original exposure selection permits the new stream; omission keeps ordinary listings only. */
+  readonly directoryPagingAllowed?: true
+  /** Actual original Peer/Use stream check; required to open pages and already composed into assertCurrent. */
+  readonly directoryPagingCurrent?: () => void
   /** Omission retains ordinary selection; trusted factory preparation permits only its one root-directory sequence. */
   readonly directoryPreparation?: { assertCaller(caller: Context): void }
   /** Recheck the original account graph, selected Workspace registration, and issuing Session/Agent authority. */
@@ -477,13 +498,20 @@ export function createTextProjectFileSystem(account: AccountTextBackend): Native
       } catch (error) { throw nativeReadFailure(error) }
     }
     override async listDir(target: FsTarget, signal?: AbortSignal): Promise<FsDirEntry[]> {
+      return (await this.directory(target, true, signal)).entries
+    }
+    override listDirectory(target: FsTarget, signal?: AbortSignal): Promise<FsDirectoryListing> {
+      return this.directory(target, false, signal)
+    }
+    private async directory(target: FsTarget, complete: boolean, signal?: AbortSignal): Promise<FsDirectoryListing> {
       try {
         const { record, check } = await this.selectedTarget(target, signal)
         this.content(record)
         const result = await record.backend.listDir(record.relative, signal)
         try {
           check()
-          const entries = result.value.map((entry): FsDirEntry => {
+          if (complete && result.value.truncated) throw new FsError('The directory listing is incomplete.', 'FS_TOO_LARGE')
+          const entries = result.value.entries.map((entry): FsDirEntry => {
             const relative = this.path(record.backend, posix.join(record.relative, entry.name))
             const entryOnly = entry.type === 'symlink' || entry.type === 'other'
             return { name: entry.name, type: entry.type === 'file' ? 'file' : entry.type === 'directory' ? 'directory' : 'other',
@@ -492,8 +520,65 @@ export function createTextProjectFileSystem(account: AccountTextBackend): Native
           })
           check()
           this.current(signal)
-          return entries
+          return { entries, truncated: result.value.truncated,
+            ...record.scope.directoryPagingAllowed !== true || record.backend.enumerateDirectory === undefined
+              ? {} : { directoryPaging: true as const } }
         } finally { result.release() }
+      } catch (error) { throw nativeReadFailure(error) }
+    }
+    override async openDirectory(target: FsTarget, maxEntries: number, signal?: AbortSignal): Promise<FsDirectoryEnumeration> {
+      try {
+        const { record, scope, check } = await this.selectedTarget(target, signal)
+        this.content(record)
+        if (scope.directoryPagingAllowed !== true || scope.directoryPagingCurrent === undefined
+          || record.backend.enumerateDirectory === undefined) {
+          throw new FsError('Optional directory paging is unavailable.', 'FS_PERMISSION_DENIED')
+        }
+        const streamCurrent = scope.directoryPagingCurrent
+        streamCurrent()
+        const enumeration = await record.backend.enumerateDirectory(record.relative, maxEntries, signal)
+        let phase: 'open' | 'eof' | 'closing' | 'closed' = 'open'
+        let closing: Promise<void> | undefined
+        const close = (): Promise<void> => {
+          closing ??= (async () => {
+            phase = 'closing'
+            try { await enumeration.close() } catch (error) { throw nativeReadFailure(error) } finally { phase = 'closed' }
+          })()
+          return closing
+        }
+        const current = (): void => {
+          if (phase === 'closing' || phase === 'closed') throw new FsError('Directory enumeration has ended.', 'FS_ABORTED')
+          check()
+          streamCurrent()
+          this.current(signal)
+        }
+        try {
+          current()
+          const version = FsDirectoryVersion(await enumeration.ready)
+          current()
+          const pageScope: AccountFileSelection = { ...scope, assertCurrent: current }
+          const ended = enumeration.ended.catch((error: unknown) => { throw nativeReadFailure(error) })
+          void ended.catch(() => {})
+          return { version, maxReplyBytes: enumeration.maxReplyBytes, ended, assertCurrent: current,
+            next: async (): Promise<FsDirectoryPage> => {
+              try {
+                current()
+                if (phase !== 'open') throw new FsError('The directory has already reached EOF.', 'FS_ABORTED')
+                const page = await enumeration.pull()
+                current()
+                if (page.eof) { await enumeration.settled; current() }
+                const entries = page.entries.map((entry): FsDirEntry => {
+                  const relative = this.path(record.backend, posix.join(record.relative, entry.name))
+                  return { name: entry.name, type: entry.type === 'file' ? 'file' : entry.type === 'directory' ? 'directory' : 'other',
+                    target: this.issue(pageScope, record.backend, relative, entry.type === 'symlink' || entry.type === 'other'),
+                    version: FsVersion(entry.version), ...entry.size === undefined ? {} : { size: entry.size } }
+                })
+                current()
+                if (page.eof) { phase = 'eof'; return { entries, version, eof: true, closed: true } }
+                return { entries, version, eof: false, closed: false }
+              } catch (error) { await close(); throw nativeReadFailure(error) }
+            }, close }
+        } catch (error) { await close(); throw error }
       } catch (error) { throw nativeReadFailure(error) }
     }
     override editText(target: FsTarget): Promise<FsEditOutcome> { return this.denied(target) }

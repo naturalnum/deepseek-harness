@@ -2047,7 +2047,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'abstract listDir(target: FsTarget, signal?: AbortSignal): Promise<FsDirEntry[]>',
         description: 'List direct children of a directory in stable name order. Returns resolved child targets plus cheap metadata only; never reads file contents.',
         parameters: [{ name: 'target', description: 'the resolved directory target.' }, { name: 'signal', description: 'aborts the listing.' }],
-        returns: 'one entry per direct child, in stable name order.',
+        returns: 'one entry per direct child, in stable name order; incomplete listings reject.',
+      },
+      {
+        signature: 'async listDirectory(target: FsTarget, signal?: AbortSignal): Promise<FsDirectoryListing>',
+        description: 'List direct children while preserving a provider\'s explicit completeness result. Providers with bounded enumeration may override this method; the default uses the complete listing.',
+        parameters: [{ name: 'target', description: 'the resolved directory target.' }, { name: 'signal', description: 'aborts the original provider listing.' }],
+        returns: 'stable metadata-only entries and whether children were omitted; provider failures propagate.',
+      },
+      {
+        signature: 'openDirectory(target: FsTarget, maxEntries: number, signal?: AbortSignal): Promise<FsDirectoryEnumeration>',
+        description: 'Open an explicitly supported direct-child enumeration; the default refuses rather than slicing a full listing.',
+        parameters: [{ name: 'target', description: 'Original resolved directory target.' }, { name: 'maxEntries', description: 'Consumer\'s existing positive per-page entry cap; provider limits may be smaller.' }, { name: 'signal', description: 'Cancels the original enumeration while actual cleanup remains owned.' }],
+        returns: 'A finite provider enumeration with explicit version, page and actual closure facts.',
       },
       {
         signature: 'abstract writeText( target: FsTarget, content: string, expected?: FsWriteIntent, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy, ): Promise<FsWriteOutcome>',
@@ -2962,6 +2974,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'Whether this operation belongs to the still-current original read carrier.',
       },
       {
+        signature: 'captureStreamCurrent(peer: PeerScope, binding: AccountBinding, endpoint: string, signal: AbortSignal): () => void',
+        description: 'Retain the original authenticated stream through its native work.',
+        parameters: [{ name: 'peer', description: 'Exact original invocation Peer.' }, { name: 'binding', description: 'Original installed account binding.' }, { name: 'endpoint', description: 'Exact admitted stream endpoint.' }, { name: 'signal', description: 'Original stream and native-work cancellation.' }],
+        returns: 'Current checks owned by the same original ingress and Peer/Use.',
+      },
+      {
         signature: 'withConfigurationPeer<T>(peer: PeerScope, consume: ConfigurationPeerOperation<T>, mode: \'if-idle\' | \'stop-and-apply\' = \'if-idle\'): Promise<T>',
         description: 'Delegate a guarded configuration handoff to the same original login/Peer owner.',
         parameters: [{ name: 'peer', description: 'Exact native invocation Peer.' }, { name: 'consume', description: 'Factory-owned exclusive update, without another login or state authority.' }, { name: 'mode', description: 'Explicit local idle operation or terminal acceptance followed by original full closure.' }],
@@ -3002,7 +3020,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async assertBootstrapCurrent(owner: Context, signal?: AbortSignal): Promise<() => void>',
-        description: 'Check original native installations and the shared policy without creating or writing business resources. Mount/business admission and native ownership are checked around the awaited policy metadata read. Selected exposure rows and visited runtimes/fibers share the explicit preparation budget; missing or exceeded budgets reject.',
+        description: 'Check original native installations and the shared policy without creating or writing business resources. Mount/business admission and native ownership are checked around the awaited policy metadata read. Selected exposure rows and visited Native implementation records share the explicit preparation budget. Missing or exceeded budgets reject.',
         parameters: [{ name: 'owner', description: 'Actual consumer scope in this account graph.' }, { name: 'signal', description: 'Optional observer cancellation, combined with the original graph lifetime.' }],
         returns: 'Original synchronous native/admission recheck for final transfer; no readiness token, catalog or account authority is issued.',
         throws: ['CloudApiError for absent policy, removed/replaced native installations or closed admission; policy failures and cancellation retain their original identity.'],
@@ -3526,7 +3544,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'assertContentAvailable(): void',
         description: 'Require the settled original Registry/FS installation and its trusted actual content-capability check.',
         parameters: [],
-        throws: ['FilesFailure for partial installation, replaced providers, S2 omission or unavailable ABI8 pool capability.'],
+        throws: ['FilesFailure for partial installation, replaced providers, S2 omission or a missing content/directory capability.'],
       },
       {
         signature: 'async projectFor(workspace: Workspace, signal?: AbortSignal): Promise<AccountFilesProject>',
@@ -6164,7 +6182,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: '@Remote async list(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceDirectoryListing>',
         description: 'List the direct children of one directory inside the Session\'s workspace.',
         parameters: [{ name: 'workspaceFileScope', description: 'header-derived workspace root for the Session identity on the wire.' }, { name: 'path', description: 'workspace path, absolute or relative to the workspace root.' }, { name: 'signal', description: 'caller cancellation.' }],
-        returns: 'the directory\'s children in the backend\'s stable name order, bounded by the entry cap.',
+        returns: 'the backend\'s sorted subset, with truncation from either the provider or this service\'s entry cap.',
       },
       {
         signature: '@Remote async search( workspaceFileScope: WorkspaceFileScope, request: WorkspaceFileSearchRequest, signal: AbortSignal, ): Promise<WorkspaceFileSearchResult>',
@@ -6172,6 +6190,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'workspaceFileScope', description: 'header-derived workspace root for the Session identity on the wire.' }, { name: 'request', description: 'the query, literal exclusions, and hidden/ignore switches.' }, { name: 'signal', description: 'caller cancellation, forwarded to the subprocess; rejection preserves its reason.' }],
         returns: 'matches capped by search.maxResults; incomplete marks excess rg files or exit 2.',
         throws: ['RemoteError `gateway/bad-request`: the query is blank.', 'RemoteError `workspace-file/not-found`: the workspace root does not exist.', 'RemoteError `workspace-file/not-directory`: the workspace root is not a directory.', 'RemoteError `workspace-file/search-failed`: subprocess is missing, rg cannot launch or execute, or the search times out.'],
+      },
+      {
+        signature: '@Remote({ mode: \'stream\' }) listPages(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal) : RemoteStream<WorkspaceDirectoryFrame, WorkspaceDirectoryControl>',
+        description: 'Enumerate direct children with one credit per page on the original selected stream.',
+        parameters: [{ name: 'workspaceFileScope', description: 'Header-derived original Session and workspace identity.' }, { name: 'path', description: 'Workspace directory path; no cursor can select another path.' }, { name: 'signal', description: 'Original physical stream cancellation.' }],
+        returns: 'Ready, bounded pages and either a closed EOF page or an explicit Host close acknowledgement.',
       },
       {
         signature: '@Remote({ mode: \'stream\' }) changes(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): AsyncIterable<WorkspaceFileWatchFrame>',
@@ -7090,7 +7114,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AccountFileSelection',
-    declaration: 'export interface AccountFileSelection {\n    readonly workspace: Workspace;\n    readonly assertMutationPolicy?: (policy?: SandboxExecutionPolicy) => void;\n    readonly directoryPreparation?: {\n        assertCaller(caller: Context): void;\n    };\n    assertCurrent(): void;\n}',
+    declaration: 'export interface AccountFileSelection {\n    readonly workspace: Workspace;\n    readonly assertMutationPolicy?: (policy?: SandboxExecutionPolicy) => void;\n    readonly directoryPagingAllowed?: true;\n    readonly directoryPagingCurrent?: () => void;\n    readonly directoryPreparation?: {\n        assertCaller(caller: Context): void;\n    };\n    assertCurrent(): void;\n}',
   },
   {
     name: 'AccountFilesPreparation',
@@ -8401,6 +8425,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FdDirectoryEntry extends FdPathMetadata {\n    readonly name: string;\n}',
   },
   {
+    name: 'FdDirectoryListing',
+    declaration: 'export interface FdDirectoryListing {\n    readonly entries: readonly FdDirectoryEntry[];\n    readonly truncated: boolean;\n}',
+  },
+  {
+    name: 'FdDirectoryPage',
+    declaration: 'export type FdDirectoryPage = {\n    readonly version: FdDirectoryVersion;\n    readonly entries: readonly FdDirectoryEntry[];\n} & ({\n    readonly eof: false;\n    readonly closed: false;\n} | {\n    readonly eof: true;\n    readonly closed: true;\n});',
+  },
+  {
+    name: 'FdDirectoryVersion',
+    declaration: 'export type FdDirectoryVersion = Branded<\'FdDirectoryVersion\'>;',
+  },
+  {
     name: 'FdEnvironmentLayout',
     declaration: 'export interface FdEnvironmentLayout {\n    readonly home: FdProjectMetadataDirectory;\n    readonly venv: FdProjectMetadataDirectory;\n    readonly tmp: FdProjectMetadataDirectory;\n}',
   },
@@ -8450,7 +8486,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FileSystem',
-    declaration: 'export abstract class FileSystem extends Service {\n    constructor(ctx: Context);\n    get supportsTextEdit(): boolean;\n    scopeRoot(signal?: AbortSignal): Promise<FsTarget | undefined>;\n    watch(target: FsTarget, changed: (error?: Error) => void, signal: AbortSignal): Promise<() => Promise<void>>;\n    get sandboxMode(): SandboxMode | undefined;\n    abstract resolve(path: string, opts?: {\n        cwd?: string;\n        signal?: AbortSignal;\n    }): Promise<FsTarget>;\n    abstract processPath(target: FsTarget): string;\n    processPathFromHostPath(hostPath: string): string | undefined;\n    abstract fileUrl(target: FsTarget): string;\n    abstract contains(parent: FsTarget, child: FsTarget): boolean;\n    abstract stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined>;\n    abstract lstat(path: string, opts?: {\n        cwd?: string;\n    }, signal?: AbortSignal): Promise<FsPathInfo | undefined>;\n    abstract readText(target: FsTarget, signal?: AbortSignal): Promise<string>;\n    abstract streamText(target: FsTarget, signal?: AbortSignal): Promise<AsyncIterable<string>>;\n    abstract readBytes(target: FsTarget, signal: AbortSignal | undefined, maxBytes: number): Promise<Uint8Array>;\n    abstract readByteRange(target: FsTarget, range: {\n        offset: number;\n        length: number;\n    }, signal?: AbortSignal): Promise<Uint8Array>;\n    abstract listDir(target: FsTarget, signal?: AbortSignal): Promise<FsDirEntry[]>;\n    abstract writeText(target: FsTarget, content:  /* …truncated — full shape in source */',
+    declaration: 'export abstract class FileSystem extends Service {\n    constructor(ctx: Context);\n    get supportsTextEdit(): boolean;\n    scopeRoot(signal?: AbortSignal): Promise<FsTarget | undefined>;\n    watch(target: FsTarget, changed: (error?: Error) => void, signal: AbortSignal): Promise<() => Promise<void>>;\n    get sandboxMode(): SandboxMode | undefined;\n    abstract resolve(path: string, opts?: {\n        cwd?: string;\n        signal?: AbortSignal;\n    }): Promise<FsTarget>;\n    abstract processPath(target: FsTarget): string;\n    processPathFromHostPath(hostPath: string): string | undefined;\n    abstract fileUrl(target: FsTarget): string;\n    abstract contains(parent: FsTarget, child: FsTarget): boolean;\n    abstract stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined>;\n    abstract lstat(path: string, opts?: {\n        cwd?: string;\n    }, signal?: AbortSignal): Promise<FsPathInfo | undefined>;\n    abstract readText(target: FsTarget, signal?: AbortSignal): Promise<string>;\n    abstract streamText(target: FsTarget, signal?: AbortSignal): Promise<AsyncIterable<string>>;\n    abstract readBytes(target: FsTarget, signal: AbortSignal | undefined, maxBytes: number): Promise<Uint8Array>;\n    abstract readByteRange(target: FsTarget, range: {\n        offset: number;\n        length: number;\n    }, signal?: AbortSignal): Promise<Uint8Array>;\n    abstract listDir(target: FsTarget, signal?: AbortSignal): Promise<FsDirEntry[]>;\n    async listDirectory(target: FsTarget, signal?: /* …truncated — full shape in source */',
   },
   {
     name: 'FileSystemSkillResources',
@@ -8731,6 +8767,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FsDeleteOutcome',
     declaration: 'export interface FsDeleteOutcome {\n    before: string | null;\n}',
+  },
+  {
+    name: 'FsDirectoryEnumeration',
+    declaration: 'export interface FsDirectoryEnumeration {\n    readonly version: FsDirectoryVersion;\n    readonly maxReplyBytes: number;\n    readonly ended: Promise<void>;\n    assertCurrent(): void;\n    next(): Promise<FsDirectoryPage>;\n    close(): Promise<void>;\n}',
+  },
+  {
+    name: 'FsDirectoryListing',
+    declaration: 'export interface FsDirectoryListing {\n    readonly entries: FsDirEntry[];\n    readonly truncated: boolean;\n    readonly directoryPaging?: true;\n}',
+  },
+  {
+    name: 'FsDirectoryPage',
+    declaration: 'export type FsDirectoryPage = {\n    readonly version: FsDirectoryVersion;\n    readonly entries: readonly FsDirEntry[];\n} & ({\n    readonly eof: false;\n    readonly closed: false;\n} | {\n    readonly eof: true;\n    readonly closed: true;\n});',
+  },
+  {
+    name: 'FsDirectoryVersion',
+    declaration: 'export type FsDirectoryVersion = Branded<\'FsDirectoryVersion\'>;',
   },
   {
     name: 'FsDirEntry',
@@ -12493,8 +12545,12 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface TestPublishRequest {\n    readonly sessionId: string;\n}',
   },
   {
+    name: 'TextDirectoryEnumeration',
+    declaration: 'export interface TextDirectoryEnumeration {\n    readonly maxReplyBytes: number;\n    readonly ready: Promise<FdDirectoryVersion>;\n    readonly ended: Promise<void>;\n    readonly closed: Promise<void>;\n    readonly settled: Promise<void>;\n    pull(): Promise<FdDirectoryPage>;\n    close(): Promise<void>;\n}',
+  },
+  {
     name: 'TextProjectBackend',
-    declaration: 'export interface TextProjectBackend {\n    readonly binding: AccountBinding;\n    readonly workspace: Workspace;\n    readonly reader: FixedRootReader;\n    readonly maxPathBytes: number;\n    assertCurrent(): void;\n    assertInstalled(ctx: Context): void;\n    canonicalPath(path: string, signal?: AbortSignal): Promise<string>;\n    readText(path: string, signal?: AbortSignal): Promise<ResidentResult<string>>;\n    lstat(path: string, signal?: AbortSignal): Promise<ResidentResult<FdPathMetadata | undefined>>;\n    listDir(path: string, signal?: AbortSignal): Promise<ResidentResult<readonly FdDirectoryEntry[]>>;\n    readBytes(path: string, maxBytes: number, signal?: AbortSignal): Promise<ResidentResult<Uint8Array>>;\n    readByteRange(path: string, range: {\n        offset: number;\n        length: number;\n    }, signal?: AbortSignal): Promise<ResidentResult<Uint8Array>>;\n    writeText(path: string, content: string, expected?: FsWriteIntent, signal?: AbortSignal): Promise<ResidentResult<FsWriteOutcome>>;\n}',
+    declaration: 'export interface TextProjectBackend {\n    readonly binding: AccountBinding;\n    readonly workspace: Workspace;\n    readonly reader: FixedRootReader;\n    readonly maxPathBytes: number;\n    assertCurrent(): void;\n    assertInstalled(ctx: Context): void;\n    canonicalPath(path: string, signal?: AbortSignal): Promise<string>;\n    readText(path: string, signal?: AbortSignal): Promise<ResidentResult<string>>;\n    lstat(path: string, signal?: AbortSignal): Promise<ResidentResult<FdPathMetadata | undefined>>;\n    listDir(path: string, signal?: AbortSignal): Promise<ResidentResult<FdDirectoryListing>>;\n    readonly enumerateDirectory?: (path: string, maxEntries: number, signal?: AbortSignal) => Promise<TextDirectoryEnumeration>;\n    readBytes(path: string, maxBytes: number, signal?: AbortSignal): Promise<ResidentResult<Uint8Array>>;\n    readByteRange(path: string, range: {\n        offset: number;\n        length: number;\n    }, signal?: AbortSignal): Promise<ResidentResult<Uint8Array>>;\n    writeText(path: string, content: string, expected?: FsWriteIntent, signal?: AbortSignal): Promise<ResidentResult<FsWriteOutcome>>;\n}',
   },
   {
     name: 'TextProps',
@@ -13173,12 +13229,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface WorkspaceDiffHunk {\n    oldStart: number;\n    oldLines: number;\n    newStart: number;\n    newLines: number;\n    lines: string[];\n}',
   },
   {
+    name: 'WorkspaceDirectoryControl',
+    declaration: 'export type WorkspaceDirectoryControl = {\n    readonly kind: \'credit\' | \'close\';\n    readonly version: FsDirectoryVersion;\n    readonly cursor: WorkspaceDirectoryCursor;\n};',
+  },
+  {
+    name: 'WorkspaceDirectoryCursor',
+    declaration: 'export type WorkspaceDirectoryCursor = Branded<\'WorkspaceDirectoryCursor\'>;',
+  },
+  {
     name: 'WorkspaceDirectoryEntry',
     declaration: 'export interface WorkspaceDirectoryEntry {\n    readonly name: string;\n    readonly type: \'file\' | \'directory\' | \'other\';\n    readonly size?: number;\n}',
   },
   {
+    name: 'WorkspaceDirectoryFrame',
+    declaration: 'export type WorkspaceDirectoryFrame = {\n    readonly kind: \'ready\';\n    readonly path: string;\n    readonly version: FsDirectoryVersion;\n    readonly cursor: WorkspaceDirectoryCursor;\n} | ({\n    readonly kind: \'page\';\n    readonly path: string;\n    readonly version: FsDirectoryVersion;\n    readonly entries: readonly WorkspaceDirectoryEntry[];\n} & ({\n    readonly nextCursor: WorkspaceDirectoryCursor;\n    readonly closed: false;\n} | {\n    readonly nextCursor: null;\n    readonly closed: true;\n})) | {\n    readonly kind: \'closed\';\n    readonly version: FsDirectoryVersion;\n    readonly closed: true;\n};',
+  },
+  {
     name: 'WorkspaceDirectoryListing',
-    declaration: 'export interface WorkspaceDirectoryListing {\n    readonly path: string;\n    readonly entries: readonly WorkspaceDirectoryEntry[];\n    readonly truncated: boolean;\n}',
+    declaration: 'export interface WorkspaceDirectoryListing {\n    readonly path: string;\n    readonly entries: readonly WorkspaceDirectoryEntry[];\n    readonly truncated: boolean;\n    readonly directoryPaging?: true;\n}',
   },
   {
     name: 'WorkspaceFileBytes',
@@ -13198,7 +13266,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WorkspaceFiles',
-    declaration: 'export class WorkspaceFiles extends TypertRemoteService {\n    static inject;\n    static Config: z<Config>;\n    constructor(ctx: Context, private readonly config: Config);\n    @Remote\n    async read(workspaceFileScope: WorkspaceFileScope, path: string, range: WorkspaceFileRange, signal: AbortSignal): Promise<WorkspaceFileText>;\n    @Remote\n    async readBytes(workspaceFileScope: WorkspaceFileScope, path: string, options: WorkspaceByteReadOptions, signal: AbortSignal): Promise<WorkspaceFileBytes>;\n    @Remote\n    async stat(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceFileStat>;\n    @Remote\n    async list(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceDirectoryListing>;\n    @Remote\n    async search(workspaceFileScope: WorkspaceFileScope, request: WorkspaceFileSearchRequest, signal: AbortSignal): Promise<WorkspaceFileSearchResult>;\n    @Remote({ mode: \'stream\' })\n    changes(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): AsyncIterable<WorkspaceFileWatchFrame>;\n}',
+    declaration: 'export class WorkspaceFiles extends TypertRemoteService {\n    static inject;\n    static Config: z<Config>;\n    constructor(ctx: Context, private readonly config: Config);\n    @Remote\n    async read(workspaceFileScope: WorkspaceFileScope, path: string, range: WorkspaceFileRange, signal: AbortSignal): Promise<WorkspaceFileText>;\n    @Remote\n    async readBytes(workspaceFileScope: WorkspaceFileScope, path: string, options: WorkspaceByteReadOptions, signal: AbortSignal): Promise<WorkspaceFileBytes>;\n    @Remote\n    async stat(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceFileStat>;\n    @Remote\n    async list(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceDirectoryListing>;\n    @Remote\n    async search(workspaceFileScope: WorkspaceFileScope, request: WorkspaceFileSearchRequest, signal: AbortSignal): Promise<WorkspaceFileSearchResult>;\n    @Remote({ mode: \'stream\' })\n    listPages(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): RemoteStream<WorkspaceDirectoryFrame, WorkspaceDirectoryControl>;\n    @Remote({ mode: \'stream\' })\n    changes(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): AsyncIterable<WorkspaceFileWatchFrame>;\n}',
   },
   {
     name: 'WorkspaceFileScope',

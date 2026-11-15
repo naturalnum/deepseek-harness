@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.1-rc.2/cloud-directory-completeness/guide.md
+/:
+  en: df5342906cdeb801
+  zh: c26c435abd902af6
+/cloud-content-requires-directory-completeness:
+  en: ca83f631eabaa0e2
+  zh: f545386df941ceff
+/cloud-content-requires-directory-completeness/change:
+  en: 392e5a1724462a20
+  zh: f2090715423e1412
+/cloud-content-requires-directory-completeness/migration:
+  en: 32473d126e750019
+  zh: 62a136c80f60830d

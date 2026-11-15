@@ -14,6 +14,8 @@
     "src/types.ts"
   ],
   "references": [
+    { "path": "../../util/brand" },
+    { "path": "../../fs/fs" },
     { "path": "../../../vendor/cordis" },
     { "path": "../gateway/tsconfig.client.json" },
     { "path": "../../core/session" },

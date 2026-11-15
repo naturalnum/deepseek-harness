@@ -27,6 +27,8 @@ Use `dsh-fs` for consistent file access across local, confined, and SSH executio
 
 You rarely load `dsh-fs` directly: you mount a backend that registers as `ctx.fs`, then either call the service from your own plugin or let the `dsh-tool-fs` tools call it for you. This page serves the two audiences that do touch it — deployments choosing a backend, and developers implementing or consuming the contract.
 
+Shared wire declarations import filesystem types from `@deepseek-ai/dsh-fs/types` to avoid importing the `ctx.fs` service declaration. The source alias and published subpath both select the filesystem types module.
+
 ### Choosing and mounting a backend
 
 Pick [`fs-local`](../fs-local/README.md) for ordinary host files or [`fs-sandbox`](../fs-sandbox/README.md) when a session's mutations must be confined to its workspace and temp roots. Mounting any backend populates `ctx.fs`; swapping backends changes nothing for the policy plugin, the tools, or the tool schemas. A composition that mounts no backend has no `ctx.fs` at all, and the tools fail at registration.
@@ -36,6 +38,10 @@ Pick [`fs-local`](../fs-local/README.md) for ordinary host files or [`fs-sandbox
 Through `ctx.fs`, resolve paths, read text or bounded bytes, list direct children, and perform guarded mutations. `patchText` applies parsed hunks under the same lock as its version check. `deleteFile` removes a regular file. `moveFile` locks both targets, optionally patches the source text, publishes the destination, then removes the source. Guards are optional: omission mutates the current state unconditionally. Failures carry stable `FsError` codes from the runtime `FS_ERROR_CODES` list, which transport validators reuse. Host-backed providers, currently `dsh-fs-local` and the `dsh-fs-sandbox` containment check, classify errno failures with `fsErrorFromErrno`: `ENOENT` and `ENOTDIR` become `FS_NOT_FOUND`, `EACCES` and `EPERM` become `FS_PERMISSION_DENIED`, `EISDIR` where a file is required becomes `FS_NOT_REGULAR_FILE`, and other errno values become `FS_IO_ERROR`, with the original error as `cause`.
 
 `watch(target, changed, signal)` reports invalidations for one file or a directory's direct entries. It resolves once observation is ready with an asynchronous close function that the caller must await. The signal cancels initialization; unsupported providers reject without polling.
+
+`listDir(target, signal)` returns every direct child or rejects; a partial array is never a complete listing. `listDirectory(target, signal)` returns `FsDirectoryListing { entries, truncated }` for consumers that can display an explicitly incomplete result. Its default delegates to `listDir` with `truncated: false`, preserving existing Local and SSH providers. A bounded provider may override it; `truncated: true` grants no information or access to omitted entries, and a sorted partial subset need not contain the directory's first names. This result has no pagination cursor.
+
+`openDirectory(target, maxEntries, signal)` is an independent optional primitive. It returns a version-bound enumeration with bounded `next()` pages and an idempotent `close()` that joins actual cleanup. EOF carries confirmed closure; `assertCurrent()` rechecks the captured authority before page delivery, and `ended` wakes a caller waiting for credit. Unsupported providers reject instead of collecting or slicing a complete directory. Local and SSH retain their existing listing behavior.
 
 -----
 

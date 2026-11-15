@@ -27,6 +27,8 @@ kind: "package-reference"
 
 你很少直接加载 `dsh-fs`：你挂载一个注册为 `ctx.fs` 的后端，然后从自己的插件调用该服务，或让 `dsh-tool-fs` 工具替你调用。本页服务于确实接触它的两类读者——选择后端的部署方，以及实现或消费该约定的开发者。
 
+共享 wire 声明从 `@deepseek-ai/dsh-fs/types` 导入文件系统类型，避免导入 `ctx.fs` 服务声明。源码别名与发布的子路径都指向文件系统类型模块。
+
 ### 选择并挂载后端
 
 普通宿主文件选择 [`fs-local`](../fs-local/README.zh.md)，会话变更必须限制在工作区与临时根目录内时选择 [`fs-sandbox`](../fs-sandbox/README.zh.md)。挂载任一后端都会填充 `ctx.fs`；更换后端不会改变策略插件、工具或工具 schema。未挂载任何后端的组合就没有 `ctx.fs`，工具会在注册时失败。
@@ -36,6 +38,10 @@ kind: "package-reference"
 通过 `ctx.fs` 可解析路径、读取文本或有界字节、列出直接子项并执行受防护变更。`patchText` 在版本检查的同一把锁内应用解析后的 hunk。`deleteFile` 删除普通文件。`moveFile` 锁定两端，按需修改源文本，发布目标后再删除源。防护是可选的：省略时无条件修改当前状态。失败携带运行时列表 `FS_ERROR_CODES` 中的稳定 `FsError` 错误码，传输校验器复用该列表。基于宿主文件系统的提供方（目前是 `dsh-fs-local` 与 `dsh-fs-sandbox` 的包含性检查）用 `fsErrorFromErrno` 分类 errno 失败：`ENOENT` 与 `ENOTDIR` 变为 `FS_NOT_FOUND`，`EACCES` 与 `EPERM` 变为 `FS_PERMISSION_DENIED`，需要文件却遇到目录的 `EISDIR` 变为 `FS_NOT_REGULAR_FILE`，其他 errno 变为 `FS_IO_ERROR`，原错误作为 `cause`。
 
 `watch(target, changed, signal)` 报告单个文件或目录直接子项的失效通知。观察就绪后，它返回调用方必须等待完成的异步关闭函数。signal 取消初始化；不支持监听的提供方直接拒绝，不使用轮询。
+
+`listDir(target, signal)` 返回全部直接子项或失败；部分数组不能代表完整目录。允许展示明确不完整结果的消费方可使用 `listDirectory(target, signal)`，取得 `FsDirectoryListing { entries, truncated }`。默认实现委托 `listDir` 并返回 `truncated: false`，保留既有 Local 和 SSH 提供方行为。有界提供方可覆盖该方法；`truncated: true` 不提供遗漏项的信息或访问权限，部分子集虽已排序，也不保证是目录名称排序后的前若干项。该结果没有分页游标。
+
+`openDirectory(target, maxEntries, signal)` 是独立可选原语，返回绑定版本的枚举，提供有界 `next()` 页面和加入实际清理的幂等 `close()`。EOF 携带关闭确认；`assertCurrent()` 在交付页面前复核捕获的权限，`ended` 唤醒等待 credit 的调用方。不支持的提供方明确拒绝，不收集或切割完整目录。Local 和 SSH 保持既有列表行为。
 
 -----
 

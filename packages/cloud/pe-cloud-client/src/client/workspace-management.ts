@@ -37,7 +37,8 @@ export function prepareWorkspaceManagement(ctx: Context, fetch: FileUploadFetch,
     createDirectory,
     download: async (id, paths, signal) => {
       const download = new CloudFileDownload({ sessionId: id, resourceAddress: sessionFileAddress(id, paths[0] ?? ''),
-        paths, signal: AbortSignal.any([signal, lifetime]), fetch, navigationUrl, maxFileBytes })
+        paths, signal: AbortSignal.any([signal, lifetime]), fetch, navigationUrl, maxFileBytes,
+        releaseDirectory: async (sessionId) => { await ctx.parallel('sidebar-files/release-directory', sessionId) } })
       try { if ((await download.save()).kind !== 'started') throw new Error('download-failed') }
       finally { await download.dispose() }
     },

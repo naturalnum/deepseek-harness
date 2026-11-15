@@ -21,8 +21,9 @@ import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { childPath, locateFile, relativeFileOf, type DirLevel, type FilesSearchResult, type FilesStoreInstance } from './store.ts'
 import type { WorkspaceFileWatchFrame } from '@deepseek-ai/dsh-api-workspace-files/types'
-import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
+import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import { DirectoryNode } from './directory-node.ts'
+import type { DirectoryPages, OpenDirectoryPages } from './directory-pages.ts'
 import { FILL_BELOW, FULLSCREEN_QUERY } from './navigator-layout.ts'
 import type { WorkspaceSearchPreferenceBook } from './search-preferences.ts'
 import { enabledPaths, type WorkspaceSearchPreferences } from './search-rules.ts'
@@ -115,6 +116,17 @@ export function createList(remote: WorkspaceFilesListRemote): ListWorkspaceDirec
 
 /** The tree's injected business face, as the navigator receives it. */
 export interface FilesInjected {
+  /** Read one page in the pane's original directory stream, or explicitly restart it.
+   * @param paneId Owning pane.
+   * @param path Original directory path.
+   * @param lifetime Caller lifetime, combined with the original directory node.
+   * @param restart Explicitly close the predecessor and restart at page one.
+   */
+  readonly nextPage: (paneId: PaneId, path: string, lifetime: AbortSignal, restart?: boolean) => void
+  /** Join the current Host-confirmed enumeration closure before opening a file.
+   * @returns Actual closure, or undefined when no enumeration or pending work exists.
+   */
+  readonly releaseDirectory: () => Promise<void> | undefined
   /**
    * Register a navigator mounted for one tab in one pane, until the returned
    * release. A pane's records — the store's tree, the scroll offset, the file
@@ -390,6 +402,7 @@ export type PlaceFace = (tabId: TabId, face: FilesInjected) => () => void
  * @param navigationOf - the attached tab's navigation; subscriptions end with this plugin or their disposer.
  * @param search - the workspace search.
  * @param preferences - every workspace's search preferences, shared by every Session.
+ * @param openPages - optional original Native page stream without automatic reconnect.
  * @returns the face factory: session, its store instance, and where to place the face beside tabs in, face out.
  */
 export function filesFace(
@@ -399,6 +412,7 @@ export function filesFace(
   navigationOf: (sessionId: SessionId, tabId: TabId) => HostObservable<SidebarRightTabNavigation>,
   search: SearchWorkspace,
   preferences: WorkspaceSearchPreferenceBook,
+  openPages?: OpenDirectoryPages,
 ): (
   sessionId: SessionId,
   store: Pick<FilesStoreInstance, 'actions' | 'getSnapshot' | 'subscribe'>,
@@ -431,6 +445,8 @@ export function filesFace(
       pane.unobserve?.()
       endSearch(pane)
       panes.delete(paneId)
+      generations.delete(paneId)
+      if (active?.paneId === paneId) void enqueue(closeActive).catch(() => { /* Keep an unconfirmed close owner. */ })
       actions.forget(paneId)
     }
     // A tab replaced in place goes before its successor mounts, in the same task.
@@ -444,16 +460,67 @@ export function filesFace(
       home.pane.tabs.delete(tabId)
       settle(home.paneId, home.pane)
     }
+    const generations = new Map<PaneId, Map<string, number>>()
+    let active: { paneId: PaneId; path: string; pages: DirectoryPages; signal: AbortSignal } | undefined
+    let serial = Promise.resolve(), queued = 0
+    const enqueue = <T>(run: () => Promise<T>): Promise<T> => {
+      queued++
+      const operation = serial.then(run).finally(() => { queued-- })
+      serial = operation.then(() => {}, () => {})
+      return operation
+    }
+    const failed = (paneId: PaneId, path: string, signal: AbortSignal, error: unknown): void => {
+      if (signal.aborted || panes.get(paneId)?.root === undefined) return
+      const failure = remoteErrorOf(error) ?? new RemoteError('gateway/internal', error instanceof Error ? error.message : String(error), {})
+      if (failure.code === 'workspace-file/directory-changed') actions.invalidated(paneId, path, failure)
+      else {
+        actions.failed(paneId, path, failure)
+        actions.pageState(paneId, path, false, true)
+      }
+    }
+    const closeActive = async (): Promise<void> => {
+      const previous = active
+      if (previous === undefined) return
+      // Keep the same failed owner on unknown closure. A later file action or
+      // replacement must not silently acquire another slot behind it.
+      try { await previous.pages.close() } catch (error) {
+        failed(previous.paneId, previous.path, previous.signal, error)
+        throw error
+      }
+      if (!previous.signal.aborted && panes.get(previous.paneId)?.root !== undefined) {
+        actions.pageState(previous.paneId, previous.path, false, true)
+      }
+      if (active === previous) active = undefined
+    }
+    const releaseDirectory = (): Promise<void> | undefined => {
+      if (active === undefined && queued === 0) return
+      return enqueue(closeActive)
+    }
+    const nextGeneration = (paneId: PaneId, path: string): number => {
+      const byPath = generations.get(paneId) ?? new Map<string, number>()
+      generations.set(paneId, byPath)
+      const generation = (byPath.get(path) ?? 0) + 1
+      byPath.set(path, generation)
+      return generation
+    }
     const load = async (paneId: PaneId, path: string, signal: AbortSignal): Promise<DirLevel | undefined> => {
-      const aborted = (): boolean => signal.aborted
-      // A closed node has nothing left to write, and its pane's tree may be gone.
-      if (aborted()) return undefined
+      if (signal.aborted) return
+      const generation = nextGeneration(paneId, path)
       actions.loading(paneId, path)
-      const result = await list(sessionId, path, signal)
-      if (aborted()) return undefined
-      if (result.ok) actions.loaded(paneId, path, result.value)
-      else actions.failed(paneId, path, result.error)
-      return result.ok ? result.value : undefined
+      try {
+        const result = await (active === undefined && queued === 0 ? list(sessionId, path, signal) : enqueue(async () => {
+          await closeActive()
+          if (signal.aborted) return
+          return list(sessionId, path, signal)
+        }))
+        if (result === undefined) return
+        // A newer listing of this level was asked for since, or the record is
+        // gone and its bookkeeping with it: nothing left for this one to write.
+        if (signal.aborted || generations.get(paneId)?.get(path) !== generation) return
+        if (result.ok) actions.loaded(paneId, path, result.value)
+        else actions.failed(paneId, path, result.error)
+        return result.ok ? result.value : undefined
+      } catch (error) { failed(paneId, path, signal, error); return }
     }
     // Store writes after which a reveal takes one step, rather than one per write.
     let batching = false
@@ -654,6 +721,38 @@ export function filesFace(
       for (const home of homes.values()) if (home.pane === pane) answerNavigation(home)
     }
     const face: FilesInjected = {
+      releaseDirectory,
+      nextPage(paneId, path, lifetime, restart = false) {
+        const node = panes.get(paneId)?.root?.find(path)
+        if (node === undefined) return
+        const signal = AbortSignal.any([lifetime, node.lifetime])
+        if (signal.aborted || openPages === undefined) return
+        const generation = nextGeneration(paneId, path)
+        actions.pageState(paneId, path, true, false)
+        void enqueue(async () => {
+          if (signal.aborted || generations.get(paneId)?.get(path) !== generation) return
+          if (restart || active?.paneId !== paneId || active.path !== path) await closeActive()
+          if (signal.aborted) return
+          if (active === undefined) {
+            const record = { paneId, path, signal, pages: openPages(sessionId, path, signal) }
+            active = record
+            void record.pages.ended.catch((error: unknown) => {
+              if (active === record) failed(paneId, path, signal, error)
+            })
+          }
+          const level = await active.pages.next()
+          return level
+        }).then(async (level) => {
+          if (level === undefined) return
+          if (signal.aborted || generations.get(paneId)?.get(path) !== generation) return
+          await panes.get(paneId)?.root?.find(path)?.reconcile(level)
+          if (signal.aborted || generations.get(paneId)?.get(path) !== generation) return
+          actions.loaded(paneId, path, level)
+        }).then(() => {
+          if (!signal.aborted && panes.get(paneId)?.root !== undefined) actions.pageState(paneId, path, false, false)
+        }, (error: unknown) => { failed(paneId, path, signal, error) })
+      },
+
       attach(paneId, tabId, tabSignal) {
         if (tabSignal.aborted) {
           drop(paneId)

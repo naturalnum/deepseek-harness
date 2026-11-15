@@ -68,6 +68,12 @@ export interface DirLevel {
   readonly entries: readonly WorkspaceDirectoryEntry[]
   /** The listing hit the endpoint's entry cap, so entries are missing. */
   readonly truncated: boolean
+  /** Actual selected Provider capability; absent for old helpers and other providers. */
+  readonly directoryPaging?: true
+  /** A page gesture is waiting for the current stream or its predecessor to settle. */
+  readonly pagingPending?: boolean
+  /** Current page only; no version, cursor or prior page arrays enter the store. */
+  readonly page?: { readonly number: number; readonly more: boolean; readonly pending?: boolean; readonly stopped?: boolean }
 }
 
 /**
@@ -285,6 +291,8 @@ function tree(state: FilesState, paneId: PaneId): FilesTreeState {
 
 /** The tree store's write set; every action names the pane it writes. */
 type FilesActions = {
+  pageState: (draft: FilesState, paneId: PaneId, path: string, pending: boolean, stopped: boolean) => void
+  invalidated: (draft: FilesState, paneId: PaneId, path: string, failure: RemoteFailure) => void
   autoRefresh: (draft: FilesState, paneId: PaneId, enabled: boolean) => void
   start: (draft: FilesState, paneId: PaneId, root: string) => void
   loading: (draft: FilesState, paneId: PaneId, path: string) => void
@@ -386,6 +394,21 @@ export function createFilesStore(): EngineStoreHandle<FilesState, FilesActions> 
        * @param paneId - the pane being drawn.
        * @param path - absolute directory path.
        */
+      pageState: (d, paneId: PaneId, path: string, pending: boolean, stopped: boolean) => {
+        const level = tree(d, paneId).levels[path]
+        if (level?.kind === 'ready') {
+          const page = level.level.page
+          tree(d, paneId).levels[path] = { ...level, level: { ...level.level, pagingPending: pending,
+            ...page === undefined ? {} : { page: { ...page, pending, stopped } } } }
+        }
+      },
+      invalidated: (d, paneId: PaneId, path: string, failure: RemoteFailure) => {
+        const state = tree(d, paneId)
+        const prefix = `${path.replace(/[/\\]+$/, '')}/`
+        state.expanded = state.expanded.filter(value => !value.startsWith(prefix) || value === path)
+        state.levels = Object.fromEntries(Object.entries(state.levels).filter(([key]) => !key.startsWith(prefix) || key === path))
+        state.levels[path] = { kind: 'failed', failure }
+      },
       toggled: (d, paneId: PaneId, path: string) => {
         const state = tree(d, paneId)
         const at = state.expanded.indexOf(path)

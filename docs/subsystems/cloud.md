@@ -697,6 +697,16 @@ withModelKeyPeerUse<T>(peer: PeerScope, consume: (use: AccountUse, assertCurrent
  */
 readOperationCurrent(peer: PeerScope, binding: AccountBinding, endpoint: string): boolean
 
+/**
+ * Retain the original authenticated stream through its native work.
+ * @param peer Exact original invocation Peer.
+ * @param binding Original installed account binding.
+ * @param endpoint Exact admitted stream endpoint.
+ * @param signal Original stream and native-work cancellation.
+ * @returns Current checks owned by the same original ingress and Peer/Use.
+ */
+captureStreamCurrent(peer: PeerScope, binding: AccountBinding, endpoint: string, signal: AbortSignal): () => void
+
 /** Delegate a guarded configuration handoff to the same original login/Peer owner.
  * @param peer Exact native invocation Peer.
  * @param consume Factory-owned exclusive update, without another login or state authority.
@@ -733,7 +743,8 @@ assertInstalled(owner: Context = this.ctx): void
 /**
  * Check original native installations and the shared policy without creating or writing business resources.
  * Mount/business admission and native ownership are checked around the awaited policy metadata read.
- * Selected exposure rows and visited runtimes/fibers share the explicit preparation budget; missing or exceeded budgets reject.
+ * Selected exposure rows and visited Native implementation records share the explicit preparation budget.
+ * Missing or exceeded budgets reject.
  * @param owner Actual consumer scope in this account graph.
  * @param signal Optional observer cancellation, combined with the original graph lifetime.
  * @returns Original synchronous native/admission recheck for final transfer; no readiness token, catalog or account authority is issued.
@@ -1400,7 +1411,7 @@ project(): AccountFilesProject
 
 /**
  * Require the settled original Registry/FS installation and its trusted actual content-capability check.
- * @throws FilesFailure for partial installation, replaced providers, S2 omission or unavailable ABI8 pool capability.
+ * @throws FilesFailure for partial installation, replaced providers, S2 omission or a missing content/directory capability.
  */
 assertContentAvailable(): void
 

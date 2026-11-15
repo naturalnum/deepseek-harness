@@ -72,6 +72,8 @@ Each open `DirectoryNode` owns its target watch while the tree is drawn; collaps
 
 File rows expose the shared [context menu](../ui-context-menu/README.md) without invoking ordinary click navigation. Directory rows and the root path use the `directory` target for native reveal and path copying without expanding the tree.
 
+When the listing advertises optional directory paging, Browse pages opens one original stream and reads its first page. Next page replaces the entries and removes off-page child levels and selections. The face keeps current cursors outside the store and never reconnects or replays them. Directory changes clear stale entries and offer an explicit restart. Before preview or download, the face joins Host-confirmed closure and the original stream terminal; unknown closure blocks the file action and asks the reader to reopen the Session. Providers without this capability retain their existing tree. The parallel `sidebar-files/release-directory` event joins each distinct face placed beside the requested Session's tabs, including previews already open when paging starts; a closure failure rejects the caller, and no enumeration is a no-op.
+
 <a id="search"></a>
 ## Search
 

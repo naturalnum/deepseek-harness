@@ -1,3 +1,4 @@
+import type { OpenDirectoryPages } from '../src/client/directory-pages.ts'
 /**
  * Mount the files page or a preview's navigator over a real store instance,
  * a real face, and a scripted listing.
@@ -56,6 +57,8 @@ interface MockedTabActions {
 
 /** What the tab and its pane look like to the components; a spec may change it and rerender. */
 export interface Placement {
+  readonly openPages?: OpenDirectoryPages
+
   contentId: string
   isFloating?: boolean
   /** The tab drawing; a spec changes it, with `signal`, to replace the tab in the same pane. */
@@ -125,7 +128,9 @@ function harness(placement: Placement, controller: AbortController, book: Worksp
   // The owner's count of drawings that placed the face beside each tab.
   const placed = new Map<TabId, number>()
   const navigation = createSnapshotStore({ address: placement.contentId, params: undefined, revision: 0 })
-  const face = filesFace(script.list, script.watch, canOpen, () => navigation, search, book)(SESSION, instance, (tabId) => {
+  const face = filesFace(
+    script.list, script.watch, canOpen, () => navigation, search, book, placement.openPages,
+  )(SESSION, instance, (tabId) => {
     placed.set(tabId, (placed.get(tabId) ?? 0) + 1)
     return () => { placed.set(tabId, placed.get(tabId)! - 1) }
   })

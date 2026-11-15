@@ -71,6 +71,11 @@ case 'protected-inputs':{
   if(!nativeRequest.approved.profile)throw new NativeDeliveryUnconfirmed('profile-input-missing');
   nativeValue=nativeProfileModule.exports.readProtectedInputs(nativeRequest.approved.profile.maxProfileBytes);break;
 }
+case 'directory-facts':{
+  nativeProfileModule.exports.requireUnpublishedDirectoryAsset(nativeRequest.approved.asset);
+  if(!nativeRequest.approved.profile)throw new NativeDeliveryUnconfirmed('profile-input-missing');
+  nativeValue=nativeProfileModule.exports.readDirectoryFacts(nativeRequest.approved.profile);break;
+}
 case 'preview-profile':{
   if(!nativeRequest.approved.profile||nativeRequest.approved.journal.path!==
     '/opt/dsh-features/pe-cloud-delivery/'+nativeRequest.value.operation+'/native-record')throw new NativeDeliveryUnconfirmed('profile-preview-input');
@@ -82,7 +87,7 @@ case 'publish':{
   if(nativeRecord.phase!=='publish-intent'||nativeRecord.operation!==nativeRequest.value.operation
     ||nativeRecord.descriptorSha256!==nativeRequest.value.descriptorSha256)throw new NativeDeliveryUnconfirmed('publication-intent');
   nativeValue=publishFdAsset(10,nativeRequest.value.expected,Buffer.from(nativeRequest.value.bytes,'base64'));
-  nativeValue.targetLoad=nativeProfileModule.exports.loadPublishedAsset(nativeValue,nativeContext);
+  nativeValue.targetLoad=nativeProfileModule.exports.loadPublishedAsset(nativeValue,nativeContext,{nativeProtocol:nativeRequest.approved.profile?.nativeProtocol});
   if(nativeRequest.approved.profile)nativeValue.profile=nativeProfileModule.exports.publishProfile(
     {...nativeRequest.approved.profile,operation:nativeRequest.value.operation,
       descriptorSha256:nativeRequest.value.descriptorSha256},nativeRecord);
@@ -130,6 +135,7 @@ try{
 }catch(error){failure=error}
 for(const fd of handles.reverse())try{fs.closeSync(fd)}catch(error){failure=error}
 if(failure){console.error('native-authority-unconfirmed');process.exitCode=1}else process.stdout.write(result);`
+  if (Buffer.byteLength(outer) >= 131071) throw new NativeDeliveryUnconfirmed('authority-argument-budget')
   return ['/proc/' + current.holder.pid + '/root/dsh-tools/node24', '-e', outer]
 }
 
@@ -174,6 +180,12 @@ export async function createNativeAuthority(current, approved, execute = execInC
       protectedInputs: input.protectedInputs === undefined ? undefined
         : input.protectedInputs.map(value => ({ path: value.path, sha256: value.sha256,
           identity: metadata(value.identity) })) }
+    if (input.nativeProtocol !== undefined) {
+      if (input.nativeProtocol !== 'directory-enumeration-v1') throw new NativeDeliveryUnconfirmed('authority-native-protocol')
+      Object.assign(pinned.approved.profile, { nativeProtocol: input.nativeProtocol,
+        directoryPaging: structuredClone(input.directoryPaging),
+        directoryFacts: input.directoryFacts === undefined ? undefined : structuredClone(input.directoryFacts) })
+    }
   }
   const request = async (method, value) => {
     try {
@@ -200,6 +212,11 @@ export async function createNativeAuthority(current, approved, execute = execInC
       if (pinned.approved.profile === undefined) throw new NativeDeliveryUnconfirmed('profile-input-missing')
       const value = await request('protected-inputs')
       pinned.approved.profile.protectedInputs = structuredClone(value)
+      return value
+    },
+    readDirectoryFacts: async () => {
+      const value = await request('directory-facts')
+      pinned.approved.profile.directoryFacts = structuredClone(value)
       return value
     },
     previewProfile: async pins => {

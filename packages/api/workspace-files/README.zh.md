@@ -63,6 +63,12 @@ kind: "package-reference"
 
 每次调用通过按需获取的 `subprocess` 运行打包的 `rg --files --sort=path`。最多处理 rg 列出的 `search.maxEntries` 个文件，在此有界文件集内按深度与路径排序并截到 `search.maxResults`；匹配数超过结果上限时置 `truncated`。额外的一条文件记录只用于检测超限，不贡献匹配。超过文件数上限会终止 rg 并置 `incomplete`，rg 退出码 2 同样表示部分结果；退出码 1 表示无结果。链接文件与目录均不返回，也不跟随。取消信号传给子进程，调用等待进程清理后以 signal 的 reason 拒绝。缺少 subprocess、启动或执行失败以及超时均以 `workspace-file/search-failed` 失败，消息说明具体原因；不回退到 JS 遍历，其他文件操作不受影响。
 
+### 目录分页
+
+`listPages(sessionId, path)` 是独立双向流，只有选中的 Provider 与 Native 暴露声明报告 `directoryPaging: true` 时才可用。`ready` 帧提供一个版本和游标；同一流的一次 `credit` 产生一页有界结果及替代游标。只有实际 EOF 才返回 `nextCursor: null` 与 `closed: true`。同一上行流接受 `close`；Host 确认 Native 清理和 slot 结算后，才发不带目录数据的 `closed` 帧。游标不能选择路径、接续另一条流或跨重启保留。
+
+目录变化在确认清理后返回 `workspace-file/directory-changed`；调用方丢弃旧页，从第一页重开。预算、取消或权限停止仅在确认清理后返回 `workspace-file/directory-stopped`。Provider 在等待下一次 credit 时结束，也只有原 close 成功后才报告停止；关闭未确认仍保持失败。其它终端失败不提供关闭确认。Client 在预览／下载前必须同时加入关闭回执与原流自然终端；本地 dispose 不够。每次交付页面前都重复原 Session、Workspace 和 Peer／Use 检查。
+
 ### 变更流
 
 `changes` 是 `stream` 模式的 Remote，只接受目标路径。Host 从 `stat` 取得实际目标类型；只要当前类型是目录，就要求位于工作区内，目标类型变化后也执行该检查。一代流先注册观察队列、解析目标并建立 `fs.watch`，然后产出 `{ kind: 'ready' }`。随后产出 `{ kind: 'change', change }`，其中 `change` 为当前 stat 元数据 `{ absolutePath, version }` 或 `{ absolutePath, absent: true }`。本地提供方使用 Chokidar，目录仅监听直接子项。匹配目标的 `fs/observed` 也触发失效。流在初始化期间排队变化。取消会独立于消费方拉取帧的进度关闭 watcher，流或插件拆除等待关闭完成。父目录保持存在时，缺失文件仍可监听同一路径的重建。
@@ -160,7 +166,7 @@ Typert 生成 `./typert` 与 `./remote` 暴露的 Host 与 Client Remote 产物�
 - **超长单行没有页**——超过 `maxBytes` 的单行在包含它的每个窗口都以 `too-large` 失败，因为页按行而非按字节切。
 - **读取不具备事务性**——结果元数据来自内容读取之前的 stat；并发写入可能使报告版本与返回内容不一致。
 - **generation 队列无界**——一个 `changes` generation 会缓冲操作观察与目标失效通知直到消费方 pull；停滞的消费方会在流的生命期内持续增长 Host 内存。
-- **`maxEntries` 限制的是答案，不是列举**——`list` 让 `ctx.fs.listDir` 列出全部子项后再截断数组，远超上限的目录仍让 Host 付出整个列举的代价（`fs-local` 上每个子项一次 stat）；要限制这份工作，需要文件系统 seam 的 `listDir` 支持上限。
+- **提供方支持时才能限制列举工作量**——`list` 使用 `ctx.fs.listDirectory`，同时保留提供方截断和自身 `maxEntries` 裁剪。默认 Local 和 SSH 实现仍先枚举全部子项再裁剪。有界提供方返回的已排序子集不保证是目录名称排序后的前若干项；`truncated` 不提供游标或遗漏项访问能力。
 - **搜索执行环境**——每次搜索重新运行 rg，不维护索引。子进程提供方必须能执行 Host 打包的二进制，并与文件系统共享工作区；不满足时搜索失败，包括缺少该路径的 SSH 配置。文件数上限前的路径前缀可能漏掉较浅的匹配；`incomplete` 明确报告这种不完整性。
 - **失效流保留元数据**——Host 结束 `changes` 或流终态失败后，已打开的值保持最后已知状态，直到重新打开。
 

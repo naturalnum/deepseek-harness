@@ -7,8 +7,10 @@ import type {} from '@deepseek-ai/dsh-pe-account-instructions/types'
 import type { OfficeKitKey } from '@deepseek-ai/dsh-office-kit/types'
 import { OfficeSourceKey, type OfficeKitRequest } from '@deepseek-ai/dsh-office-kit'
 import * as fs from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, readFileSync, statSync, symlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { Worker } from 'node:worker_threads'
 import { createServer, request as httpRequest, type IncomingMessage } from 'node:http'
 import { Socket } from 'node:net'
@@ -17,16 +19,18 @@ import { WebServer } from '@deepseek-ai/dsh-host-webserver'
 import * as NativeConnection from '@deepseek-ai/dsh-client-connection'
 import { CloudIngress } from '@deepseek-ai/dsh-pe-cloud-access/src/ingress.ts'
 import { BetterAuthAccess } from '@deepseek-ai/dsh-pe-cloud-access/src/auth.ts'
+import { PeAuthService } from '@deepseek-ai/dsh-pe-cloud-access/src/auth-root.ts'
+import CredentialsLocal from '@deepseek-ai/dsh-credentials-local'
 import type { AccessConfig } from '@deepseek-ai/dsh-pe-cloud-access/types'
 import type { AuthIngressConfig } from '@deepseek-ai/dsh-pe-cloud-access/src/root-config.ts'
-import { LinuxFilesPool } from '@deepseek-ai/dsh-pe-cloud-files/src/worker-pool.ts'
+import { LinuxFilesPool, type PoolReadPort } from '@deepseek-ai/dsh-pe-cloud-files/src/worker-pool.ts'
 import type { NativeTextFileSystemConstructor } from '@deepseek-ai/dsh-pe-cloud-files/src/text-project.ts'
 import { tmpdir } from 'node:os'
 import { Context, FiberState, symbols } from '@deepseek-ai/cordis'
-import { boot, initProfile } from '@deepseek-ai/dsh-app-boot'
+import { boot, initProfile, PluginPackages } from '@deepseek-ai/dsh-app-boot'
 import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
-import { CloudAccountApi, ConfigSaveCoordinator, ExposureService, AccountModelKeyEnvironment, type ConfigSaveBarrier } from '@deepseek-ai/dsh-pe-cloud-api'
+import { CloudAccountApi, CloudApiError, ConfigSaveCoordinator, ExposureService, AccountModelKeyEnvironment, type ConfigSaveBarrier } from '@deepseek-ai/dsh-pe-cloud-api'
 import { CloudAccountFiles, type AccountFilesPreparation, type ResolveAccountFileProject } from '@deepseek-ai/dsh-pe-cloud-files'
 import WorkspaceRegistry, { type Workspace } from '@deepseek-ai/dsh-workspace'
 import Storage from '@deepseek-ai/dsh-storage'
@@ -35,6 +39,7 @@ import * as DomainStorage from '@deepseek-ai/dsh-storage-domain'
 import * as ExecutionRoot from '@deepseek-ai/dsh-pe-opensandbox/root'
 import NativeController, { type SessionRequestId } from '@deepseek-ai/dsh-api-session-controller'
 import WorkspaceFiles from '@deepseek-ai/dsh-api-workspace-files'
+import type { WorkspaceDirectoryControl, WorkspaceDirectoryFrame } from '@deepseek-ai/dsh-api-workspace-files/types'
 import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
 import * as ToolFs from '@deepseek-ai/dsh-tool-fs'
 import SubagentModelSelection from '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
@@ -44,7 +49,7 @@ import LlmRuntime, { createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import Agents from '@deepseek-ai/dsh-agent'
 import AgentPreset from '@deepseek-ai/dsh-agent-preset'
 import AgentPresets from '@deepseek-ai/dsh-agent-preset-registry'
-import { FsError } from '@deepseek-ai/dsh-fs'
+import { FsDirectoryVersion, FsError, FsVersion, type FileSystem, type FsDirectoryEnumeration, type FsTarget } from '@deepseek-ai/dsh-fs'
 import Sessions, { Session, SessionId } from '@deepseek-ai/dsh-session'
 import Projections from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -55,7 +60,7 @@ import WorkingDirectory from '@deepseek-ai/dsh-working-directory'
 import DefaultModel from '@deepseek-ai/dsh-agent-default-model'
 import RemoteAccess from '@deepseek-ai/dsh-api-remote-access'
 import Gateway from '@deepseek-ai/dsh-api-gateway'
-import Settings from '@deepseek-ai/dsh-settings'
+import Settings, * as SettingsModule from '@deepseek-ai/dsh-settings'
 import * as Locale from '@deepseek-ai/dsh-client-locale'
 import Typert from '@deepseek-ai/dsh-typert-registry'
 import SessionQuery from '@deepseek-ai/dsh-session-query'
@@ -76,10 +81,11 @@ import { AccountRuntimeError } from '../src/errors.ts'
 import type { NativeAccountBootHandle } from '../src/native-boot.ts'
 import { instructionLimits, instructionSourceFixture, type InstructionSourceFixture } from './instruction-source-fixture.ts'
 import { nativeProjectDeriver, nativeRoutedFileSystem } from './native-project-fixture.ts'
-import type { PeerId } from '@deepseek-ai/dsh-typert-protocol'
+import type { PeerId, PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 import type { AccountBinding, AccountId, AccountMountInput, OwnerEpoch } from '../src/types.ts'
 import type { FileReadTiming } from '../src/file-read-timing.ts'
 import { textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
+import { accessConfig, ingressConfig, carrier, rootConfig as authRootConfig } from '../../pe-cloud-access/tests/ingress-fixture.ts'
 
 /** Real Node HTTP parser and bridge over an in-process socket pair; no listener or network. */
 class ReadFixtureSocket extends Socket {
@@ -125,7 +131,19 @@ afterEach(async () => {
   }
 })
 
+/** Read the exact Native settings package version approved by the directory bootstrap fixture. */
+function nativeSettingsVersion(): string {
+  const metadata: unknown = JSON.parse(readFileSync(new URL('../../../settings/settings/package.json', import.meta.url), 'utf8'))
+  if (typeof metadata !== 'object' || metadata === null || !('version' in metadata) || typeof metadata.version !== 'string') {
+    throw new Error('Native settings package version is absent')
+  }
+  return metadata.version
+}
+
 async function fixture(options: {
+  accountId?: AccountId
+  bootstrapInventory?: boolean
+  nativeDirectoryHelper?: string
   modelKey?: boolean
   goals?: boolean
   terminalProbe?: boolean
@@ -144,6 +162,8 @@ async function fixture(options: {
   auditedFileCalls?: boolean
   auditedFileBytes?: boolean
   auditedFileList?: boolean
+  auditedFilePages?: boolean
+  captureStreamCurrent?: (caller: Context, binding: AccountBinding, endpoint: string, signal?: AbortSignal) => () => void
   installFileApi?: boolean
   office?: boolean
   officeUnselected?: boolean
@@ -175,18 +195,27 @@ async function fixture(options: {
       ] : []).concat(options.goals ? ['get', 'create', 'edit', 'pause', 'resume', 'complete', 'clear'].map(method => ({
         endpoint: 'goals/' + method, handlerId: 'native:goals', guard: 'account-session',
       })) : []),
-      streamEndpoints: options.auditedFileCalls ? [{ endpoint: 'workspaceFiles/changes',
-        handlerId: 'native:workspaceFiles', guard: 'account-session' }] : [], exactFetchRoutes: [], allowedSettings: [] } },
+      streamEndpoints: [...options.auditedFileCalls ? ['changes', ...options.auditedFilePages ? ['listPages'] : []].map(method => ({
+        endpoint: `workspaceFiles/${method}`, handlerId: 'native:workspaceFiles', guard: 'account-session' })) : [],
+      ...options.bootstrapInventory ? [{ endpoint: 'workspace/follow', handlerId: 'native:workspaceController', guard: 'account-project' }] : []],
+      exactFetchRoutes: [], allowedSettings: [],
+      ...options.bootstrapInventory ? { approvedConfiguration: { recipeVersion: 'm8s', catalogVersion: 'native-directory-bootstrap',
+        maxEntries: 512, maxStringBytes: 512, maxCatalogBytes: 8192, plugins: [
+          { id: 'native-directory-settings', entryId: 'include:settings', moduleName: '@deepseek-ai/dsh-settings',
+            packageName: '@deepseek-ai/dsh-settings', packageVersion: nativeSettingsVersion(), installable: false, toggleable: false },
+        ],
+        skills: { mode: 'closed' }, credentials: { mode: 'read-only' }, fields: [] } } : {} } },
     { id: 'execution', name: 'cordis:execution', config: { mode: 'closed', requiredCapabilities: [], maxBoundAccounts: 2 } },
   ]))
   const root = await boot('m8s-shared-root', sharedPath, [], (ctx) => {
     Object.assign(ctx.loader.builtins, { runtime: PeAccountRuntime, exposure: ExposureService, execution: { ...ExecutionRoot, inject: ['peAccountRuntime'] } })
   })
   roots.push(root)
+  if (options.bootstrapInventory) new PluginPackages(root)
   const capacity = new RuntimeCapacity({ maxMountedAccounts: 2, maxConcurrentMounts: 1, maxConcurrentDrains: 1 })
   const factory = new AccountFactory(capacity, { maxWaiters: 2, maxWaitersPerAccount: 2, maxBorrows: 2, maxBorrowsPerAccount: 2 })
   const identity = createProcessInstanceIdentity()
-  const accountId = brandString<AccountId>('m8s-' + directory)
+  const accountId = options.accountId ?? brandString<AccountId>('m8s-' + directory)
   const layout = deriveAccountLayout(accountId, identity.instanceId, {
     sharedAccountsRoot: join(directory, 'accounts'), localCacheRoot: join(directory, 'cache'), maxPathBytes: 4096,
   })
@@ -195,6 +224,7 @@ async function fixture(options: {
   initProfile(layout.profileRoot, [])
   const anchor = join(directory, 'package.json')
   writeFileSync(anchor, '{"name":"m8s-native-fixture","private":true}\n')
+  if (options.bootstrapInventory) symlinkSync(fileURLToPath(new URL('../node_modules', import.meta.url)), join(directory, 'node_modules'), 'dir')
   const configPath = join(layout.profileRoot, 'cordis.yml')
   writeFileSync(configPath, '[]\n')
   if (options.readonlyBase) chmodSync(configPath, 0o444)
@@ -225,7 +255,8 @@ async function fixture(options: {
       configSha256: accountPresetConfigDigest(declaration, 8192), selectable: true }], maxPresetConfigBytes: 8192, agentLoopEntryId: 'loop' })
   const guards = vi.fn((_ctx: Context, _installed: AccountBinding, files: CloudAccountFiles): AccountNativeGuards => {
     if (options.instructionSources !== undefined) {
-      return createAccountPolicy(_ctx, _installed, files, policy, root.peExposure.policy, 128, undefined, undefined, options.timing)
+      return createAccountPolicy(_ctx, _installed, files, policy, root.peExposure.policy,
+        options.bootstrapInventory ? 512 : 128, undefined, undefined, options.timing)
     }
     const unavailable = (): never => { throw new AccountRuntimeError('cloud/account-unavailable', 'No fixture project/model/Preset approval') }
     return {
@@ -298,7 +329,7 @@ async function fixture(options: {
     { id: 'loop', name: 'cordis:' + names.agentLoop, config: { agents: [] } },
     { id: 'controller', name: 'cordis:' + names.controller, config: { nativeOpen: false } },
     { id: 'execution', name: 'cordis:' + names.execution, config: { mode: 'closed', requiredCapabilities: [] } },
-    ...options.firstScreen || options.presetServices ? [{ id: 'settings', name: 'cordis:m8ax-settings' }] : [],
+    ...options.firstScreen || options.presetServices ? [{ id: 'settings', name: options.bootstrapInventory ? '@deepseek-ai/dsh-settings' : 'cordis:m8ax-settings' }] : [],
     ...options.firstScreen ? [
       { id: 'locale', name: 'cordis:m8ax-locale' },
       { id: 'workspace-controller', name: 'cordis:' + firstScreenNames.workspaceController },
@@ -313,10 +344,10 @@ async function fixture(options: {
   const recipe: AccountRecipe = {
     profile: { name: 'account', dir: layout.profileRoot, patchPath: layout.patchPath, installAnchor: anchor,
       cwd: project, home: layout.privateRoot, startedBundles: [], overlays: [], telemetryDisabledEnv: undefined },
-    configPath, bareModuleBaseUrl: new URL('../../../../package.json', import.meta.url).href,
+    configPath, bareModuleBaseUrl: new URL(options.bootstrapInventory ? '../package.json' : '../../../../package.json', import.meta.url).href,
     requiredEntryIds: ['include', ...rows.map(row => row.id)], maxObservedEvents: 16, maxPathBytes: 4096,
     native: { saves, exposure: root.peExposure.policy, execution: root.peSandboxCoordinator, stopTimeoutMs: options.stopTimeoutMs ?? 5000,
-      maxNativeInventoryEntries: options.goals ? 256 : 128,
+      maxNativeInventoryEntries: options.bootstrapInventory ? 512 : options.goals ? 256 : 128,
       ...options.modelKey ? { modelKey: { limits: { bindings: [modelKeyBinding('provider')], maxKeyBytes: 128, maxVersionBytes: 128,
         maxReplyBytes: 4096, maxMetadataBytes: 65536 }, maxNativeInventoryEntries: 128,
       withModelKeyPeerUse: async () => { throw new Error('No component login or production ready borrow') },
@@ -324,6 +355,7 @@ async function fixture(options: {
       ...options.firstScreen ? { firstScreen: { home: layout.privateRoot, maxHomeBytes: 4096,
         maxCollectionItems: 16, maxFrameBytes: 65536, maxQueuedEvents: 16, maxQueuedBytes: 131072 } } : {},
       ...options.readCurrent === undefined ? {} : { readCurrent: options.readCurrent },
+      ...options.captureStreamCurrent === undefined ? {} : { captureStreamCurrent: options.captureStreamCurrent },
       assertRootCurrent: () => {
         if (options.instructionSources === undefined || options.factoryComponent) { root.peAccountRuntime.assertRecipeSealed('m8s'); return }
         root.fiber.assertActive()
@@ -333,6 +365,7 @@ async function fixture(options: {
       ...options.missingGuards ? {} : { guards },
       files(_ctx, installed, getFileProject): AccountFilesPreparation {
         resolveFiles = getFileProject
+        let directoryContent: PoolReadPort | undefined
         // This external Node-port fixture supplies no Linux FD, quota, exclusive namespace or production storage certificate.
         class FixtureFileSystem extends FsLocal {
           static inject = ['peAccount']
@@ -346,23 +379,29 @@ async function fixture(options: {
             if (workspace === undefined) throw new Error('Native default project is not eligible')
             let FileSystem: NativeTextFileSystemConstructor = options.nativeFiles
               ? nativeRoutedFileSystem(project, getFileProject) : FixtureFileSystem
-            if (options.realFiles) {
+            if (options.realFiles || options.nativeDirectoryHelper !== undefined) {
               const gate = new SharedArrayBuffer(32)
               testPool = new LinuxFilesPool({ maxLanes: 1, maxRunning: 2, maxRunningPerLane: 2, maxQueued: 4, maxQueuedPerLane: 4,
                 maxResidentBytes: 1048576, maxResidentBytesPerLane: 524288, waitTimeoutMs: 3000, workerCount: 2,
                 minimumHealthyWorkers: 1, workerReservationBytes: 128, replyOverheadBytes: 64, readyTimeoutMs: 2000,
-                drainTimeoutMs: 100, helperPath: '/test-only/not-loaded.node', maxReadBytes: 4096, maxPathBytes: 4096,
+                drainTimeoutMs: 100, helperPath: options.nativeDirectoryHelper ?? '/test-only/not-loaded.node', maxReadBytes: 4096, maxPathBytes: 4096,
                 maxResolveRetries: 2, readChunkBytes: 512,
                 content: { maxEntries: 8, maxNameBytes: 64, maxReplyBytes: 8192, operationTimeoutMs: 3000 },
+                ...options.nativeDirectoryHelper === undefined ? {} : {
+                  directoryPaging: { idleTimeoutMs: 10000, totalTimeoutMs: 30000, maxPages: 8 },
+                },
               }, (input) => {
-                const worker = new Worker(new URL('./fixtures/account-read-worker.mjs', import.meta.url),
-                  { workerData: { gate, abiVersion: 8, content: input.content } })
+                const worker = options.nativeDirectoryHelper === undefined
+                  ? new Worker(new URL('./fixtures/account-read-worker.mjs', import.meta.url),
+                    { workerData: { gate, abiVersion: 8, content: input.content } })
+                  : new Worker(new URL('../../pe-cloud-files/lib/file-worker.js', import.meta.url), { workerData: input, execArgv: [] })
                 testWorkers.push(worker); return worker
               })
               await testPool.start()
               const info = statSync(layout.projectsRoot, { bigint: true })
               const port = testPool.bind(installed, { rootPath: layout.projectsRoot,
                 rootDevice: String(info.dev), rootInode: String(info.ino) }, () => { assertCurrent(installed) })
+              directoryContent = port
               FileSystem = await port.createTextFileSystem(workspace, (caller) => {
                 assertCurrent(installed); caller.fiber.assertActive()
               }, getFileProject)
@@ -378,6 +417,10 @@ async function fixture(options: {
         const info = statSync(layout.projectsRoot, { bigint: true })
         return { binding: options.copiedFilesBinding ? { ...installed } : installed,
           port: { createWorkspaceRegistry: () => FixtureRegistry },
+          ...options.nativeDirectoryHelper === undefined ? {} : { assertContentAvailable: () => {
+            if (directoryContent === undefined) throw new Error('Original directory content lane has not installed')
+            directoryContent.assertContentAvailable()
+          } },
           projectFor: nativeProjectDeriver(installed, () => { assertCurrent(installed) }),
           ...options.instructionSources === undefined ? {} : {
             withInstructionReaders: options.instructionSources.bind(() => { assertCurrent(installed) }),
@@ -389,6 +432,14 @@ async function fixture(options: {
           assertUnpublished: () => { assertCurrent(installed) } }
       } },
     prepare(ctx) {
+      if (options.bootstrapInventory) {
+        // Keep the original Loader and actual source namespace on Vitest's source plane, as in bootstrap-inventory.spec.ts.
+        const internal = ctx.loader.internal
+        if (internal === undefined) throw new Error('Original native module importer is absent')
+        const originalImport = internal.import.bind(internal)
+        vi.spyOn(internal, 'import').mockImplementation(async (name: string, parent: string, attributes: ImportAttributes) =>
+          name === '@deepseek-ai/dsh-settings' ? SettingsModule : await originalImport(name, parent, attributes))
+      }
       Object.assign(ctx.loader.builtins, { 'm8s-dependencies': dependencies, 'm8s-jsonl': Jsonl, 'm8s-model': DefaultModel,
         'm8s-sandbox-policy': SandboxPolicyService, 'm8s-model-selection': SubagentModelSelection,
         'm8s-terminal-probe': { Config: z.object({ value: z.number().default(1).volatile() }), apply() {} },
@@ -485,6 +536,7 @@ async function fixture(options: {
     return outcome
   }
   return { factory, capacity, root, saves, barriers, input, recipe, start, guards, project, layout, credentialPath, lifetime,
+    inspectFiles: () => testPool?.inspect(),
     expectOfficeUnconfirmed: () => { expectedOfficeUnconfirmed = true },
     finishBootstrap: () => {
       if (integration === undefined) throw new Error('The original native component integration is absent')
@@ -2278,3 +2330,325 @@ it.each(['readBytes', 'list'])('traces real Access HTTP %s through the native Ga
   expect(revokeGenerationAtPeer).toBe(false); expect(revokeGenerationOnStat).toBe(false)
   expect(query).not.toHaveBeenCalled()
 }, 30000)
+
+
+it.each(['session', 'workspace', 'peer'] as const)(
+  'revokes paused Native directory pages after the original %s identity is withdrawn', async (revoked) => {
+    let peerCurrent = true
+    const capture = vi.fn((caller: Context, binding: AccountBinding, endpoint: string, signal?: AbortSignal) => {
+      const invocation = caller.invocation
+      expect(endpoint).toBe('workspaceFiles/listPages')
+      expect(invocation?.request.method).toBe('listPages')
+      return () => {
+        signal?.throwIfAborted()
+        expect(caller.invocation).toBe(invocation)
+        expect(binding).toBe(expectedBinding)
+        if (!peerCurrent) throw new CloudApiError('cloud/account-unavailable', 'Original component Peer was withdrawn.')
+      }
+    })
+    const f = await fixture({ instructionSources: instructionSourceFixture(), nativeFiles: true, auditedFileCalls: true,
+      auditedFilePages: true, captureStreamCurrent: capture,
+      beforeBootstrap: (ctx) => { vi.spyOn(ctx.peCloudFiles, 'assertContentAvailable').mockImplementation(() => {}) } })
+    const outcome = await f.start()
+    if (outcome.status === 'failed') throw outcome.cause
+    const expectedBinding = outcome.binding
+    const ctx = outcome.context, own = await ctx.sessionController.create({})
+    await ctx.sessionPersistence.flush()
+    if (revoked !== 'session') await ctx.agentLoop.stop()
+    const controller = new AbortController(), version = FsDirectoryVersion('1:2:3:4:5:6:7')
+    const terminal = Promise.withResolvers<undefined>(), credit = [
+      Promise.withResolvers<IteratorResult<WorkspaceDirectoryControl>>(),
+      Promise.withResolvers<IteratorResult<WorkspaceDirectoryControl>>(),
+    ]
+    let reads = 0, selected: Awaited<ReturnType<typeof f.fileProject>> | undefined, child: FsTarget | undefined
+    const next = vi.fn<FsDirectoryEnumeration['next']>(async () => {
+      if (child === undefined) throw new Error('Original selected child target missing')
+      return { entries: [{ name: 'first.txt', target: child, version: FsVersion('entry'), type: 'file', size: 1 }],
+        version, eof: false, closed: false }
+    })
+    const close = vi.fn(async () => { terminal.resolve(undefined) })
+    vi.spyOn(ctx.fs, 'openDirectory').mockImplementation(async function (this: FileSystem, _target, _maxEntries, signal) {
+      selected = await f.fileProject(this.ctx, signal)
+      child = await this.resolve('first.txt', signal === undefined ? {} : { signal })
+      return { version, maxReplyBytes: 65536, ended: terminal.promise, next, close,
+        assertCurrent: () => {
+          if (selected === undefined) throw new Error('Original file selection absent')
+          selected.assertCurrent()
+        } }
+    })
+    writeFileSync(join(f.project, 'first.txt'), 'x')
+    const peer = { id: brandString<PeerId>('native-directory-revocation'), ctx, principal: { kind: 'owner' as const },
+      interactions: 'answer' as const, signal: outcome.binding.lifetime, dispose: async () => {} }
+    const source: AsyncIterable<WorkspaceDirectoryControl> = { [Symbol.asyncIterator]: () => ({
+      next: () => {
+        const pending = credit[reads++]
+        if (pending === undefined) throw new Error('Unexpected extra directory credit read')
+        return pending.promise
+      },
+      return: async () => {
+        for (const pending of credit) pending.resolve({ done: true, value: undefined })
+        return { done: true, value: undefined }
+      },
+    }) }
+    const stream = (await ctx.typertGateway.stream({ namespace: 'workspaceFiles', method: 'listPages', peer,
+      args: { workspaceFileScopeId: own.sessionId, path: '.' }, signal: controller.signal, uplink: source }))[Symbol.asyncIterator]()
+    cleanups.push(async () => {
+      controller.abort()
+      for (const pending of credit) pending.resolve({ done: true, value: undefined })
+      await stream.return?.()
+    })
+    const ready = (await stream.next()).value as WorkspaceDirectoryFrame
+    if (ready.kind !== 'ready') throw new Error('Original Native ready frame missing')
+    credit[0]!.resolve({ done: false, value: { kind: 'credit', cursor: ready.cursor, version } })
+    const first = (await stream.next()).value as WorkspaceDirectoryFrame
+    if (first.kind !== 'page' || first.closed) throw new Error('Expected one nonterminal Native page')
+    expect(next).toHaveBeenCalledOnce()
+    expect(capture).toHaveBeenCalled()
+    const workspace = ctx.peCloudFiles.project().workspace
+    if (revoked === 'session') {
+      const original = ctx.sessions.get.bind(ctx.sessions), current = original(own.sessionId)
+      if (current === undefined) throw new Error('Original Native Session missing')
+      const replacement = Session.create(own.sessionId, undefined, current.header)
+      vi.spyOn(ctx.sessions, 'get').mockImplementation(id => id === own.sessionId ? replacement : original(id))
+    } else if (revoked === 'workspace') {
+      await workspace.detachSession(own.sessionId)
+    } else peerCurrent = false
+    credit[1]!.resolve({ done: false, value: { kind: 'credit', cursor: first.nextCursor, version } })
+    await expect(stream.next()).rejects.toMatchObject({ code: revoked === 'peer' ? 'cloud/account-unavailable' : 'cloud/forbidden' })
+    expect(next).toHaveBeenCalledOnce()
+    expect(close).toHaveBeenCalled()
+  })
+
+// This original integration entry consumes an already-built native helper; it never compiles C or supplies worker-ready replies.
+it.skipIf(process.platform !== 'linux' || process.env.FD_HELPER === undefined || process.env.PE_ACCESS_POSTGRES_CONFIG === undefined)
+  .each(['exposure', 'login'] as const)(
+    'opens directory pages from the actual bootstrap route through PeAuthService and retains its original capture through %s revocation', async (revoked) => {
+      const helper = process.env.FD_HELPER, postgres = process.env.PE_ACCESS_POSTGRES_CONFIG
+      if (helper === undefined || postgres === undefined) throw new Error('Original native helper and dedicated access PG inputs are required')
+      const database: unknown = JSON.parse(readFileSync(postgres, 'utf8'))
+      if (database === null || typeof database !== 'object' || !('host' in database) || typeof database.host !== 'string'
+        || !('port' in database) || typeof database.port !== 'number' || !('user' in database) || typeof database.user !== 'string'
+        || !('password' in database) || typeof database.password !== 'string' || !('databases' in database)
+        || database.databases === null || typeof database.databases !== 'object'
+        || !('access' in database.databases) || typeof database.databases.access !== 'string') {
+        throw new Error('Invalid dedicated access PostgreSQL input')
+      }
+      const pool = new pg.Pool({ host: database.host, port: database.port, user: database.user,
+        password: database.password, database: database.databases.access, max: 2, connectionTimeoutMillis: 1000, query_timeout: 2000 })
+      const settings = { ...accessConfig(), sessionRecheckMs: 60000, authCheckTimeoutMs: 5000, peerCloseTimeoutMs: 3000 }
+      const access: { ingress?: CloudIngress; service?: PeAuthService } = {}
+      const secret = `directory-bootstrap-${randomUUID()}-${randomUUID()}`
+      const requestId = brandString<Branded<'pe-request-id'>>('native-directory-bootstrap')
+      const auth = await BetterAuthAccess.create(settings, pool, secret,
+        async (login) => { await access.ingress?.invalidateLogin(login) })
+      cleanups.push(async () => { await auth.close(); if (!pool.ended) await pool.end() })
+      await (await auth.planMigrations(requestId)).runMigrations()
+      const library = Reflect.get(auth, 'auth') as { handler(request: Request): Promise<Response> }
+      const signedUp = await library.handler(new Request(`${settings.publicOrigin}/cloud/auth/sign-up/email`, {
+        method: 'POST', headers: { 'content-type': 'application/json', origin: settings.publicOrigin },
+        body: JSON.stringify({ email: `directory-${randomUUID()}@access.example.test`, password: 'Directory-probe-12345!', name: 'Directory pages' }),
+      }))
+      expect(signedUp.status).toBe(200)
+      const cookie = signedUp.headers.getSetCookie().map(value => value.split(';')[0]).join('; ')
+      const identity = carrier('/cloud/bootstrap', 'GET', ['Cookie', cookie])
+      cleanups.push(async () => { identity.request.destroy(); identity.socket.destroy() })
+      const principal = await auth.authenticate(identity.request, requestId)
+      auth.releasePrincipal(principal)
+      const captures: { peer: PeerScope; binding: AccountBinding; current: () => void }[] = []
+      const f = await fixture({ accountId: principal.accountId, instructionSources: instructionSourceFixture(),
+        firstScreen: true, bootstrapInventory: true, nativeFiles: true, nativeDirectoryHelper: helper,
+        auditedFileCalls: true, auditedFileBytes: true, auditedFileList: true, auditedFilePages: true,
+        captureStreamCurrent: (caller, binding, endpoint, signal) => {
+          const invocation = caller.invocation, service = access.service
+          if (invocation === undefined || service === undefined) throw new Error('Original directory invocation owner is absent')
+          expect(invocation.service).toBe('workspaceFiles')
+          expect(invocation.request.namespace).toBe('workspaceFiles')
+          expect(invocation.request.method).toBe('listPages')
+          expect(endpoint).toBe('workspaceFiles/listPages')
+          const current = service.captureStreamCurrent(invocation.peer, binding, endpoint,
+            signal === undefined ? invocation.signal : AbortSignal.any([invocation.signal, signal]))
+          captures.push({ peer: invocation.peer, binding, current })
+          return current
+        } })
+      const outcome = await f.start()
+      if (outcome.status === 'failed') throw outcome.cause
+      const ctx = outcome.context, binding = outcome.binding, runtime = f.root.peAccountRuntime
+      await ctx.plugin(NativeConnection)
+      const own = await ctx.sessionController.create({})
+      for (let index = 0; index < 25; index++) writeFileSync(join(f.project, `page-${index}.txt`), `${index}`)
+      await ctx.sessionPersistence.flush()
+      const releaseRequest = vi.fn(), releasePeer = vi.fn()
+      const issue = (release: () => void) => {
+        let released = false
+        return { binding, context: ctx, assertCurrent() {
+          if (released) throw new Error('Original component Use was released')
+          binding.lifetime.throwIfAborted(); ctx.fiber.assertActive(); f.recipe.native?.assertRootCurrent()
+        }, release() { if (!released) { released = true; release() } } }
+      }
+      // Only the external Root/factory admission is supplied; the native bootstrap, inventory, file provider and handlers stay real.
+      vi.spyOn(runtime, 'assertRecipeSealed').mockImplementation(() => { f.root.fiber.assertActive() })
+      vi.spyOn(runtime, 'assertBusinessCurrent').mockImplementation((current) => {
+        expect(current).toBe(binding); binding.lifetime.throwIfAborted(); ctx.fiber.assertActive()
+      })
+      vi.spyOn(runtime, 'locateAccount').mockResolvedValue(undefined)
+      const acquire = vi.spyOn(runtime, 'acquireAccount').mockImplementation(async (id) => {
+        expect(id).toBe(binding.accountId); return issue(releaseRequest)
+      })
+      const borrow = vi.spyOn(runtime, 'borrowAccount').mockImplementation(async (current) => {
+        expect(current).toBe(binding); return issue(releasePeer)
+      })
+      const web = new WebServer(f.root, { host: '127.0.0.1', port: 0 })
+      const routes = vi.spyOn(web, 'register'), upgrades = vi.spyOn(web, 'registerUpgrade')
+      vi.spyOn(runtime, 'registerIngressClose').mockImplementation(owner =>
+        f.root.effect(() => () => owner.closeActual(), 'fixture: retain actual authentication close'))
+      const credentialDirectory = realpathSync(mkdtempSync(join(tmpdir(), 'directory-auth-root-')))
+      directories.push(credentialDirectory)
+      const credentialPath = join(credentialDirectory, 'credentials.json')
+      writeFileSync(credentialPath, JSON.stringify({ version: 1, refs: {
+        [settings.authSecretRef]: secret, INGRESS_TEST_DB_PASSWORD: database.password,
+      } }), { mode: 0o600 })
+      await f.root.plugin(CredentialsLocal, { path: credentialPath, watch: false })
+      const service = await PeAuthService.mountRoot(f.root, { ...authRootConfig(), ...settings,
+        database: { ...authRootConfig().database, host: database.host, port: database.port,
+          user: database.user, database: database.databases.access },
+        ingress: { ...ingressConfig(), requestTimeoutMs: 10000,
+          maxRequestBodyBytes: 65536, maxBootstrapResponseBytes: 65536, maxFrameBytes: 65536 },
+      })
+      cleanups.push(async () => { await service.close() })
+      expect(f.root.get('peAuth')).toBeInstanceOf(PeAuthService)
+      expect(service.observe().phase).toBe('initialized')
+      const ingress: unknown = Reflect.get(service, 'ingress')
+      if (!(ingress instanceof CloudIngress)) throw new Error('Original Root ingress was not installed')
+      access.ingress = ingress; access.service = service
+      const captureRoot = vi.spyOn(service, 'captureStreamCurrent')
+      const route = routes.mock.calls.find(([row]) => row.path === '/cloud/bootstrap')?.[0]
+      if (route === undefined || !('handler' in route)) throw new Error('Original bootstrap handler was not registered')
+      const input = carrier('/cloud/bootstrap', 'GET', ['Cookie', cookie])
+      cleanups.push(async () => { input.request.destroy(); input.socket.destroy() })
+      await route.handler(input.request, input.response)
+      expect(input.response.statusCode).toBe(200)
+      const wire = Buffer.concat(input.socket.output).toString('utf8')
+      const bootstrap: unknown = JSON.parse(wire.slice(wire.indexOf('\r\n\r\n') + 4))
+      const record = (value: unknown): value is Record<string, unknown> =>
+        value !== null && typeof value === 'object' && !Array.isArray(value)
+      if (!record(bootstrap) || typeof bootstrap.connectionGeneration !== 'string') throw new Error('Actual bootstrap generation is absent')
+      expect(bootstrap).toMatchObject({ account: { id: binding.accountId }, capabilities: { filePreview: { state: 'available' } } })
+      const descriptor = ctx.peCloudApi.requireStream('workspaceFiles/listPages')
+      expect(descriptor).toEqual({ endpoint: 'workspaceFiles/listPages', handlerId: 'native:workspaceFiles', guard: 'account-session' })
+      const native: unknown = Reflect.get(ctx.workspaceFiles, symbols.original) ?? ctx.workspaceFiles
+      if (!(native instanceof WorkspaceFiles)) throw new Error('Original native WorkspaceFiles was not installed')
+      expect(native.listPages).toBe(WorkspaceFiles.prototype.listPages)
+      const upgrade = upgrades.mock.calls.find(([row]) => row.path === '/api/remote.mux')?.[0]
+      if (upgrade === undefined) throw new Error('Original mux upgrade route was not registered')
+      const server = createServer(), client = new ReadFixtureSocket(), incoming = new ReadFixtureSocket()
+      client.other = incoming; incoming.other = client
+      client.on('error', (_error: Error) => { /* The original stream terminal and close assertions observe carrier failures. */ })
+      incoming.on('error', (_error: Error) => { /* Ingress retains native cleanup responsibility for this carrier. */ })
+      cleanups.push(async () => { client.destroy(); incoming.destroy() })
+      const frames: unknown[] = [], handshake = Promise.withResolvers<undefined>()
+      let pending = Buffer.alloc(0), upgraded = false
+      const sendBytes = (body: Buffer, opcode = 1): void => {
+        if (body.length > 65535) throw new Error('Directory fixture frame exceeds the original bounded mux input')
+        const extended = body.length >= 126, header = Buffer.alloc(extended ? 8 : 6)
+        header[0] = 0x80 | opcode; header[1] = 0x80 | (extended ? 126 : body.length)
+        if (extended) header.writeUInt16BE(body.length, 2)
+        const mask = header.subarray(extended ? 4 : 2); mask.set([1, 2, 3, 4])
+        client.write(Buffer.concat([header, Buffer.from(body.map((value, index) => value ^ mask[index % 4]!))]))
+      }
+      const send = (frame: unknown): void => { sendBytes(Buffer.from(JSON.stringify(frame))) }
+      client.once('close', () => { if (!upgraded) handshake.reject(new Error('Original upgrade was refused')) })
+      client.on('data', (data: Buffer) => {
+        pending = Buffer.concat([pending, data])
+        if (!upgraded) {
+          const end = pending.indexOf('\r\n\r\n')
+          if (end < 0) return
+          if (!pending.subarray(0, end).toString('utf8').includes('101 Switching Protocols')) {
+            handshake.reject(new Error('Original authenticated upgrade did not succeed')); client.destroy(); return
+          }
+          pending = pending.subarray(end + 4); upgraded = true; handshake.resolve(undefined)
+        }
+        while (pending.length >= 2) {
+          const opcode = pending[0]! & 15
+          let size = pending[1]! & 127, offset = 2
+          if (size === 127) { handshake.reject(new Error('Unexpected unbounded fixture frame')); client.destroy(); return }
+          if (size === 126) { if (pending.length < 4) return; size = pending.readUInt16BE(2); offset = 4 }
+          if (pending.length < offset + size) return
+          const body = pending.subarray(offset, offset + size)
+          pending = pending.subarray(offset + size)
+          if (opcode === 1) frames.push(JSON.parse(body.toString('utf8')))
+          else if (opcode === 8 && !client.destroyed) { sendBytes(body, 8); client.end() }
+          else if (opcode === 9) sendBytes(body, 10)
+        }
+      })
+      server.on('upgrade', (request, socket, head) => {
+        void Promise.resolve().then(() => upgrade.handler(request, socket, head))
+          .catch((error: unknown) => { handshake.reject(error); socket.destroy() })
+      })
+      server.emit('connection', incoming)
+      const query = new URLSearchParams({ peAccount: binding.accountId, peGeneration: bootstrap.connectionGeneration })
+      client.write(`GET /api/remote.mux?${query} HTTP/1.1\r\nHost: 127.0.0.1:4100\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\nOrigin: ${settings.publicOrigin}\r\nCookie: ${cookie}\r\n\r\n`)
+      await handshake.promise
+      const item = (id: string, kind: string) => frames.flatMap(frame =>
+        record(frame) && frame.type === 'item' && frame.streamId === id && record(frame.value) ? [frame.value] : [])
+        .find(value => value.kind === kind)
+      const open = (id: string, path = '.') => { send({ type: 'open', streamId: id, endpoint: 'workspaceFiles/listPages',
+        payload: { args: { workspaceFileScopeId: own.sessionId, path } } }) }
+      const page = async (id: string) => {
+        open(id)
+        await vi.waitFor(() => { expect(item(id, 'ready')).toBeDefined() })
+        const ready = item(id, 'ready')
+        if (ready === undefined || typeof ready.cursor !== 'string' || typeof ready.version !== 'string') throw new Error('Original ready credit is absent')
+        send({ type: 'item', streamId: id, value: { kind: 'credit', cursor: ready.cursor, version: ready.version } })
+        await vi.waitFor(() => { expect(item(id, 'page')).toBeDefined() })
+        const value = item(id, 'page')
+        if (value === undefined || value.closed !== false || typeof value.nextCursor !== 'string') throw new Error('Expected one bounded nonterminal page')
+        return value
+      }
+      const first = await page('closed-directory')
+      const firstCapture = captures[0]
+      expect(captureRoot).toHaveBeenCalled()
+      if (firstCapture === undefined) throw new Error('Original stream capture is absent')
+      for (const captured of captures) {
+        expect(captured.peer).toBe(firstCapture.peer)
+        expect(captured.binding).toBe(binding)
+      }
+      const borrows = borrow.mock.calls.length, acquisitions = acquire.mock.calls.length
+      expect(borrows).toBe(1); expect(releasePeer).not.toHaveBeenCalled()
+      send({ type: 'item', streamId: 'closed-directory', value: { kind: 'close', cursor: first.nextCursor, version: first.version } })
+      await vi.waitFor(() => {
+        expect(item('closed-directory', 'closed')).toMatchObject({ closed: true })
+        expect(frames).toContainEqual({ type: 'end', streamId: 'closed-directory' })
+        expect(f.inspectFiles()?.busy).toBe(0)
+      })
+      expect(() => firstCapture.current()).toThrow()
+      open('outside-directory', '../outside')
+      await vi.waitFor(() => { expect(frames.some(frame => record(frame) && frame.type === 'error' && frame.streamId === 'outside-directory')).toBe(true) })
+      expect(item('outside-directory', 'page')).toBeUndefined()
+      const second = await page('revoked-directory'), original = captures.at(-1)
+      if (original === undefined) throw new Error('Original capture was not retained')
+      expect(original.peer).toBe(firstCapture.peer)
+      expect(original.binding).toBe(binding)
+      expect(borrow).toHaveBeenCalledTimes(borrows); expect(acquire).toHaveBeenCalledTimes(acquisitions)
+      if (revoked === 'exposure') {
+        ctx.peCloudApi.invalidate()
+        send({ type: 'item', streamId: 'revoked-directory', value: { kind: 'credit', cursor: second.nextCursor, version: second.version } })
+        await vi.waitFor(() => { expect(frames.some(frame => record(frame) && frame.type === 'error' && frame.streamId === 'revoked-directory')).toBe(true) })
+        expect(releasePeer).not.toHaveBeenCalled()
+      } else {
+        await auth.revokeLogin(principal.authSessionId, requestId)
+        await vi.waitFor(() => { expect(releasePeer).toHaveBeenCalledOnce() })
+      }
+      expect(() => original.current()).toThrow()
+      expect(frames.flatMap(frame => record(frame) && frame.type === 'item' && frame.streamId === 'revoked-directory'
+        && record(frame.value) && frame.value.kind === 'page' ? [frame.value] : [])).toHaveLength(1)
+      await vi.waitFor(() => { expect(f.inspectFiles()?.busy).toBe(0) })
+      expect(borrow).toHaveBeenCalledTimes(borrows)
+      expect(native.listPages).toBe(WorkspaceFiles.prototype.listPages)
+      await service.close()
+      expect(service.observe().phase).toBe('closed')
+      expect(() => service.captureStreamCurrent(firstCapture.peer, binding, 'workspaceFiles/listPages',
+        new AbortController().signal)).toThrow()
+      expect(releasePeer).toHaveBeenCalledOnce()
+      expect(releaseRequest).toHaveBeenCalledTimes(acquire.mock.calls.length)
+    }, 30000,
+  )

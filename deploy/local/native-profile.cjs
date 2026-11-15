@@ -39,8 +39,19 @@ function protect(name, directory = false, io = fs) {
   }
 }
 
-function read(name, maximum, io) {
-  if (name === ROOT + '/credentials.json') {
+function read(name, maximum, io, accountRoot) {
+  if (accountRoot !== undefined) {
+    need(name === accountRoot + '/private/profile/cordis.patch.yml', 'profile-directory-account-path')
+    protect(path.posix.dirname(accountRoot), true, io)
+    for (let item = path.posix.dirname(name); item.startsWith(accountRoot); item = path.posix.dirname(item)) {
+      const stat = io.lstatSync(item)
+      need(!stat.isSymbolicLink() && stat.isDirectory() && [0, 2000].includes(stat.uid)
+        && (stat.mode & 0o022) === 0, 'profile-directory-account-parent')
+    }
+    const stat = io.lstatSync(name)
+    need(stat.isFile() && !stat.isSymbolicLink() && stat.nlink === 1 && stat.uid === 2000 && stat.gid === 2000
+      && (stat.mode & 0o7777) === 0o600, 'profile-directory-account-file')
+  } else if (name === ROOT + '/credentials.json') {
     protect(path.posix.dirname(name), true, io)
     const stat = io.lstatSync(name)
     need(stat.isFile() && !stat.isSymbolicLink() && stat.nlink === 1 && stat.uid === 2000 && stat.gid === 2000
@@ -110,7 +121,24 @@ function readProtectedInputs(maximum, io = fs) {
   return protectedInputs
 }
 
-function helperToken(text) {
+/** Prove selected config data has no Loader expression node before using fields or schema defaults. */
+function requireDirectoryLiteral(value) {
+  const active = new Set()
+  let nodes = 0
+  const visit = (current, depth) => {
+    need(depth <= 128 && ++nodes <= 65536, 'profile-directory-literal-bounds')
+    // Matches loader/config/utils.ts:isJsExpr, including inherited keys and non-string payloads.
+    need(!(current instanceof Object && '__jsExpr' in current), 'profile-directory-config-expression')
+    if (current === null || typeof current !== 'object') return
+    need(!active.has(current), 'profile-directory-literal-cycle')
+    active.add(current)
+    for (const key of Object.keys(current)) visit(current[key], depth + 1)
+    active.delete(current)
+  }
+  visit(value, 0)
+}
+
+function helperToken(text, literal = false) {
   let parsed
   try { parsed = JSON.parse(text) }
   catch (error) { throw new NativeProfileUnconfirmed('profile-json-format', error) }
@@ -126,11 +154,13 @@ function helperToken(text) {
   }
   need(selected.length === 1, 'profile-single-files-root')
   const { row, path: selectedPath } = selected[0]
+  if (literal) requireDirectoryLiteral(row.config)
   need(row.config !== null && typeof row.config === 'object' && !Array.isArray(row.config)
     && Object.hasOwn(row.config, 'helperPath') && typeof row.config.helperPath === 'string', 'profile-files-root-helper')
 
   // JSON.parse owns syntax validation. This scan retains token offsets and rejects duplicate decoded keys.
   let cursor = 0, token
+  const nodes = []
   const space = () => { while (/\s/.test(text[cursor] ?? '')) cursor++ }
   const string = () => {
     const start = cursor
@@ -144,6 +174,7 @@ function helperToken(text) {
   }
   const value = path => {
     space()
+    const start = cursor
     if (text[cursor] === '"') {
       const current = string()
       if (isDeepStrictEqual(path, selectedPath)) token = current
@@ -173,10 +204,236 @@ function helperToken(text) {
       while (cursor < text.length && !/[\s,\]}]/.test(text[cursor])) cursor++
       need(cursor > start, 'profile-json-value')
     }
+    nodes.push({ path, start, end: cursor })
   }
   value([]); space()
   need(cursor === text.length && token !== undefined && token.value === row.config.helperPath, 'profile-helper-token')
-  return { ...token, parsed, path: selectedPath }
+  return { ...token, parsed, path: selectedPath, nodes }
+}
+
+const DIRECTORY_PROTOCOL = 'directory-enumeration-v1'
+const DIRECTORY_STREAM = Object.freeze({ endpoint: 'workspaceFiles/listPages', handlerId: 'native:workspaceFiles', guard: 'account-session' })
+const PAGING_KEYS = ['idleTimeoutMs', 'totalTimeoutMs', 'maxPages']
+const exact = (value, keys) => value && !Array.isArray(value)
+  && isDeepStrictEqual(Object.keys(value).sort(), [...keys].sort())
+const positive = value => Number.isSafeInteger(value) && value >= 1
+
+/** Validate the original optional paging configuration; never supplies production defaults. */
+function directoryPaging(value) {
+  need(exact(value, PAGING_KEYS) && PAGING_KEYS.every(key => positive(value[key]) && value[key] <= 2147483647), 'profile-directory-budgets')
+  return Object.fromEntries(PAGING_KEYS.map(key => [key, value[key]]))
+}
+
+/** Conservative complete-frame/resident proof from unchanged actual files-root values. */
+function directoryCapacity(config, paging, readerMaxEntries) {
+  directoryPaging(paging)
+  const c = config.content, x = config.maxPathBytes
+  need(positive(readerMaxEntries), 'profile-directory-reader-facts')
+  need(c && ['maxEntries', 'maxNameBytes', 'maxReplyBytes', 'operationTimeoutMs'].every(key =>
+    positive(c[key]) && c[key] <= 2147483647) && positive(x) && x <= 16384 && c.maxNameBytes <= x
+    && Number.isSafeInteger(paging.maxPages * c.maxEntries)
+    && Number.isSafeInteger(paging.maxPages * c.maxReplyBytes), 'profile-directory-content')
+  for (const key of ['workerCount', 'workerReservationBytes', 'maxLanes', 'maxResidentBytes',
+    'maxResidentBytesPerLane', 'replyOverheadBytes']) need(positive(config[key]), 'profile-directory-capacity-facts')
+  const v = config.skillVersions, p = config.skillProjection, b = config.skillBundles
+  let metadata = 0
+  if (v !== undefined) {
+    need(positive(v.maxVersions), 'profile-directory-skill-facts')
+    if (b !== undefined) need(positive(b.maxManifestBytes), 'profile-directory-bundle-facts')
+    metadata = v.maxVersions * (2048 + (b === undefined ? 0 : 8 * b.maxManifestBytes))
+    if (p !== undefined) {
+      for (const key of ['maxProjects', 'maxRecordBytes', 'maxCopiesPerProject', 'maxParentBorrows',
+        'maxOperationBorrows', 'maxCopiesPerOperation']) need(positive(p[key]), 'profile-directory-projection-facts')
+      metadata += p.maxProjects * (8 * p.maxRecordBytes + 8192 + p.maxCopiesPerProject * 4096)
+        + 4096 * (p.maxParentBorrows + p.maxOperationBorrows * (p.maxCopiesPerOperation + 1))
+    }
+  }
+  const storage = config.staticStorage
+  if (storage !== undefined) need(positive(storage.rootProbeReservationBytes), 'profile-directory-storage-facts')
+  const rootReserved = config.workerCount * config.workerReservationBytes
+    + (storage === undefined ? 0 : storage.rootProbeReservationBytes) + config.maxLanes * metadata
+  const rootAvailable = config.maxResidentBytes - rootReserved, laneAvailable = config.maxResidentBytesPerLane - metadata
+  // Both root/project/relative paths are bounded by x; an admitted mount id has at most twenty digits.
+  const pageEntries = Math.min(readerMaxEntries, c.maxEntries)
+  const reservation = 4 * x + 80 + 4 * x + 12 * (x + 1) + 8 * c.maxReplyBytes
+    + (pageEntries + 1) * (2048 + 8 * (2 * x + 128)) + 4 * config.replyOverheadBytes
+    + 8 * (256 + 128 + c.maxNameBytes)
+  // Covers original C charge, JSON escaping, opaque version/cursor, and all complete control/page envelopes.
+  // The actual wire projection contains only name, type and numeric size. Its
+  // fixed JSON is at most 63 bytes (including a 25-character Number), plus one
+  // entry separator; child targets and file versions never enter this frame.
+  const frame = 4096 + 6 * x + pageEntries * (64 + 6 * c.maxNameBytes)
+  const requiredPages = Math.ceil(129 / pageEntries) + 1
+  need([metadata, rootReserved, rootAvailable, laneAvailable, reservation, frame].every(Number.isSafeInteger)
+    && rootAvailable > 0 && laneAvailable > 0 && reservation <= rootAvailable && reservation <= laneAvailable
+    && frame <= c.maxReplyBytes && paging.maxPages >= requiredPages, 'profile-directory-capacity-unavailable')
+  return { content: Object.fromEntries(['maxEntries', 'maxNameBytes', 'maxReplyBytes', 'operationTimeoutMs'].map(key => [key, c[key]])), maxPathBytes: x, pageEntriesUpper: pageEntries,
+    readerMaxEntries, minimumEntriesPerNonemptyPage: pageEntries, acceptanceEntries: 129,
+    requiredPagesUpper: requiredPages, completeFrameBytesUpper: frame, reservationBytesUpper: reservation,
+    skillMetadataBytes: metadata, rootReservedBytes: rootReserved, rootAvailableBytes: rootAvailable,
+    laneAvailableBytes: laneAvailable, configSha256: hash(Buffer.from(JSON.stringify(config))) }
+}
+
+function literalEntries(rows, prefix = [], ancestors = [], seen = new Set()) {
+  need(Array.isArray(rows) && prefix.length <= 128, 'profile-directory-entry-array')
+  const result = []
+  for (const [index, row] of rows.entries()) {
+    need(row && typeof row === 'object' && !Array.isArray(row) && !seen.has(row) && seen.size < 65536, 'profile-directory-entry-data')
+    seen.add(row)
+    const path = [...prefix, index], parents = [...ancestors, row]
+    if (row.group === true) result.push(...literalEntries(row.config, [...path, 'config'], parents, seen))
+    else result.push({ row, path, ancestors: parents })
+  }
+  return result
+}
+const entryEnabled = row => row.disabled === undefined || row.disabled === false || row.disabled === null
+
+/** Token edits retain every byte outside the fixed helper/paging/exposure fields. */
+function directoryCandidate(text, spec, resolveModule, readerMaxEntries) {
+  const token = helperToken(text, true), paging = directoryPaging(spec.directoryPaging)
+  need(token.value === spec.originalHelperPath && spec.nativeProtocol === DIRECTORY_PROTOCOL, 'profile-directory-selection')
+  const configPath = token.path.slice(0, -1), at = path => token.nodes.find(row => isDeepStrictEqual(row.path, path))
+  const get = path => path.reduce((value, key) => value[key], token.parsed)
+  const config = get(configPath), capacity = directoryCapacity(config, paging, readerMaxEntries), providers = []
+  const expectedModule = resolveModule('@deepseek-ai/dsh-pe-cloud-api/root'), exposureAncestors = []
+  const filesRow = get(configPath.slice(0, -1))
+  need(entryEnabled(filesRow) && filesRow.group !== true && typeof filesRow.name === 'string'
+    && resolveModule(filesRow.name) === resolveModule('@deepseek-ai/dsh-pe-cloud-files/root')
+    && token.parsed[configPath[0]].id === undefined
+    && Buffer.byteLength(spec.nextHelperPath) <= config.maxPathBytes, 'profile-directory-root-files-entry')
+  for (const [op, operation] of token.parsed.entries()) for (const entry of literalEntries(operation.insert ?? [], [op, 'insert'])) {
+    if (typeof entry.row.name !== 'string') continue
+    let module
+    try { module = resolveModule(entry.row.name) } catch (error) { continue } // Unrelated module names do not select exposure.
+    if (module === expectedModule) {
+      need(operation.id === undefined && entry.ancestors.every(entryEnabled), 'profile-directory-active-root-exposure')
+      providers.push([...entry.path, 'config']); exposureAncestors.push(...entry.ancestors.map(row => row.id))
+    }
+  }
+  need(providers.length === 1, 'profile-directory-exposure-provider')
+  const selectedIds = [filesRow.id, ...exposureAncestors]
+  need(selectedIds.every(id => typeof id === 'string' && id.length > 0)
+    && !token.parsed.some(operation => operation.id !== undefined && selectedIds.includes(operation.id)), 'profile-directory-entry-override')
+  const exposurePath = providers[0], exposure = get(exposurePath)
+  requireDirectoryLiteral(exposure)
+  need(exposure && typeof exposure.recipeVersion === 'string' && exposure.recipeVersion.length > 0
+    && ['rpcEndpoints', 'streamEndpoints', 'exactFetchRoutes', 'allowedSettings'].every(key => Array.isArray(exposure[key]))
+    && !exposure.rpcEndpoints.some(row => row?.endpoint === DIRECTORY_STREAM.endpoint), 'profile-directory-exposure-fields')
+  const same = exposure.streamEndpoints.filter(row => row?.endpoint === DIRECTORY_STREAM.endpoint)
+  need(same.length <= 1 && same.every(row => isDeepStrictEqual(row, DIRECTORY_STREAM)), 'profile-directory-exact-stream')
+  const edits = [{ start: token.start, end: token.end, text: JSON.stringify(spec.nextHelperPath) }]
+  const expected = structuredClone(token.parsed), expectedConfig = configPath.reduce((value, key) => value[key], expected)
+  expectedConfig.helperPath = spec.nextHelperPath
+  const replace = (path, value) => { const node = at(path); need(node, 'profile-directory-token'); edits.push({ ...node, text: JSON.stringify(value) }) }
+  if (Object.hasOwn(config, 'directoryPaging')) { directoryPaging(config.directoryPaging); replace([...configPath, 'directoryPaging'], paging) }
+  else { const node = at(configPath); need(node, 'profile-directory-config-token'); edits.push({ start: node.end - 1, end: node.end - 1,
+    text: (Object.keys(config).length ? ',' : '') + '"directoryPaging":' + JSON.stringify(paging) }) }
+  expectedConfig.directoryPaging = paging
+  if (!same.length) {
+    const node = at([...exposurePath, 'streamEndpoints']); need(node, 'profile-directory-stream-token')
+    edits.push({ start: node.end - 1, end: node.end - 1, text: (exposure.streamEndpoints.length ? ',' : '') + JSON.stringify(DIRECTORY_STREAM) })
+    exposurePath.reduce((value, key) => value[key], expected).streamEndpoints.push({ ...DIRECTORY_STREAM })
+  }
+  edits.sort((a, b) => a.start - b.start)
+  let next = '', cursor = 0
+  const inverse = []
+  for (const edit of edits) {
+    need(edit.start >= cursor, 'profile-directory-overlap')
+    next += text.slice(cursor, edit.start)
+    inverse.push({ start: next.length, end: next.length + edit.text.length, text: text.slice(edit.start, edit.end) })
+    next += edit.text
+    cursor = edit.end
+  }
+  next += text.slice(cursor)
+  let restored = next
+  for (const edit of inverse.reverse()) restored = restored.slice(0, edit.start) + edit.text + restored.slice(edit.end)
+  need(restored === text && isDeepStrictEqual(JSON.parse(next), expected), 'profile-directory-reverse-bytes')
+  const facts = { format: 'pe-cloud-directory-profile-facts/v1', nativeProtocol: DIRECTORY_PROTOCOL,
+    directoryPaging: paging, stream: { ...DIRECTORY_STREAM }, exposureModule: expectedModule,
+    exposureConfigPath: exposurePath, capacity, originalSha256: hash(Buffer.from(text)), candidateSha256: hash(Buffer.from(next)) }
+  return { bytes: Buffer.from(next), facts }
+}
+
+function directoryPreview(spec, io = fs) {
+  binding(spec, spec.original, true, io); otherInputs(spec, io)
+  const bytes = read(spec.original.source, spec.maxProfileBytes, io), text = bytes.toString('utf8')
+  need(hash(bytes) === spec.original.sha256 && Buffer.from(text).equals(bytes), 'profile-directory-original-bytes')
+  const resolver = require('node:module').createRequire(ROOT + '/profiles/cloud/package.json')
+  const base = read('/opt/dsh-features/account-base.yml', spec.maxProfileBytes, io).toString('utf8')
+  const includeRequire = require('node:module').createRequire('/opt/dsh-installed-products/vendor/include/package.json')
+  const yaml = includeRequire('js-yaml'), include = includeRequire('./lib/index.js')
+  const rows = yaml.load(base, { schema: include.entryListSchema })
+  need(Array.isArray(rows), 'profile-directory-account-base-array')
+  const selectedReader = entry => ['pe-cloud-workspace-files', 'cordis:pe-cloud-workspace-files'].includes(entry.row.name)
+  let readers = literalEntries(rows).filter(selectedReader)
+  const readerProfiles = []
+  // The current deployment installs native builtins in each account's original patch,
+  // while account-base contains shared additions. Follow only the protected storage plan.
+  if (readers.length === 0) {
+    const storage = JSON.parse(read(ROOT + '/storage-plan.json', spec.maxProfileBytes, io))
+    need(Array.isArray(storage.slots) && storage.slots.length > 0 && storage.slots.length <= 65536,
+      'profile-directory-account-slots')
+    const roots = new Set()
+    let used = 0
+    for (const slot of storage.slots) {
+      const root = slot.accountRoot
+      need(typeof root === 'string' && root.startsWith('/srv/') && path.posix.normalize(root) === root
+        && !/[\\\0]/.test(root) && !roots.has(root), 'profile-directory-account-slot')
+      roots.add(root)
+      const filename = root + '/private/profile/cordis.patch.yml'
+      const raw = read(filename, spec.maxProfileBytes - used, io, root)
+      used += raw.length
+      const patch = yaml.load(raw.toString('utf8'), { schema: include.entryListSchema })
+      need(Array.isArray(patch), 'profile-directory-account-patch')
+      const selected = []
+      for (const operation of patch) {
+        need(operation && typeof operation === 'object' && !Array.isArray(operation), 'profile-directory-account-operation')
+        for (const entry of literalEntries(operation.insert ?? [])) if (selectedReader(entry)) {
+          need(operation.id === undefined, 'profile-directory-account-reader-override')
+          selected.push(entry)
+        }
+      }
+      need(selected.length === 1 && selected[0].ancestors.every(entryEnabled), 'profile-directory-account-reader')
+      const ids = new Set(selected[0].ancestors.map(row => row.id).filter(id => id !== undefined))
+      need(!patch.some(operation => operation.id !== undefined && ids.has(operation.id)),
+        'profile-directory-account-reader-override')
+      readers.push(selected[0])
+      readerProfiles.push([filename, hash(raw)])
+    }
+  } else need(readers.length === 1 && readers[0].ancestors.every(entryEnabled), 'profile-directory-account-reader')
+  for (const entry of readers) requireDirectoryLiteral(entry.row.config)
+  const nativeRequire = require('node:module').createRequire('/opt/dsh-installed-products/packages/cloud/pe-cloud-runtime/package.json')
+  const WorkspaceFiles = nativeRequire('@deepseek-ai/dsh-api-workspace-files').default
+  const configs = readers.map(entry => nativeRequire('@deepseek-ai/cordis').resolveConfig(WorkspaceFiles, entry.row.config))
+  const readerConfig = configs[0]
+  need(configs.every(config => positive(config.maxEntries) && config.maxEntries === readerConfig.maxEntries),
+    'profile-directory-reader-config')
+  const resolveModule = name => resolver.resolve(name.startsWith('file:') ? require('node:url').fileURLToPath(name) : name)
+  const result = directoryCandidate(text, spec, resolveModule, readerConfig.maxEntries)
+  result.facts.readerConfigSha256 = hash(Buffer.from(JSON.stringify(readerConfig)))
+  if (readerProfiles.length) result.facts.readerProfilesSha256 = hash(Buffer.from(JSON.stringify(readerProfiles)))
+  need(result.bytes.length <= spec.maxProfileBytes, 'profile-directory-output-size')
+  return result
+}
+
+/** Refuse an occupied content-addressed target before preparing a new responsibility. */
+function requireUnpublishedDirectoryAsset(asset, io = fs) {
+  need(asset.sha256 && HASH.test(asset.sha256), 'profile-directory-asset-target')
+  const name = '/opt/dsh-feature-assets/fd-skill-store-v1-' + asset.sha256 + '.node'
+  for (const path of [name, name + '.source.json']) {
+    try { io.lstatSync(path) } catch (error) { if (error.code === 'ENOENT') continue; throw error }
+    throw new NativeProfileUnconfirmed('profile-directory-asset-already-present')
+  }
+}
+
+/** Read only fixed current profile facts; caller cannot supply selectors or configuration bodies. */
+function readDirectoryFacts(spec, io = fs) {
+  need(spec.target === TARGET && spec.nativeProtocol === DIRECTORY_PROTOCOL
+    && positive(spec.maxProfileBytes) && spec.maxProfileBytes <= 1048576
+    && Array.isArray(spec.protectedInputs) && spec.protectedInputs.length === 5
+    && isDeepStrictEqual(spec.protectedInputs.map(row => row.path).sort(), [...INPUTS].sort()), 'profile-directory-facts-input')
+  const result = directoryPreview(spec, io)
+  return { ...result.facts, protectedInputsSha256: hash(Buffer.from(JSON.stringify(spec.protectedInputs))) }
 }
 
 function candidateBytes(spec, io) {
@@ -188,6 +445,11 @@ function candidateBytes(spec, io) {
   need(hash(bytes) === spec.original.sha256, 'profile-original-source-changed')
   const text = bytes.toString('utf8')
   need(Buffer.from(text).equals(bytes), 'profile-input-utf8')
+  if (spec.nativeProtocol !== undefined) {
+    const result = directoryPreview(spec, io)
+    need(isDeepStrictEqual(readDirectoryFacts(spec, io), spec.directoryFacts), 'profile-directory-facts-changed')
+    return result.bytes
+  }
   const token = helperToken(text)
   need(token.value === spec.originalHelperPath, 'profile-original-helper-value')
   const replacement = JSON.stringify(spec.nextHelperPath)
@@ -206,7 +468,7 @@ function candidateBytes(spec, io) {
 }
 
 /**
- * Preview only the unique JSON insert row files-root/config/helperPath token; no profile body is returned.
+ * Preview the fixed helper token; directory mode also selects its three budgets and exact stream. No profile body is returned.
  * @param {object} spec Current original profile and fixed next asset path.
  * @param {object} io Root filesystem; omitted uses the current namespace.
  * @returns {object} Candidate source path, bytes and hash; duplicate or unsupported JSON rejects unchanged.
@@ -275,9 +537,10 @@ function publishProfile(spec, record, io = fs) {
  * @param {object} asset Just-published immutable FD metadata, including its expected identity.
  * @param {object} current Current normal Node and seccomp paths, without Root/configuration bytes.
  * @param {object} runtime Root filesystem and original argv executor; omitted uses actual current operations.
- * @returns {object} Read-only export and kernel identity receipt; does not invoke account or file operations.
+ * @returns {object} Actual load/export identity; directory mode also runs the original read-only openat2 probe, without account data access.
  */
-function loadPublishedAsset(asset, current, { io = fs, execute = execFileSync } = {}) {
+function loadPublishedAsset(asset, current, { io = fs, execute = execFileSync, nativeProtocol } = {}) {
+  need(nativeProtocol === undefined || nativeProtocol === DIRECTORY_PROTOCOL, 'profile-native-protocol')
   const name = '/opt/dsh-feature-assets/' + asset.name
   need(current.nodePath === '/dsh-tools/node24' && current.seccompPath === '/opt/dsh-feature-assets/app-seccomp.bpf'
     && Number.isSafeInteger(current.shutdownTimeoutMs) && current.shutdownTimeoutMs > 0
@@ -301,9 +564,14 @@ const methods=['openAnchor','openRead','closeRead','openMetadata','closeAnchor',
 'projectSkillVersion','prepareSkillStore','verifySkillStore','inspectSkillStore','prepareSkillParent',
 'verifySkillParent','prepareSkillVersion','retireSkillVersions'];
 if(addon.abiVersion!==8||versions.some(name=>addon[name]!==1)
-||methods.some(name=>typeof addon[name]!=='function')||addon.directoryListingVersion!==undefined)throw Error('native-load-rejected');
+||methods.some(name=>typeof addon[name]!=='function')
+||(${JSON.stringify(nativeProtocol === DIRECTORY_PROTOCOL)}?addon.directoryListingVersion!==1||addon.directoryPagingVersion!==1
+||['openDirectoryEnumeration','pullDirectoryEnumeration','closeDirectoryEnumeration'].some(name=>typeof addon[name]!=='function')
+:addon.directoryListingVersion!==undefined))throw Error('native-load-rejected');
+if(${JSON.stringify(nativeProtocol === DIRECTORY_PROTOCOL)})addon.probeKernel();
 console.log(JSON.stringify({loaded:true,uid:2000,gid:2000,node:process.version,abiVersion:addon.abiVersion,
-inspectSkillStore:true,capabilities:'all-zero',noNewPrivileges:true,seccomp:2}));`
+inspectSkillStore:true,capabilities:'all-zero',noNewPrivileges:true,seccomp:2${nativeProtocol === DIRECTORY_PROTOCOL
+  ? ",nativeProtocol:'directory-enumeration-v1',directoryListingVersion:addon.directoryListingVersion,directoryPagingVersion:addon.directoryPagingVersion,napi:process.versions.napi,modules:process.versions.modules,kernel:require('node:os').release(),libc:process.report.getReport().header.glibcVersionRuntime" : ''}}));`
   const result = JSON.parse(execute('/usr/bin/env', ['-i',
     'PATH=/dsh-tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
     'HOME=/tmp/dsh-feature-home', 'XDG_CACHE_HOME=/tmp/dsh-feature-cache', 'TMPDIR=/tmp',
@@ -316,6 +584,10 @@ inspectSkillStore:true,capabilities:'all-zero',noNewPrivileges:true,seccomp:2}))
   need(result.loaded === true && result.uid === 2000 && result.gid === 2000 && result.abiVersion === 8
     && result.inspectSkillStore === true && result.capabilities === 'all-zero'
     && result.noNewPrivileges === true && result.seccomp === 2, 'profile-load-receipt')
+  if (nativeProtocol === DIRECTORY_PROTOCOL) need(result.nativeProtocol === DIRECTORY_PROTOCOL
+    && result.node === 'v24.19.0' && result.directoryListingVersion === 1 && result.directoryPagingVersion === 1
+    && typeof result.napi === 'string' && typeof result.modules === 'string'
+    && typeof result.kernel === 'string' && typeof result.libc === 'string', 'profile-directory-load-receipt')
   return result
 }
 
@@ -323,6 +595,7 @@ inspectSkillStore:true,capabilities:'all-zero',noNewPrivileges:true,seccomp:2}))
 function continueNativePublish(input, current, store, product, nativeState,
   { io = fs, spawn = spawnSync, execute = execFileSync } = {}) {
   const { expected, approved, groups, binding: controller } = input
+  need(approved.profile?.nativeProtocol === undefined, 'continuation-legacy-profile-only')
   nativeState.requireNativePublishIntent(expected, store.read())
   need(isDeepStrictEqual(store.read(), expected)
     && isDeepStrictEqual(store.identity, expected.directoryIdentity)
@@ -558,4 +831,5 @@ function observeTuple(groups, managedFiles, io = fs) {
 }
 
 module.exports = { selectProfile, tupleSha256, observeTuple, previewProfile, publishProfile, readProtectedInputs,
-  loadPublishedAsset, continueNativePublish, NativeProfileUnconfirmed }
+  loadPublishedAsset, continueNativePublish, NativeProfileUnconfirmed, directoryPaging, directoryCapacity,
+  directoryCandidate, readDirectoryFacts, requireUnpublishedDirectoryAsset, DIRECTORY_PROTOCOL, DIRECTORY_STREAM }

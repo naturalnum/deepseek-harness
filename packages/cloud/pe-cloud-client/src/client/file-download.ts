@@ -12,6 +12,8 @@ export interface CloudFileDownloadInput {
   readonly fetch: FileUploadFetch
   readonly navigationUrl: (path: string) => string
   readonly maxFileBytes: number
+  /** Join the original Session's directory closure before preflight; omission preserves immediate preflight. */
+  readonly releaseDirectory?: (sessionId: SessionId) => Promise<void>
 }
 /** Browser handoff does not confirm operating-system persistence. */
 export type CloudFileDownloadResult = { readonly kind: 'started' | 'cancelled' | 'busy' }
@@ -46,6 +48,8 @@ export class CloudFileDownload {
     try {
       const file = parseFileAddress(input.resourceAddress)
       if (file?.scope !== 'session' || file.sessionId !== input.sessionId || !file.path) return { kind: 'failed', reason: 'invalid-resource' }
+      await input.releaseDirectory?.(input.sessionId)
+      signal.throwIfAborted()
       const query = new URLSearchParams({ sessionId: input.sessionId })
       for (const path of input.paths ?? [file.path]) query.append('path', path)
       const path = `api/workspace-files/download?${query}`

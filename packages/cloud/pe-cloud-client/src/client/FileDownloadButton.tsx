@@ -19,7 +19,7 @@ export interface FileDownloadButtonProps extends CloudFileDownloadInput { readon
 /** @param props Captured native occurrence. @returns An accessible icon and failure-only feedback. */
 export function FileDownloadButton(props: FileDownloadButtonProps): ReactElement {
   const owner = useMemo(() => new CloudFileDownload(props), [props.sessionId, props.resourceAddress,
-    props.signal, props.fetch, props.navigationUrl, props.maxFileBytes, props.paths])
+    props.signal, props.fetch, props.navigationUrl, props.maxFileBytes, props.paths, props.releaseDirectory])
   const active = useRef<CloudFileDownload | undefined>(owner)
   active.current = owner
   useEffect(() => () => {

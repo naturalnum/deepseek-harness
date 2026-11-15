@@ -141,6 +141,8 @@ export interface AccountNativePreparation {
   readonly assertRootCurrent: () => void
   /** Current original HTTP read, when this caller is inside an admitted read carrier. */
   readonly readCurrent?: (caller: Context, binding: AccountBinding, endpoint: string) => boolean
+  /** Capture one original stream's repeated Peer/Use authorization; missing support keeps paging unavailable. */
+  readonly captureStreamCurrent?: (caller: Context, binding: AccountBinding, endpoint: string, signal?: AbortSignal) => () => void
   /** Original factory borrow for the installed ready graph; required only for selected cloud project creation. */
   readonly borrowAccount?: (binding: AccountBinding) => Promise<AccountUse>
   /** Existing restricted lane/grant issuer; absence cannot supply a native files owner. */
@@ -275,8 +277,18 @@ export class AccountNativeIntegration {
     )
     if (this.input.files !== undefined) {
       const files = this.input.files(ctx, binding, async (caller, signal) => {
+        const originalInvocation = caller.invocation
+        const paging = originalInvocation?.service === 'workspaceFiles'
+          && originalInvocation.request.namespace === 'workspaceFiles' && originalInvocation.request.method === 'listPages'
+        const streamCurrent = !paging ? undefined : this.input.captureStreamCurrent?.(caller, binding, 'workspaceFiles/listPages', signal)
         const admit = (): boolean => {
-          const invocation = caller.invocation
+          const invocation = originalInvocation
+          if (paging) {
+            if (streamCurrent === undefined || caller.invocation !== originalInvocation) {
+              throw new CloudApiError('cloud/account-unavailable', 'The original file stream authorization is unavailable.')
+            }
+            streamCurrent()
+          }
           const method = invocation?.request.method
           const endpoint = `workspaceFiles/${method}`
           const workspaceCall = invocation?.service === 'workspaceFiles' && invocation.request.namespace === 'workspaceFiles'
@@ -323,6 +335,10 @@ export class AccountNativeIntegration {
         assertCurrent()
         const mutation = selected.assertMutationPolicy
         return { workspace: selected.workspace, assertCurrent,
+          ...streamCurrent === undefined ? {} : { directoryPagingCurrent: streamCurrent },
+          ...this.input.captureStreamCurrent === undefined
+            || !this.input.exposure.manifest.streamEndpoints.some(row => row.endpoint === 'workspaceFiles/listPages')
+            ? {} : { directoryPagingAllowed: true as const },
           ...mutation === undefined ? {} : { assertMutationPolicy: (policy: Parameters<typeof mutation>[0]) => {
             assertCurrent()
             mutation(policy)

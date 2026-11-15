@@ -22,7 +22,7 @@ import { FsError, FsVersion } from '@deepseek-ai/dsh-fs'
 import type { FsErrorCode, FsInfo, FsWriteIntent, FsWriteOutcome } from '@deepseek-ai/dsh-fs'
 import { createFixedRootReader, decodeTextStream, nativeInfo } from './read-only.ts'
 import type { FixedRootReader } from './read-only.ts'
-import type { FdByteStream } from './worker-client.ts'
+import type { FdByteStream, FdDirectoryEnumeration } from './worker-client.ts'
 import type { FdMetadata } from './worker-protocol.ts'
 import type { ResidentResult, FilesWorkTrace } from './work-queue.ts'
 import { FilesWorkOwner } from './work-owner.ts'
@@ -215,6 +215,7 @@ function workerInput(config: FilesPoolConfig): FdWorkerInput {
     helperPath: config.helperPath, maxReadBytes: config.maxReadBytes, maxPathBytes: config.maxPathBytes,
     maxResolveRetries: config.maxResolveRetries, readChunkBytes: config.readChunkBytes,
     ...config.content === undefined ? {} : { content: { ...config.content } },
+    ...config.directoryPaging === undefined ? {} : { directoryPaging: { ...config.directoryPaging } },
     ...config.skillProjection === undefined ? {} : { skillProjection: { ...config.skillProjection } },
     ...config.skillBundles === undefined ? {} : { skillBundles: { ...config.skillBundles } },
     ...config.skillVersions === undefined ? {} : { skillVersions: { ...config.skillVersions } },
@@ -316,6 +317,14 @@ function validate(config: FilesPoolConfig): void {
     .some(value => !Number.isSafeInteger(value) || value < 1 || value > 2_147_483_647)
     || content.maxNameBytes > config.maxPathBytes)) {
     throw new FilesFailure('files/prerequisite-missing', 'files content capacities require explicit bounded values')
+  }
+  const paging = config.directoryPaging
+  if (paging !== undefined && (content === undefined
+    || [paging.idleTimeoutMs, paging.totalTimeoutMs, paging.maxPages].some(value =>
+      !Number.isSafeInteger(value) || value < 1 || value > 2_147_483_647)
+    || !Number.isSafeInteger(paging.maxPages * content.maxEntries)
+    || !Number.isSafeInteger(paging.maxPages * content.maxReplyBytes))) {
+    throw new FilesFailure('files/prerequisite-missing', 'directory enumeration requires explicit finite lifetime and total budgets')
   }
   for (const value of [
     config.workerCount, config.minimumHealthyWorkers, config.workerReservationBytes, config.replyOverheadBytes,
@@ -517,7 +526,7 @@ export class LinuxFilesPool implements DrainParticipant {
     const assertContentAvailable = (): void => {
       checkCurrent()
       if (this.config.content === undefined || this.slots.some(slot => !slot.client.supportsContentReads)) {
-        throw new FilesFailure('files/prerequisite-missing', 'The original files pool has no verified ABI8 content capability.')
+        throw new FilesFailure('files/prerequisite-missing', 'The original files pool lacks verified content and directory completeness capabilities.')
       }
     }
     const assertStagingAvailable = (): void => {
@@ -864,7 +873,63 @@ export class LinuxFilesPool implements DrainParticipant {
         }
         throw error
       })
+      const enumerateDirectory = async (path: string, maxEntries: number, control?: AbortSignal) => {
+        const content = contentLimits()
+        current()
+        if (!Number.isSafeInteger(maxEntries) || maxEntries < 1) throw new FdWorkerFailure('FS_TOO_LARGE')
+        if (this.config.directoryPaging === undefined || this.slots.some(slot => !slot.client.supportsDirectoryPaging)) {
+          throw new FilesFailure('files/prerequisite-missing', 'The original pool has no verified optional directory enumeration capability.')
+        }
+        const pageEntries = Math.min(maxEntries, content.maxEntries)
+        const reservation = contentBudget(path, content.maxReplyBytes, pageEntries + 1)
+          + 8 * (256 + 128 + content.maxNameBytes)
+        if (!Number.isSafeInteger(reservation) || reservation > this.config.maxResidentBytesPerLane) {
+          throw new FdWorkerFailure('FS_TOO_LARGE')
+        }
+        const started = Promise.withResolvers<FdDirectoryEnumeration>(), actualDone = Promise.withResolvers<void>()
+        void started.promise.catch(() => {})
+        // Native completion releases running/slot ownership; the original result retains page bytes until close.
+        const work = port.run(reservation, actual => this.withSlot(false, async (client) => {
+          current()
+          const enumeration = client.enumerateDirectory(project, path, pageEntries, content.maxReplyBytes,
+            content.maxNameBytes, actual)
+          started.resolve(enumeration)
+          try { await enumeration.finished; return { kind: 'completed' as const } }
+          catch (error) { return { kind: 'failed' as const, error } }
+        }).finally(() => { actualDone.resolve() }), control)
+        void work.catch((error: unknown) => { started.reject(error) })
+        const settled = actualDone.promise.then(() => work).then(() => {})
+        void settled.catch(() => {})
+        const enumeration = await started.promise
+        let closing: Promise<void> | undefined
+        const close = (): Promise<void> => {
+          closing ??= (async () => {
+            const closed = enumeration.close()
+            try { await closed } finally {
+              await actualDone.promise
+              const result = await work.catch(() => undefined)
+              result?.release()
+            }
+          })()
+          return closing
+        }
+        try { await enumeration.ready; current() } catch (error) { await close(); throw error }
+        return Object.freeze({ maxReplyBytes: content.maxReplyBytes, ready: enumeration.ready,
+          ended: enumeration.finished, closed: enumeration.closed,
+          settled,
+          pull: async () => {
+            try {
+              current()
+              const page = await enumeration.pull()
+              current()
+              if (control?.aborted) throw new FdWorkerFailure('FS_ABORTED')
+              return page
+            } catch (error) { await close(); throw error }
+          }, close })
+      }
       return Object.freeze({ binding, workspace, reader: projectReader, maxPathBytes: this.config.maxPathBytes,
+        ...this.config.directoryPaging === undefined || this.slots.some(slot => !slot.client.supportsDirectoryPaging)
+          ? {} : { enumerateDirectory },
         assertInstalled, assertCurrent: current,
         lstat: (path: string, control?: AbortSignal) => {
           contentLimits()
@@ -873,9 +938,9 @@ export class LinuxFilesPool implements DrainParticipant {
         },
         listDir: (path: string, control?: AbortSignal) => {
           const content = contentLimits()
-          // Covers native rows, decoded/transport copies, main-thread entries, issued targets and their retained paths.
-          return contentRun(contentBudget(path, content.maxReplyBytes, content.maxEntries),
-            (client, actual) => client.list(project, path, content.maxEntries, content.maxReplyBytes, actual), control)
+          // Covers result copies and issued targets plus the one-entry probe scratch and completeness frame.
+          return contentRun(contentBudget(path, content.maxReplyBytes, content.maxEntries + 1),
+            (client, actual) => client.listDirectory(project, path, content.maxEntries, content.maxReplyBytes, actual), control)
         },
         readBytes: (path: string, maxBytes: number, control?: AbortSignal) => {
           const content = contentLimits()

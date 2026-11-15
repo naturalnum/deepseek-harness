@@ -273,6 +273,18 @@ export class CloudIngress {
     })
   }
 
+  /**
+   * Retain original stream authorization through its actual native enumeration lifetime.
+   * @param peer Exact original invocation Peer.
+   * @param binding Original installed account binding.
+   * @param endpoint Exact admitted stream endpoint.
+   * @param signal Original logical-stream and enumeration cancellation.
+   * @returns A check using the original Peer/Use, complete stream exposure and ingress-generation checks.
+   */
+  captureStreamCurrent(peer: PeerScope, binding: AccountBinding, endpoint: string, signal: AbortSignal): () => void {
+    return this.peers.captureStreamCurrent(peer, binding, endpoint, signal)
+  }
+
   /** Use the original login owner for a factory-owned configuration handoff.
    * @param peer Exact invocation Peer.
    * @param consume Actual runtime update; receives only original trusted identities and closure/join callbacks.

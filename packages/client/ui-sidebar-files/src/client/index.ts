@@ -20,6 +20,7 @@ import { FILES_ID, FILES_KIND, filesDefinition } from './definition.tsx'
 import { canOpenOf, createList, createWatch, filesFace, type FilesInjected } from './face.ts'
 import { createSearch } from './search-workspace.ts'
 import { FileTree } from './FileTree.tsx'
+import { createDirectoryPages } from './directory-pages.ts'
 import { FileNavigator } from './FileNavigator.tsx'
 import { FilesBody } from './FilesBody.tsx'
 import { FilesTitle } from './FilesTitle.tsx'
@@ -39,6 +40,17 @@ export type { FilesBodyProps } from './FilesBody.tsx'
 export type { TreeEntry, TreeEntryMeta, TreeEntryKind, TreeDirectoryState, FileTreeInput } from './FileTree.tsx'
 export type { FileNavigatorInput } from './FileNavigator.tsx'
 export type { NavigatorToggleInput } from './NavigatorToggle.tsx'
+
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /**
+     * Join Host-confirmed closure of directories beside this Session's tabs; no live enumeration is a no-op.
+     * @mode parallel
+     * @param sessionId - Session whose original directory streams must close.
+     */
+    'sidebar-files/release-directory'(sessionId: SessionId): Promise<void>
+  }
+}
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
@@ -87,7 +99,7 @@ export function apply(ctx: ClientContext): void {
         return () => { active = false; unsubscribe() }
       }, 'ui-sidebar-files: tab navigation'),
     }
-  }, createSearch(ctx.remote), preferences)
+  }, createSearch(ctx.remote), preferences, createDirectoryPages(ctx.remote))
   // A Factory runs its inject per occurrence, so each store instance gets its
   // one face when it is minted. The shortcut, which acts outside any body, finds
   // the face placed beside the target tab; a tab's loading and loaded drawings
@@ -111,6 +123,10 @@ export function apply(ctx: ClientContext): void {
       if (tabs.size === 0) beside.delete(sessionId)
     }
   }
+  ctx.on('sidebar-files/release-directory', async (sessionId) => {
+    const selected = new Set([...beside.get(sessionId)?.values() ?? []].map(entry => entry.face))
+    await Promise.all([...selected].map(bound => bound.releaseDirectory()))
+  })
   const store: typeof handle = {
     ...handle,
     create: (scopeKey) => {

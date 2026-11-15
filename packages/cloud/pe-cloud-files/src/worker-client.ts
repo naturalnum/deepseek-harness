@@ -1,5 +1,5 @@
 /** Worker transport retains operations until actual FD-closure replies or actual worker exit. */
-import { validStageName } from './worker-protocol.ts'
+import { validStageName, parseFdDirectoryVersion } from './worker-protocol.ts'
 import { parseBundleFrame } from './bundle-native.ts'
 import type { FdBundleRequest, FdBundleFacts } from './bundle-native.ts'
 import { skillSourceContext, parseSkillProjectFrame } from './skill-projection.ts'
@@ -12,7 +12,7 @@ import type { OperationId } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { FsErrorCode, FsWriteIntent } from '@deepseek-ai/dsh-fs'
 import type { FdTaskRequest, FdRootIdentity, FdMetadata, FdDirectoryRequest, FdDirectoryObservation, LeafBackend,
   FdStorageRequest, FdStorageView, FdTextWriteRequest, FdTextWriteResult, FdContentRequest, FdPathMetadata,
-  FdDirectoryEntry } from './worker-protocol.ts'
+  FdDirectoryEntry, FdDirectoryListing, FdDirectoryPage, FdDirectoryVersion } from './worker-protocol.ts'
 import { FilesFailure } from './error.ts'
 import { DirectoryMetadataFailure } from './directory-error.ts'
 import { parseLeafFrame, leafPreparation, DirectoryPreparationFailure } from './leaf-frame.ts'
@@ -106,6 +106,21 @@ export interface FdStageSink {
 export interface FdByteStream {
   readonly finished: Promise<void>
   next(): Promise<IteratorResult<Uint8Array<ArrayBuffer>>>
+  cancel(): void
+}
+
+/** Closure was not confirmed by the native enumeration protocol, even if its worker has exited. */
+export class FdDirectoryCloseFailure extends FdWorkerFailure {
+  constructor(options?: ErrorOptions) { super('FS_IO_ERROR'); if (options?.cause !== undefined) this.cause = options.cause }
+}
+
+/** One original slot; operation failure, native closure and retained page consumption are separate facts. */
+export interface FdDirectoryEnumeration {
+  readonly ready: Promise<FdDirectoryVersion>
+  readonly finished: Promise<void>
+  readonly closed: Promise<void>
+  pull(): Promise<FdDirectoryPage>
+  close(): Promise<void>
   cancel(): void
 }
 
@@ -237,9 +252,28 @@ interface PendingStream extends PendingBase {
   cancelled: boolean
   total: number
 }
+interface DirectoryPull {
+  readonly sequence: number
+  readonly resolve: (page: FdDirectoryPage) => void
+  readonly reject: (error: Error) => void
+}
+type DirectoryStep =
+  | { readonly kind: 'starting' }
+  | { readonly kind: 'ready'; readonly version: FdDirectoryVersion }
+  | { readonly kind: 'pulling'; readonly version: FdDirectoryVersion; readonly pull: DirectoryPull }
+  | { readonly kind: 'closing'; readonly version: FdDirectoryVersion | undefined; readonly expectedPage: number | undefined }
+interface PendingEnumeration extends PendingBase {
+  readonly kind: 'directory-enumeration'
+  readonly maxEntries: number
+  readonly maxNameBytes: number
+  readonly resolveReady: (version: FdDirectoryVersion) => void
+  readonly finish: (closed: boolean, error?: Error) => void
+  step: DirectoryStep
+  sequence: number
+}
 type Pending = PendingContent | PendingRead | PendingStat | PendingStream | PendingDirectory
   | PendingLeaf | PendingStorage | PendingTextWrite | PendingStage | PendingProjectMetadata | PendingEnvironmentLayout
-    | PendingBundle | PendingSkill | PendingSkillRetire | PendingSkillProject | PendingSkillContext
+    | PendingBundle | PendingSkill | PendingSkillRetire | PendingSkillProject | PendingSkillContext | PendingEnumeration
 
 function object(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null }
 function wireError(value: Record<string, unknown>): FdWorkerFailure | undefined {
@@ -299,6 +333,8 @@ export class FdWorkerClient {
   private readyResolved = false
   private storageVersion: 1 | undefined
   private abiVersion: 6 | 7 | 8 | undefined
+  private directoryListingVersion: 1 | undefined
+  private directoryPagingVersion: 1 | undefined
   private stagingVersion: 1 | undefined
   private projectMetadataVersion: 1 | undefined
   private skillProjectionVersion: 1 | undefined
@@ -334,8 +370,11 @@ export class FdWorkerClient {
   /** Whether this exact prebuilt worker completed the independent text-capable ABI handshake. */
   get supportsTextWrites(): boolean { return this.abiVersion === 7 || this.abiVersion === 8 }
 
-  /** Whether the worker supports bounded nofollow/list/range commands. */
-  get supportsContentReads(): boolean { return this.abiVersion === 8 }
+  /** Whether the complete nofollow/list/range group includes explicit directory completeness. */
+  get supportsContentReads(): boolean { return this.abiVersion === 8 && this.directoryListingVersion === 1 }
+
+  /** Actual native enumeration handshake and explicit worker lifetime configuration. */
+  get supportsDirectoryPaging(): boolean { return this.supportsContentReads && this.directoryPagingVersion === 1 }
 
   /** The separate staging companion must complete its own real worker handshake. */
   get supportsStaging(): boolean { return this.stagingVersion === 1 }
@@ -611,23 +650,44 @@ export class FdWorkerClient {
   }
 
   /**
-   * List direct children with strict complete-reply and entry bounds; excess rejects.
+   * List every direct child or reject; internal tree validators require completeness.
+   * @param root Previously authorized fixed project identity.
+   * @param relativePath Project-relative directory.
+   * @param maxEntries Maximum children in a complete result.
+   * @param maxBytes Complete encoded reply budget including names and metadata.
+   * @param signal Cancellation retains actual ownership.
+   * @returns Complete UTF-8 byte-sorted nofollow entries after descriptor closure.
+   */
+  async list(
+    root: FdRootIdentity, relativePath: string, maxEntries: number, maxBytes: number, signal: AbortSignal,
+  ): Promise<readonly FdDirectoryEntry[]> {
+    const listing = await this.listDirectory(root, relativePath, maxEntries, maxBytes, signal)
+    if (listing.truncated) throw new FdWorkerFailure('FS_TOO_LARGE')
+    return listing.entries
+  }
+
+  /**
+   * List a bounded subset of direct children with explicit completeness and strict reply bounds.
    * @param root Previously authorized fixed project identity.
    * @param relativePath Project-relative directory.
    * @param maxEntries Maximum direct children, not a recursive traversal limit.
    * @param maxBytes Complete encoded reply budget including names and metadata.
    * @param signal Cancellation retains actual ownership.
-   * @returns Stable UTF-8 byte-sorted nofollow entries after all descriptors close.
+   * @returns UTF-8 byte-sorted nofollow entries and whether children were omitted, after all descriptors close.
    */
-  list(
+  listDirectory(
     root: FdRootIdentity, relativePath: string, maxEntries: number, maxBytes: number, signal: AbortSignal,
-  ): Promise<readonly FdDirectoryEntry[]> {
+  ): Promise<FdDirectoryListing> {
     return this.content({ kind: 'list', maxEntries, maxBytes }, root, relativePath, maxBytes, maxEntries, signal, (value) => {
-      if (value.kind !== 'list-reply' || !Array.isArray(value.entries)
-        || value.entries.length > maxEntries) throw new FdWorkerFailure('FS_IO_ERROR')
+      const listing = value.listing
+      if (value.kind !== 'list-reply' || !object(listing) || Object.keys(listing).length !== 2
+        || !Array.isArray(listing.entries) || typeof listing.truncated !== 'boolean'
+        || listing.entries.length > maxEntries || listing.truncated && listing.entries.length === 0) {
+        throw new FdWorkerFailure('FS_IO_ERROR')
+      }
       const entries: FdDirectoryEntry[] = []
       let previous: Buffer | undefined
-      for (const entry of value.entries) {
+      for (const entry of listing.entries) {
         const info = pathMetadata(entry, true)
         if (!object(entry) || info === undefined || typeof entry.name !== 'string' || !entry.name
           || entry.name === '.' || entry.name === '..' || /[/\\\0]/.test(entry.name)
@@ -638,7 +698,7 @@ export class FdWorkerClient {
         previous = name
         entries.push({ name: entry.name, ...info })
       }
-      return entries
+      return { entries, truncated: listing.truncated }
     })
   }
 
@@ -681,7 +741,7 @@ export class FdWorkerClient {
     return new Promise((resolve, reject) => {
       const pending: PendingContent = { kind: command.kind, ...this.base(maxBytes, signal), maxEntries, reject, accept: (value) => {
         try {
-          const keys = command.kind === 'list' ? ['kind', 'id', 'entries'] : command.kind === 'lstat' ? ['kind', 'id',
+          const keys = command.kind === 'list' ? ['kind', 'id', 'listing'] : command.kind === 'lstat' ? ['kind', 'id',
             'metadata'] : ['kind', 'id', 'bytes']
           if (Object.keys(value).length !== keys.length || Object.keys(value).some(key =>
             !keys.includes(key))) throw new FdWorkerFailure('FS_IO_ERROR')
@@ -916,6 +976,58 @@ export class FdWorkerClient {
     }
   }
 
+  /**
+   * Open one bounded native directory enumeration on the original exclusive slot.
+   * @param root Original authorized fixed project identity.
+   * @param relativePath Relative directory beneath that identity.
+   * @param maxEntries Per-page metadata count, never a complete-tree limit.
+   * @param maxBytes Complete encoded frame cap.
+   * @param maxNameBytes Original native name cap in UTF-8 bytes.
+   * @param signal Cancellation wakes an idle enumeration and preserves actual closure responsibility.
+   * @returns A single-pull enumeration; finished rejects when native closure is unconfirmed.
+   */
+  enumerateDirectory(
+    root: FdRootIdentity, relativePath: string, maxEntries: number, maxBytes: number, maxNameBytes: number, signal: AbortSignal,
+  ): FdDirectoryEnumeration {
+    this.assertAvailable(signal)
+    if (!this.supportsDirectoryPaging) throw new FdWorkerFailure('FS_PERMISSION_DENIED')
+    const ready = Promise.withResolvers<FdDirectoryVersion>()
+    const finished = Promise.withResolvers<void>(), closed = Promise.withResolvers<void>()
+    void ready.promise.catch(() => {})
+    void finished.promise.catch(() => {})
+    void closed.promise.catch(() => {})
+    const pending: PendingEnumeration = {
+      kind: 'directory-enumeration', ...this.base(maxBytes, signal), maxEntries, maxNameBytes, sequence: 0,
+      step: { kind: 'starting' }, resolveReady: ready.resolve,
+      finish: (confirmed, error) => {
+        const observed = confirmed ? error : new FdDirectoryCloseFailure({ cause: error })
+        ready.reject(observed ?? new FdWorkerFailure('FS_ABORTED'))
+        if (pending.step.kind === 'pulling') pending.step.pull.reject(observed ?? new FdWorkerFailure('FS_ABORTED'))
+        if (observed === undefined) finished.resolve()
+        else finished.reject(observed)
+        if (confirmed) closed.resolve()
+        else closed.reject(observed)
+      },
+    }
+    this.pending = pending
+    this.post({ kind: 'directory-open', id: pending.id, root, relativePath, maxEntries, maxBytes, cancel: pending.cancel.buffer })
+    return {
+      ready: ready.promise, finished: finished.promise, closed: closed.promise,
+      pull: async () => {
+        await ready.promise
+        if (this.pending !== pending || pending.step.kind === 'closing') throw new FdWorkerFailure('FS_ABORTED')
+        if (pending.step.kind !== 'ready') throw new FilesFailure('cloud/capacity', 'directory has an outstanding pull')
+        const version = pending.step.version, sequence = pending.sequence++
+        return new Promise((resolve, reject) => {
+          pending.step = { kind: 'pulling', version, pull: { sequence, resolve, reject } }
+          this.post({ kind: 'directory-pull', id: pending.id, sequence })
+        })
+      },
+      close: () => { if (this.pending === pending) this.cancelEnumeration(pending); return closed.promise },
+      cancel: () => { if (this.pending === pending) this.cancelEnumeration(pending) },
+    }
+  }
+
   /** Healthy admission excludes startup, failure and a requested or observed exit. */
   get available(): boolean { return this.readyResolved && !this.closed && this.failure === undefined }
 
@@ -947,6 +1059,7 @@ export class FdWorkerClient {
       if (this.pending?.id === id && this.pending.kind === 'stage') { this.cancelStage(this.pending); return }
       Atomics.store(cancel, 0, 1)
       if (this.pending?.id === id && this.pending.kind === 'stream') this.cancelPending(this.pending)
+      if (this.pending?.id === id && this.pending.kind === 'directory-enumeration') this.cancelEnumeration(this.pending)
     }
     signal.addEventListener('abort', abort, { once: true })
     return { id, maxBytes, cancel, removeAbort: () => { signal.removeEventListener('abort', abort) } }
@@ -976,11 +1089,24 @@ export class FdWorkerClient {
     this.post({ kind: 'stream-cancel', id: pending.id })
   }
 
+  private cancelEnumeration(pending: PendingEnumeration): void {
+    if (pending.step.kind === 'closing') return
+    const step = pending.step
+    if (step.kind === 'pulling') step.pull.reject(new FdWorkerFailure('FS_ABORTED'))
+    pending.step = { kind: 'closing', version: step.kind === 'starting' ? undefined : step.version,
+      expectedPage: step.kind === 'pulling' ? step.pull.sequence : undefined }
+    Atomics.store(pending.cancel, 0, 1)
+    this.post({ kind: 'directory-close', id: pending.id })
+  }
+
   private message(value: unknown): void {
     if (this.failure !== undefined) return
     if (!object(value)) { this.failProtocol(); return }
     if (value.kind === 'ready') {
       if ((value.abiVersion !== 6 && value.abiVersion !== 7 && value.abiVersion !== 8) || this.readyResolved || this.closed
+        || (value.directoryListingVersion !== undefined && (value.directoryListingVersion !== 1 || value.abiVersion !== 8))
+        || (value.directoryPagingVersion !== undefined && (value.directoryPagingVersion !== 1
+          || value.abiVersion !== 8 || value.directoryListingVersion !== 1))
         || (value.storageProbeVersion !== undefined && value.storageProbeVersion !== 1)
         || (value.stagingAbiVersion !== undefined && value.stagingAbiVersion !== 1)
         || (value.projectMetadataVersion !== undefined && (value.projectMetadataVersion !== 1 || value.abiVersion !== 8))
@@ -995,6 +1121,8 @@ export class FdWorkerClient {
       }
       this.storageVersion = value.storageProbeVersion
       this.abiVersion = value.abiVersion
+      this.directoryListingVersion = value.directoryListingVersion
+      this.directoryPagingVersion = value.directoryPagingVersion
       this.stagingVersion = value.stagingAbiVersion
       this.projectMetadataVersion = value.projectMetadataVersion
       this.environmentLayoutVersion = value.environmentLayoutVersion
@@ -1069,6 +1197,7 @@ export class FdWorkerClient {
       return
     }
     if (pending.kind === 'stage') { this.stageMessage(pending, value); return }
+    if (pending.kind === 'directory-enumeration') { this.enumerationMessage(pending, value); return }
     if (pending.kind === 'project-metadata') { this.projectMetadataMessage(pending, value); return }
     if (pending.kind === 'environment-layout') { this.environmentLayoutMessage(pending, value); return }
     if (pending.kind === 'text-write') { this.textWriteMessage(pending, value); return }
@@ -1108,6 +1237,66 @@ export class FdWorkerClient {
     pending.removeAbort()
     this.pending = undefined
     pending.resolve(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength))
+  }
+
+  private enumerationMessage(pending: PendingEnumeration, value: Record<string, unknown>): void {
+    let encoded: string
+    try { encoded = JSON.stringify(value) } catch (_error) { this.failProtocol(); return }
+    if (Buffer.byteLength(encoded) > pending.maxBytes) { this.failProtocol(); return }
+    const step = pending.step
+    if (value.kind === 'directory-ready' && Object.keys(value).length === 3
+      && (step.kind === 'starting' || step.kind === 'closing' && step.version === undefined)) {
+      const version = parseFdDirectoryVersion(value.version)
+      if (version === undefined) { this.failProtocol(); return }
+      pending.step = step.kind === 'closing' ? { ...step, version } : { kind: 'ready', version }
+      pending.resolveReady(version)
+      return
+    }
+    if (value.kind === 'reply' && value.ok === false
+      && Object.keys(value).length === (value.syscallCode === undefined ? 4 : 5)) {
+      const error = wireError(value)
+      if (error === undefined) { this.failProtocol(); return }
+      pending.removeAbort(); this.pending = undefined; pending.finish(true, error); return
+    }
+    if (value.kind === 'directory-closed' && Object.keys(value).length === 4 && step.kind === 'closing'
+      && step.version !== undefined && value.version === step.version && value.closed === true) {
+      pending.removeAbort(); this.pending = undefined; pending.finish(true); return
+    }
+    if (value.kind !== 'directory-page' || Object.keys(value).length !== 4
+      || !(step.kind === 'pulling' && value.sequence === step.pull.sequence
+        || step.kind === 'closing' && step.expectedPage !== undefined && value.sequence === step.expectedPage)) {
+      this.failProtocol(); return
+    }
+    if (step.kind !== 'pulling' && step.kind !== 'closing') { this.failProtocol(); return }
+    const page = value.page
+    if (!object(page) || Object.keys(page).length !== 4 || page.version !== step.version
+      || !Array.isArray(page.entries) || page.entries.length > pending.maxEntries || typeof page.eof !== 'boolean'
+      || page.closed !== page.eof || !page.eof && page.entries.length === 0 || step.version === undefined) {
+      this.failProtocol(); return
+    }
+    const entries: FdDirectoryEntry[] = []
+    let previous: Buffer | undefined
+    for (const row of page.entries) {
+      const info = pathMetadata(row, true)
+      if (!object(row) || info === undefined || typeof row.name !== 'string' || !row.name
+        || row.name === '.' || row.name === '..' || /[/\\\0]/.test(row.name)) { this.failProtocol(); return }
+      const bytes = Buffer.from(row.name)
+      if (bytes.byteLength > pending.maxNameBytes || bytes.toString('utf8') !== row.name
+        || previous !== undefined && Buffer.compare(previous, bytes) >= 0) { this.failProtocol(); return }
+      previous = bytes
+      entries.push({ name: row.name, ...info })
+    }
+    const result: FdDirectoryPage = page.eof
+      ? { version: step.version, entries, eof: true, closed: true }
+      : { version: step.version, entries, eof: false, closed: false }
+    if (result.eof) {
+      pending.removeAbort(); this.pending = undefined
+      if (step.kind === 'pulling') step.pull.resolve(result)
+      pending.finish(true)
+    } else if (step.kind === 'pulling') {
+      pending.step = { kind: 'ready', version: step.version }
+      step.pull.resolve(result)
+    } else pending.step = { ...step, expectedPage: undefined }
   }
 
   private stageMessage(pending: PendingStage, value: Record<string, unknown>): void {
@@ -1306,6 +1495,7 @@ export class FdWorkerClient {
         { operationId: pending.id, project: Object.freeze({ ...pending.request.root }), version: pending.request.version }, {
           cause: error }))
     else if (pending.kind === 'stream') pending.finish(error)
+    else if (pending.kind === 'directory-enumeration') pending.finish(false, error)
     else if (pending.kind === 'skill-prepare' || pending.kind === 'skill-retire') {
       const intent = Object.freeze({ operationId: pending.id,
         kind: pending.kind === 'skill-prepare' ? 'prepare' as const : 'retire' as const,

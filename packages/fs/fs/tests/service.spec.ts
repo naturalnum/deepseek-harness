@@ -5,7 +5,7 @@
  * abstract service contract, so a minimal fake backend exercises it.
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { FileSystem, FsError, FsTargetKey, FsVersion } from '@deepseek-ai/dsh-fs'
 import type {
@@ -90,6 +90,34 @@ class FakeFileSystem extends FileSystem {
 }
 
 describe('FileSystem provider seam', () => {
+  it('wraps an existing complete provider listing without changing its entries', async () => {
+    const ctx = new Context()
+    try {
+      await ctx.plugin(FakeFileSystem)
+      const target = await ctx.fs.resolve('skills')
+      expect(await ctx.fs.listDirectory(target)).toEqual({ entries: await ctx.fs.listDir(target), truncated: false })
+    } finally { await ctx.fiber.dispose() }
+  })
+
+  it('preserves a complete provider failure through the default bounded method', async () => {
+    const ctx = new Context()
+    try {
+      await ctx.plugin(FakeFileSystem)
+      const target = await ctx.fs.resolve('not-a-directory')
+      await expect(ctx.fs.listDirectory(target)).rejects.toMatchObject({ code: 'FS_NOT_DIRECTORY' })
+    } finally { await ctx.fiber.dispose() }
+  })
+
+  it('refuses optional page enumeration without materializing the default complete listing', async () => {
+    const ctx = new Context()
+    try {
+      await ctx.plugin(FakeFileSystem)
+      const target = await ctx.fs.resolve('skills'), list = vi.spyOn(ctx.fs, 'listDir')
+      await expect(ctx.fs.openDirectory(target, 64)).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+      expect(list).not.toHaveBeenCalled()
+    } finally { await ctx.fiber.dispose() }
+  })
+
   it('registers as ctx.fs and serves the primitives', async () => {
     const ctx = new Context()
     await ctx.plugin(FakeFileSystem)

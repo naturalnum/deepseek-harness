@@ -316,6 +316,7 @@ export const EVENT_SCOPE_PAGE: Record<string, string> = {
  * exemption cannot mask another declaration in that scope.
  */
 export const EVENT_WALK_EXEMPTIONS: Record<string, string> = {
+  'sidebar-files/release-directory': 'client-side original directory closure — packages/client/ui-sidebar-files/README.md owns the event',
   'file-upload/complete': 'client-side upload notification, outside the Host projection — packages/client/file-upload/README.md owns the event',
   'account-ui/change': 'client-side account lifecycle signal — packages/client/ui-settings-account/README.md owns the API',
   'account-ui/refresh': 'client-side account refresh signal — packages/client/ui-settings-account/README.md owns the API',
@@ -659,6 +660,10 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   FsMoveOutcome: 'filesystem.md',
   FsMoveSourceFailure: 'filesystem.md',
   PatchHunk: 'filesystem.md',
+  FsDirectoryEnumeration: 'filesystem.md',
+  FsDirectoryListing: 'filesystem.md',
+  FsDirectoryPage: 'filesystem.md',
+  FsDirectoryVersion: 'filesystem.md',
   FsEditOutcome: 'filesystem.md',
   FsEditRequest: 'filesystem.md',
   FsInfo: 'filesystem.md',
@@ -1176,6 +1181,9 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   SubagentCapacityReservation: 'cloud.md#actual-work-and-capacity',
   SubagentAdmission: 'subagent.md',
   SubagentAdmissionRequest: 'subagent.md',
+  WorkspaceDirectoryControl: 'workspace.md',
+  WorkspaceDirectoryCursor: 'workspace.md',
+  WorkspaceDirectoryFrame: 'workspace.md',
 }
 
 /** TypeScript lib and pinned framework types with no repository-owned data page. */
