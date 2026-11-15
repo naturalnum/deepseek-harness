@@ -25,6 +25,7 @@ def collect(root, base):
     git(root, 'rev-parse', '--verify', '--end-of-options', base + '^{commit}')
     fields = git(root, 'diff', '--name-status', '-z', '-M', base, '--').split('\0')
     changed = set()
+    added = set()
     index = 0
     while index < len(fields) - 1:
         status, path = fields[index:index + 2]
@@ -32,8 +33,8 @@ def collect(root, base):
         if status.startswith(('R', 'C')):
             path = fields[index]
             index += 1
-        if not status.startswith('A') and native_source(path):
-            changed.add(path)
+        if native_source(path):
+            (added if status.startswith('A') else changed).add(path)
     rows = ledger((root / 'deploy/upstream/ledger.tsv').read_text())
     by_path = {row['路径']: row for row in rows}
     paths = sorted(set(git(root, 'ls-files', '-z', '--cached', '--others', '--exclude-standard').split('\0')))
@@ -59,11 +60,17 @@ def collect(root, base):
     non_seam = sum(by_path.get(path, {}).get('类别') != '扩展点' for path in changed)
     for row in rows:
         row['changed'] = row['路径'] in changed
+        row['added'] = row['路径'] in added
     return dict(counts=dict(native_source_files=len(changed), non_seam_files=non_seam,
                             uncentralized_internal_lines=sum(not row['centralized'] for row in reads)),
+                added_native_sources=sorted(added),
+                added_native_counts=dict(total=len(added),
+                    skill_assets=sum(path.startswith('packages/skill/skill-office/assets/') for path in added),
+                    root_scripts=sum(path.startswith('scripts/') for path in added),
+                    src=sum(not path.startswith(('scripts/', 'packages/skill/skill-office/assets/')) for path in added)),
                 imports=syntax['imports'], inheritance=syntax['inheritance'],
                 mounts=sorted(syntax['mounts'] + mounts, key=lambda row: (row['path'], row['line'], row['entry'])),
-                internals=reads, ledger=rows, unlisted_native_sources=sorted(changed - by_path.keys()))
+                internals=reads, ledger=rows, unlisted_native_sources=sorted((changed | added) - by_path.keys()))
 
 
 def main():

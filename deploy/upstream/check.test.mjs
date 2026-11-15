@@ -32,18 +32,18 @@ function fixture() {
   git('add', '--', 'src/rename.ts', 'src/renamed.ts')
   write('src/new.ts', 'new\n')
   git('add', '--', 'src/new.ts')
-  const ledger = paths => write('deploy/upstream/ledger.tsv', '路径\t类别\t原因\t撤销条件\n'
-    + paths.map(path => `${path}\t扩展点\t原有登记\t上游提供等价能力`).join('\n') + '\n')
+  const ledger = (paths, includeAdded = true) => write('deploy/upstream/ledger.tsv', '路径\t类别\t原因\t撤销条件\n'
+    + [...paths, ...includeAdded ? ['src/new.ts'] : []].map(path => `${path}\t扩展点\t原有登记\t上游提供等价能力`).join('\n') + '\n')
   const run = (...args) => spawnSync(process.execPath, [check, ...args], { cwd: root, encoding: 'utf8' })
   return { root, base, ledger, run, write }
 }
 
-test('matches modified, deleted and renamed source while excluding own, new, test, document and config paths', () => {
+test('matches modified, deleted and renamed source while tracking additions separately from modified, deleted and renamed paths', () => {
   const f = fixture()
   f.ledger(['src/main.ts', 'src/remove.ts', 'src/renamed.ts'])
   const actual = f.run(f.base)
   assert.equal(actual.status, 0, actual.stderr)
-  assert.match(actual.stdout, /3 changed source files; 3 ledger rows; matched/u)
+  assert.match(actual.stdout, /3 changed source files; 4 ledger rows; matched/u)
 })
 
 test('lists both an unlisted upstream change and a stale ledger path', () => {
@@ -95,4 +95,18 @@ test('requires current generated interface tables for six-column ledgers', () =>
   f.write('packages/cloud/example/src/index.ts', 'export const phase = (entry: { fiberPhase: string }) => entry.fiberPhase\n')
   assert.equal(refresh().status, 0)
   assert.equal(f.run(f.base).status, 0, 'a public JSON fiberPhase field is not a Native fiber read')
+})
+
+test('refuses a missing addition without changing the historical modified-source count', () => {
+  const f = fixture()
+  const old = ['src/main.ts', 'src/remove.ts', 'src/renamed.ts']
+  f.ledger(old, false)
+  const missing = f.run(f.base)
+  assert.equal(missing.status, 1)
+  assert.match(missing.stderr, /Unlisted added Native source:\nsrc\/new\.ts/u)
+  f.ledger(old)
+  const repaired = f.run(f.base)
+  assert.equal(repaired.status, 0, repaired.stderr)
+  assert.match(repaired.stdout, /3 changed source files; 4 ledger rows; matched/u)
+  assert.match(repaired.stdout, /Added Native source paths \(excluded from historical counts\): 1; all listed/u)
 })

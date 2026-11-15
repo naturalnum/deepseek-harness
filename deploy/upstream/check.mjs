@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Compare the current checkout's upstream source changes with the four-column ledger. */
+/** Compare the current checkout's upstream source changes and additions with the existing ledger. */
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -26,12 +26,16 @@ function main() {
   const fields = execFileSync('git', ['diff', '--name-status', '-z', '-M', base, '--'],
     { cwd: root, encoding: 'utf8' }).split('\0')
   const changed = new Set()
+  const added = new Set()
   for (let index = 0; index < fields.length - 1;) {
     const status = fields[index++]
     let path = fields[index++]
     if (status.startsWith('R') || status.startsWith('C')) path = fields[index++]
-    if (!status.startsWith('A') && !own.test(path) && !test.test(path) && !doc.test(path)
-      && !config.test(path) && source.test(path)) changed.add(path)
+    if (!own.test(path) && !test.test(path) && !doc.test(path)
+      && !config.test(path) && source.test(path)) {
+      if (status.startsWith('A')) added.add(path)
+      else changed.add(path)
+    }
   }
   const lines = readFileSync(join(root, 'deploy/upstream/ledger.tsv'), 'utf8').trimEnd().split('\n')
   const header = lines.shift()
@@ -58,9 +62,11 @@ function main() {
     }
   }
   const missing = [...changed].filter(path => !ledger.has(path)).sort()
-  const stale = [...ledger].filter(path => !changed.has(path) && !withdrawn.has(path)).sort()
-  if (missing.length || stale.length) {
+  const missingAdded = [...added].filter(path => !ledger.has(path)).sort()
+  const stale = [...ledger].filter(path => !changed.has(path) && !added.has(path) && !withdrawn.has(path)).sort()
+  if (missing.length || missingAdded.length || stale.length) {
     if (missing.length) console.error('Unlisted upstream source:\n' + missing.join('\n'))
+    if (missingAdded.length) console.error('Unlisted added Native source:\n' + missingAdded.join('\n'))
     if (stale.length) console.error('Ledger paths without upstream changes:\n' + stale.join('\n'))
     return 1
   }
@@ -69,6 +75,7 @@ function main() {
     process.stdout.write(result)
   }
   console.log(`upstream check: ${changed.size} changed source files; ${ledger.size} ledger rows; matched.`)
+  console.log(`Added Native source paths (excluded from historical counts): ${added.size}; all listed.`)
   return 0
 }
 

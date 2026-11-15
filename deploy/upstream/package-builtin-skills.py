@@ -10,7 +10,7 @@ import zipfile
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--check', action='store_true')
 args = parser.parse_args()
-repo = Path(__file__).resolve().parent.parent
+repo = Path(__file__).resolve().parents[2]
 for relative in ['packages/skill/skill-office/assets', 'packages/skill/skill-office/assets/reports']:
     for root in sorted((repo / relative).iterdir()):
         if not root.is_dir() or not (root / 'SKILL.md').is_file():

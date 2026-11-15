@@ -4,6 +4,93 @@
     "non_seam_files": 48,
     "uncentralized_internal_lines": 0
   },
+  "added_native_sources": [
+    "apps/web/src/cloud-web.module.css",
+    "apps/web/src/cloud-web.ts",
+    "apps/web/src/locales.ts",
+    "packages/boot/app-boot/src/config-compare.ts",
+    "packages/boot/app-boot/src/config-impact.ts",
+    "packages/boot/app-boot/src/entry-config-impact.ts",
+    "packages/client/ui-settings-models/src/client/IntegratedModels.tsx",
+    "packages/client/ui-settings-models/src/client/integration.ts",
+    "packages/client/ui-settings-subagent/src/client/integration.ts",
+    "packages/client/ui-settings-web-search/src/client/integration.ts",
+    "packages/client/ui-sidebar-files/src/client/directory-pages.ts",
+    "packages/host/frontend-static/src/resource.ts",
+    "packages/mcp/mcp-client/src/http-incoming.ts",
+    "packages/session-query/session-log-export/src/registration.ts",
+    "packages/skill/skill-filesystem/src/source.ts",
+    "packages/skill/skill-office/assets/reports/latex-report-writer/scripts/build_latex_report.py",
+    "packages/skill/skill-office/assets/reports/latex-report-writer/scripts/markdown_to_latex.py",
+    "packages/skill/skill-office/assets/reports/latex-report-writer/scripts/render_pdf.py",
+    "packages/skill/skill-office/assets/reports/latex-report-writer/scripts/validate_latex_report.py",
+    "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/build_context_bundle.py",
+    "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/compile_runtime_packs.py",
+    "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/normalize_markdown.py",
+    "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/report_text_utils.py",
+    "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/title_specificity.py",
+    "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_abstract.py",
+    "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_chapter_length.py",
+    "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_chapter_summary.py",
+    "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_chapter_summary_centralization.py",
+    "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_current_rule_conflicts.py",
+    "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_experiment_evidence_layering.py",
+    "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_experiment_reference.py",
+    "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_formulas.py",
+    "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_heading_coverage.py",
+    "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_heading_transition.py",
+    "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_outline.py",
+    "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_references.py",
+    "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_report_language.py",
+    "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_research_coverage.py",
+    "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_rule_restructure.py",
+    "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_runtime_pack_coverage.py",
+    "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_simulation_notice.py",
+    "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_word_count.py",
+    "packages/skill/skill-office/assets/reports/report-workflow-orchestrator/scripts/normalize_markdown.py",
+    "packages/skill/skill-office/assets/reports/report-workflow-orchestrator/scripts/report_text_utils.py",
+    "packages/skill/skill-office/assets/reports/report-workflow-orchestrator/scripts/run_quality_gate.py",
+    "packages/skill/skill-office/assets/reports/report-workflow-orchestrator/scripts/validate_handoff.py",
+    "packages/skill/skill-office/assets/reports/report-workflow-orchestrator/scripts/validate_review_chain.py",
+    "packages/skill/skill-office/assets/reports/report-workflow-orchestrator/scripts/validate_rule_consistency.py",
+    "packages/skill/skill-office/assets/reports/report-workflow-orchestrator/scripts/workflow_cli.py",
+    "packages/skill/skill-office/assets/reports/report-workflow-orchestrator/scripts/workflow_engine.py",
+    "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/check_environment.py",
+    "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/config.py",
+    "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/cover_bottom_layout.py",
+    "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/cover_layout.py",
+    "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/engine/__init__.py",
+    "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/engine/chart_renderer.py",
+    "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/engine/image_handler.py",
+    "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/engine/parser.py",
+    "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/engine/request_client.py",
+    "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/engine/style_mapper.py",
+    "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/engine/tag_style.py",
+    "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/engine/utils.py",
+    "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/engine/word_builder.py",
+    "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/format_existing_report.py",
+    "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/main.py",
+    "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/markdown_math.py",
+    "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/normalize_report_template.py",
+    "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/orchestration_adapter.py",
+    "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/render_for_visual_qa.py",
+    "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/repair_json.py",
+    "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/report_generator.py",
+    "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/report_validator.py",
+    "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/toc_styles.py",
+    "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/utils.py",
+    "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/word_field_refresh.py",
+    "packages/skill/skill-office/assets/reports/technical-report-pre-review/scripts/extract_materials.py",
+    "packages/skill/skill-office/assets/reports/technical-report-pre-review/scripts/fill_review_template.py",
+    "packages/skill/skill/src/types.ts",
+    "packages/workspace/workspace/src/metadata.ts"
+  ],
+  "added_native_counts": {
+    "total": 79,
+    "skill_assets": 62,
+    "root_scripts": 0,
+    "src": 17
+  },
   "imports": [
     {
       "path": "packages/cloud/pe-account-instructions/src/directories.ts",
@@ -9321,7 +9408,8 @@
       "撤销条件": "启动器没有插件点；向上游提交，或接受 5 秒默认宽限后还原",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "apps/cli/src/bin.ts",
@@ -9330,7 +9418,8 @@
       "撤销条件": "随 args.ts 一起处理",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "apps/cli/src/process-shutdown.ts",
@@ -9339,7 +9428,8 @@
       "撤销条件": "进程级行为只能在启动器里改；向上游提交",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "apps/cli/src/profile-boot.ts",
@@ -9348,7 +9438,8 @@
       "撤销条件": "需要上游提供“应用关闭参与者”登记点",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "apps/web/product-isolation.ts",
@@ -9357,7 +9448,8 @@
       "撤销条件": "构建脚本自身的缺陷；向上游提交",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "apps/web/src/main.ts",
@@ -9366,7 +9458,8 @@
       "撤销条件": "可另建自有入口应用（自带 main.ts，复用上游构建配置），或请上游提供入口替换点；代价是多维护一套入口",
       "处置": "搬进插件",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/api/gateway/src/client/index.ts",
@@ -9375,7 +9468,8 @@
       "撤销条件": "Native提供等价公开兼容入口时替换；无贡献保持目标保留名称行为",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/api/gateway/src/index.ts",
@@ -9384,7 +9478,8 @@
       "撤销条件": "三个扩展点保留；清理语义改动拆成独立补丁，提上游或回退",
       "处置": "搬进插件",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/api/gateway/src/stream-server.ts",
@@ -9393,7 +9488,8 @@
       "撤销条件": "与 gateway/src/index.ts 一起处理",
       "处置": "搬进插件",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/api/gateway/src/types.ts",
@@ -9402,7 +9498,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/api/remotes/src/client/index.ts",
@@ -9411,7 +9508,8 @@
       "撤销条件": "已撤回Native通用事件政策；Cloud继续由原账号事件所有者发送",
       "处置": "搬进插件",
       "这一程的状态": "已搬",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/api/remotes/src/index.ts",
@@ -9420,7 +9518,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/api/remotes/src/remote-events.ts",
@@ -9429,7 +9528,8 @@
       "撤销条件": "已撤回Native通用事件政策；Cloud继续由原账号事件所有者发送",
       "处置": "搬进插件",
       "这一程的状态": "已搬",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/api/session-controller/src/agent.ts",
@@ -9438,7 +9538,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/api/session-controller/src/client/sessions/service.ts",
@@ -9447,7 +9548,8 @@
       "撤销条件": "提上游",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/api/session-controller/src/commands.ts",
@@ -9456,7 +9558,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/api/session-controller/src/control.ts",
@@ -9465,7 +9568,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/api/session-controller/src/history.ts",
@@ -9474,7 +9578,8 @@
       "撤销条件": "随取消结算加固一起提上游或回退",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/api/session-controller/src/index.ts",
@@ -9483,7 +9588,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/api/session-controller/src/skill-catalog.ts",
@@ -9492,7 +9598,8 @@
       "撤销条件": "账号目录读取由Cloud子类复用Native实现并保留前后准入检查",
       "处置": "搬进插件",
       "这一程的状态": "已搬",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/api/settings-controller/src/index.ts",
@@ -9501,7 +9608,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/api/terminal-controller/src/client/bindings.ts",
@@ -9510,7 +9618,8 @@
       "撤销条件": "同 close-requests.ts",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/api/terminal-controller/src/client/close-requests.ts",
@@ -9519,7 +9628,8 @@
       "撤销条件": "取决于界面侧页面存储端口的去留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/api/terminal-controller/src/client/index.ts",
@@ -9528,7 +9638,8 @@
       "撤销条件": "同 close-requests.ts",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/api/terminal-controller/src/client/model.ts",
@@ -9537,7 +9648,8 @@
       "撤销条件": "同 close-requests.ts",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/api/terminal-controller/src/client/shell-preference.ts",
@@ -9546,7 +9658,8 @@
       "撤销条件": "同 close-requests.ts",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/api/workspace-files/src/changes.ts",
@@ -9555,7 +9668,8 @@
       "撤销条件": "未有必须携带的账号安全场景；原生多FS作用域监听恢复原服务绑定行为，独立用户影响已列",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/api/workspace-files/src/index.ts",
@@ -9564,7 +9678,8 @@
       "撤销条件": "原生提供等价有界列表与分页消费接口后撤回；不恢复已撤caller-FS修复",
       "处置": "必须携带",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/api/workspace-files/src/types.ts",
@@ -9573,7 +9688,8 @@
       "撤销条件": "原生提供同等公开接口后改用原生",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/attachment/attachment-local/src/file-store.ts",
@@ -9582,7 +9698,8 @@
       "撤销条件": "等文件关闭那 5 行提上游；其余随 store.ts 处理",
       "处置": "搬进插件",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/attachment/attachment-local/src/index.ts",
@@ -9591,7 +9708,8 @@
       "撤销条件": "随 store.ts 处理",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/attachment/attachment-local/src/store.ts",
@@ -9600,7 +9718,8 @@
       "撤销条件": "提上游；或让云端附件存储（已继承 LocalAttachmentStore）自己实现暂存",
       "处置": "搬进插件",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/attachment/attachment/src/error.ts",
@@ -9609,7 +9728,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/boot/app-boot/src/compatibility-preflight.ts",
@@ -9618,7 +9738,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/boot/app-boot/src/index.ts",
@@ -9627,7 +9748,8 @@
       "撤销条件": "原生等价非空根重组可替代后撤；具体保存阻断红目的必须保",
       "处置": "必须携带",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/boot/app-boot/src/profile-context.ts",
@@ -9636,7 +9758,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/boot/app-boot/src/profile-resolution/service.ts",
@@ -9645,7 +9768,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/boot/app-boot/src/profile.ts",
@@ -9654,7 +9778,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/boot/cmdline/src/index.ts",
@@ -9663,7 +9788,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/boot/config-editor/src/index.ts",
@@ -9672,7 +9798,8 @@
       "撤销条件": "钩子在私有写入流程里，保留；守护分支的计划逻辑已在 app-boot/config-impact.ts",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/boot/plugin-manager/src/index.ts",
@@ -9681,7 +9808,8 @@
       "撤销条件": "钩子在私有启停写入流程里，保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/boot/plugin-manager/src/patch.ts",
@@ -9690,7 +9818,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/connection/src/http-bridge.ts",
@@ -9699,7 +9828,8 @@
       "撤销条件": "Host 侧连接层内部逻辑；向上游提交",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/connection/src/index.ts",
@@ -9708,7 +9838,8 @@
       "撤销条件": "随 rpc-host.ts、http-bridge.ts 一起处理",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/connection/src/rpc-host.ts",
@@ -9717,7 +9848,8 @@
       "撤销条件": "需要上游提供“分发前守卫”",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/connection/src/rpc.ts",
@@ -9726,7 +9858,8 @@
       "撤销条件": "随 rpc-host.ts",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/file-upload/src/client/contract.ts",
@@ -9735,7 +9868,8 @@
       "撤销条件": "原生提供等价页面能力声明后撤回",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/file-upload/src/client/index.ts",
@@ -9744,7 +9878,8 @@
       "撤销条件": "fetch 钩子可改用上游已有的全局 __DSH_FILE_UPLOAD__；完成事件仍需上游提供",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/file-upload/src/client/runtime.ts",
@@ -9753,7 +9888,8 @@
       "撤销条件": "修复部分只能改上游；钩子部分见上一行",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/file-upload/src/http-route.ts",
@@ -9762,7 +9898,8 @@
       "撤销条件": "向上游提交；参数部分可改成云端自有路由，但要重复上传实现",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/file-upload/src/index.ts",
@@ -9771,7 +9908,8 @@
       "撤销条件": "向上游提交；可覆盖方法需要上游接受",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/file-upload/src/types.ts",
@@ -9780,7 +9918,8 @@
       "撤销条件": "原生提供等价上传策略口子后撤回",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/modules/src/client/entries.ts",
@@ -9789,7 +9928,8 @@
       "撤销条件": "随 modules/src/index.ts",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/modules/src/client/manifest.ts",
@@ -9798,7 +9938,8 @@
       "撤销条件": "随 modules/src/index.ts",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/modules/src/index.ts",
@@ -9807,7 +9948,8 @@
       "撤销条件": "需要上游提供“只登记不激活的客户端包”",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/shortcuts/src/client/index.ts",
@@ -9816,7 +9958,8 @@
       "撤销条件": "上游若提供页面级默认存储端口，本文件不用改",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/shortcuts/src/client/storage.ts",
@@ -9825,7 +9968,8 @@
       "撤销条件": "同上；直接用 localStorage 的代码需上游改成走端口",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/store/src/contract.ts",
@@ -9834,7 +9978,8 @@
       "撤销条件": "按账号分区本地存储的根接缝；需要上游接受",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/store/src/index.ts",
@@ -9843,7 +9988,8 @@
       "撤销条件": "同上",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/tsdown.client.ts",
@@ -9852,7 +9998,8 @@
       "撤销条件": "把浏览器用到的 bootstrap 解码放进 pe-cloud-client 自身，不再从 pe-cloud-access/schema 取值（推断）",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-agent-preset/src/client/settings-store.ts",
@@ -9861,7 +10008,8 @@
       "撤销条件": "没有已确认跨账号、丢数据或密钥泄露场景；目标原生已有正式RemoteResult与网关载体失败投影，按手册默认撤回",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-attachment/src/FileCard.module.css",
@@ -9870,7 +10018,8 @@
       "撤销条件": "随 FileCard.tsx",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-attachment/src/FileCard.tsx",
@@ -9879,7 +10028,8 @@
       "撤销条件": "组件内部状态展示；向上游提交",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-attachment/src/client/ComposerAttachments.tsx",
@@ -9888,7 +10038,8 @@
       "撤销条件": "同上",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-chat/src/client/apply.ts",
@@ -9897,7 +10048,8 @@
       "撤销条件": "原生有默认不变的同等运行装饰位置时改用其入口",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-chat/src/client/chat/AssistantMarkdown.tsx",
@@ -9906,7 +10058,8 @@
       "撤销条件": "Native有等价JSON文件呈现入口后替换；原解析/文件delegate/Host权限不改",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-chat/src/client/chat/AssistantNodeView.tsx",
@@ -9915,7 +10068,8 @@
       "撤销条件": "Native有等价JSON文件呈现入口后替换；原解析/文件delegate/Host权限不改",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-chat/src/client/chat/ChatFlow.tsx",
@@ -9924,7 +10078,8 @@
       "撤销条件": "原生有默认不变的同等运行装饰位置时改用其入口",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-chat/src/client/chat/ChatView.module.css",
@@ -9933,7 +10088,8 @@
       "撤销条件": "还原则保留上游鲸尾；要换图标需上游给“运行状态图标”插槽",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-chat/src/client/chat/ChatView.tsx",
@@ -9942,7 +10098,8 @@
       "撤销条件": "向上游提交",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-chat/src/client/chat/RunningStatus.tsx",
@@ -9951,7 +10108,8 @@
       "撤销条件": "原生有默认不变的同等运行装饰位置时改用其入口",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-chat/src/client/chat/RunningWhaleTail.tsx",
@@ -9960,7 +10118,8 @@
       "撤销条件": "同上",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-chat/src/client/contract/slots.ts",
@@ -9969,7 +10128,8 @@
       "撤销条件": "原生有默认不变的同等运行装饰位置时改用其入口",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-chat/src/client/locale.ts",
@@ -9978,7 +10138,8 @@
       "撤销条件": "当前原生locale精确目标blob；Cloud沿自有chain贡献保全部原文案",
       "处置": "搬进插件",
       "这一程的状态": "已搬",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-chat/tsdown.config.ts",
@@ -9987,7 +10148,8 @@
       "撤销条件": "同 ChatView.module.css",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-conversation/src/client/apply.ts",
@@ -9996,7 +10158,8 @@
       "撤销条件": "向上游提交",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-conversation/src/client/contract/slots.ts",
@@ -10005,7 +10168,8 @@
       "撤销条件": "上游已有 conversation.hero.brand.mark 等细粒度插槽，若只换图标不隐藏整块可不改；否则需上游接受",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-conversation/src/client/input/hub.ts",
@@ -10014,7 +10178,8 @@
       "撤销条件": "上游若提供页面级默认存储端口，本文件存储部分不用改",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-conversation/src/client/locales.ts",
@@ -10023,7 +10188,8 @@
       "撤销条件": "随对应修复",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-conversation/src/client/service.ts",
@@ -10032,7 +10198,8 @@
       "撤销条件": "向上游提交",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-conversation/src/client/skeleton/ConversationContent.tsx",
@@ -10041,7 +10208,8 @@
       "撤销条件": "同 contract/slots.ts",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-conversation/src/client/skeleton/ConversationWidthControls.tsx",
@@ -10050,7 +10218,8 @@
       "撤销条件": "上游若让本组件走存储端口即可不改",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-conversation/src/client/skeleton/InputBar.tsx",
@@ -10059,7 +10228,8 @@
       "撤销条件": "向上游提交",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-conversation/src/client/stop-shortcut.ts",
@@ -10068,7 +10238,8 @@
       "撤销条件": "向上游提交",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-conversation/src/client/stores.ts",
@@ -10077,7 +10248,8 @@
       "撤销条件": "上游若提供页面级默认存储端口，本文件不用改",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-open-in-app/src/client/controller.ts",
@@ -10086,7 +10258,8 @@
       "撤销条件": "同上",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-open-in-app/src/client/index.ts",
@@ -10095,7 +10268,8 @@
       "撤销条件": "同上",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-plugin-manager/src/client/PluginManagerPage.tsx",
@@ -10104,7 +10278,8 @@
       "撤销条件": "可改为云端自有插件页（已有 power-evolve-plugins 页和 plugins.tab 插槽），但原生页仍会显示全部开关；需上游给“数据源/许可”接缝",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-plugin-manager/src/client/index.ts",
@@ -10113,7 +10288,8 @@
       "撤销条件": "Native UI无该私有类型消费者",
       "处置": "搬进插件",
       "这一程的状态": "已搬",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-plugin-manager/src/client/locales.ts",
@@ -10122,7 +10298,8 @@
       "撤销条件": "当前Native页面未读取这些字典键",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-plugin-manager/src/client/manager-store.ts",
@@ -10131,7 +10308,8 @@
       "撤销条件": "同 PluginManagerPage.tsx",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-primitives/src/index.ts",
@@ -10140,7 +10318,8 @@
       "撤销条件": "Native公开等价组件和类型时撤出口；无Cloud贡献时默认绘制与行为不变",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-primitives/src/markdown/MarkdownText.tsx",
@@ -10149,7 +10328,8 @@
       "撤销条件": "Native有等价JSON文件呈现入口后替换；原解析/文件delegate/Host权限不改",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-primitives/src/markdown/file-link.ts",
@@ -10158,7 +10338,8 @@
       "撤销条件": "同上",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-primitives/src/markdown/render.tsx",
@@ -10167,7 +10348,8 @@
       "撤销条件": "Native有等价JSON文件呈现入口后替换；原解析/文件delegate/Host权限不改",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-renderer/src/client/registry.ts",
@@ -10176,7 +10358,8 @@
       "撤销条件": "上游若提供页面级默认存储端口，本文件不用改",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-schedule/src/client/TaskDetail.tsx",
@@ -10185,7 +10368,8 @@
       "撤销条件": "同上",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-schedule/src/client/index.ts",
@@ -10194,7 +10378,8 @@
       "撤销条件": "同上",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-schedule/src/client/recent-time-zones.ts",
@@ -10203,7 +10388,8 @@
       "撤销条件": "同上；直接用 localStorage 的代码需上游改成走端口",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-schedule/src/client/task-tab-bindings.ts",
@@ -10212,7 +10398,8 @@
       "撤销条件": "同上",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-settings-models/src/client/ModelsSection.tsx",
@@ -10221,7 +10408,8 @@
       "撤销条件": "Native等价Slot/Factory后替换；无Cloud贡献保持原默认",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-settings-models/src/client/ProviderEditor.tsx",
@@ -10230,7 +10418,8 @@
       "撤销条件": "Native有等价呈现/模式入口后替换；无integration保持目标默认",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-settings-models/src/client/index.ts",
@@ -10239,7 +10428,8 @@
       "撤销条件": "Native等价Slot/Factory后替换；无Cloud贡献保持原默认",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-settings-models/src/client/locales.ts",
@@ -10248,7 +10438,8 @@
       "撤销条件": "已搬自有区，Native默认文案不改",
       "处置": "搬进插件",
       "这一程的状态": "已搬",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-settings-models/src/client/operations.ts",
@@ -10257,7 +10448,8 @@
       "撤销条件": "随 index.ts",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-settings-models/src/client/slot-contract.ts",
@@ -10266,7 +10458,8 @@
       "撤销条件": "原生等价可选行Slot/原编辑器Factory后替换，保持无Cloud默认",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-settings-models/src/client/store.ts",
@@ -10275,7 +10468,8 @@
       "撤销条件": "随 index.ts",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-settings-shell/src/client/ShellCard.tsx",
@@ -10284,7 +10478,8 @@
       "撤销条件": "原生提供同等带标签的只读限额展示口后撤回；保留实际只读限额与账号撤卡",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-settings-shell/src/client/index.ts",
@@ -10293,7 +10488,8 @@
       "撤销条件": "同上",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-settings-shell/src/client/locales.ts",
@@ -10302,7 +10498,8 @@
       "撤销条件": "已由Cloud原页面词典及原卡片普通数据口子承担；无原生本地文案改动",
       "处置": "搬进插件",
       "这一程的状态": "已搬",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-settings-subagent/src/client/SubagentLimitsFields.tsx",
@@ -10311,7 +10508,8 @@
       "撤销条件": "需上游接受“可限定字段和命名空间”的接缝",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-settings-subagent/src/client/index.ts",
@@ -10320,7 +10518,8 @@
       "撤销条件": "同上",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-settings-subagent/src/client/subagent-limits-card-controller.ts",
@@ -10329,7 +10528,8 @@
       "撤销条件": "同上",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-settings-web-search/src/client/WebSearchCard.tsx",
@@ -10338,7 +10538,8 @@
       "撤销条件": "随 web-search-card-controller.ts",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-settings-web-search/src/client/index.ts",
@@ -10347,7 +10548,8 @@
       "撤销条件": "需上游接受",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-settings-web-search/src/client/locales.ts",
@@ -10356,7 +10558,8 @@
       "撤销条件": "随 web-search-card-controller.ts",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-settings-web-search/src/client/web-search-card-controller.ts",
@@ -10365,7 +10568,8 @@
       "撤销条件": "可在 pe-cloud-client 遮蔽 plugins.item 的 web-search 条目自写卡片；改默认的部分应单独作为通用修复提交",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-settings/src/client/config-form-types.ts",
@@ -10374,7 +10578,8 @@
       "撤销条件": "需上游接受",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-settings/src/client/config-form.ts",
@@ -10383,7 +10588,8 @@
       "撤销条件": "需上游接受",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-sidebar-documentpreview/src/client/TextPreview.tsx",
@@ -10392,7 +10598,8 @@
       "撤销条件": "Native提供等价可选读取回调时替换；不提供时原单次读取",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-sidebar-documentpreview/src/client/excel/delimited.ts",
@@ -10401,7 +10608,8 @@
       "撤销条件": "无具体多账号串读、持久化丢失或密钥泄漏场景；按开发手册默认撤回并记用户可见变化",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-sidebar-documentpreview/src/client/excel/index.ts",
@@ -10410,7 +10618,8 @@
       "撤销条件": "已撤回，原Excel注册不变",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-sidebar-documentpreview/src/client/face.ts",
@@ -10419,7 +10628,8 @@
       "撤销条件": "Native提供等价可选读取回调时替换；不提供时原单次读取",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-sidebar-documentpreview/src/client/index.ts",
@@ -10428,7 +10638,8 @@
       "撤销条件": "Native提供等价可选读取回调时替换；不提供时原单次读取",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-sidebar-documentpreview/src/client/rpc.ts",
@@ -10437,7 +10648,8 @@
       "撤销条件": "Native提供等价可选读取回调时替换；不提供时原单次读取",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-sidebar-files/src/client/FileNavigator.tsx",
@@ -10446,7 +10658,8 @@
       "撤销条件": "原生提供同等公开接口后改用原生",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-sidebar-files/src/client/FileTree.tsx",
@@ -10455,7 +10668,8 @@
       "撤销条件": "原生提供同等公开接口后改用原生",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-sidebar-files/src/client/FilesBody.module.css",
@@ -10464,7 +10678,8 @@
       "撤销条件": "随 FilesBody.tsx",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-sidebar-files/src/client/FilesBody.tsx",
@@ -10473,7 +10688,8 @@
       "撤销条件": "原生actions槽提供同等面板刷新后撤回",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-sidebar-files/src/client/directory-node.ts",
@@ -10482,7 +10698,8 @@
       "撤销条件": "原生提供同等公开接口后改用原生",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-sidebar-files/src/client/face.ts",
@@ -10491,7 +10708,8 @@
       "撤销条件": "同上",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-sidebar-files/src/client/index.ts",
@@ -10500,7 +10718,8 @@
       "撤销条件": "同上",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-sidebar-files/src/client/locales.ts",
@@ -10509,7 +10728,8 @@
       "撤销条件": "原生提供同等分页交互后撤回7键；管理文案已不在原生",
       "处置": "必须携带",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-sidebar-files/src/client/store.ts",
@@ -10518,7 +10738,8 @@
       "撤销条件": "原生提供同等公开接口后改用原生",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-sidebar-files/src/client/workspace-tree.ts",
@@ -10527,7 +10748,8 @@
       "撤销条件": "原生提供同等公开接口后改用原生",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-sidebar-right/src/client/index.ts",
@@ -10536,7 +10758,8 @@
       "撤销条件": "上游若提供页面级默认存储端口，本文件不用改",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-sidebar-right/src/client/persistence.ts",
@@ -10545,7 +10768,8 @@
       "撤销条件": "同上；直接用 localStorage 的代码需上游改成走端口",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-sidebar-right/src/client/service.ts",
@@ -10554,7 +10778,8 @@
       "撤销条件": "同上",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-sidebar-right/src/client/stores.ts",
@@ -10563,7 +10788,8 @@
       "撤销条件": "同上",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-sidebar-right/src/client/tab-inventory.ts",
@@ -10572,7 +10798,8 @@
       "撤销条件": "同上",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-sidebar/src/client/SidebarRoot.module.css",
@@ -10581,7 +10808,8 @@
       "撤销条件": "纯外观偏好，还原即可；要保留则只能改上游",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-sidebar/src/client/SidebarRoot.tsx",
@@ -10590,7 +10818,8 @@
       "撤销条件": "同上",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-skill/src/client/index.ts",
@@ -10599,7 +10828,8 @@
       "撤销条件": "原生提供同等显式缓存失效口时替换；未调用时默认与目标一致",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-theme/src/client/AppearanceRow.module.css",
@@ -10608,7 +10838,8 @@
       "撤销条件": "随 ui-theme/src/client/index.ts",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-theme/src/client/AppearanceRow.tsx",
@@ -10617,7 +10848,8 @@
       "撤销条件": "已撤；外观不再显示额外保存反馈，预览不证明Host持久化",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-theme/src/client/index.ts",
@@ -10626,7 +10858,8 @@
       "撤销条件": "已撤；外观不再显示额外保存反馈，预览不证明Host持久化",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-theme/src/client/locales.ts",
@@ -10635,7 +10868,8 @@
       "撤销条件": "已撤；外观不再显示额外保存反馈，预览不证明Host持久化",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-theme/src/client/settings-store.ts",
@@ -10644,7 +10878,8 @@
       "撤销条件": "已撤；外观不再显示额外保存反馈，预览不证明Host持久化",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-theme/src/theme-settings.ts",
@@ -10653,7 +10888,8 @@
       "撤销条件": "已撤；外观不再显示额外保存反馈，预览不证明Host持久化",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-tool/src/client/contract/slots.ts",
@@ -10662,7 +10898,8 @@
       "撤销条件": "原生说明在现有报告预算内通过时可撤回",
       "处置": "搬进插件",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-trajectory/src/client/duration-store.ts",
@@ -10671,7 +10908,8 @@
       "撤销条件": "上游若提供页面级默认存储端口，本文件不用改",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-trajectory/src/client/index.ts",
@@ -10680,7 +10918,8 @@
       "撤销条件": "同上",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-trajectory/src/client/string-wrapping-store.ts",
@@ -10689,7 +10928,8 @@
       "撤销条件": "同上",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-workspace/src/client/contract/slots.ts",
@@ -10698,7 +10938,8 @@
       "撤销条件": "原生插槽提供等价禁用原因后撤回",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-workspace/src/client/index.ts",
@@ -10707,7 +10948,8 @@
       "撤销条件": "原生提供同等默认不变集成入口时替换；未提供输入维持Native默认",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-workspace/src/client/locales.ts",
@@ -10716,7 +10958,8 @@
       "撤销条件": "词典当前与目标Native精确相同，Cloud用原root当前Locale求值自有文案",
       "处置": "撤掉",
       "这一程的状态": "已搬",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/client/ui-workspace/src/client/navigation.ts",
@@ -10725,7 +10968,8 @@
       "撤销条件": "向上游提交",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-workspace/src/client/rows/Rows.tsx",
@@ -10734,7 +10978,8 @@
       "撤销条件": "原生已有相同默认不变删除限制显示口时改用其入口",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-workspace/src/client/rows/WorkspaceBrowser.tsx",
@@ -10743,7 +10988,8 @@
       "撤销条件": "原生已有相同默认不变删除限制显示口时改用其入口",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-workspace/src/client/rows/WorkspaceDialogs.tsx",
@@ -10752,7 +10998,8 @@
       "撤销条件": "原生已有相同默认不变删除限制显示口时改用其入口",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/web/src/boot.ts",
@@ -10761,7 +11008,8 @@
       "撤销条件": "云端页面生命周期的根接缝；需上游接受",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/context/agent-instructions/src/files.ts",
@@ -10770,7 +11018,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/core/agent-default-model/src/index.ts",
@@ -10779,7 +11028,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/core/agent-loop/src/agent.ts",
@@ -10788,7 +11038,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/core/agent-loop/src/index.ts",
@@ -10797,7 +11048,8 @@
       "撤销条件": "三个扩展点保留；关闭失败保留部分提上游",
       "处置": "搬进插件",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/core/agent/src/index.ts",
@@ -10806,7 +11058,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/core/system-prompt/src/index.ts",
@@ -10815,7 +11068,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/core/tools/src/index.ts",
@@ -10824,7 +11078,8 @@
       "撤销条件": "原生提供等价的工具快照前准备入口后撤回",
       "处置": "留作口子",
       "这一程的状态": "已验证",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/credentials/credentials-local/src/index.ts",
@@ -10833,7 +11088,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/credentials/credentials/src/index.ts",
@@ -10842,7 +11098,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/experimental/deepseek-chat-import/src/client/mount.ts",
@@ -10851,7 +11108,8 @@
       "撤销条件": "不改产品行为；待格式门禁与原生末尾空行规则一致后撤",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/experimental/liveshare/src/endpoint-classification.ts",
@@ -10860,7 +11118,8 @@
       "撤销条件": "原生包含同等分页接口权限登记时撤回",
       "处置": "必须携带",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/extensions/cordis-client-runner/src/client/api-catalog.ts",
@@ -10869,7 +11128,8 @@
       "撤销条件": "不手工合并，合并后重新生成",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/extensions/cordis-client-runner/src/client/slot-catalog.ts",
@@ -10878,7 +11138,8 @@
       "撤销条件": "不手工合并，合并后重新生成",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/extensions/tool-cordis/src/api-catalog.ts",
@@ -10887,7 +11148,8 @@
       "撤销条件": "不手工合并，合并上游后重新生成；想让它不随云端包变化，需在生成脚本里排除 packages/cloud（脚本归别的任务）",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/feedback/command-feedback/src/index.ts",
@@ -10896,7 +11158,8 @@
       "撤销条件": "保留；或云端自己注册 /feedback 命令",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/feedback/message-feedback/src/index.ts",
@@ -10905,7 +11168,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/fs/fs/src/index.ts",
@@ -10914,7 +11178,8 @@
       "撤销条件": "原生提供等价公开接口后改用原生",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/fs/fs/src/types.ts",
@@ -10923,7 +11188,8 @@
       "撤销条件": "原生提供同等公开接口后改用原生",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/fs/tool-fs-search/src/glob.ts",
@@ -10932,7 +11198,8 @@
       "撤销条件": "在云端执行器放宽参数上限，然后回退这处改动",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/fs/tool-fs/src/index.ts",
@@ -10941,7 +11208,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/fs/tool-fs/src/read-image.ts",
@@ -10950,7 +11218,8 @@
       "撤销条件": "原生提供通用附件容量失败后撤回此分支",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/host/frontend-static/src/index.ts",
@@ -10959,7 +11228,8 @@
       "撤销条件": "原生公开等价静态资源函数后撤回提取",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/host/webserver/src/index.ts",
@@ -10968,7 +11238,8 @@
       "撤销条件": "云端自建监听可以不改，但会失去原生路由复用；建议保留为配置项",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/interaction/commands/src/index.ts",
@@ -10977,7 +11248,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/interaction/permission-presets/src/index.ts",
@@ -10986,7 +11258,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/mcp/mcp-client/src/connection.ts",
@@ -10995,7 +11268,8 @@
       "撤销条件": "修复部分提上游；扩展点保留",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/mcp/mcp-client/src/generation.ts",
@@ -11004,7 +11278,8 @@
       "撤销条件": "原生提供等价 fetch 和关闭注入口后把预算实现搬自有插件",
       "处置": "必须携带",
       "这一程的状态": "已验证",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/mcp/mcp-client/src/index.ts",
@@ -11013,7 +11288,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/mcp/mcp-client/src/tools.ts",
@@ -11022,7 +11298,8 @@
       "撤销条件": "提上游",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/mcp/mcp-client/src/transport.ts",
@@ -11031,7 +11308,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/preset/agent-preset-registry/src/index.ts",
@@ -11040,7 +11318,8 @@
       "撤销条件": "修复提上游；扩展点保留",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/ptc-runtime/ptc-runtime-node/src/index.ts",
@@ -11049,7 +11328,8 @@
       "撤销条件": "保留",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/schedule/schedule/src/index.ts",
@@ -11058,7 +11338,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/schedule/schedule/src/runtime.ts",
@@ -11067,7 +11348,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/schedule/schedule/src/types.ts",
@@ -11076,7 +11358,8 @@
       "撤销条件": "原生提供等价 Session 过滤后撤回",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/session-query/session-log-export/src/client/Dialog.tsx",
@@ -11085,7 +11368,8 @@
       "撤销条件": "无具体多账号串读、持久化丢失或密钥泄漏场景；按开发手册默认撤回并记用户可见变化",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/session-query/session-log-export/src/client/controller.ts",
@@ -11094,7 +11378,8 @@
       "撤销条件": "原生提供同等默认不变应用导航绑定入口时替换",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/session-query/session-log-export/src/client/index.ts",
@@ -11103,7 +11388,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/session-query/session-log-export/src/client/locales.ts",
@@ -11112,7 +11398,8 @@
       "撤销条件": "无具体多账号串读、持久化丢失或密钥泄漏场景；按开发手册默认撤回并记用户可见变化",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/session-query/session-log-export/src/index.ts",
@@ -11121,7 +11408,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/session-query/session-query/src/cold-read.ts",
@@ -11130,7 +11418,8 @@
       "撤销条件": "随取消结算加固一起提上游或回退",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/session-query/session-query/src/config.ts",
@@ -11139,7 +11428,8 @@
       "撤销条件": "随取消结算加固一起提上游或回退",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/session-query/session-query/src/index.ts",
@@ -11148,7 +11438,8 @@
       "撤销条件": "随取消结算加固一起提上游或回退",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/session-query/session-query/src/observation.ts",
@@ -11157,7 +11448,8 @@
       "撤销条件": "随取消结算加固一起提上游或回退",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/session/session-persistence-jsonl/src/catalog-migration.ts",
@@ -11166,7 +11458,8 @@
       "撤销条件": "无具体跨账号、丢数据或密钥泄露场景，按开发手册默认撤回",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/session/session-persistence-jsonl/src/generation.ts",
@@ -11175,7 +11468,8 @@
       "撤销条件": "无具体跨账号、丢数据或密钥泄露场景，按开发手册默认撤回",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/session/session-persistence-jsonl/src/index.ts",
@@ -11184,7 +11478,8 @@
       "撤销条件": "原生提供等价只读观察后撤",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/session/session-persistence-jsonl/src/storage.ts",
@@ -11193,7 +11488,8 @@
       "撤销条件": "原生提供等价只读工作快照后撤",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/session/session-persistence-jsonl/src/zstd-private-decoder.ts",
@@ -11202,7 +11498,8 @@
       "撤销条件": "无具体跨账号、丢数据或密钥泄露场景，按开发手册默认撤回",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/session/session-persistence-jsonl/src/zstd-public-decoder.ts",
@@ -11211,7 +11508,8 @@
       "撤销条件": "无具体跨账号、丢数据或密钥泄露场景，按开发手册默认撤回",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/session/session-persistence/src/index.ts",
@@ -11220,7 +11518,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/settings/settings/src/index.ts",
@@ -11229,7 +11528,8 @@
       "撤销条件": "保留（透传参数和一个导出）",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/settings/settings/src/redact.ts",
@@ -11238,7 +11538,8 @@
       "撤销条件": "原生提供等价可选容器投影后撤回回调",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/settings/settings/src/schema.ts",
@@ -11247,7 +11548,8 @@
       "撤销条件": "已撤，Cloud原字段policy先行拒绝不完整容器",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/skill/skill-filesystem/src/index.ts",
@@ -11256,7 +11558,8 @@
       "撤销条件": "仅保留当前程序化文件来源；旧部署选项测试按原生当前配置撤回，调用限制和环境说明待迁入我方插件",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/skill/skill-office/src/index.ts",
@@ -11265,7 +11568,8 @@
       "撤销条件": "原生源码和旧部署选项测试已撤回；云端 Office 技能与 Linux 执行说明待接我方提供方并实测",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/skill/skill/src/index.ts",
@@ -11274,7 +11578,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/skill/tool-skill/src/index.ts",
@@ -11283,7 +11588,8 @@
       "撤销条件": "提上游",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/skill/tool-workspace-dependencies/src/index.ts",
@@ -11292,7 +11598,8 @@
       "撤销条件": "可改为云端包自带一个同名工具插件",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/subagent/subagent/src/index.ts",
@@ -11301,7 +11608,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/subagent/subagent/src/manager.ts",
@@ -11310,7 +11618,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/subagent/subagent/src/types.ts",
@@ -11319,7 +11628,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/subprocess/subprocess/src/types.ts",
@@ -11328,7 +11638,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/terminal/terminal-bash/src/index.ts",
@@ -11337,7 +11648,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/test-support/client-runtime/src/assembly/bundle-roster.ts",
@@ -11346,7 +11658,8 @@
       "撤销条件": "合并时取上游版本，丢弃我方改动",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/typert/generator/src/analyzer.ts",
@@ -11355,7 +11668,8 @@
       "撤销条件": "无具体跨账号、丢数据或密钥泄露场景，按开发手册撤回",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "packages/typert/generator/src/cordis-catalog.ts",
@@ -11364,7 +11678,8 @@
       "撤销条件": "目前只有一个云端条目用到；改掉云端那个类型名即可回退",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/workspace/workspace/src/entity.ts",
@@ -11373,7 +11688,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/workspace/workspace/src/index.ts",
@@ -11382,7 +11698,8 @@
       "撤销条件": "保留；实现在我方新增的 metadata.ts",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/workspace/workspace/src/types.ts",
@@ -11391,7 +11708,8 @@
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "scripts/check-workspace-constraints.ts",
@@ -11400,7 +11718,8 @@
       "撤销条件": "云端入口/发布文件/私有包规则全部由正式自有检查或上游等价覆盖，正反约束不减且原脚本可完全还原；须相关正式检查通过且该脚本相对上游无差异。",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "scripts/compile-referenced-projects.ts",
@@ -11409,7 +11728,8 @@
       "撤销条件": "上游/正式构建方案在原4GiB堆上限下完成相同Host检查、不删检查项且不再需本地8GiB差异；须相关正式检查通过且该脚本相对上游无差异。",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "scripts/gen-client-catalog.ts",
@@ -11418,7 +11738,8 @@
       "撤销条件": "入口回到原行数限制内或上游通用机制覆盖当前规模，完整catalog不漏项、原脚本无需本地122→123调整；须相关正式检查通过且该脚本相对上游无差异。",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "scripts/gen-config-catalog.ts",
@@ -11427,7 +11748,8 @@
       "撤销条件": "可以向上游提交，提交后就不再是我们的差异。",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "scripts/gen-cordis-catalog.ts",
@@ -11436,7 +11758,8 @@
       "撤销条件": "原生新增类型映射被上游吸纳、云端服务/类型/事件登记经标准扩展或正式自有生成保持全量归属，整个原脚本无需本地映射/豁免；须相关正式检查通过且该脚本相对上游无差异。",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "scripts/gen-doc-graphs.ts",
@@ -11445,7 +11768,8 @@
       "撤销条件": "15云端服务角色可经上游标准扩展或自有生成段完整进入最终能力图，原脚本不再需本地条目；须相关正式检查通过且该脚本相对上游无差异。",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "scripts/gen-tool-catalog.ts",
@@ -11454,7 +11778,8 @@
       "撤销条件": "remote_exec/remote_server_info由标准扩展或自有目录合成完整列出且原脚本无需本地imports/登记；须相关正式检查通过且该脚本相对上游无差异。",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "scripts/package-dependency-policy.ts",
@@ -11463,7 +11788,8 @@
       "撤销条件": "仅配置依赖登记由上游标准扩展或正式自有检查等价承担，apps/web原依赖约束不减且脚本无本地差异；须相关正式检查通过且该脚本相对上游无差异。",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "scripts/product-package-policy.ts",
@@ -11472,7 +11798,8 @@
       "撤销条件": "上游支持不需本地改脚本的自有包分类登记入口，8包分类仍完整受正式检查且原脚本可无差异恢复；须相关正式检查通过且该脚本相对上游无差异。",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "scripts/translation-pairing.ts",
@@ -11481,7 +11808,8 @@
       "撤销条件": "科研CLOUD中英配对由正式自有检查/上游标准范围等价覆盖，原脚本无登记差异；须相关正式检查通过且该脚本相对上游无差异。",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "scripts/verify-concrete-terms.ts",
@@ -11490,7 +11818,8 @@
       "撤销条件": "第三方/报告技能豁免已不需要且文件列表缓冲通用修复已被上游等价吸纳，完整扫描无截断/漏检，整个脚本可还原；须相关正式检查通过且该脚本相对上游无差异。",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "scripts/verify-public-repository-links.ts",
@@ -11499,7 +11828,8 @@
       "撤销条件": "上游等价解决当前文件规模的列举缓冲溢出/截断，完整公开链接检查覆盖不减，脚本无本地差异；须相关正式检查通过且该脚本相对上游无差异。",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "scripts/verify-repository-references.ts",
@@ -11508,7 +11838,8 @@
       "撤销条件": "来源固定记录/科研记录/uv.lock可由上游标准规则正确校验或已迁出本仓，不再需本地哈希/大小豁免，完整引用检查通过；须相关正式检查通过且该脚本相对上游无差异。",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "scripts/verify-translation-pairing.ts",
@@ -11517,7 +11848,8 @@
       "撤销条件": "相关第三方导入内容已移出本仓或被上游标准导入机制正确处理、不再需本地未改动豁免，配对覆盖不减；须相关正式检查通过且该脚本相对上游无差异。",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "scripts/web-product-bundle-isolation.ts",
@@ -11526,7 +11858,8 @@
       "撤销条件": "可以向上游提交，提交后就不再是我们的差异。",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "vendor/cordis/src/fiber.ts",
@@ -11535,7 +11868,8 @@
       "撤销条件": "修复提上游（上游最新版仍无此判断）；计数器保留",
       "处置": "撤掉",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "vendor/loader/src/config/diff.ts",
@@ -11544,7 +11878,8 @@
       "撤销条件": "只被 entry.ts 的计划逻辑用；若计划计算外移可一并搬走",
       "处置": "撤掉",
       "这一程的状态": "已撤",
-      "changed": false
+      "changed": false,
+      "added": false
     },
     {
       "路径": "vendor/loader/src/config/entry.ts",
@@ -11553,7 +11888,8 @@
       "撤销条件": "要读 Entry 私有状态，只能留在本文件；可把计划计算外移，只留守护入口、版本计数和少量访问器",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "vendor/loader/src/config/group.ts",
@@ -11562,7 +11898,8 @@
       "撤销条件": "保留；awaitUpdate 可单独提上游",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "vendor/loader/src/config/tree.ts",
@@ -11571,7 +11908,8 @@
       "撤销条件": "原生提供等价的树命令准备检查后撤回",
       "处置": "必须携带",
       "这一程的状态": "已按新原生重加",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "vendor/loader/src/index.ts",
@@ -11580,7 +11918,8 @@
       "撤销条件": "保留；这是守护机制的唯一入口",
       "处置": "留作口子",
       "这一程的状态": "没动",
-      "changed": true
+      "changed": true,
+      "added": false
     },
     {
       "路径": "packages/client/ui-primitives/src/LightningMark.tsx",
@@ -11589,7 +11928,838 @@
       "撤销条件": "原生无该品牌资产；自有图形保留原几何、尺寸、类名、currentColor和装饰语义",
       "处置": "搬进插件",
       "这一程的状态": "已搬",
-      "changed": false
+      "changed": false,
+      "added": false
+    },
+    {
+      "路径": "apps/web/src/cloud-web.module.css",
+      "类别": "云端定制",
+      "原因": "现有Cloud预启动登录/退出界面样式，内容自有但当前静态入口需同构建链；不改变普通Native入口",
+      "撤销条件": "Native提供等价预启动静态拼装入口且原Cloud登录/退出/未知保护均完整接续后迁自有区",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "apps/web/src/cloud-web.ts",
+      "类别": "云端定制",
+      "原因": "现有Cloud Cookie登录与Native预启动拼装；只在显式Cloud入口加载，原AppWebEntry执行模块/退出生命周期",
+      "撤销条件": "Native提供等价预启动静态拼装入口且原Cloud登录/退出/未知保护均完整接续后迁自有区",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "apps/web/src/locales.ts",
+      "类别": "云端定制",
+      "原因": "现有Cloud预启动双语登录文案；不重建Native对话或技能页面",
+      "撤销条件": "Native提供等价预启动静态拼装入口且原Cloud登录/退出/未知保护均完整接续后迁自有区",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/boot/app-boot/src/config-compare.ts",
+      "类别": "扩展点",
+      "原因": "仅为原profile已准备配置计划提供确定Schema检查；Cloud准入规则留pe-cloud-api，原解析器不复制",
+      "撤销条件": "Native提供等价公开入口后替换；不得丢失省略默认行为、原身份/版本/路径或未知保护",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/boot/app-boot/src/config-impact.ts",
+      "类别": "扩展点",
+      "原因": "原profile/Include配置计划及强版本/载体检查；Cloud只消费公开计划，省略准备调用保原Native更新",
+      "撤销条件": "Native提供等价公开入口后替换；不得丢失省略默认行为、原身份/版本/路径或未知保护",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/boot/app-boot/src/entry-config-impact.ts",
+      "类别": "扩展点",
+      "原因": "配置计算从vendor移至原app-boot检查器；原Loader仅检查入口/版本计数和原应用，无Cloud账号分支",
+      "撤销条件": "Native提供等价公开入口后替换；不得丢失省略默认行为、原身份/版本/路径或未知保护",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/client/ui-settings-models/src/client/IntegratedModels.tsx",
+      "类别": "扩展点",
+      "原因": "原Models组件的可选已准入输入装配；版本和账号Key动作由Cloud输入，不复制原Models控制或渲染",
+      "撤销条件": "Native提供等价公开入口后替换；不得丢失省略默认行为、原身份/版本/路径或未知保护",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/client/ui-settings-models/src/client/integration.ts",
+      "类别": "扩展点",
+      "原因": "可选页面只读/凭据编辑公共类型，省略保持原读和onboarding；Cloud规则及Key内容不在Native",
+      "撤销条件": "Native提供等价公开入口后替换；不得丢失省略默认行为、原身份/版本/路径或未知保护",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/client/ui-settings-subagent/src/client/integration.ts",
+      "类别": "扩展点",
+      "原因": "可选namespace/字段输入公共类型，不授予权限，省略保持原Native设置",
+      "撤销条件": "Native提供等价公开入口后替换；不得丢失省略默认行为、原身份/版本/路径或未知保护",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/client/ui-settings-web-search/src/client/integration.ts",
+      "类别": "扩展点",
+      "原因": "可选页面版本绑定的credential准备回调；Key归账号自管，Native默认省略路径不变",
+      "撤销条件": "Native提供等价公开入口后替换；不得丢失省略默认行为、原身份/版本/路径或未知保护",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/client/ui-sidebar-files/src/client/directory-pages.ts",
+      "类别": "扩展点",
+      "原因": "原目录分页/信用cursor和实际Host close消费者，用户大目录能力保留；账号路径准入仍Cloud，原传输引擎不复制",
+      "撤销条件": "Native提供等价公开入口后替换；不得丢失省略默认行为、原身份/版本/路径或未知保护",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/host/frontend-static/src/resource.ts",
+      "类别": "扩展点",
+      "原因": "原静态资源响应抽取为同一实现供公开/已认证入口复用；Cloud准入回调，保Native MIME/路径/ETag/HEAD和错误",
+      "撤销条件": "Native提供等价公开入口后替换；不得丢失省略默认行为、原身份/版本/路径或未知保护",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/mcp/mcp-client/src/http-incoming.ts",
+      "类别": "扩展点",
+      "原因": "原SDK fetch入口的显式可选累计解码字节门及真实reader收尾；省略选项沿原SDK路径，不复制JSON/SSE解析器",
+      "撤销条件": "Native提供等价公开入口后替换；不得丢失省略默认行为、原身份/版本/路径或未知保护",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/session-query/session-log-export/src/registration.ts",
+      "类别": "扩展点",
+      "原因": "抽取原ZIP命令/路由注册及可选读前/await后准入，原导出压缩/读取仍单一Native实现",
+      "撤销条件": "Native提供等价公开入口后替换；不得丢失省略默认行为、原身份/版本/路径或未知保护",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-filesystem/src/packaged.ts",
+      "类别": "功能增强",
+      "原因": "未导出且无产品导入的旧packaged读取辅助实现；用户技能资源、清单及ZIP均保留",
+      "撤销条件": "当前无Native产品消费者；恢复该实现必须重新给实际消费者和所属验证，不能凭旧清单回加",
+      "处置": "撤掉",
+      "这一程的状态": "已撤",
+      "changed": false,
+      "added": false
+    },
+    {
+      "路径": "packages/skill/skill-filesystem/src/source.ts",
+      "类别": "扩展点",
+      "原因": "已使用的只读来源/整资源准备公共类型，原发现/前文解析复用，明确无Host默认根或watcher回退",
+      "撤销条件": "Native提供等价公开入口后替换；不得丢失省略默认行为、原身份/版本/路径或未知保护",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/latex-report-writer/scripts/build_latex_report.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：latex-report-writer/scripts/build_latex_report.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/latex-report-writer/scripts/markdown_to_latex.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：latex-report-writer/scripts/markdown_to_latex.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/latex-report-writer/scripts/render_pdf.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：latex-report-writer/scripts/render_pdf.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/latex-report-writer/scripts/validate_latex_report.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：latex-report-writer/scripts/validate_latex_report.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/build_context_bundle.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：power-grid-technical-report-writer/scripts/build_context_bundle.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/compile_runtime_packs.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：power-grid-technical-report-writer/scripts/compile_runtime_packs.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/normalize_markdown.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：power-grid-technical-report-writer/scripts/normalize_markdown.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/report_text_utils.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：power-grid-technical-report-writer/scripts/report_text_utils.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/title_specificity.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：power-grid-technical-report-writer/scripts/title_specificity.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_abstract.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：power-grid-technical-report-writer/scripts/validate_abstract.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_chapter_length.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：power-grid-technical-report-writer/scripts/validate_chapter_length.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_chapter_summary.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：power-grid-technical-report-writer/scripts/validate_chapter_summary.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_chapter_summary_centralization.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：power-grid-technical-report-writer/scripts/validate_chapter_summary_centralization.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_current_rule_conflicts.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：power-grid-technical-report-writer/scripts/validate_current_rule_conflicts.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_experiment_evidence_layering.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：power-grid-technical-report-writer/scripts/validate_experiment_evidence_layering.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_experiment_reference.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：power-grid-technical-report-writer/scripts/validate_experiment_reference.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_formulas.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：power-grid-technical-report-writer/scripts/validate_formulas.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_heading_coverage.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：power-grid-technical-report-writer/scripts/validate_heading_coverage.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_heading_transition.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：power-grid-technical-report-writer/scripts/validate_heading_transition.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_outline.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：power-grid-technical-report-writer/scripts/validate_outline.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_references.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：power-grid-technical-report-writer/scripts/validate_references.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_report_language.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：power-grid-technical-report-writer/scripts/validate_report_language.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_research_coverage.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：power-grid-technical-report-writer/scripts/validate_research_coverage.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_rule_restructure.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：power-grid-technical-report-writer/scripts/validate_rule_restructure.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_runtime_pack_coverage.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：power-grid-technical-report-writer/scripts/validate_runtime_pack_coverage.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_simulation_notice.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：power-grid-technical-report-writer/scripts/validate_simulation_notice.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/scripts/validate_word_count.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：power-grid-technical-report-writer/scripts/validate_word_count.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/report-workflow-orchestrator/scripts/normalize_markdown.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：report-workflow-orchestrator/scripts/normalize_markdown.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/report-workflow-orchestrator/scripts/report_text_utils.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：report-workflow-orchestrator/scripts/report_text_utils.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/report-workflow-orchestrator/scripts/run_quality_gate.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：report-workflow-orchestrator/scripts/run_quality_gate.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/report-workflow-orchestrator/scripts/validate_handoff.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：report-workflow-orchestrator/scripts/validate_handoff.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/report-workflow-orchestrator/scripts/validate_review_chain.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：report-workflow-orchestrator/scripts/validate_review_chain.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/report-workflow-orchestrator/scripts/validate_rule_consistency.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：report-workflow-orchestrator/scripts/validate_rule_consistency.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/report-workflow-orchestrator/scripts/workflow_cli.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：report-workflow-orchestrator/scripts/workflow_cli.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/report-workflow-orchestrator/scripts/workflow_engine.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：report-workflow-orchestrator/scripts/workflow_engine.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/check_environment.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：tech-report-writer/scripts/check_environment.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/config.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：tech-report-writer/scripts/config.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/cover_bottom_layout.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：tech-report-writer/scripts/cover_bottom_layout.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/cover_layout.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：tech-report-writer/scripts/cover_layout.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/engine/__init__.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：tech-report-writer/scripts/engine/__init__.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/engine/chart_renderer.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：tech-report-writer/scripts/engine/chart_renderer.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/engine/image_handler.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：tech-report-writer/scripts/engine/image_handler.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/engine/parser.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：tech-report-writer/scripts/engine/parser.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/engine/request_client.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：tech-report-writer/scripts/engine/request_client.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/engine/style_mapper.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：tech-report-writer/scripts/engine/style_mapper.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/engine/tag_style.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：tech-report-writer/scripts/engine/tag_style.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/engine/utils.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：tech-report-writer/scripts/engine/utils.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/engine/word_builder.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：tech-report-writer/scripts/engine/word_builder.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/format_existing_report.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：tech-report-writer/scripts/format_existing_report.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/main.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：tech-report-writer/scripts/main.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/markdown_math.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：tech-report-writer/scripts/markdown_math.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/normalize_report_template.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：tech-report-writer/scripts/normalize_report_template.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/orchestration_adapter.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：tech-report-writer/scripts/orchestration_adapter.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/render_for_visual_qa.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：tech-report-writer/scripts/render_for_visual_qa.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/repair_json.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：tech-report-writer/scripts/repair_json.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/report_generator.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：tech-report-writer/scripts/report_generator.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/report_validator.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：tech-report-writer/scripts/report_validator.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/toc_styles.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：tech-report-writer/scripts/toc_styles.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/utils.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：tech-report-writer/scripts/utils.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/tech-report-writer/scripts/word_field_refresh.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：tech-report-writer/scripts/word_field_refresh.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/technical-report-pre-review/scripts/extract_materials.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：technical-report-pre-review/scripts/extract_materials.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill-office/assets/reports/technical-report-pre-review/scripts/fill_review_template.py",
+      "类别": "自有技能资源",
+      "原因": "用户报告技能资源：technical-report-pre-review/scripts/fill_review_template.py；原SKILL根及打包清单摘要已核同，Cloud Office镜像/技能目录仍使用；不属Native执行引擎",
+      "撤销条件": "用户明确不再提供该报告技能或等价完整资源迁自有资产根且所有消费者/打包与真实调用核齐后才能撤旧路径",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/skill/skill/src/types.ts",
+      "类别": "扩展点",
+      "原因": "现有skills/change失效事件客户端安全声明，消费者重取各自目录，不复制原技能选择/执行引擎",
+      "撤销条件": "Native提供等价公开入口后替换；不得丢失省略默认行为、原身份/版本/路径或未知保护",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "packages/workspace/workspace/src/metadata.ts",
+      "类别": "扩展点",
+      "原因": "可选Workspace目录I/O注入与未知分类，省略沿原Node stat/mkdir/realpath；Cloud文件权限自有区提供",
+      "撤销条件": "Native提供等价公开入口后替换；不得丢失省略默认行为、原身份/版本/路径或未知保护",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": false,
+      "added": true
+    },
+    {
+      "路径": "scripts/imported-research-content.ts",
+      "类别": "项目工具",
+      "原因": "精确路径/摘要检查及JSON原样迁deploy/upstream；正式翻译检查和原自测仅更新导入，不增豁免",
+      "撤销条件": "当前无Native产品消费者；恢复该实现必须重新给实际消费者和所属验证，不能凭旧清单回加",
+      "处置": "搬进插件",
+      "这一程的状态": "已搬",
+      "changed": false,
+      "added": false
+    },
+    {
+      "路径": "scripts/package-builtin-skills.py",
+      "类别": "项目工具",
+      "原因": "项目技能包工具迁deploy/upstream并固定原仓库根；原全部用户资产和生成字节保持",
+      "撤销条件": "当前无Native产品消费者；恢复该实现必须重新给实际消费者和所属验证，不能凭旧清单回加",
+      "处置": "搬进插件",
+      "这一程的状态": "已搬",
+      "changed": false,
+      "added": false
+    },
+    {
+      "路径": "scripts/tracked-repository-files.ts",
+      "类别": "项目工具",
+      "原因": "仅旧自测使用；两个生产检查已还原Native等价完整列举，不减少当前生产扫描覆盖",
+      "撤销条件": "当前无Native产品消费者；恢复该实现必须重新给实际消费者和所属验证，不能凭旧清单回加",
+      "处置": "撤掉",
+      "这一程的状态": "已撤",
+      "changed": false,
+      "added": false
     }
   ],
   "unlisted_native_sources": []
