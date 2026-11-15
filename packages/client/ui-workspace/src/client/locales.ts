@@ -16,7 +16,7 @@ export const zh = {
   'shortcut.noPicker': '目录选择器不可用',
   'shortcut.directoryBusy': '正在选择或添加工作区',
   'shortcut.noCompletedTurn': '当前会话没有已结束的轮次',
-  'shortcut.forkFailed': '未能完成分支操作，分支可能已创建。请先检查会话列表，再决定是否重新创建。',
+  'shortcut.forkFailed': '无法分叉会话，请重试',
   'section.workspaces': '工作区',
   'section.sessions': '会话',
   'viewOptions.label': '视图选项',
@@ -56,7 +56,6 @@ export const zh = {
   'field.workspaceName': '工作区名称',
   'field.sessionName': '会话名称',
   'delete.workspace': '删除工作区',
-  'delete.unavailable': '此部署暂不支持删除工作区',
   'delete.desc': '将把“{name}”从工作区列表中移除。文件夹与会话记录会保留，其会话将显示在“未分组”下。',
   'delete.pending': '正在删除工作区…',
   'menu.fork': '分叉会话',
@@ -143,7 +142,7 @@ export const en = {
   'shortcut.noPicker': 'Directory picker unavailable',
   'shortcut.directoryBusy': 'Selecting or adding a workspace',
   'shortcut.noCompletedTurn': 'This session has no completed turn',
-  'shortcut.forkFailed': 'The branch operation failed; a branch may already exist. Check the conversation list before creating another.',
+  'shortcut.forkFailed': 'Could not fork the session. Try again.',
   'section.workspaces': 'Workspaces',
   'section.sessions': 'Sessions',
   'viewOptions.label': 'View options',
@@ -183,7 +182,6 @@ export const en = {
   'field.workspaceName': 'Workspace name',
   'field.sessionName': 'Session name',
   'delete.workspace': 'Delete workspace',
-  'delete.unavailable': 'Workspace deletion is unavailable in this deployment',
   'delete.desc': 'This removes “{name}” from the workspace list. The folder and session logs will be kept. Its sessions will appear under Ungrouped.',
   'delete.pending': 'Deleting workspace…',
   'menu.fork': 'Fork session',
@@ -376,7 +374,6 @@ export const ja = {
   'time.months': '{n}か月',
   'time.years': '{n}年',
   'time.ago': '{t}前',
-  'delete.unavailable': 'この環境ではワークスペースを削除できません',
 } satisfies Record<keyof typeof en, string>
 
 /** Spanish dictionary, checked against the English keys. */
@@ -500,7 +497,6 @@ export const es = {
   'time.months': '{n}mo',
   'time.years': '{n}y',
   'time.ago': 'Hace {t}',
-  'delete.unavailable': 'La eliminación de espacios de trabajo no está disponible en este despliegue',
 } satisfies Record<keyof typeof en, string>
 
 /** French dictionary, checked against the English keys. */
@@ -624,7 +620,6 @@ export const fr = {
   'time.months': '{n}mo',
   'time.years': '{n}y',
   'time.ago': 'Il y a {t}',
-  'delete.unavailable': 'La suppression d’espaces de travail n’est pas disponible dans ce déploiement',
 } satisfies Record<keyof typeof en, string>
 
 /** German dictionary, checked against the English keys. */
@@ -748,7 +743,6 @@ export const de = {
   'time.months': '{n}mo',
   'time.years': '{n}y',
   'time.ago': 'Vor {t}',
-  'delete.unavailable': 'Das Löschen von Arbeitsbereichen ist in dieser Bereitstellung nicht verfügbar',
 } satisfies Record<keyof typeof en, string>
 
 /** Russian dictionary, checked against the English keys. */
@@ -872,7 +866,6 @@ export const ru = {
   'time.months': '{n}mo',
   'time.years': '{n}y',
   'time.ago': '{t} назад',
-  'delete.unavailable': 'Удаление рабочих пространств недоступно в этом развёртывании',
 } satisfies Record<keyof typeof en, string>
 
 /** Portuguese dictionary, checked against the English keys. */
@@ -996,5 +989,4 @@ export const pt = {
   'time.months': '{n} mês',
   'time.years': '{n}s',
   'time.ago': '{t} atrás',
-  'delete.unavailable': 'A eliminação de espaços de trabalho não está disponível nesta instalação',
 } satisfies Record<keyof typeof en, string>

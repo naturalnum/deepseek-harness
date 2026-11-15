@@ -293,7 +293,7 @@ function ProjectRow({
   const dragPreview = useRowDragPreview(css.dragPreview as string, DRAG_PREVIEW_PROPERTIES)
   const workspaceMenuTarget = row.workspaceId !== undefined && row.cwd !== undefined
     ? { workspaceId: row.workspaceId, path: row.cwd,
-      ...workspaceDeleteDisabledReason === undefined ? {} : { deleteDisabledReason: t('delete.unavailable') } } : undefined
+      ...workspaceDeleteDisabledReason === undefined ? {} : { deleteDisabledReason: workspaceDeleteDisabledReason.message() } } : undefined
   const ownRow = (
     <div
       className={clsx(css.projectRow, menuOpen && css.menuOpen)}

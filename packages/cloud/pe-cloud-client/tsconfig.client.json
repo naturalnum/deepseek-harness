@@ -30,6 +30,7 @@
     "src/client/persistence.ts",
     "src/client/page-lifetime.ts",
     "src/client/prepared-page.ts",
+    "src/client/workspace-restriction.ts",
     "src/client/projects.ts",
     "src/client/project-flow.tsx",
     "src/client/project-slots.ts",

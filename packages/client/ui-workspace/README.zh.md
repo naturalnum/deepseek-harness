@@ -249,7 +249,7 @@ Workspace 和 Session 的原生拖拽预览使用不可交互的离屏副本，�
 
 Workspace 与 Session 悬浮卡片会复制对应行被截断的值：激活 Workspace 卡片会写入其完整目录路径，激活非空白 Session 卡片则会写入其完整显示标题。临时的空白「新会话」卡片保持只读，因为其本地化标签是占位文案，并非会话内容。Session 卡片（包括空白「新会话」卡片）在标题下方显示其工作目录，POSIX 主目录前缀缩写为 `~`；Host 未报告目录或目录为空时省略该行。 Session 卡片在卡片打开期间还会在相对时间与行尾状态行之间渲染 `sidebar.session.row.hover` seat，与行自身状态无关。同一物理列表中的首张 Workspace 或 Session 卡片等待 800ms；实际显示一张后，移到该列表的其他 Workspace 或 Session 会立即替换卡片。列表与其当前活动的 portal 卡片构成一次指针交互：进入卡片阅读或复制后，移到相邻 Workspace 或 Session 仍会立即切换。指针离开两者后，共享等待在活动卡片通过原有指针宽限及关闭生命周期关闭时重置，不另设分组计时器。列表没有活动卡片时，指针离开便立即重置等待。小型操作提示与右侧悬浮卡片同时显示；置顶、归档、Workspace 新建会话及搜索结果取消归档的提示通过 portal 保持在卡片上层。悬停操作按钮（包括「更多」）保留卡片；打开「更多」菜单或开始拖拽 Session 会关闭卡片。
 
-组合可以提供可选根属性 `workspaceDeleteDisabledReason: 'unavailable'`。原 Workspace 菜单显示本地化限制，已打开的确认框也在删除前复查当前属性。该限制不授予任何权限；原资源检查与 Host 修改仍是权威。省略时保留原生删除行为。
+组合可以提供可选根属性 `workspaceDeleteDisabledReason: { message: () => string }`。回调返回当前本地化显示原因；Native 不持有部署业务文案。原 Workspace 菜单和已打开的确认框只要限制存在就禁用删除，并在渲染时读取文字。限制的持有期限由原根决定，不要求 Cloud 条目继续存活；该限制不授予任何权限，原资源检查与 Host 修改仍是权威。省略时保留原生删除行为。
 
 </details>
 

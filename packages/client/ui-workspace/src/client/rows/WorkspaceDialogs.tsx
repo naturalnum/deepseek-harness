@@ -137,7 +137,7 @@ export function WorkspaceDialogs({ request, workspaces, renameWorkspace, deleteW
       )}
     >
       {deleting && <div className={css.deleteStatus} role="status">{t('delete.pending')}</div>}
-      {workspaceDeleteDisabledReason !== undefined && <div role="status">{t('delete.unavailable')}</div>}
+      {workspaceDeleteDisabledReason !== undefined && <div role="status">{workspaceDeleteDisabledReason.message()}</div>}
       {deleteError !== null && <div className={css.renameError} role="alert">{deleteError}</div>}
     </Modal>
   </>

@@ -2588,10 +2588,11 @@ describe('WorkspaceBrowser', () => {
       useWorkspaces: hook(workspaceState([workspace('alpha', [], 'Alpha')])), deleteWorkspace,
     })
     browser.openDialog(wid('alpha'), 'Alpha', 'delete')
-    rerender(browser, { workspaceDeleteDisabledReason: 'unavailable' })
+    const restriction = { message: () => 'Deployment restriction' }
+    rerender(browser, { workspaceDeleteDisabledReason: restriction })
     const confirm = screen.getByRole<HTMLButtonElement>('button', { name: '删除工作区' })
     expect(confirm.disabled).toBe(true)
-    expect(screen.getByRole('status').textContent).toBe(zh['delete.unavailable'])
+    expect(screen.getByRole('status').textContent).toBe(restriction.message())
     fireEvent.click(confirm)
     expect(deleteWorkspace).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: '取消' }))

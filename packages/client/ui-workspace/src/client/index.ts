@@ -101,8 +101,11 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-/** Deployment-specific reason that Workspace removal is not available. */
-export type WorkspaceDeleteDisabledReason = 'unavailable'
+/** Optional display data for a deployment restriction; absence preserves Native removal. */
+export interface WorkspaceDeleteDisabledReason {
+  /** Current localized reason, evaluated while the original page root owns the restriction. */
+  readonly message: () => string
+}
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface GlobalStandardProps {
@@ -278,10 +281,10 @@ export function apply(ctx: Context): void {
       uiWorkspace.forkSession(sessionId, (childId) => {
         ctx.get('productAnalytics')?.track('branch_session_click', { session_id: childId, parent_session_id: sessionId, click_position: 'sidebar' })
       }, { allowMigration: false }).catch((error: unknown) => {
-        const code = error instanceof Error && error.name === 'SessionForkError'
-          ? (error as SessionForkError).rpcError.code : undefined
-        if (code === 'session/migration-required') notify({ kind: 'forkRequiresOpen', sessionId })
-        else notify({ kind: 'shortcutForkFailed', reason: code === 'session/fork-unavailable' ? 'unavailable' : 'failed' })
+        if (error instanceof Error && error.name === 'SessionForkError'
+          && (error as SessionForkError).rpcError.code === 'session/migration-required') {
+          notify({ kind: 'forkRequiresOpen', sessionId })
+        }
       })
     },
   })

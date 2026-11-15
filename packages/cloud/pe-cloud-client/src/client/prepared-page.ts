@@ -23,7 +23,7 @@ import type { SkillManagementView } from './management/skills/types.ts'
 import { attachManagedSkillEditing, type ManagedSkillEditingInput } from './managed-skill-editing.ts'
 import { attachSkillVersionEditing } from './skill-version-editing.ts'
 import type { CloudPersistenceLimits, CloudPersistenceStorage } from './persistence.ts'
-import type { WorkspaceDeleteDisabledReason } from '@deepseek-ai/dsh-client-ui-workspace/client'
+import { createWorkspaceDeleteRestriction } from './workspace-restriction.ts'
 
 /** Fixed page inputs supplied by the pre-Cordis application owner, never by bootstrap JSON. */
 export interface CloudPagePreparationInput {
@@ -324,7 +324,7 @@ export class PreparedCloudPage {
       if (this.workspaceRestrictionSlots.has(identity)) return
       // The page root retains the restriction until the native graph ends,
       // even if this Cloud Loader entry is withdrawn first.
-      slots.provideRoot({ props: { workspaceDeleteDisabledReason: 'unavailable' satisfies WorkspaceDeleteDisabledReason } })
+      slots.provideRoot({ props: { workspaceDeleteDisabledReason: createWorkspaceDeleteRestriction(scope.root) } })
       this.workspaceRestrictionSlots.add(identity)
     })
     ctx.effect(() => () => {

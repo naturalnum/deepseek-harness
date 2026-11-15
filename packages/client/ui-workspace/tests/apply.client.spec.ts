@@ -804,7 +804,7 @@ describe('ui-workspace apply', () => {
     expect(b.selectPanel).not.toHaveBeenCalled()
   })
 
-  it.each(['ordinary', 'other-remote', 'unwrapped-migration', 'child-title'] as const)('reports a fork failure without reopening or repeating creation (%s)', async (kind) => {
+  it.each(['ordinary', 'other-remote', 'unwrapped-migration', 'child-title'] as const)('keeps a fork failure silent without reopening or repeating creation (%s)', async (kind) => {
     const b = await bench()
     onTestFinished(() => b.ctx.fiber.dispose())
     declare(b.slots, 'sidebar.workspaces', 'shell.overlay')
@@ -833,10 +833,7 @@ describe('ui-workspace apply', () => {
     expect(forkSession).toHaveBeenCalledOnce()
     await expect(forkSession.mock.results[0]!.value).rejects.toBe(error)
 
-    await vi.waitFor(() => {
-      expect(toast.hooks.toast.getSnapshot()).toEqual({ kind: 'shortcutForkFailed',
-        reason: kind === 'other-remote' ? 'unavailable' : 'failed', seq: 1 })
-    })
+    expect(toast.hooks.toast.getSnapshot()).toBeNull()
     expect(b.fork).toHaveBeenCalledOnce()
     expect(b.retain).not.toHaveBeenCalled()
     expect(b.selectPanel).not.toHaveBeenCalled()

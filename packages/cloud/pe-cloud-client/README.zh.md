@@ -33,7 +33,7 @@ Cloud 浏览器以自有双语品牌字典提供 PowerEvolve 名称，并以黑�
 
 运行中的闪电标志与原中英“处理中／Processing”及其余六语文案通过原 Flow 的两个行内 chain 槽贡献。Cloud 的 `cloud-running-status` 词典及共享 LightningMark 随账号品牌插件撤回，原 `chat` 词典保持默认值；无贡献时显示原生鲸尾与文案。Cloud 不复制时钟、TextShimmer、暂停或无障碍播报逻辑，也不改原生图片资源和构建配置。
 
-由于当前 Cloud 组合未开放删除 RPC，准备好的 Cloud 页面在其 root 生命周期内禁用原生工作区删除操作。菜单及已打开的确认框显示本地化原因；该展示限制不替代 Host 鉴权。
+由于当前 Cloud 组合未开放删除 RPC，准备好的 Cloud 页面在其 root 生命周期内禁用原生工作区删除操作。菜单及已打开的确认框显示本地化原因；该展示限制不替代 Host 鉴权。原8语文案归自有 `workspace-restriction.ts`，由普通 message 回调通过原 Native root 当前 locale.resolveText 求值；locale 尚未出现时使用原英文。限制及回调仍由原 root 持有，跨 Cloud entry 先撤回及 slots 替换持续有效，直到原 Native 图实际关闭；不增加 I/O 或删除权限。
 
 `/schema` 导出提供浏览器安全的公共配置校验；`/types` 包含其配置类型。其空运行模块以 `lib/types/types.js` 发布；未打包的浏览器编译产物不参与发布。Host 入口声明浏览器包，并可选地注入公开 Web 部署输入，不提供业务服务或认证路由。
 
