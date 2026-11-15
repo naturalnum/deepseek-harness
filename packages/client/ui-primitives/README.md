@@ -38,7 +38,7 @@ Compose feature UI from these atoms whenever the web client needs a standard con
 <a id="component-catalog"></a>
 ### Component catalog
 
-`ConfigField` is a controlled schema field: callers own its value, choices, validation, localized labels and write/reset actions. `LightningMark` reuses the existing decorative mark with the standard icon size and class props; neither component owns a service or persistence.
+`ConfigField` is a controlled schema field: callers own its value, choices, validation, localized labels and write/reset actions. It owns no service or persistence.
 
 Check this table before writing a control in a feature package. A plugin cannot import another plugin's component, so this package is the only place a control can be shared: reuse what fits, and lift a deliberate visual difference into a prop rather than starting a second copy.
 

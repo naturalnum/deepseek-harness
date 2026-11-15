@@ -31,7 +31,7 @@ Cloud Loader 另挂载生成的 API 项目创建贡献，并向两个原生 Work
 
 Cloud 浏览器以自有双语品牌字典提供 PowerEvolve 名称，并以黑色闪电标志填充原生侧栏品牌位置；字典与 slot 随原插件一起撤回。原生品牌字典保留默认值。空欢迎标题占用者移除输入框上方的标题、旧标志与预览版徽标。`deploy/bundle` 将公开构建值 `DSH_CLIENT_TITLE` 默认设为 PowerEvolve，保留显式指定的标题；普通原生构建保留默认标题。
 
-运行中的闪电标志与原中英“处理中／Processing”及其余六语文案通过原 Flow 的两个行内 chain 槽贡献。Cloud 的 `cloud-running-status` 词典及共享 LightningMark 随账号品牌插件撤回，原 `chat` 词典保持默认值；无贡献时显示原生鲸尾与文案。Cloud 不复制时钟、TextShimmer、暂停或无障碍播报逻辑，也不改原生图片资源和构建配置。
+运行中的闪电标志与原中英“处理中／Processing”及其余六语文案通过原 Flow 的两个行内 chain 槽贡献。Cloud 的 `cloud-running-status` 词典及自有 LightningMark 随账号品牌插件撤回，原 `chat` 词典保持默认值；无贡献时显示原生鲸尾与文案。Cloud 不复制时钟、TextShimmer、暂停或无障碍播报逻辑，也不改原生图片资源和构建配置。
 
 由于当前 Cloud 组合未开放删除 RPC，准备好的 Cloud 页面在其 root 生命周期内禁用原生工作区删除操作。菜单及已打开的确认框显示本地化原因；该展示限制不替代 Host 鉴权。原8语文案归自有 `workspace-restriction.ts`，由普通 message 回调通过原 Native root 当前 locale.resolveText 求值；locale 尚未出现时使用原英文。限制及回调仍由原 root 持有，跨 Cloud entry 先撤回及 slots 替换持续有效，直到原 Native 图实际关闭；不增加 I/O 或删除权限。
 

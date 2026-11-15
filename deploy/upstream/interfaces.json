@@ -1,7 +1,7 @@
 {
   "counts": {
     "native_source_files": 189,
-    "non_seam_files": 49,
+    "non_seam_files": 48,
     "uncentralized_internal_lines": 0
   },
   "imports": [
@@ -2989,6 +2989,15 @@
       "typeOnly": false
     },
     {
+      "path": "packages/cloud/pe-cloud-client/src/client/LightningMark.tsx",
+      "line": 1,
+      "module": "@deepseek-ai/dsh-client-ui-primitives",
+      "names": [
+        "IconProps"
+      ],
+      "typeOnly": true
+    },
+    {
       "path": "packages/cloud/pe-cloud-client/src/client/ServicePreviewRow.tsx",
       "line": 2,
       "module": "@deepseek-ai/dsh-client-ui-primitives",
@@ -3231,7 +3240,6 @@
       "line": 9,
       "module": "@deepseek-ai/dsh-client-ui-primitives",
       "names": [
-        "LightningMark",
         "TextShimmer"
       ],
       "typeOnly": false
@@ -10127,11 +10135,11 @@
     },
     {
       "路径": "packages/client/ui-primitives/src/index.ts",
-      "类别": "登记",
-      "原因": "导出 ConfigField 和新增的 LightningMark",
-      "撤销条件": "LightningMark 可搬进 pe-cloud-client（前提是 ui-chat 不再用它）；ConfigField 需上游导出或云端自写",
-      "处置": "撤掉",
-      "这一程的状态": "没动",
+      "类别": "扩展点",
+      "原因": "仅公开原有受控ConfigField及文件呈现JSON类型；PowerEvolve闪电图形已迁自有区",
+      "撤销条件": "Native公开等价组件和类型时撤出口；无Cloud贡献时默认绘制与行为不变",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
       "changed": true
     },
     {
@@ -11573,6 +11581,15 @@
       "处置": "留作口子",
       "这一程的状态": "没动",
       "changed": true
+    },
+    {
+      "路径": "packages/client/ui-primitives/src/LightningMark.tsx",
+      "类别": "云端定制",
+      "原因": "PowerEvolve品牌资产已原样迁至pe-cloud-client/src/client/LightningMark.tsx；唯一Cloud消费者改用本地模块",
+      "撤销条件": "原生无该品牌资产；自有图形保留原几何、尺寸、类名、currentColor和装饰语义",
+      "处置": "搬进插件",
+      "这一程的状态": "已搬",
+      "changed": false
     }
   ],
   "unlisted_native_sources": []

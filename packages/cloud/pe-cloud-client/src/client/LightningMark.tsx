@@ -1,4 +1,4 @@
-import type { IconProps } from './icons/props.ts'
+import type { IconProps } from '@deepseek-ai/dsh-client-ui-primitives'
 
 /**
  * Render a solid lightning mark in the surrounding text color.
