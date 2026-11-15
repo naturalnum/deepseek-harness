@@ -230,6 +230,8 @@ The package adds zero request tokens.
 
 The guard preserves request content and any reusable prefix; provider cache availability remains provider-owned.
 
+Native proxy-target reads and the Gateway method identity comparison are centralized in `src/native-inventory.ts`. Its bounded fiber iterator filters to the current account root before charging runtime and fiber visits; the configured bound and duplicate/provider checks remain unchanged. Unreviewed Native methods remain outside the selected exposure policy.
+
 ## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>

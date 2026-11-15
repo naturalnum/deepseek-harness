@@ -1,5 +1,6 @@
 /** Optional account-local Remote over native clients, private files and the original authenticated Peer/save owners. */
-import { symbols, type Context } from '@deepseek-ai/cordis'
+import { nativeOriginal } from './native-inventory.ts'
+import { type Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { Remote, remoteMethods, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { mcpConnectionInput, McpConnectionWriteRefused, type CloudAccountFiles,
@@ -24,7 +25,7 @@ export interface CloudMcpConnectionPreparation {
 declare module '@deepseek-ai/cordis' { interface Context { cloudMcpConnections: CloudMcpConnectionService } }
 const namespace = 'cloudMcpConnections'
 function unavailable(): never { throw new CloudApiError('cloud/account-unavailable', 'MCP connection management is unavailable.') }
-function original(value: object): object { const raw: unknown = Reflect.get(value, symbols.original)
+function original(value: object): object { const raw: unknown = nativeOriginal(value)
   return raw !== null && typeof raw === 'object' ? raw : value }
 
 /** One optional management capability; protocol implementation remains entirely in dsh-mcp-client. */

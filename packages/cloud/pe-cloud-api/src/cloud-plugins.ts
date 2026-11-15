@@ -1,5 +1,6 @@
 /** Catalog-approved plugin Remote; the original login, factory, native writers and save owner retain all actual work. */
-import { symbols, type Context } from '@deepseek-ai/cordis'
+import { nativeOriginal } from './native-inventory.ts'
+import { type Context } from '@deepseek-ai/cordis'
 import { Remote, remoteMethods, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { CloudAccountApi } from './account-service.ts'
 import type { AccountPluginControl } from './plugin-control.ts'
@@ -12,7 +13,7 @@ import { CloudApiError } from './errors.ts'
 declare module '@deepseek-ai/cordis' { interface Context { cloudPlugins: CloudPluginService } }
 const methods = ['current', 'change', 'list'] as const
 function original(value: object): object {
-  const target: unknown = Reflect.get(value, symbols.original)
+  const target: unknown = nativeOriginal(value)
   return target !== null && (typeof target === 'object' || typeof target === 'function') ? target : value
 }
 function unavailable(): never { throw new CloudApiError('cloud/account-unavailable', 'The original approved plugin Remote is unavailable.') }

@@ -1,5 +1,6 @@
 /** Account admission around the original human-command registry and executor. */
-import { symbols, type Context } from '@deepseek-ai/cordis'
+import { nativeOriginal } from './native-inventory.ts'
+import { type Context } from '@deepseek-ai/cordis'
 import CommandRuntime, { type CommandDescriptor, type CommandExecution, type CommandSubmitAttachment } from '@deepseek-ai/dsh-commands'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -52,7 +53,7 @@ export function createNativeCommands(
     }
     if (policy.manifest.recipeVersion !== binding.recipeVersion) unavailable()
     if (captured.native !== undefined) {
-      const current = ctx.get('commands'), target: unknown = current === undefined ? undefined : Reflect.get(current, symbols.original) ?? current
+      const current = ctx.get('commands'), target: unknown = current === undefined ? undefined : nativeOriginal(current) ?? current
       if (target !== captured.native) unavailable()
     }
   }
@@ -112,7 +113,7 @@ export function createNativeCommands(
   captured.native = value
   return { value, inspect() {
     installed()
-    const current = ctx.get('commands'), target: unknown = current === undefined ? undefined : Reflect.get(current, symbols.original) ?? current
+    const current = ctx.get('commands'), target: unknown = current === undefined ? undefined : nativeOriginal(current) ?? current
     if (target !== value) unavailable()
     firstScreenNativeOwner(ctx, 'commands', value, maximum)
     const remote = value.typertRemote, markers = remoteMethods(value)

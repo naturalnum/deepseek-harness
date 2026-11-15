@@ -1,5 +1,5 @@
 /** Request-bound model key adaptation; native credentials and AccountSaves retain all writes and ordering. */
-import { symbols } from '@deepseek-ai/cordis'
+import { nativeOriginal } from './native-inventory.ts'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import type { ApprovedModelKeyConfiguration } from './types.ts'
 import type { AccountUse } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
@@ -42,7 +42,7 @@ export class AccountModelKeyEnvironment implements LaunchEnvironmentSnapshot {
 }
 
 function original(value: object): object {
-  const target: unknown = Reflect.get(value, symbols.original)
+  const target: unknown = nativeOriginal(value)
   return target !== null && typeof target === 'object' ? target : value
 }
 

@@ -1430,7 +1430,7 @@ it('joins a real native WebSocket observation before the same HTTP configuration
   const request = await f.http(peer, () => { ingressUse.assertCurrent(); ingressUse.release() })
   try {
     await request.body
-    expect(request.result()).toMatchObject({ result: { ok: true, value: { originalConsumer: 'settled-after-native-ws-close' } } })
+    expect(request.result(), JSON.stringify(request.result())).toMatchObject({ result: { ok: true, value: { originalConsumer: 'settled-after-native-ws-close' } } })
     expect(applied).toBe(true); expect(ws.didClose()).toBe(true)
     f.registry.assertCurrent(peer, requestId)
     expect(f.observe()).toMatchObject({ borrowed: 3, released: 2, inUse: 1, calls: 1 })
@@ -1475,7 +1475,7 @@ it('retains an actual native write and its pending HTTP task after the response 
   })
   const request = await f.http(peer, () => { ingressUse.assertCurrent(); ingressUse.release() })
   try {
-    await Promise.race([committed.promise, request.body.then(() => { throw new Error('HTTP settled before native write') })])
+    await Promise.race([committed.promise, request.body.then(() => { throw new Error('HTTP settled before native write: ' + JSON.stringify(request.result())) })])
     expect(f.patch()).toContain('value: 2')
     expect(f.registry.reservedCarriers).toBeGreaterThan(0)
     request.disconnect()

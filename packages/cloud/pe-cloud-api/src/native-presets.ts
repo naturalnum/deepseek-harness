@@ -1,5 +1,6 @@
 /** Account admission over the original native preset registry and selection commit. */
-import { symbols, type Context } from '@deepseek-ai/cordis'
+import { nativeOriginal } from './native-inventory.ts'
+import { type Context } from '@deepseek-ai/cordis'
 import AgentPresets from '@deepseek-ai/dsh-agent-preset-registry'
 import type { AgentPresetDocument, AgentPresetRoster } from '@deepseek-ai/dsh-agent-preset-registry/types'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -56,7 +57,7 @@ export function createNativePresets(
       || policy.manifest.recipeVersion !== binding.recipeVersion) unavailable()
     if (installation.value !== undefined) {
       const value = ctx.get('agentPresets')
-      if ((value === undefined ? undefined : Reflect.get(value, symbols.original) ?? value) !== installation.value) unavailable()
+      if ((value === undefined ? undefined : nativeOriginal(value) ?? value) !== installation.value) unavailable()
     }
   }
   const admit = (method: 'list' | 'read' | 'select'): void => {

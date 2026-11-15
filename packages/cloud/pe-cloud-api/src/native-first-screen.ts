@@ -1,3 +1,4 @@
+import { nativeOriginal, nativeAccountFibers } from './native-inventory.ts'
 import { projectApprovedSettings, projectApprovedSettingsNamespace } from './approved-settings.ts'
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-goal'
@@ -9,7 +10,7 @@ import type {} from '@deepseek-ai/dsh-user-questions'
 import type { ApprovedConfigurationField } from './types.ts'
 /** Fixed native first-screen readers; original registries, DTOs and iteration remain authoritative. */
 import { isDeepStrictEqual } from 'node:util'
-import { FiberState, symbols, type Context, type Fiber } from '@deepseek-ai/cordis'
+import { FiberState, type Context, type Fiber } from '@deepseek-ai/cordis'
 import WorkspaceController from '@deepseek-ai/dsh-api-workspace-controller'
 import type {
   WorkspaceCreateRequest, WorkspaceCreateValue, WorkspaceFollowFrame, WorkspaceRenameRequest, WorkspaceValue, WorkspaceView,
@@ -102,7 +103,7 @@ function unavailable(): never {
 }
 
 function original(value: object): object {
-  const target: unknown = Reflect.get(value, symbols.original)
+  const target: unknown = nativeOriginal(value)
   return target !== null && typeof target === 'object' ? target : value
 }
 
@@ -127,18 +128,14 @@ export function firstScreenNativeOwner(
   const local = ctx.get(key), root = ctx.root.get(key)
   if (local === undefined || root === undefined || original(local) !== target || original(root) !== target) unavailable()
   let visited = 0, found: Fiber | undefined
-  for (const runtime of ctx.registry.values()) {
-    if (++visited > maximum) unavailable()
-    for (const fiber of runtime.fibers) {
+  for (const fiber of nativeAccountFibers(ctx, () => { if (++visited > maximum) unavailable() })) {
+    if (fiber.ctx.root !== ctx.root || fiber.state !== FiberState.ACTIVE) continue
+    for (const installed of nativeFiberProvisions(fiber)) {
       if (++visited > maximum) unavailable()
-      if (fiber.ctx.root !== ctx.root || fiber.state !== FiberState.ACTIVE) continue
-      for (const installed of nativeFiberProvisions(fiber)) {
-        if (++visited > maximum) unavailable()
-        if (installed.name !== key || installed.ctx.fiber !== fiber) continue
-        const registered: unknown = installed.value
-        if (registered === null || typeof registered !== 'object' || original(registered) !== target || found !== undefined) unavailable()
-        found = fiber
-      }
+      if (installed.name !== key || installed.ctx.fiber !== fiber) continue
+      const registered: unknown = installed.value
+      if (registered === null || typeof registered !== 'object' || original(registered) !== target || found !== undefined) unavailable()
+      found = fiber
     }
   }
   if (found === undefined) unavailable()

@@ -1,5 +1,6 @@
 /** Native receipts and accepted Session refs become bounded, request-local project paths. */
-import { symbols, type Context } from '@deepseek-ai/cordis'
+import { nativeOriginal } from './native-state.ts'
+import { type Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { FileAttachmentRef, SaveFileStreamAttachment } from '@deepseek-ai/dsh-attachment'
 import { AttachmentCleanupError, AttachmentPublicationUnconfirmedError, AttachmentStorageCapacityError } from '@deepseek-ai/dsh-attachment-local'
@@ -32,7 +33,7 @@ interface PreparedPaths {
 
 function key(ref: FileAttachmentRef): string { return `${ref.attachmentId}\0${ref.name}` }
 function original(value: object): object {
-  const raw: unknown = Reflect.get(value, symbols.original)
+  const raw: unknown = nativeOriginal(value)
   return raw !== null && typeof raw === 'object' ? raw : value
 }
 function denied(): never { throw new CloudApiError('cloud/forbidden', 'The attachment is unavailable in this native request.') }

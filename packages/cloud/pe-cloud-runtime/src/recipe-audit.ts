@@ -1,9 +1,9 @@
 /** Actual Root Loader/provider audit retaining the original files storage owner through admission. */
-import { Context, FiberState, symbols, type Fiber } from '@deepseek-ai/cordis'
+import { Context, FiberState, type Fiber } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-app-boot'
 import { ExposureService } from '@deepseek-ai/dsh-pe-cloud-api'
 import { RootStorageOwner } from '@deepseek-ai/dsh-pe-cloud-files/root'
-import { nativeEntryFiber, nativeEffectiveConfig, nativeProvision, nativeImplementation } from './native-state.ts'
+import { nativeEntryFiber, nativeEffectiveConfig, nativeProvision, nativeImplementation, nativeOriginal, nativeEntryModule, nativeEntryId, nativeEntryConfig, nativeEntryDisabled, nativeObserveRecipe, nativeAccountFibers, nativeEntryName } from './native-state.ts'
 import { AccountRuntimeError } from './errors.ts'
 import type { DrainParticipant, RootRecipeInput, RootRecipeIssue, RootRecipeObservation, RootRecipeRole } from './types.ts'
 import type { FileReadTiming } from './file-read-timing.ts'
@@ -42,7 +42,7 @@ function object(value: unknown): value is object {
 }
 
 function original(value: object): object {
-  const target: unknown = Reflect.get(value, symbols.original)
+  const target: unknown = nativeOriginal(value)
   return object(target) ? target : value
 }
 
@@ -71,19 +71,10 @@ export class RootRecipeAudit {
     private readonly control: () => Readonly<{ phase: string; recipeVersion: string | undefined; maximum: number | undefined }>,
     private readonly fileReadTiming?: FileReadTiming,
   ) {
-    owner.on('internal/plugin', () => { this.revoke('root-plugin') })
-    owner.on('internal/service', () => { this.revoke('root-service') })
-    owner.on('loader/entry-init', () => { this.revoke('entry-init') })
-    owner.on('loader/partial-dispose', () => { this.revoke('partial-dispose') })
-    owner.on('loader/volatile-update', () => { this.revoke('volatile-update') }, { global: true })
-    owner.on('loader/patch-context', (_entry, next) => { this.revoke('patch-context'); return next() })
     const checkFiber = (fiber: Fiber): void => {
       if (this.candidate?.facts.some(fact => descends(fiber, fact.fiber))) this.revoke('fiber-update')
     }
-    owner.on('internal/update', function (this: Fiber, _config, next) {
-      checkFiber(this)
-      return next()
-    }, { global: true, prepend: true })
+    nativeObserveRecipe(owner, (reason) => { this.revoke(reason) }, checkFiber)
   }
 
   /**
@@ -139,56 +130,52 @@ export class RootRecipeAudit {
     const facts = new Map<Entry, EntryFact>()
     const rootEntries = new Map<string, Entry>()
     for (const expected of input.roots) {
-      const matches = rows.filter(row => row.options.id === expected.entryId)
-      const modules = rows.filter(row => row.moduleNamespace === expected.module)
+      const matches = rows.filter(row => nativeEntryId(row) === expected.entryId)
+      const modules = rows.filter(row => nativeEntryModule(row) === expected.module)
       const entry = matches[0]
       if (matches.length !== 1) { issue('root-entry-duplicate-or-missing'); continue }
-      if (entry === undefined || entry.disabled) { issue('root-entry-inactive'); continue }
-      if (entry.moduleNamespace !== expected.module) { issue('root-module-replaced'); continue }
+      if (entry === undefined || nativeEntryDisabled(entry)) { issue('root-entry-inactive'); continue }
+      if (nativeEntryModule(entry) !== expected.module) { issue('root-module-replaced'); continue }
       if (modules.length !== 1) { issue('root-entry-duplicate-or-missing'); continue }
       const fiber = nativeEntryFiber(entry)
       if (fiber === undefined || fiber.state !== FiberState.ACTIVE || fiber.ctx.root !== root) {
         issue('root-entry-inactive'); continue
       }
-      const plan = entry.prepareConfigUpdate(entry.options.config)
+      const plan = entry.prepareConfigUpdate(nativeEntryConfig(entry))
       if (plan.impact !== 'none') { issue('root-config-unproven'); continue }
-      facts.set(entry, { entry, fiber, plan, module: entry.moduleNamespace })
+      facts.set(entry, { entry, fiber, plan, module: nativeEntryModule(entry) })
       rootEntries.set(expected.role, entry)
     }
     for (const row of rows) {
-      const name = row.options.name
+      const name = nativeEntryName(row)
       if (['/account', '/session', '/client'].some(suffix => name.startsWith('@deepseek-ai/dsh-pe-') && name.endsWith(suffix))) {
         issue('account-entry-in-root')
       }
     }
     // Capture every audited provider entry before invoking any provider health callback.
     for (const expected of input.providers) {
-      const entry = rows.find(row => row.options.id === expected.entryId)
+      const entry = rows.find(row => nativeEntryId(row) === expected.entryId)
       const fiber = nativeEntryFiber(entry)
       if (entry === undefined || fiber === undefined || facts.has(entry)) continue
-      const plan = entry.prepareConfigUpdate(entry.options.config)
+      const plan = entry.prepareConfigUpdate(nativeEntryConfig(entry))
       if (plan.impact !== 'none') { issue('root-config-unproven'); continue }
-      facts.set(entry, { entry, fiber, plan, module: entry.moduleNamespace })
+      facts.set(entry, { entry, fiber, plan, module: nativeEntryModule(entry) })
     }
     const providers: Candidate['providers'][number][] = []
     const implementations = new Map<string, { fiber: Fiber; value: unknown; record: object } | null>()
-    for (const runtime of root.registry.values()) {
-      consume()
-      for (const fiber of runtime.fibers) {
-        consume()
-        if (fiber.ctx.root !== root || fiber.state !== FiberState.ACTIVE) continue
-        for (const expected of input.providers) {
-          const implementation = nativeProvision(fiber, expected.key)
-          if (implementation === undefined || implementation.ctx.fiber !== fiber) continue
-          implementations.set(expected.key, implementations.has(expected.key) ? null
-            : { fiber, value: implementation.value, record: implementation })
-        }
+    for (const fiber of nativeAccountFibers(root, consume)) {
+      if (fiber.ctx.root !== root || fiber.state !== FiberState.ACTIVE) continue
+      for (const expected of input.providers) {
+        const implementation = nativeProvision(fiber, expected.key)
+        if (implementation === undefined || implementation.ctx.fiber !== fiber) continue
+        implementations.set(expected.key, implementations.has(expected.key) ? null
+          : { fiber, value: implementation.value, record: implementation })
       }
     }
     for (const expected of input.providers) {
       const value: unknown = root.get(expected.key)
       if (!object(value) || original(value) !== original(expected.value)) { issue('provider-replaced-or-missing'); continue }
-      const entry = rows.find(row => row.options.id === expected.entryId)
+      const entry = rows.find(row => nativeEntryId(row) === expected.entryId)
       const implementation = implementations.get(expected.key)
       if (implementation == null) { issue('provider-duplicate-or-missing'); continue }
       const entryFiber = nativeEntryFiber(entry)
@@ -334,23 +321,21 @@ export class RootRecipeAudit {
     for (const role of ROOT_ROLES) {
       const specifier = role === 'opensandbox/root' ? '@deepseek-ai/dsh-pe-opensandbox/root'
         : '@deepseek-ai/dsh-pe-cloud-' + role
-      const matches = entries.filter(row => row.options.name === specifier), entry = matches[0]
-      if (matches.length !== 1 || entry === undefined || !object(entry.moduleNamespace)) unavailable()
-      roots.push({ role, entryId: entry.options.id, module: entry.moduleNamespace })
+      const matches = entries.filter(row => nativeEntryName(row) === specifier), entry = matches[0]
+      if (matches.length !== 1 || entry === undefined) unavailable()
+      const module = nativeEntryModule(entry)
+      if (!object(module)) unavailable()
+      roots.push({ role, entryId: nativeEntryId(entry), module })
     }
     const providers: RootRecipeInput['providers'][number][] = []
     const implementations = new Map<string, { fiber: Fiber; value: object }>()
-    for (const runtime of root.registry.values()) {
-      consume()
-      for (const fiber of runtime.fibers) {
-        consume()
-        if (fiber.ctx.root !== root || fiber.state !== FiberState.ACTIVE) continue
-        for (const key of PROVIDERS) {
-          const installed = nativeProvision(fiber, key), value: unknown = installed?.value
-          if (installed === undefined || installed.ctx.fiber !== fiber) continue
-          if (!object(value) || implementations.has(key)) unavailable()
-          implementations.set(key, { fiber, value: original(value) })
-        }
+    for (const fiber of nativeAccountFibers(root, consume)) {
+      if (fiber.ctx.root !== root || fiber.state !== FiberState.ACTIVE) continue
+      for (const key of PROVIDERS) {
+        const installed = nativeProvision(fiber, key), value: unknown = installed?.value
+        if (installed === undefined || installed.ctx.fiber !== fiber) continue
+        if (!object(value) || implementations.has(key)) unavailable()
+        implementations.set(key, { fiber, value: original(value) })
       }
     }
     for (const key of PROVIDERS) {
@@ -363,7 +348,7 @@ export class RootRecipeAudit {
       const entry = matches.find(row => !matches.some(other => other !== row
         && descends(other.fiber, row.fiber)))?.entry
       if (entry === undefined) unavailable()
-      providers.push({ key, entryId: entry.options.id, value: installed.value })
+      providers.push({ key, entryId: nativeEntryId(entry), value: installed.value })
     }
     const exposure = root.get('peExposure')
     if (!(exposure instanceof ExposureService)) unavailable()
@@ -387,7 +372,7 @@ export class RootRecipeAudit {
     try {
       for (const { entry, fiber, module } of candidate.facts) {
         reason = 'entry-identity'
-        if (nativeEntryFiber(entry) !== fiber || fiber.state !== FiberState.ACTIVE || entry.moduleNamespace !== module) throw new Error('changed')
+        if (nativeEntryFiber(entry) !== fiber || fiber.state !== FiberState.ACTIVE || nativeEntryModule(entry) !== module) throw new Error('changed')
       }
       for (const { key, value, fiber } of candidate.providers) {
         reason = 'provider-identity'; provider = key
@@ -418,7 +403,7 @@ export class RootRecipeAudit {
       }
       for (const { entry, fiber, plan, module } of candidate.facts) {
         reason = 'entry-identity'
-        if (nativeEntryFiber(entry) !== fiber || fiber.state !== FiberState.ACTIVE || entry.moduleNamespace !== module) throw new Error('changed')
+        if (nativeEntryFiber(entry) !== fiber || fiber.state !== FiberState.ACTIVE || nativeEntryModule(entry) !== module) throw new Error('changed')
         reason = 'entry-config-plan'
         if (!entry.isConfigPlanVersionCurrent(plan)) throw new Error('changed')
         if (checkPlans) {
@@ -453,7 +438,7 @@ export class RootRecipeAudit {
         || exposure.policy.manifest !== candidate.manifest)) throw new Error('changed')
       for (const { entry, fiber, module, plan } of candidate.facts) {
         reason = 'entry-identity'
-        if (nativeEntryFiber(entry) !== fiber || fiber.state !== FiberState.ACTIVE || entry.moduleNamespace !== module) throw new Error('changed')
+        if (nativeEntryFiber(entry) !== fiber || fiber.state !== FiberState.ACTIVE || nativeEntryModule(entry) !== module) throw new Error('changed')
         reason = 'entry-config-plan'
         if (!entry.isConfigPlanVersionCurrent(plan)) throw new Error('changed')
       }

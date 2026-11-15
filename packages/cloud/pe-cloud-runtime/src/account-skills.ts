@@ -1,6 +1,7 @@
 /** Native skill resources use the original Agent, project guards and files-issued projection results. */
+import { nativeOriginal } from './native-state.ts'
 import { posix } from 'node:path'
-import { symbols, type Context } from '@deepseek-ai/cordis'
+import { type Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { SkillResourcePreparation, ManagedSkillResourcePreparation } from '@deepseek-ai/dsh-pe-cloud-api'
 import { FdMutationFailure, type CloudAccountFiles, type SkillBundleVersion, type SkillVersion } from '@deepseek-ai/dsh-pe-cloud-files'
@@ -16,7 +17,7 @@ type SkillFiles = Pick<CloudAccountFiles, 'binding' | 'assertInstalled' | 'proje
 type SkillGuards = Pick<AccountNativeGuards, 'sessions' | 'projectForAgent' | 'assertWorkspace'>
 
 function original(value: object): object {
-  const target: unknown = Reflect.get(value, symbols.original)
+  const target: unknown = nativeOriginal(value)
   return target !== null && typeof target === 'object' ? target : value
 }
 function denied(): never {

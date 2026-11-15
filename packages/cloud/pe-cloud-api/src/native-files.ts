@@ -1,5 +1,6 @@
 /** Original WorkspaceFiles registration and bounded provider/Remote inventory checks. */
-import { FiberState, symbols, type Context, type Fiber } from '@deepseek-ai/cordis'
+import { nativeOriginal, nativeAccountFibers } from './native-inventory.ts'
+import { FiberState, type Context, type Fiber } from '@deepseek-ai/cordis'
 import WorkspaceFiles from '@deepseek-ai/dsh-api-workspace-files'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
@@ -21,7 +22,7 @@ export interface NativeWorkspaceFiles {
 }
 
 function original(value: object): object {
-  const target: unknown = Reflect.get(value, symbols.original)
+  const target: unknown = nativeOriginal(value)
   return target !== null && typeof target === 'object' ? target : value
 }
 
@@ -53,19 +54,15 @@ export function createNativeWorkspaceFiles(
     let remaining = maximum
     const consume = (): void => { if (--remaining < 0) unavailable() }
     const found = new Map<NativeFileKey, Registration>()
-    for (const runtime of ctx.registry.values()) {
-      consume()
-      for (const fiber of runtime.fibers) {
+    for (const fiber of nativeAccountFibers(ctx, consume)) {
+      if (fiber.ctx.root !== ctx.root || fiber.state !== FiberState.ACTIVE) continue
+      for (const installed of nativeFiberProvisions(fiber)) {
         consume()
-        if (fiber.ctx.root !== ctx.root || fiber.state !== FiberState.ACTIVE) continue
-        for (const installed of nativeFiberProvisions(fiber)) {
-          consume()
-          const key = keys.find(key => key === installed.name)
-          if (key === undefined || installed.ctx.fiber !== fiber) continue
-          const value: unknown = installed.value
-          if (value === null || typeof value !== 'object' || found.has(key)) unavailable()
-          found.set(key, { value: original(value), fiber })
-        }
+        const key = keys.find(key => key === installed.name)
+        if (key === undefined || installed.ctx.fiber !== fiber) continue
+        const value: unknown = installed.value
+        if (value === null || typeof value !== 'object' || found.has(key)) unavailable()
+        found.set(key, { value: original(value), fiber })
       }
     }
     for (const key of keys) {

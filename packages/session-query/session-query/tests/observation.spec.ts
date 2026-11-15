@@ -641,14 +641,14 @@ describe('SessionObservationReader cold path', () => {
     })
     await expect(reader.read(meta.id)).rejects.toMatchObject({
       code: 'SESSION_QUERY_CORRUPT_SESSION',
-      message: 'stored session is corrupt',
+      message: `stored session "${meta.id}" is corrupt: stored prefix failed validation`,
     })
     hooks.readFailure = undefined
 
     hooks.statFailure = 'offline'
     await expect(reader.read(meta.id)).rejects.toMatchObject({
       code: 'SESSION_QUERY_PERSISTENCE_FAILED',
-      message: 'failed to observe stored session',
+      message: expect.stringContaining('unknown error') as string,
     })
     await ctx.fiber.dispose()
   })
@@ -735,7 +735,7 @@ describe('SessionObservationReader cold path', () => {
 
     await expect(new SessionObservationReader(ctx).read(meta.id)).rejects.toMatchObject({
       code: 'SESSION_QUERY_PERSISTENCE_FAILED',
-      message: 'failed to observe stored session',
+      message: expect.stringContaining('disk detached') as string,
       cause: expect.objectContaining({ message: 'disk detached' }) as Error,
     })
     await ctx.fiber.dispose()

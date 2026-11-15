@@ -55,17 +55,3 @@ export class SessionQueryError extends HarnessError {
     super(message, code, options)
   }
 }
-
-/** Cancellation after a provider-certified stat has actually settled. */
-export class SessionQuerySettledStatAbortError extends SessionQueryError {
-  constructor(reason: unknown) {
-    super('session observation was aborted', 'SESSION_QUERY_ABORTED', { cause: reason })
-  }
-}
-
-/** Cancellation after provider-certified read work and handle cleanup actually settled. */
-export class SessionQuerySettledReadAbortError extends SessionQueryError {
-  constructor(reason: unknown) {
-    super('session observation was aborted', 'SESSION_QUERY_ABORTED', { cause: reason })
-  }
-}

@@ -6,7 +6,7 @@ import Typert from '@deepseek-ai/dsh-typert-registry'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { afterAll, beforeAll, expect, it, onTestFinished, vi } from 'vitest'
-import { inventoryMethodMatches } from '../src/inventory-method.ts'
+import { inventoryMethodMatches } from '../src/native-inventory.ts'
 import { descriptors, managementAccount } from '../../pe-cloud-access/tests/fixtures/remote-servers/account.ts'
 import { remoteManagedFixture } from '../../pe-opensandbox/tests/remote-managed-fixture.ts'
 

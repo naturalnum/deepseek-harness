@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
+import { installEntryConfigInspection } from '@deepseek-ai/dsh-app-boot/src/entry-config-impact.ts'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import * as Connection from '@deepseek-ai/dsh-client-connection'
 import LocalCredentials from '@deepseek-ai/dsh-credentials-local'
@@ -449,6 +450,7 @@ async function boot(
   let server: Server | undefined
   try {
     await ctx.plugin(Loader)
+    installEntryConfigInspection(ctx.loader)
     Object.assign(ctx.loader.builtins, {
       include: Include, credentials: LocalCredentials, connection: Connection,
       typert: TypertRegistry, 'remote-access': RemoteAccess, gateway: TypertGateway, fixture: OperatorConnectFixture,

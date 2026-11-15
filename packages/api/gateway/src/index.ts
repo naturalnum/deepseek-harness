@@ -249,17 +249,19 @@ export class TypertGatewayService extends Service implements TypertGateway {
    * @param peer - fixed live Peer selected by the external carrier.
    * @param beforeOpen - synchronous guard before each logical-stream dispatch; a throw refuses that stream.
    * @param options - optional frame limit and pre-allocation logical resource reservation; settlement is synchronous.
+   * @param projectFailure - optional pure wire-error projection; omission preserves native messages and cleanup ownership is unchanged.
    * @returns carrier closed explicitly or when the calling Context unloads.
    */
   createNodeStreamTransport(
     peer: PeerScope, beforeOpen: (endpoint: string) => void, options?: NodeStreamTransportOptions,
+    projectFailure?: TypertGatewayWireStream['failure'],
   ): NodeStreamTransport {
     const mux = new RemoteStreamMuxServer(
       (endpoint, payload, uplink, admittedPeer, control, window) => {
         beforeOpen(endpoint)
         return this.openWireStream(endpoint, payload, uplink, admittedPeer, control.signal, control, window)
       },
-      this.wireStream.failure,
+      projectFailure ?? this.wireStream.failure,
       {
         heartbeatIntervalMs: this.nodeTransportConfig.websocketHeartbeatIntervalMs,
         streamInboxBytes: this.nodeTransportConfig.streamInboxBytes,

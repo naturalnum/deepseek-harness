@@ -4,7 +4,7 @@ import type {} from '@deepseek-ai/dsh-terminal'
 import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { FiberState, symbols, type Context, type Fiber } from '@deepseek-ai/cordis'
+import { FiberState, type Context, type Fiber } from '@deepseek-ai/cordis'
 import { isJsExpr } from '@deepseek-ai/cordis-plugin-loader'
 import AgentPreset from '@deepseek-ai/dsh-agent-preset'
 import AgentPresets from '@deepseek-ai/dsh-agent-preset-registry'
@@ -32,7 +32,7 @@ import type { AccountBinding } from './types.ts'
 import { ACCOUNT_NATIVE_ENTRIES, type AccountNativeGuards } from './account-native-integration.ts'
 import { createAccountFileMutationGuard } from './account-permissions.ts'
 import type { FileReadTiming } from './file-read-timing.ts'
-import { nativeEntryFiber, nativeEffectiveConfig, nativeProvision } from './native-state.ts'
+import { nativeEntryFiber, nativeEffectiveConfig, nativeProvision, nativeOriginal, nativeEntryModule, nativeEntryId, nativeEntryName, nativeEntryConfig, nativeEntryGroup, nativeEntryDisabled, nativeCallback, nativeConfigSchema, nativeImportEntry, nativeEntryBaseUrl, nativeResolveConfig, nativePluginFibers, nativeRegisteredFibers, nativeObservePolicy } from './native-state.ts'
 import type { OfficeProfileSelection } from './office-profile.ts'
 
 /** One Root-approved native declaration; nonselectable rows retain historical Session recovery only. */
@@ -78,7 +78,7 @@ function unavailable(): never { throw new CloudApiError('cloud/account-unavailab
 function modelDenied(): never { throw new CloudApiError('cloud/model-not-allowed', 'The model route is not approved and available for this account.') }
 function object(value: unknown): value is object { return value !== null && typeof value === 'object' }
 function original(value: object): object {
-  const target: unknown = Reflect.get(value, symbols.original)
+  const target: unknown = nativeOriginal(value)
   return object(target) ? target : value
 }
 
@@ -205,14 +205,7 @@ class AccountPolicy {
           && (fact.fiber.uid === null || fact.fiber.state !== FiberState.ACTIVE
             || !fact.entry.isConfigPlanVersionCurrent(fact.plan)))) ctx.get('peCloudApi')?.invalidate()
       }
-      ctx.on('loader/partial-dispose', (entry) => { revoke(entry) })
-      ctx.on('loader/volatile-update', function (this: Fiber) { revoke(undefined, this) }, { global: true })
-      ctx.on('internal/plugin', (fiber) => { revoke(undefined, fiber) })
-      ctx.on('internal/status', (fiber) => { revoke(undefined, fiber) })
-      ctx.on('internal/update', function (this: Fiber, _config, next) {
-        revoke(undefined, this)
-        return next()
-      }, { global: true, prepend: true })
+      nativeObservePolicy(ctx, revoke)
     }
   }
 
@@ -242,7 +235,7 @@ class AccountPolicy {
     }
     for (const fact of this.facts ?? []) {
       if (nativeEntryFiber(fact.entry) !== fact.fiber || fact.fiber.state !== FiberState.ACTIVE
-        || fact.entry.moduleNamespace !== fact.module) unavailable()
+        || nativeEntryModule(fact.entry) !== fact.module) unavailable()
       try {
         this.assertPlanCurrent(fact)
       }
@@ -398,13 +391,13 @@ class AccountPolicy {
     const fact = (id: string): EntryFact => {
       const matches = entries.filter(row => row.options.id === id), entry = matches[0], fiber = nativeEntryFiber(entry)
       if (matches.length !== 1 || entry === undefined || fiber?.state !== FiberState.ACTIVE) unavailable()
-      const plan = entry.prepareConfigUpdate(entry.options.config)
+      const plan = entry.prepareConfigUpdate(nativeEntryConfig(entry))
       if (plan.impact !== 'none') unavailable()
-      return { id, entry, fiber, plan, module: entry.moduleNamespace }
+      return { id, entry, fiber, plan, module: nativeEntryModule(entry) }
     }
     const declarations = this.config.presets.map((selected) => {
       const preset = fact(selected.entryId), config = nativeEffectiveConfig(preset.fiber)
-      if (preset.fiber.runtime?.callback !== AgentPreset || !object(config)
+      if (nativeCallback(preset.fiber) !== AgentPreset || !object(config)
         || Reflect.get(config, 'id') !== selected.id
         || accountPresetConfigDigest(config, this.config.maxPresetConfigBytes) !== selected.configSha256) refuse()
       return preset
@@ -413,7 +406,7 @@ class AccountPolicy {
     const nativeLoop = this.provider('agentLoop')
     const loopProvider = nativeProvision(loop.fiber, 'agentLoop')
     if (!(nativeLoop instanceof AgentLoop) || nativeLoop.config.agents.length !== 0
-      || loop.entry.options.name !== 'cordis:' + ACCOUNT_NATIVE_ENTRIES.agentLoop
+      || nativeEntryName(loop.entry) !== 'cordis:' + ACCOUNT_NATIVE_ENTRIES.agentLoop
       || loopProvider?.ctx.fiber !== loop.fiber
       || !object(loopProvider?.value) || original(loopProvider?.value) !== original(nativeLoop)) unavailable()
     const nativePresets = this.provider('agentPresets')
@@ -427,17 +420,17 @@ class AccountPolicy {
     const registry = fact(registryEntry.options.id)
     const office = this.office?.assertEntries(this.ctx).map((expected) => {
       const installed = fact(expected.id)
-      const schema = installed.fiber.runtime?.Config
-      if (installed.entry.options.name !== expected.name || schema === undefined
-        || !isDeepStrictEqual(installed.entry.options.config, expected.config)
+      const schema = nativeConfigSchema(installed.fiber)
+      if (nativeEntryName(installed.entry) !== expected.name || schema === undefined
+        || !isDeepStrictEqual(nativeEntryConfig(installed.entry), expected.config)
         || !isDeepStrictEqual(nativeEffectiveConfig(installed.fiber),
-          installed.fiber.resolveConfig(structuredClone(expected.config)))) refuse()
+          nativeResolveConfig(installed.fiber, structuredClone(expected.config)))) refuse()
       return installed
     }) ?? []
     const facts = [...declarations, loop, registry, ...office]
     try { for (const fact of facts) {
       if (nativeEntryFiber(fact.entry) !== fact.fiber || fact.fiber.state !== FiberState.ACTIVE
-        || fact.entry.moduleNamespace !== fact.module || !fact.entry.isConfigPlanVersionCurrent(fact.plan)) unavailable()
+        || nativeEntryModule(fact.entry) !== fact.module || !fact.entry.isConfigPlanVersionCurrent(fact.plan)) unavailable()
       fact.entry.assertConfigUpdatePlan(fact.plan)
     } }
     catch (_invalid) { unavailable() }
@@ -445,7 +438,7 @@ class AccountPolicy {
     // The last full validation can reenter native code; finish without invoking callbacks.
     for (const fact of facts) {
       if (nativeEntryFiber(fact.entry) !== fact.fiber || fact.fiber.state !== FiberState.ACTIVE
-        || fact.entry.moduleNamespace !== fact.module || !fact.entry.isConfigPlanVersionCurrent(fact.plan)) unavailable()
+        || nativeEntryModule(fact.entry) !== fact.module || !fact.entry.isConfigPlanVersionCurrent(fact.plan)) unavailable()
     }
     this.facts = facts
 
@@ -518,15 +511,15 @@ class AccountPolicy {
     if (approved.length !== 1 || approved[0]?.values === undefined
       || !approved[0].values.some(candidate => Object.is(candidate, value))) refuse()
     const facts = this.facts, setting = facts?.find(fact => serviceKey === 'agentLoop'
-      ? fact.entry.options.id === this.config.agentLoopEntryId
+      ? nativeEntryId(fact.entry) === this.config.agentLoopEntryId
       : nativeProvision(fact.fiber, 'agentPresets')?.ctx.fiber === fact.fiber)
-    if (facts === undefined || setting === undefined || !object(setting.entry.options.config)) unavailable()
+    if (facts === undefined || setting === undefined || !object(nativeEntryConfig(setting.entry))) unavailable()
     const runtime = setting.fiber.runtime, schema = runtime?.Config, service = this.provider(serviceKey)
     if (schema === undefined || !(service instanceof AgentLoop || service instanceof AgentPresets)) unavailable()
     const serialize: unknown = Reflect.get(schema, 'toJSON')
     if (typeof serialize !== 'function') unavailable()
     const schemaBefore: unknown = structuredClone(Reflect.apply(serialize, schema, [])), serviceBefore = original(service)
-    const before = structuredClone(setting.entry.options.config) as Record<string, unknown>
+    const before = structuredClone(nativeEntryConfig(setting.entry)) as Record<string, unknown>
     const retained = (config: Record<string, unknown>): Record<string, unknown> =>
       Object.fromEntries(Object.entries(config).filter(([key]) => key !== fieldName))
     let expected: unknown, updated: EntryFact | undefined, publishedFacts: readonly EntryFact[] | undefined
@@ -540,10 +533,10 @@ class AccountPolicy {
       this.ctx.fiber.assertActive()
       if (this.binding.lifetime.aborted || this.facts !== facts || this.activeSettingsUpdate !== token || this.ctx.get('peAccount') !== this.binding
         || this.ctx.root.get('peAccount') !== this.binding || nativeEntryFiber(setting.entry) !== setting.fiber
-        || setting.fiber.state !== FiberState.ACTIVE || setting.entry.moduleNamespace !== setting.module
+        || setting.fiber.state !== FiberState.ACTIVE || nativeEntryModule(setting.entry) !== setting.module
         || setting.fiber.runtime !== runtime || runtime?.Config !== schema || Reflect.get(schema, 'toJSON') !== serialize
         || !isDeepStrictEqual(Reflect.apply(serialize, schema, []), schemaBefore)) unavailable()
-      const after: unknown = setting.entry.options.config
+      const after: unknown = nativeEntryConfig(setting.entry)
       if (!object(after) || !isDeepStrictEqual(retained(before), retained(after as Record<string, unknown>))
         || expected === undefined) unavailable()
       const next = setting.entry.prepareConfigUpdate(after)
@@ -905,9 +898,9 @@ class AccountPolicy {
     const runtime = this.provider('subagents')
     if (!(runtime instanceof SubagentRuntime)) unavailable()
     let native = 0
-    for (const fiber of this.ctx.registry.get(SubagentRuntime)?.fibers ?? []) {
+    for (const fiber of nativePluginFibers(this.ctx, SubagentRuntime)) {
       const installed: unknown = nativeProvision(fiber, 'subagents')?.value
-      if (++native > 1 || fiber.state !== FiberState.ACTIVE || fiber.runtime?.callback !== SubagentRuntime
+      if (++native > 1 || fiber.state !== FiberState.ACTIVE || nativeCallback(fiber) !== SubagentRuntime
         || !object(installed) || original(installed) !== original(runtime)
         || fiber.ctx.root !== this.ctx.root || fiber.ctx.get('peAccount') !== this.binding) refuse()
     }
@@ -915,10 +908,10 @@ class AccountPolicy {
     let selected = provider === undefined
     for (const namespace of [Spawn, Fork]) {
       let found = 0
-      for (const fiber of this.ctx.registry.get(namespace)?.fibers ?? []) {
+      for (const fiber of nativePluginFibers(this.ctx, namespace)) {
         const config = nativeEffectiveConfig(fiber)
-        if (++found > 1 || fiber.state !== FiberState.ACTIVE || fiber.runtime?.callback !== namespace.apply
-          || fiber.entry?.moduleNamespace !== namespace || !object(config)
+        if (++found > 1 || fiber.state !== FiberState.ACTIVE || nativeCallback(fiber) !== namespace.apply
+          || nativeEntryModule(fiber.entry) !== namespace || !object(config)
           || fiber.ctx.root !== this.ctx.root || fiber.ctx.get('peAccount') !== this.binding) refuse()
         const name: unknown = Reflect.get(config, 'providerName')
         if (typeof name !== 'string' || runtime.getProvider(name) === undefined) refuse()
@@ -937,8 +930,9 @@ class AccountPolicy {
     const inspection = this.provider('agentPresets').inspectCompositions(parent.ctx)
     if (inspection.length !== 1 || inspection[0]?.id !== this.sessionPreset(parent.session)) refuse()
     const entries: Entry[] = []
-    for (const runtime of this.ctx.registry.values()) for (const fiber of runtime.fibers) {
-      if (scopeOf(fiber.ctx) !== generation || fiber.entry === undefined || fiber.entry.options.group || fiber.entry.disabled) continue
+    for (const fiber of nativeRegisteredFibers(this.ctx)) {
+      if (scopeOf(fiber.ctx) !== generation || fiber.entry === undefined
+        || nativeEntryGroup(fiber.entry) || nativeEntryDisabled(fiber.entry)) continue
       // The Loader assigns the same Entry to its owned plugin/inject fibers.
       if (fiber.parent.fiber.entry === fiber.entry) continue
       if (entries.length >= this.maxEntries || fiber.state !== FiberState.ACTIVE || nativeEntryFiber(fiber.entry) !== fiber) refuse()
@@ -949,19 +943,19 @@ class AccountPolicy {
     const facts: EntryFact[] = []
     for (const entry of entries) {
       signal.throwIfAborted()
-      const namespace: unknown = await entry.parent.tree.import(entry.options.name)
+      const namespace: unknown = await nativeImportEntry(entry)
       signal.throwIfAborted()
       this.current()
       const fiber = nativeEntryFiber(entry)
       let plugin: unknown = namespace
       if (object(plugin) && Reflect.get(plugin, 'default') !== undefined) plugin = Reflect.get(plugin, 'default')
       const callback: unknown = typeof plugin === 'function' ? plugin : object(plugin) ? Reflect.get(plugin, 'apply') : undefined
-      if (fiber?.state !== FiberState.ACTIVE || entry.moduleNamespace !== namespace || fiber.runtime?.callback !== callback
+      if (fiber?.state !== FiberState.ACTIVE || nativeEntryModule(entry) !== namespace || nativeCallback(fiber) !== callback
         || scopeOf(fiber.ctx) !== generation
-        || !modules.some(row => row.moduleName === entry.options.name && row.baseUrl === entry.parent.tree.ctx.baseUrl)) refuse()
-      const plan = entry.prepareConfigUpdate(entry.options.config)
+        || !modules.some(row => row.moduleName === nativeEntryName(entry) && row.baseUrl === nativeEntryBaseUrl(entry))) refuse()
+      const plan = entry.prepareConfigUpdate(nativeEntryConfig(entry))
       if (plan.impact !== 'none') refuse()
-      facts.push({ id: entry.options.id, entry, fiber, plan, module: namespace })
+      facts.push({ id: nativeEntryId(entry), entry, fiber, plan, module: namespace })
     }
     const prior = this.facts ?? []
     this.facts = [...prior, ...facts.filter(fact => !prior.some(existing => existing.entry === fact.entry))]

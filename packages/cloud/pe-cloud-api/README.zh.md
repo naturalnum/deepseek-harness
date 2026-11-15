@@ -254,3 +254,5 @@ Root 可通过 `native.workspaceTransfers` 显式设置 `maxFileBytes`、`maxFil
 包随现有 Remote 产物发布生成的 Remote Client 声明映射和本包 `src` 文件。已安装的客户端可从 Remote 声明导航到 Host 实现；原 Typert 生成器在写入任何产物前校验产物清单。
 
 </details>
+
+原生代理目标读取及 Gateway 方法身份比对集中在 `src/native-inventory.ts`。其中有界 Fiber 遍历先筛选当前账号根，再计入运行时和 Fiber 次数；配置上限及重复项、提供者检查保持原样。未经审核的原生方法仍不在选定的开放策略中。

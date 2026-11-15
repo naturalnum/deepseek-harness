@@ -1,5 +1,6 @@
 /** Original question answers and timed-wait claims confined to one account Agent. */
-import { symbols, type Context } from '@deepseek-ai/cordis'
+import { nativeOriginal } from './native-inventory.ts'
+import { type Context } from '@deepseek-ai/cordis'
 import UserQuestions from '@deepseek-ai/dsh-user-questions'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -39,7 +40,7 @@ export function createNativeUserQuestions(
     if (binding.lifetime.aborted || ctx.get('peAccount') !== binding || ctx.root.get('peAccount') !== binding
       || policy.manifest.recipeVersion !== binding.recipeVersion) unavailable()
     if (installation.value !== undefined) {
-      const current = ctx.get('userQuestions'), original: unknown = current === undefined ? undefined : Reflect.get(current, symbols.original) ?? current
+      const current = ctx.get('userQuestions'), original: unknown = current === undefined ? undefined : nativeOriginal(current) ?? current
       if (original !== installation.value) unavailable()
     }
   }

@@ -708,6 +708,7 @@ export class LoginPeerRegistry {
   }
 
   private createMux(entry: Entry, handle: LoginPeer, gateway: TypertGatewayService): NodeStreamTransport {
+    const nativeFailure = gateway.wireStream.failure
     return gateway.createNodeStreamTransport(handle.peer, (endpoint) => {
       const id = this.requestId()
       try { this.assertCurrent(handle, id); this.ports.beforeStream(endpoint, handle); this.assertCurrent(handle, id) }
@@ -738,6 +739,11 @@ export class LoginPeerRegistry {
           if (status === 'confirmed') { entry.streamCount--; if (business) entry.businessStreamCount-- }
         }
       },
+    }, (error) => {
+      const failure = nativeFailure(error)
+      return failure.code === 'gateway/internal'
+        ? { code: failure.code, message: 'The request could not be completed.', details: {} }
+        : failure
     })
   }
 

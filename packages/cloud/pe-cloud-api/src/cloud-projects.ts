@@ -1,5 +1,6 @@
 /** Account-owned project allocation through the original files and Workspace owners. */
-import { symbols, type Context } from '@deepseek-ai/cordis'
+import { nativeOriginal } from './native-inventory.ts'
+import { type Context } from '@deepseek-ai/cordis'
 import { Remote, remoteMethods, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { WorkspaceValue } from '@deepseek-ai/dsh-api-workspace-controller/types'
 import type { CloudAccountApi } from './account-service.ts'
@@ -20,7 +21,7 @@ declare module '@deepseek-ai/cordis' {
 }
 
 function original(value: object): object {
-  const target: unknown = Reflect.get(value, symbols.original)
+  const target: unknown = nativeOriginal(value)
   return target !== null && typeof target === 'object' ? target : value
 }
 

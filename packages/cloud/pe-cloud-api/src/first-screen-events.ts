@@ -1,6 +1,7 @@
 /** Bounded native notifications and selected interactive requests on the original account Gateway. */
+import { nativeOriginal } from './native-inventory.ts'
 import { isAbsolute } from 'node:path'
-import { FiberState, symbols, type Context, type Fiber } from '@deepseek-ai/cordis'
+import { FiberState, type Context, type Fiber } from '@deepseek-ai/cordis'
 import Gateway, { type TypertRemoteEventFrame,
   type TypertRemoteEventDispatch, type TypertRemoteEventInvocation } from '@deepseek-ai/dsh-api-gateway'
 import { projectRemoteEventRequest } from '@deepseek-ai/dsh-api-gateway/stream-protocol'
@@ -93,7 +94,7 @@ export function registerFirstScreenEvents(
   const references = new Set(modelKeyReferences)
   const profile = ctx.get('profileContext'), gateway = ctx.get('typertGateway')
   const skills = ctx.get('cloudSkills')
-  const skillIdentity: unknown = skills === undefined ? undefined : Reflect.get(skills, symbols.original) ?? skills
+  const skillIdentity: unknown = skills === undefined ? undefined : nativeOriginal(skills) ?? skills
   if (profile === undefined || profile.home !== input.home || !isAbsolute(input.home)
     || Buffer.byteLength(input.home, 'utf8') > input.maxHomeBytes || !(gateway instanceof Gateway)) unavailable()
   const original = firstScreenNativeOwner(ctx, 'typertGateway', gateway, input.maxInventoryEntries)
@@ -118,7 +119,7 @@ export function registerFirstScreenEvents(
     input.api.assertInstalled(ctx)
     if (skills !== undefined) {
       const current = ctx.get('cloudSkills')
-      if (current === undefined || (Reflect.get(current, symbols.original) ?? current) !== skillIdentity) unavailable()
+      if (current === undefined || (nativeOriginal(current) ?? current) !== skillIdentity) unavailable()
       skills.assertCurrent()
     }
     input.native.assertCurrent()

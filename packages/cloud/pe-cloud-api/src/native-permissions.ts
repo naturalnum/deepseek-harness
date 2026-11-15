@@ -1,5 +1,6 @@
 /** Account-native permission catalog over the original durable preset/command implementation. */
-import { symbols, type Context } from '@deepseek-ai/cordis'
+import { nativeOriginal } from './native-inventory.ts'
+import { type Context } from '@deepseek-ai/cordis'
 import PermissionPresetService, { type Config as PermissionConfig, type PresetSpec } from '@deepseek-ai/dsh-permission-presets'
 import type { ApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
 import type { PermissionCatalog } from '@deepseek-ai/dsh-permission-presets/types'
@@ -66,7 +67,7 @@ export function createNativePermissions(
     assertEnforcement()
     if (originalService.value !== undefined) {
       const current = ctx.get('permissionPresets')
-      const original: unknown = current === undefined ? undefined : Reflect.get(current, symbols.original) ?? current
+      const original: unknown = current === undefined ? undefined : nativeOriginal(current) ?? current
       if (original !== originalService.value) unavailable()
     }
   }

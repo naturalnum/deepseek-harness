@@ -1,5 +1,6 @@
 /** Account admission for the original streaming Session-log ZIP route. */
-import { symbols, type Context } from '@deepseek-ai/cordis'
+import { nativeOriginal } from './native-inventory.ts'
+import { type Context } from '@deepseek-ai/cordis'
 import { SESSION_LOG_EXPORT_PATH, type Config } from '@deepseek-ai/dsh-session-log-export'
 import { registerSessionLogExport } from '@deepseek-ai/dsh-session-log-export/registration'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
@@ -21,7 +22,7 @@ function unavailable(): never {
 }
 
 function original(value: object): object {
-  const target: unknown = Reflect.get(value, symbols.original)
+  const target: unknown = nativeOriginal(value)
   return target !== null && typeof target === 'object' ? target : value
 }
 

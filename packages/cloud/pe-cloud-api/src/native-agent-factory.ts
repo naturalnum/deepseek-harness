@@ -1,5 +1,6 @@
 /** Private graph-bound admission around the public native AgentLoop factory transaction. */
-import { symbols, type Context } from '@deepseek-ai/cordis'
+import { nativeOriginal } from './native-inventory.ts'
+import { type Context } from '@deepseek-ai/cordis'
 import type { AgentDisposalObserver, AgentDisposalStatus, AgentHandle } from '@deepseek-ai/dsh-agent'
 import { delegationDepthOf } from '@deepseek-ai/dsh-subagent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
@@ -102,7 +103,7 @@ class FactoryAdmission {
     parent.ctx.fiber.assertActive()
     const same = (left: object | undefined, right: object | undefined): boolean =>
       left !== undefined && right !== undefined
-      && (Reflect.get(left, symbols.original) ?? left) === (Reflect.get(right, symbols.original) ?? right)
+      && (nativeOriginal(left) ?? left) === (nativeOriginal(right) ?? right)
     const agents = this.ctx.get('agents'), sessions = this.ctx.get('sessions')
     if (parent.ctx.root !== this.ctx.root || parent.ctx.get('peAccount') !== this.binding
       || parent.ctx.root.get('peAccount') !== this.binding || agents?.get(parent.id) !== parent

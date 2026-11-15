@@ -1,5 +1,6 @@
 /** Private account-graph admission and native Session Controller assembly. */
-import { symbols, type Context } from '@deepseek-ai/cordis'
+import { nativeOriginal } from './native-inventory.ts'
+import { type Context } from '@deepseek-ai/cordis'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import SessionController, { SessionSkillCatalog, type SessionControlBufferLimits } from '@deepseek-ai/dsh-api-session-controller'
 import type {
@@ -404,7 +405,7 @@ class AccountSessionController extends SessionController {
   inspectSkillCatalog(maximum: number): ExposureInventory['rpcEndpoints'] {
     if (!this.admission.skillCatalogSelected()) return []
     const scoped = this.ctx.get('sessionSkillCatalog')
-    const target: unknown = scoped === undefined ? undefined : Reflect.get(scoped, symbols.original) ?? scoped
+    const target: unknown = scoped === undefined ? undefined : nativeOriginal(scoped) ?? scoped
     if (!(target instanceof this.catalogConstructor) || target.list !== this.catalogConstructor.prototype.list) {
       throw new CloudApiError('cloud/account-unavailable', 'The original guarded skill catalog changed.')
     }
@@ -634,7 +635,7 @@ export function createNativeController(
 export function inspectNativeController(
   controller: SessionController, recipeVersion: string, maximum: number,
 ): ExposureInventory {
-  const target: unknown = Reflect.get(controller, symbols.original)
+  const target: unknown = nativeOriginal(controller)
   const actual = target instanceof AccountSessionController ? target : controller
   if (!(actual instanceof AccountSessionController)) {
     throw new CloudApiError('cloud/account-unavailable', 'Prepared inventory requires the original guarded Controller.')

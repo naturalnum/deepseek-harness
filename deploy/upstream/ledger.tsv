@@ -117,7 +117,7 @@ packages/extensions/tool-cordis/src/api-catalog.ts	生成	由 pnpm run gen-cordi
 packages/session/session-persistence-jsonl/src/index.ts	云端定制	加了静止观察 isQuiescent/settlePreparations（扩展点），同时把 stat/open/read 改成“取消后先等实际 I/O 结算再返回、关闭失败不吞”（改了原生取消语义）；约一半行数是包进 observeRequest 的缩进	拆成两份：静止观察留作小扩展点；取消结算加固单独提上游或放弃	撤掉	已撤
 vendor/loader/src/config/entry.ts	扩展点	给条目加“配置更新计划”接口和守护入口；没有守护时原更新路径只多一个版本计数	要读 Entry 私有状态，只能留在本文件；可把计划计算外移，只留守护入口、版本计数和少量访问器	留作口子	没动
 packages/boot/config-editor/src/index.ts	扩展点	加保存钩子 registerSaveHook/submitSave、影响守护 registerImpactGuard、edit 第三参 control、editFailureOutcome；没有守护时走原写入路径（另有只读加载、别名归一等小调整）	钩子在私有写入流程里，保留；守护分支的计划逻辑已在 app-boot/config-impact.ts	留作口子	没动
-packages/api/gateway/src/index.ts	云端定制	加了 createNodeStreamTransport、远程事件队列上限参数、inspectInvocation 三个扩展点，同时把流清理从“不等待、只打日志”改成“等待并保留失败”（改默认）	三个扩展点保留；清理语义改动拆成独立补丁，提上游或回退	搬进插件	没动
+packages/api/gateway/src/index.ts	云端定制	加了 createNodeStreamTransport、远程事件队列上限参数、inspectInvocation 三个扩展点，同时把流清理从“不等待、只打日志”改成“等待并保留失败”（改默认）；Node mux 可选失败投影只提供默认不变口子，私密错误文本策略在 Access	三个扩展点保留；清理语义改动拆成独立补丁，提上游或回退	搬进插件	没动
 packages/extensions/cordis-client-runner/src/client/slot-catalog.ts	生成	由 pnpm run gen-client-catalog 生成；每个槽位多一个标准属性 workspaceDeleteDisabledReason，新增 2 个槽位，并列出云端占用者	不手工合并，合并后重新生成	撤掉	没动
 packages/boot/plugin-manager/src/index.ts	扩展点	加 registerSaveHook、registerSelectionGuard、changeFailureOutcome、previewBundleSelection；没有守护时原启停写入不变	钩子在私有启停写入流程里，保留	留作口子	没动
 packages/skill/skill-filesystem/src/index.ts	扩展点	加可选的程序化文件来源 FileSystemSkillSource、includeDefaultUserRoots 和一组 bundled* 选项（调用上限、执行环境镜像路径、整包清单）；默认值保持原行为；含一句面向执行环境的提示文本	仅保留当前程序化文件来源；旧部署选项测试按原生当前配置撤回，调用限制和环境说明待迁入我方插件	留作口子	没动
@@ -131,7 +131,7 @@ packages/session/session-persistence-jsonl/src/generation.ts	云端定制	历史
 packages/subagent/subagent/src/index.ts	扩展点	加 registerAdmission：子 Agent 启动和冷恢复前的准入检查；没有登记时原提供方查找不变	保留	留作口子	没动
 packages/skill/skill/src/index.ts	扩展点	加 inspect()（列出全部候选及胜出关系）、SkillPackage 和 candidate.package；skills/change 事件声明移到新文件 types.ts	保留	留作口子	没动
 packages/api/session-controller/src/control.ts	扩展点	控制流可选缓冲上限 SessionControlBufferLimits；不传时保持原缓冲	保留	留作口子	没动
-packages/session-query/session-query/src/cold-read.ts	云端定制	新增两种冷读函数（保留句柄关闭失败、取消后结算）；原函数不变，但 observation.ts 默认改用新函数	随取消结算加固一起提上游或回退	搬进插件	没动
+packages/session-query/session-query/src/cold-read.ts	云端定制	新增两种冷读函数（保留句柄关闭失败、取消后结算）；原函数不变，但 observation.ts 默认改用新函数；当前原生观察器不消费旧清理认证助手/异常类，生产代码无调用；撤回通用取消认证要求及其专用分支测试	随取消结算加固一起提上游或回退	撤掉	已撤
 vendor/loader/src/index.ts	扩展点	加 LoaderUpdateGuard、LoaderUpdateScope、withUpdateGuard，以及“受守护的销毁不自动写 disabled”一处判断	保留；这是守护机制的唯一入口	留作口子	没动
 packages/mcp/mcp-client/src/connection.ts	通用修复	严格启动失败在确认关闭后交给调用方，监督器不再重试和重复告警（改默认）；另含扩展点 closureConfirmed 和有界 HTTP 读取器的归属	修复部分提上游；扩展点保留	撤掉	没动
 packages/session-query/session-query/src/observation.ts	云端定制	取消后的结算认证（看提供方是否声明能结算），错误信息不再带会话号和后端原文（改默认文案）	随取消结算加固一起提上游或回退	撤掉	已撤
@@ -178,7 +178,7 @@ packages/schedule/schedule/src/runtime.ts	扩展点	投递前后调用可选的�
 packages/fs/fs/src/index.ts	扩展点	文件系统基类加 supportsTextEdit（默认 true）和 scopeRoot（默认 undefined）	保留	留作口子	没动
 packages/core/system-prompt/src/index.ts	扩展点	新增瀑布事件 system-prompt/prepare，组装提示词前先等监听者；无监听者时直接继续	保留	留作口子	没动
 packages/context/agent-instructions/src/files.ts	扩展点	找项目根时在 fs.scopeRoot() 给出的边界处停下；默认提供方无边界时不变	保留	留作口子	没动
-packages/session-query/session-query/src/config.ts	扩展点	两个新错误类 SessionQuerySettledStatAbortError、SessionQuerySettledReadAbortError	随取消结算加固一起提上游或回退	留作口子	没动
+packages/session-query/session-query/src/config.ts	扩展点	两个新错误类 SessionQuerySettledStatAbortError、SessionQuerySettledReadAbortError；当前原生观察器不消费旧清理认证助手/异常类，生产代码无调用；撤回通用取消认证要求及其专用分支测试	随取消结算加固一起提上游或回退	撤掉	已撤
 packages/mcp/mcp-client/src/transport.ts	扩展点	配置了 maxIncomingResponseBytes 时给 SDK 传入有界 fetch；不配置时不变	保留	留作口子	没动
 packages/api/terminal-controller/src/client/shell-preference.ts	扩展点	同 close-requests.ts：存储改走可选页面端口	同 close-requests.ts	留作口子	没动
 packages/fs/tool-fs-search/src/glob.ts	云端定制	把 12 条 VCS 排除参数合成 2 条花括号模式，为了不超过云端命令 16 个参数的上限；搜索结果应等价	在云端执行器放宽参数上限，然后回退这处改动	撤掉	已撤
@@ -208,7 +208,7 @@ packages/core/agent-loop/src/agent.ts	扩展点	Agent 加只读属性 isQuiescen
 packages/attachment/attachment/src/error.ts	扩展点	新错误码 ATTACHMENT_STORAGE_CAPACITY 和可选字段 settlement	保留	留作口子	没动
 packages/settings/settings/src/schema.ts	通用修复	随 redact.ts：处理字典键的 schema	随 redact.ts 提上游	撤掉	没动
 packages/api/session-controller/src/skill-catalog.ts	云端定制	列技能时在发起 Agent 的上下文里取工作目录（云端按调用方区分工作目录）；原生下等价	云端已有 AccountSkillCatalog 子类，可试着在子类里包这一层	搬进插件	没动
-packages/session-query/session-query/src/index.ts	登记	导出两个新错误类	随取消结算加固一起提上游或回退	撤掉	没动
+packages/session-query/session-query/src/index.ts	登记	导出两个新错误类；当前原生观察器不消费旧清理认证助手/异常类，生产代码无调用；撤回通用取消认证要求及其专用分支测试	随取消结算加固一起提上游或回退	撤掉	已撤
 packages/api/remotes/src/remote-events.ts	功能增强	把 skills/change 加进转发给界面的事件清单：技能目录变化后界面自动刷新	保留；或提上游	撤掉	没动
 packages/ptc-runtime/ptc-runtime-node/src/index.ts	扩展点	把已解析的沙箱策略随 spawn 规格传给子进程提供方；本地提供方不读它	保留	撤掉	已撤
 packages/attachment/attachment-local/src/index.ts	登记	导出三个新错误类	随 store.ts 处理	撤掉	没动

@@ -1,5 +1,6 @@
 /** Sole native upload owner with account admission and its original streamed persistence hook. */
-import { FiberState, symbols, type Context } from '@deepseek-ai/cordis'
+import { nativeOriginal, nativeAccountFibers } from './native-inventory.ts'
+import { FiberState, type Context } from '@deepseek-ai/cordis'
 import { FileUploads, FILE_UPLOAD_PATH, FileUploadIntakeUnconfirmedError } from '@deepseek-ai/dsh-client-file-upload'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-commands'
@@ -25,7 +26,7 @@ export interface NativeUploads {
 }
 
 function original(value: object): object {
-  const target: unknown = Reflect.get(value, symbols.original)
+  const target: unknown = nativeOriginal(value)
   return target !== null && typeof target === 'object' ? target : value
 }
 
@@ -116,18 +117,14 @@ export function createNativeUploads(
     if (ctx.fiber.state !== FiberState.ACTIVE
       || original(ctx.fileUploads) !== value || original(ctx.root.fileUploads) !== value) unavailable()
     let visited = 0, owners = 0
-    for (const runtime of ctx.registry.values()) {
-      if (++visited > maximum) unavailable()
-      for (const fiber of runtime.fibers) {
+    for (const fiber of nativeAccountFibers(ctx, () => { if (++visited > maximum) unavailable() })) {
+      if (fiber.ctx.root !== ctx.root || fiber.state !== FiberState.ACTIVE) continue
+      for (const provision of nativeFiberProvisions(fiber)) {
         if (++visited > maximum) unavailable()
-        if (fiber.ctx.root !== ctx.root || fiber.state !== FiberState.ACTIVE) continue
-        for (const provision of nativeFiberProvisions(fiber)) {
-          if (++visited > maximum) unavailable()
-          if (provision.name !== 'fileUploads' || provision.ctx.fiber !== fiber) continue
-          const registered: unknown = provision.value
-          if (++owners !== 1 || fiber !== ctx.fiber || registered === null || typeof registered !== 'object'
-            || original(registered) !== value) unavailable()
-        }
+        if (provision.name !== 'fileUploads' || provision.ctx.fiber !== fiber) continue
+        const registered: unknown = provision.value
+        if (++owners !== 1 || fiber !== ctx.fiber || registered === null || typeof registered !== 'object'
+          || original(registered) !== value) unavailable()
       }
     }
     if (owners !== 1 || ctx.connection.createSharedFetchHandler('/api').requestBodyMode({

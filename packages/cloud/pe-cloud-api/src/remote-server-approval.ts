@@ -1,5 +1,6 @@
 /** Preserve the native approval request and its audit pair for the exact account tool call. */
-import { symbols, type Context } from '@deepseek-ai/cordis'
+import { nativeOriginal } from './native-inventory.ts'
+import { type Context } from '@deepseek-ai/cordis'
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { CloudApiError } from './errors.ts'
@@ -17,10 +18,10 @@ export function remoteServerApproval(ctx: Context, binding: AccountBinding, exec
   { ask(reason: string): Promise<boolean>; denialReason(): string | undefined } | undefined {
   const approval = ctx.get('approval'), agent = exec.agent
   if (approval === undefined || agent === undefined) return undefined
-  const originalApproval: unknown = Reflect.get(approval, symbols.original) ?? approval
+  const originalApproval: unknown = nativeOriginal(approval) ?? approval
   const current = (): void => {
     const selected = ctx.get('approval')
-    const selectedOriginal: unknown = selected === undefined ? undefined : Reflect.get(selected, symbols.original) ?? selected
+    const selectedOriginal: unknown = selected === undefined ? undefined : nativeOriginal(selected) ?? selected
     exec.signal.throwIfAborted(); ctx.fiber.assertActive(); assertCurrent()
     if (binding.lifetime.aborted || ctx.get('peAccount') !== binding || ctx.root.get('peAccount') !== binding
       || agent.ctx.root !== ctx.root || agent.ctx.get('peAccount') !== binding || ctx.get('agents')?.get(agent.id) !== agent

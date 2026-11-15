@@ -1,5 +1,6 @@
 /** Account-owned model-key Remote; the original Peer Use and save barrier retain all work. */
-import { symbols, type Context } from '@deepseek-ai/cordis'
+import { nativeOriginal } from './native-inventory.ts'
+import { type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { Remote, remoteMethods, TypertRemoteService, type PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 import type { AccountUse } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
@@ -36,7 +37,7 @@ declare module '@deepseek-ai/cordis' {
 }
 const methods = ['metadata', 'describe', 'set', 'unset'] as const
 function original(value: object): object {
-  const target: unknown = Reflect.get(value, symbols.original)
+  const target: unknown = nativeOriginal(value)
   return target !== null && typeof target === 'object' ? target : value
 }
 function unavailable(): never {

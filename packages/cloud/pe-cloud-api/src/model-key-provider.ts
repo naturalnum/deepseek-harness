@@ -1,5 +1,6 @@
 /** Actual native provider/settings projection selected by finite Root binding data. */
-import { FiberState, symbols, type Context } from '@deepseek-ai/cordis'
+import { nativeOriginal } from './native-inventory.ts'
+import { FiberState, type Context } from '@deepseek-ai/cordis'
 import type z from '@deepseek-ai/schemastery'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
@@ -13,7 +14,7 @@ import type { ProfileConfigUpdatePlan } from '@deepseek-ai/dsh-app-boot'
 
 function unavailable(): never { throw new CloudApiError('cloud/account-unavailable', 'The original approved model provider is unavailable or changed.') }
 function original(value: object): object {
-  const target: unknown = Reflect.get(value, symbols.original)
+  const target: unknown = nativeOriginal(value)
   return target !== null && typeof target === 'object' ? target : value
 }
 function record(value: unknown): value is Record<string, unknown> { return value !== null && typeof value === 'object' && !Array.isArray(value) }

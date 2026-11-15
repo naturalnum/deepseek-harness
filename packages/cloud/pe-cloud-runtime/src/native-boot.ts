@@ -1,3 +1,4 @@
+import { nativeEntryId, nativeLoggedFiberState } from './native-state.ts'
 /** Private native assembly after the factory's owner, root-capability, and recipe admission checks. */
 import { isAbsolute } from 'node:path'
 import { Context, FiberState } from '@deepseek-ai/cordis'
@@ -161,7 +162,7 @@ export function startNativeAccountBoot(input: NativeAccountBootInput): NativeAcc
             observeStartup(diagnostic, { nativeError: failure })
             observeStartup(nativeErrorDiagnostic, { nativeError: failure })
           }
-          if (!disposeRequested && message.fiber?.deref()?.state !== FiberState.UNLOADING) return
+          if (!disposeRequested && nativeLoggedFiberState(message.fiber) !== FiberState.UNLOADING) return
           if (errorEvents + warningEvents >= input.maxObservedEvents) { overflow = true; return }
           if (message.type === 'error') errorEvents++
           else warningEvents++
@@ -195,7 +196,7 @@ export function startNativeAccountBoot(input: NativeAccountBootInput): NativeAcc
         entries.push(entry)
       }
       for (const id of requiredIds) {
-        const matches = entries.filter(entry => entry.options.id === id)
+        const matches = entries.filter(entry => nativeEntryId(entry) === id)
         if (matches.length !== 1 || matches[0]?.fiber?.state !== FiberState.ACTIVE) {
           requiredEntryId = id
           throw new AccountRuntimeError('cloud/account-unavailable', 'A required native recipe entry is absent, disabled, duplicated, or inactive')

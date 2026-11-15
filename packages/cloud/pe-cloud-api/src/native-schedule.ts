@@ -1,5 +1,6 @@
 /** Original Host tasks under one account's Session, target, and exposure guards. */
-import { symbols, type Context } from '@deepseek-ai/cordis'
+import { nativeOriginal } from './native-inventory.ts'
+import { type Context } from '@deepseek-ai/cordis'
 import ScheduleService, { type ScheduleCatalogEntry, type ScheduleTask, type ScheduleTargetRequest } from '@deepseek-ai/dsh-schedule'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
@@ -73,7 +74,7 @@ export function createNativeSchedule(ctx: Context, binding: AccountBinding, asse
       || policy.manifest.recipeVersion !== binding.recipeVersion) unavailable()
     if (owner.value !== undefined) {
       const scoped = ctx.get('schedule')
-      const original: unknown = scoped === undefined ? undefined : Reflect.get(scoped, symbols.original) ?? scoped
+      const original: unknown = scoped === undefined ? undefined : nativeOriginal(scoped) ?? scoped
       if (original !== owner.value) unavailable()
     }
   }

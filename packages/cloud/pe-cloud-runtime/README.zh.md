@@ -331,3 +331,7 @@ HTTP MCP 组合夹具通过显式账号配方入口选择原 Native 工具执行
 无。
 
 </details>
+
+原生 Cordis 代理目标通过 `src/native-state.ts` 读取；账号策略保留原有类型收窄、回退与身份比较。
+
+原生 Loader 元数据、运行时回调及 Schema、注册表遍历和生命周期事件订阅经由 `src/native-state.ts` 读取；账号策略继续持有身份检查、遍历上限、撤销及发布责任。

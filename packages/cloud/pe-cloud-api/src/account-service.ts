@@ -5,10 +5,10 @@ import { CloudRemoteServerService, type CloudRemoteServerPreparation } from './c
 import { registerWorkspaceTransfers, type SelectWorkspaceTransfer } from './workspace-transfers.ts'
 import type { WorkspaceTransferLimits } from './types.ts'
 import { createWorkspaceUploadConsumer, type WorkspaceUploadBorrow, type WorkspaceUploadSettlement } from './workspace-upload.ts'
-import { inventoryMethodMatches } from './inventory-method.ts'
+import { inventoryMethodMatches, nativeOriginal, nativeAccountFibers } from './native-inventory.ts'
 import { AccountCapabilityInventories } from './capability-inventory.ts'
 import { approvedSettingsMatch } from './approved-settings.ts'
-import { Context, FiberState, Service, symbols, type Fiber } from '@deepseek-ai/cordis'
+import { Context, FiberState, Service, type Fiber } from '@deepseek-ai/cordis'
 import type AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import type SessionController from '@deepseek-ai/dsh-api-session-controller'
 import type WorkspaceFiles from '@deepseek-ai/dsh-api-workspace-files'
@@ -95,7 +95,7 @@ type NativeKey = 'sessionController' | 'agentLoop' | 'llm'
 interface NativeInstallation { readonly value: object; readonly fiber: Fiber }
 
 function original(value: object): object {
-  const target: unknown = Reflect.get(value, symbols.original)
+  const target: unknown = nativeOriginal(value)
   return target !== null && typeof target === 'object' ? target : value
 }
 
@@ -1263,21 +1263,17 @@ export class CloudAccountApi extends Service {
         || expected.fiber.state !== FiberState.ACTIVE || expected.fiber.ctx.root !== owner.root
         || original(local) !== expected.value || original(root) !== expected.value) this.nativeUnavailable()
     }
-    for (const runtime of owner.registry.values()) {
-      consume(1)
-      for (const fiber of runtime.fibers) {
+    for (const fiber of nativeAccountFibers(owner, () => consume(1))) {
+      if (fiber.ctx.root !== owner.root || fiber.state !== FiberState.ACTIVE) continue
+      for (const installed of nativeFiberProvisions(fiber)) {
         consume(1)
-        if (fiber.ctx.root !== owner.root || fiber.state !== FiberState.ACTIVE) continue
-        for (const installed of nativeFiberProvisions(fiber)) {
-          consume(1)
-          if (installed.ctx.fiber !== fiber) continue
-          const key = installed.name
-          if (key !== 'sessionController' && key !== 'agentLoop' && key !== 'llm') continue
-          const expected = this.native[key]
-          const value: unknown = installed.value
-          if (++counts[key] > 1 || expected === undefined || fiber !== expected.fiber || value === null || typeof value !== 'object'
-            || original(value) !== expected.value) this.nativeUnavailable()
-        }
+        if (installed.ctx.fiber !== fiber) continue
+        const key = installed.name
+        if (key !== 'sessionController' && key !== 'agentLoop' && key !== 'llm') continue
+        const expected = this.native[key]
+        const value: unknown = installed.value
+        if (++counts[key] > 1 || expected === undefined || fiber !== expected.fiber || value === null || typeof value !== 'object'
+          || original(value) !== expected.value) this.nativeUnavailable()
       }
     }
     if (Object.values(counts).some(count => count !== 1)) this.nativeUnavailable()

@@ -1,8 +1,9 @@
 /** Root control composition retains original PG/storage/native work through ready and drain settlement. */
+import { nativeOriginal } from './native-state.ts'
 import { StaticAccountBindings, accountAdministrationTransactionBudget } from './static-account-bindings.ts'
 import { PluginPackages } from '@deepseek-ai/dsh-app-boot'
 import { posix } from 'node:path'
-import { Context, Service, symbols } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import { ConfigSaveCoordinator, AccountModelKeyEnvironment, type ModelKeyPeerConsumer,
   type ConfigurationPeerConsumer, type CloudPluginPreparation, type ExactFetchExposure } from '@deepseek-ai/dsh-pe-cloud-api'
@@ -933,7 +934,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     const withModelKeyPeerUse: ModelKeyPeerConsumer['withModelKeyPeerUse'] = (peer, consume) => {
       const current: unknown = this.ctx.root.get('peAuth')
       if (!hasModelKeyPeerConsumer(current) || !hasModelKeyPeerConsumer(selectedAuth)
-        || (Reflect.get(current, symbols.original) ?? current) !== (Reflect.get(selectedAuth, symbols.original) ?? selectedAuth)) {
+        || (nativeOriginal(current) ?? current) !== (nativeOriginal(selectedAuth) ?? selectedAuth)) {
         throw new AccountMountPrerequisiteError()
       }
       this.assertRecipeSealed(config.recipeVersion)
@@ -943,7 +944,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     const withConfigurationPeer: ConfigurationPeerConsumer['withConfigurationPeer'] = (peer, consume, mode) => {
       const current: unknown = this.ctx.root.get('peAuth')
       if (!hasConfigurationPeerConsumer(current) || !hasConfigurationPeerConsumer(selectedAuth)
-        || (Reflect.get(current, symbols.original) ?? current) !== (Reflect.get(selectedAuth, symbols.original) ?? selectedAuth)) {
+        || (nativeOriginal(current) ?? current) !== (nativeOriginal(selectedAuth) ?? selectedAuth)) {
         throw new AccountMountPrerequisiteError()
       }
       this.assertRecipeSealed(config.recipeVersion)
@@ -954,7 +955,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
       this.assertRecipeSealed(config.recipeVersion)
       const current = this.ctx.root.get('pluginPackages')
       if (!(current instanceof PluginPackages) || !(selectedPackages instanceof PluginPackages)
-        || (Reflect.get(current, symbols.original) ?? current) !== (Reflect.get(selectedPackages, symbols.original) ?? selectedPackages)) {
+        || (nativeOriginal(current) ?? current) !== (nativeOriginal(selectedPackages) ?? selectedPackages)) {
         throw new AccountMountPrerequisiteError()
       }
       return current
@@ -1020,7 +1021,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
             withModelKeyPeerUse: (peer, consume) => {
               const current: unknown = this.ctx.root.get('peAuth')
               if (!hasModelKeyPeerConsumer(current) || !hasModelKeyPeerConsumer(selectedAuth)
-                || (Reflect.get(current, symbols.original) ?? current) !== (Reflect.get(selectedAuth, symbols.original) ?? selectedAuth)) {
+                || (nativeOriginal(current) ?? current) !== (nativeOriginal(selectedAuth) ?? selectedAuth)) {
                 throw new AccountMountPrerequisiteError()
               }
               this.assertRecipeSealed(config.recipeVersion)
@@ -1029,8 +1030,8 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
           } },
           ...auth === undefined ? {} : { inspectRootFetch: () => {
             const current: unknown = this.ctx.root.get('peAuth')
-            if (!hasRootFetch(current) || (Reflect.get(current, symbols.original) ?? current)
-              !== (Reflect.get(auth, symbols.original) ?? auth)) throw new AccountMountPrerequisiteError()
+            if (!hasRootFetch(current) || (nativeOriginal(current) ?? current)
+              !== (nativeOriginal(auth) ?? auth)) throw new AccountMountPrerequisiteError()
             return auth.inspectRootFetch()
           } },
           ...config.native.workspaceTransfers === undefined ? {} : { workspaceTransfers: config.native.workspaceTransfers },
@@ -1052,8 +1053,8 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
             const peer = caller.invocation?.peer
             if (peer === undefined) return false
             const current: unknown = this.ctx.root.get('peAuth')
-            if (!hasReadCarrier(current) || (Reflect.get(current, symbols.original) ?? current)
-              !== (Reflect.get(selectedAuth, symbols.original) ?? selectedAuth)) throw new AccountMountPrerequisiteError()
+            if (!hasReadCarrier(current) || (nativeOriginal(current) ?? current)
+              !== (nativeOriginal(selectedAuth) ?? selectedAuth)) throw new AccountMountPrerequisiteError()
             return selectedAuth.readOperationCurrent(peer, binding, endpoint)
           } },
           assertRootCurrent: () => { this.assertRecipeSealed(config.recipeVersion) } },

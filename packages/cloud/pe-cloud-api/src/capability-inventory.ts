@@ -1,10 +1,10 @@
 /** Account capability contributions checked against the original Gateway and live Cordis owner. */
-import { FiberState, symbols, type Context } from '@deepseek-ai/cordis'
+import { FiberState, type Context } from '@deepseek-ai/cordis'
 import Gateway from '@deepseek-ai/dsh-api-gateway'
 import { nativeProvision } from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import { remoteMethods, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { CloudApiError } from './errors.ts'
-import { inventoryMethodMatches } from './inventory-method.ts'
+import { inventoryMethodMatches, nativeOriginal } from './native-inventory.ts'
 import type { EndpointExposure, ExposureInventory } from './types.ts'
 
 interface Contribution {
@@ -14,7 +14,7 @@ interface Contribution {
 }
 
 function original(value: object): object {
-  const target: unknown = Reflect.get(value, symbols.original)
+  const target: unknown = nativeOriginal(value)
   return target !== null && typeof target === 'object' ? target : value
 }
 

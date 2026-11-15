@@ -1,6 +1,7 @@
 /** Account admission around the original Session and per-message feedback services. */
+import { nativeOriginal } from './native-inventory.ts'
 import { createHash } from 'node:crypto'
-import { symbols, type Context } from '@deepseek-ai/cordis'
+import { type Context } from '@deepseek-ai/cordis'
 import { SessionFeedbackService } from '@deepseek-ai/dsh-command-feedback'
 import type { SessionFeedbackRecordRequest, SessionFeedbackRecordResult } from '@deepseek-ai/dsh-command-feedback/types'
 import MessageFeedbackService from '@deepseek-ai/dsh-message-feedback'
@@ -75,7 +76,7 @@ function feedbackAdmission(
     if (policy.manifest.recipeVersion !== binding.recipeVersion) unavailable()
     if (native !== undefined) {
       const scoped = ctx.get(namespace)
-      const original: unknown = scoped === undefined ? undefined : Reflect.get(scoped, symbols.original) ?? scoped
+      const original: unknown = scoped === undefined ? undefined : nativeOriginal(scoped) ?? scoped
       if (original !== native) unavailable()
     }
   }

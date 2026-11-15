@@ -1,5 +1,6 @@
 /** Account-bound admission over the original same-Session goal domain. */
-import { symbols, type Context } from '@deepseek-ai/cordis'
+import { nativeOriginal } from './native-inventory.ts'
+import { type Context } from '@deepseek-ai/cordis'
 import GoalService, { type CreateGoalRequest, type CreateGoalResult, type EditGoalRequest, type GoalRef, type GoalView } from '@deepseek-ai/dsh-goal'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
@@ -54,7 +55,7 @@ export function createNativeGoals(
     }
     if (policy.manifest.recipeVersion !== binding.recipeVersion) unavailable()
     if (installation.value !== undefined) {
-      const current = ctx.get('goals'), original: unknown = current === undefined ? undefined : Reflect.get(current, symbols.original) ?? current
+      const current = ctx.get('goals'), original: unknown = current === undefined ? undefined : nativeOriginal(current) ?? current
       if (original !== installation.value) unavailable()
     }
   }

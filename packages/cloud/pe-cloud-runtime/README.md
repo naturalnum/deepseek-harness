@@ -332,3 +332,7 @@ The HTTP MCP composition fixture selects the original Native tool executor throu
 None.
 
 </details>
+
+Native Cordis proxy targets are read through `src/native-state.ts`; account policies retain their original type narrowing, fallback and identity comparisons.
+
+Native Loader metadata, runtime callbacks and schemas, registry iteration, and lifecycle event subscriptions are read through `src/native-state.ts`. Account policy continues to own identity checks, visit limits, revocation and publication.

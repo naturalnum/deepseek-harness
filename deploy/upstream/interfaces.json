@@ -1,8 +1,8 @@
 {
   "counts": {
-    "native_source_files": 202,
-    "non_seam_files": 95,
-    "uncentralized_internal_lines": 217
+    "native_source_files": 199,
+    "non_seam_files": 93,
+    "uncentralized_internal_lines": 90
   },
   "imports": [
     {
@@ -580,7 +580,6 @@
         "Context",
         "FiberState",
         "Service",
-        "symbols",
         "Fiber"
       ],
       "typeOnly": false
@@ -756,7 +755,6 @@
       "module": "@deepseek-ai/cordis",
       "names": [
         "FiberState",
-        "symbols",
         "Context"
       ],
       "typeOnly": false
@@ -782,17 +780,16 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/cloud-mcp-connections.ts",
-      "line": 2,
+      "line": 3,
       "module": "@deepseek-ai/cordis",
       "names": [
-        "symbols",
         "Context"
       ],
       "typeOnly": false
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/cloud-mcp-connections.ts",
-      "line": 3,
+      "line": 4,
       "module": "@deepseek-ai/dsh-brand",
       "names": [
         "brandString"
@@ -801,7 +798,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/cloud-mcp-connections.ts",
-      "line": 4,
+      "line": 5,
       "module": "@deepseek-ai/dsh-typert-protocol",
       "names": [
         "Remote",
@@ -812,7 +809,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/cloud-mcp-connections.ts",
-      "line": 7,
+      "line": 8,
       "module": "@deepseek-ai/dsh-tools",
       "names": [
         "ToolRunContext"
@@ -821,17 +818,16 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/cloud-model-key.ts",
-      "line": 2,
+      "line": 3,
       "module": "@deepseek-ai/cordis",
       "names": [
-        "symbols",
         "Context"
       ],
       "typeOnly": false
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/cloud-model-key.ts",
-      "line": 4,
+      "line": 5,
       "module": "@deepseek-ai/dsh-typert-protocol",
       "names": [
         "Remote",
@@ -843,7 +839,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/cloud-model-key.ts",
-      "line": 13,
+      "line": 14,
       "module": "@deepseek-ai/dsh-settings/types",
       "names": [
         "SettingsPathOpView"
@@ -852,17 +848,16 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/cloud-plugins.ts",
-      "line": 2,
+      "line": 3,
       "module": "@deepseek-ai/cordis",
       "names": [
-        "symbols",
         "Context"
       ],
       "typeOnly": false
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/cloud-plugins.ts",
-      "line": 3,
+      "line": 4,
       "module": "@deepseek-ai/dsh-typert-protocol",
       "names": [
         "Remote",
@@ -873,17 +868,16 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/cloud-projects.ts",
-      "line": 2,
+      "line": 3,
       "module": "@deepseek-ai/cordis",
       "names": [
-        "symbols",
         "Context"
       ],
       "typeOnly": false
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/cloud-projects.ts",
-      "line": 3,
+      "line": 4,
       "module": "@deepseek-ai/dsh-typert-protocol",
       "names": [
         "Remote",
@@ -894,7 +888,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/cloud-projects.ts",
-      "line": 4,
+      "line": 5,
       "module": "@deepseek-ai/dsh-api-workspace-controller/types",
       "names": [
         "WorkspaceValue"
@@ -903,17 +897,16 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/cloud-remote-servers.ts",
-      "line": 2,
+      "line": 3,
       "module": "@deepseek-ai/cordis",
       "names": [
-        "symbols",
         "Context"
       ],
       "typeOnly": false
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/cloud-remote-servers.ts",
-      "line": 4,
+      "line": 5,
       "module": "@deepseek-ai/dsh-typert-protocol",
       "names": [
         "Remote",
@@ -924,7 +917,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/cloud-remote-servers.ts",
-      "line": 5,
+      "line": 6,
       "module": "@deepseek-ai/dsh-remote-server-cloud",
       "names": [
         "installRemoteServerTools",
@@ -934,7 +927,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/cloud-remote-servers.ts",
-      "line": 8,
+      "line": 9,
       "module": "@deepseek-ai/dsh-tools",
       "names": [
         "ToolRunContext"
@@ -943,17 +936,16 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/cloud-skills.ts",
-      "line": 2,
+      "line": 3,
       "module": "@deepseek-ai/cordis",
       "names": [
-        "symbols",
         "Context"
       ],
       "typeOnly": false
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/cloud-skills.ts",
-      "line": 3,
+      "line": 4,
       "module": "@deepseek-ai/dsh-typert-protocol",
       "names": [
         "Remote",
@@ -964,7 +956,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/cloud-skills.ts",
-      "line": 4,
+      "line": 5,
       "module": "@deepseek-ai/dsh-skill",
       "names": [
         "default as SkillRegistry"
@@ -1020,11 +1012,10 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/first-screen-events.ts",
-      "line": 3,
+      "line": 4,
       "module": "@deepseek-ai/cordis",
       "names": [
         "FiberState",
-        "symbols",
         "Context",
         "Fiber"
       ],
@@ -1032,7 +1023,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/first-screen-events.ts",
-      "line": 4,
+      "line": 5,
       "module": "@deepseek-ai/dsh-api-gateway",
       "names": [
         "default as Gateway",
@@ -1044,7 +1035,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/first-screen-events.ts",
-      "line": 6,
+      "line": 7,
       "module": "@deepseek-ai/dsh-api-gateway/stream-protocol",
       "names": [
         "projectRemoteEventRequest"
@@ -1053,7 +1044,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/first-screen-events.ts",
-      "line": 7,
+      "line": 8,
       "module": "@deepseek-ai/dsh-api-remotes",
       "names": [
         "createRemoteWaterfallListener"
@@ -1062,7 +1053,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/first-screen-events.ts",
-      "line": 8,
+      "line": 9,
       "module": "@deepseek-ai/dsh-session",
       "names": [
         "SessionId"
@@ -1071,7 +1062,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/first-screen-events.ts",
-      "line": 9,
+      "line": 10,
       "module": "@deepseek-ai/dsh-typert-protocol",
       "names": [
         "isRemoteJsonValue"
@@ -1080,7 +1071,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/first-screen-events.ts",
-      "line": 10,
+      "line": 11,
       "module": "@deepseek-ai/dsh-deque",
       "names": [
         "Deque"
@@ -1089,7 +1080,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/first-screen-events.ts",
-      "line": 11,
+      "line": 12,
       "module": "@deepseek-ai/dsh-user-approval",
       "names": [
         "default as ApprovalService"
@@ -1098,7 +1089,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/first-screen-events.ts",
-      "line": 12,
+      "line": 13,
       "module": "@deepseek-ai/dsh-app-boot",
       "names": [
         "(augmentation)"
@@ -1107,7 +1098,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/first-screen-events.ts",
-      "line": 13,
+      "line": 14,
       "module": "@deepseek-ai/dsh-api-session-controller",
       "names": [
         "(augmentation)"
@@ -1116,7 +1107,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/first-screen-events.ts",
-      "line": 14,
+      "line": 15,
       "module": "@deepseek-ai/dsh-settings",
       "names": [
         "(augmentation)"
@@ -1125,7 +1116,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/first-screen-events.ts",
-      "line": 15,
+      "line": 16,
       "module": "@deepseek-ai/dsh-credentials",
       "names": [
         "(augmentation)"
@@ -1134,7 +1125,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/first-screen-events.ts",
-      "line": 16,
+      "line": 17,
       "module": "@deepseek-ai/dsh-skill/types",
       "names": [
         "(augmentation)"
@@ -1143,7 +1134,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/first-screen-events.ts",
-      "line": 17,
+      "line": 18,
       "module": "@deepseek-ai/dsh-goal/types",
       "names": [
         "(augmentation)"
@@ -1152,7 +1143,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/first-screen-events.ts",
-      "line": 18,
+      "line": 19,
       "module": "@deepseek-ai/dsh-commands/types",
       "names": [
         "(augmentation)"
@@ -1161,7 +1152,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/first-screen-events.ts",
-      "line": 19,
+      "line": 20,
       "module": "@deepseek-ai/dsh-permission-presets",
       "names": [
         "(augmentation)"
@@ -1170,19 +1161,10 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/first-screen-events.ts",
-      "line": 20,
+      "line": 21,
       "module": "@deepseek-ai/dsh-schedule/client",
       "names": [
         "(augmentation)"
-      ],
-      "typeOnly": true
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/inventory-method.ts",
-      "line": 2,
-      "module": "@deepseek-ai/cordis",
-      "names": [
-        "Context"
       ],
       "typeOnly": true
     },
@@ -1429,18 +1411,17 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 2,
+      "line": 3,
       "module": "@deepseek-ai/cordis",
       "names": [
         "FiberState",
-        "symbols",
         "Context"
       ],
       "typeOnly": false
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 4,
+      "line": 5,
       "module": "@deepseek-ai/dsh-llm",
       "names": [
         "default as LlmRuntime"
@@ -1449,7 +1430,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 5,
+      "line": 6,
       "module": "@deepseek-ai/dsh-util-values",
       "names": [
         "JsonValue"
@@ -1458,7 +1439,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 6,
+      "line": 7,
       "module": "@deepseek-ai/dsh-settings/types",
       "names": [
         "SettingsPathOpView"
@@ -1467,7 +1448,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 7,
+      "line": 8,
       "module": "@deepseek-ai/dsh-agent-default-model",
       "names": [
         "(augmentation)"
@@ -1476,21 +1457,12 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 12,
+      "line": 13,
       "module": "@deepseek-ai/dsh-app-boot",
       "names": [
         "ProfileConfigUpdatePlan"
       ],
       "typeOnly": true
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/model-key.ts",
-      "line": 2,
-      "module": "@deepseek-ai/cordis",
-      "names": [
-        "symbols"
-      ],
-      "typeOnly": false
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/model-key.ts",
@@ -1522,17 +1494,16 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-agent-factory.ts",
-      "line": 2,
+      "line": 3,
       "module": "@deepseek-ai/cordis",
       "names": [
-        "symbols",
         "Context"
       ],
       "typeOnly": false
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-agent-factory.ts",
-      "line": 3,
+      "line": 4,
       "module": "@deepseek-ai/dsh-agent",
       "names": [
         "AgentDisposalObserver",
@@ -1543,7 +1514,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-agent-factory.ts",
-      "line": 4,
+      "line": 5,
       "module": "@deepseek-ai/dsh-subagent",
       "names": [
         "delegationDepthOf"
@@ -1552,7 +1523,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-agent-factory.ts",
-      "line": 5,
+      "line": 6,
       "module": "@deepseek-ai/dsh-agent-loop",
       "names": [
         "default as AgentLoop"
@@ -1561,17 +1532,16 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-commands.ts",
-      "line": 2,
+      "line": 3,
       "module": "@deepseek-ai/cordis",
       "names": [
-        "symbols",
         "Context"
       ],
       "typeOnly": false
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-commands.ts",
-      "line": 3,
+      "line": 4,
       "module": "@deepseek-ai/dsh-commands",
       "names": [
         "default as CommandRuntime",
@@ -1583,7 +1553,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-commands.ts",
-      "line": 4,
+      "line": 5,
       "module": "@deepseek-ai/dsh-typert-protocol",
       "names": [
         "remoteMethods"
@@ -1592,7 +1562,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-commands.ts",
-      "line": 5,
+      "line": 6,
       "module": "@deepseek-ai/dsh-agent",
       "names": [
         "Agent"
@@ -1601,7 +1571,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-commands.ts",
-      "line": 13,
+      "line": 14,
       "module": "@deepseek-ai/dsh-brand",
       "names": [
         "brandString"
@@ -1610,7 +1580,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-commands.ts",
-      "line": 14,
+      "line": 15,
       "module": "@deepseek-ai/dsh-client-file-upload/types",
       "names": [
         "FileUploadReceiptId"
@@ -1619,17 +1589,16 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-feedback.ts",
-      "line": 3,
+      "line": 4,
       "module": "@deepseek-ai/cordis",
       "names": [
-        "symbols",
         "Context"
       ],
       "typeOnly": false
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-feedback.ts",
-      "line": 4,
+      "line": 5,
       "module": "@deepseek-ai/dsh-command-feedback",
       "names": [
         "SessionFeedbackService"
@@ -1638,7 +1607,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-feedback.ts",
-      "line": 5,
+      "line": 6,
       "module": "@deepseek-ai/dsh-command-feedback/types",
       "names": [
         "SessionFeedbackRecordRequest",
@@ -1648,7 +1617,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-feedback.ts",
-      "line": 6,
+      "line": 7,
       "module": "@deepseek-ai/dsh-message-feedback",
       "names": [
         "default as MessageFeedbackService"
@@ -1657,7 +1626,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-feedback.ts",
-      "line": 7,
+      "line": 8,
       "module": "@deepseek-ai/dsh-message-feedback/types",
       "names": [
         "MessageFeedbackDeleteRequest",
@@ -1671,7 +1640,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-feedback.ts",
-      "line": 11,
+      "line": 12,
       "module": "@deepseek-ai/dsh-session/types",
       "names": [
         "SessionId"
@@ -1680,7 +1649,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-feedback.ts",
-      "line": 12,
+      "line": 13,
       "module": "@deepseek-ai/dsh-typert-protocol",
       "names": [
         "remoteMethods"
@@ -1689,11 +1658,10 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-files.ts",
-      "line": 2,
+      "line": 3,
       "module": "@deepseek-ai/cordis",
       "names": [
         "FiberState",
-        "symbols",
         "Context",
         "Fiber"
       ],
@@ -1701,7 +1669,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-files.ts",
-      "line": 3,
+      "line": 4,
       "module": "@deepseek-ai/dsh-api-workspace-files",
       "names": [
         "default as WorkspaceFiles"
@@ -1710,7 +1678,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-files.ts",
-      "line": 4,
+      "line": 5,
       "module": "@deepseek-ai/dsh-typert-protocol",
       "names": [
         "remoteMethods"
@@ -1719,7 +1687,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 2,
+      "line": 3,
       "module": "@deepseek-ai/dsh-commands",
       "names": [
         "(augmentation)"
@@ -1728,7 +1696,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 3,
+      "line": 4,
       "module": "@deepseek-ai/dsh-goal",
       "names": [
         "(augmentation)"
@@ -1737,7 +1705,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 4,
+      "line": 5,
       "module": "@deepseek-ai/dsh-client-connection",
       "names": [
         "(augmentation)"
@@ -1746,7 +1714,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 5,
+      "line": 6,
       "module": "@deepseek-ai/dsh-command-feedback",
       "names": [
         "(augmentation)"
@@ -1755,7 +1723,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 6,
+      "line": 7,
       "module": "@deepseek-ai/dsh-message-feedback",
       "names": [
         "(augmentation)"
@@ -1764,7 +1732,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 7,
+      "line": 8,
       "module": "@deepseek-ai/dsh-permission-presets",
       "names": [
         "(augmentation)"
@@ -1773,7 +1741,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 8,
+      "line": 9,
       "module": "@deepseek-ai/dsh-user-questions",
       "names": [
         "(augmentation)"
@@ -1782,11 +1750,10 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 12,
+      "line": 13,
       "module": "@deepseek-ai/cordis",
       "names": [
         "FiberState",
-        "symbols",
         "Context",
         "Fiber"
       ],
@@ -1794,7 +1761,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 13,
+      "line": 14,
       "module": "@deepseek-ai/dsh-api-workspace-controller",
       "names": [
         "default as WorkspaceController"
@@ -1803,7 +1770,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 14,
+      "line": 15,
       "module": "@deepseek-ai/dsh-api-workspace-controller/types",
       "names": [
         "WorkspaceCreateRequest",
@@ -1823,7 +1790,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 19,
+      "line": 20,
       "module": "@deepseek-ai/dsh-api-settings-controller",
       "names": [
         "default as SettingsController",
@@ -1833,7 +1800,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 20,
+      "line": 21,
       "module": "@deepseek-ai/dsh-api-remote-access",
       "names": [
         "default as RemoteAccess"
@@ -1842,7 +1809,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 21,
+      "line": 22,
       "module": "@deepseek-ai/dsh-workspace",
       "names": [
         "default as WorkspaceRegistry",
@@ -1852,7 +1819,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 22,
+      "line": 23,
       "module": "@deepseek-ai/dsh-settings",
       "names": [
         "default as Settings"
@@ -1861,7 +1828,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 23,
+      "line": 24,
       "module": "@deepseek-ai/dsh-settings/types",
       "names": [
         "SettingsDescribeValue",
@@ -1872,7 +1839,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 24,
+      "line": 25,
       "module": "@deepseek-ai/dsh-client-locale",
       "names": [
         "* as Locale"
@@ -1881,7 +1848,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 25,
+      "line": 26,
       "module": "@deepseek-ai/dsh-typert-protocol",
       "names": [
         "RemoteError",
@@ -1891,7 +1858,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 28,
+      "line": 29,
       "module": "@deepseek-ai/dsh-session/types",
       "names": [
         "SessionId"
@@ -1900,7 +1867,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 36,
+      "line": 37,
       "module": "@deepseek-ai/dsh-app-boot",
       "names": [
         "ProfileConfigUpdatePlan"
@@ -1909,17 +1876,16 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-goals.ts",
-      "line": 2,
+      "line": 3,
       "module": "@deepseek-ai/cordis",
       "names": [
-        "symbols",
         "Context"
       ],
       "typeOnly": false
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-goals.ts",
-      "line": 3,
+      "line": 4,
       "module": "@deepseek-ai/dsh-goal",
       "names": [
         "default as GoalService",
@@ -1933,7 +1899,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-goals.ts",
-      "line": 4,
+      "line": 5,
       "module": "@deepseek-ai/dsh-agent",
       "names": [
         "Agent"
@@ -1942,10 +1908,21 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-goals.ts",
-      "line": 5,
+      "line": 6,
       "module": "@deepseek-ai/dsh-typert-protocol",
       "names": [
         "remoteMethods"
+      ],
+      "typeOnly": false
+    },
+    {
+      "path": "packages/cloud/pe-cloud-api/src/native-inventory.ts",
+      "line": 2,
+      "module": "@deepseek-ai/cordis",
+      "names": [
+        "symbols",
+        "Context",
+        "Fiber"
       ],
       "typeOnly": false
     },
@@ -1961,11 +1938,10 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-office.ts",
-      "line": 4,
+      "line": 5,
       "module": "@deepseek-ai/cordis",
       "names": [
         "FiberState",
-        "symbols",
         "Context",
         "Fiber"
       ],
@@ -1973,7 +1949,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-office.ts",
-      "line": 5,
+      "line": 6,
       "module": "@deepseek-ai/dsh-office-kit",
       "names": [
         "default as OfficeKit",
@@ -1991,7 +1967,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-office.ts",
-      "line": 10,
+      "line": 11,
       "module": "@deepseek-ai/dsh-typert-protocol",
       "names": [
         "remoteMethods"
@@ -2000,17 +1976,16 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-permissions.ts",
-      "line": 2,
+      "line": 3,
       "module": "@deepseek-ai/cordis",
       "names": [
-        "symbols",
         "Context"
       ],
       "typeOnly": false
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-permissions.ts",
-      "line": 3,
+      "line": 4,
       "module": "@deepseek-ai/dsh-permission-presets",
       "names": [
         "default as PermissionPresetService",
@@ -2021,7 +1996,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-permissions.ts",
-      "line": 4,
+      "line": 5,
       "module": "@deepseek-ai/dsh-user-approval",
       "names": [
         "ApprovalPolicy"
@@ -2030,7 +2005,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-permissions.ts",
-      "line": 5,
+      "line": 6,
       "module": "@deepseek-ai/dsh-permission-presets/types",
       "names": [
         "PermissionCatalog"
@@ -2039,7 +2014,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-permissions.ts",
-      "line": 6,
+      "line": 7,
       "module": "@deepseek-ai/dsh-session",
       "names": [
         "Session"
@@ -2048,7 +2023,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-permissions.ts",
-      "line": 7,
+      "line": 8,
       "module": "@deepseek-ai/dsh-typert-protocol",
       "names": [
         "remoteMethods"
@@ -2057,17 +2032,16 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-plugin-inventory.ts",
-      "line": 2,
+      "line": 3,
       "module": "@deepseek-ai/cordis",
       "names": [
-        "symbols",
         "Context"
       ],
       "typeOnly": false
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-plugin-inventory.ts",
-      "line": 3,
+      "line": 4,
       "module": "@deepseek-ai/dsh-host-plugin-inventory",
       "names": [
         "default as PluginInventoryGateway",
@@ -2077,7 +2051,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-plugin-inventory.ts",
-      "line": 4,
+      "line": 5,
       "module": "@deepseek-ai/dsh-typert-protocol",
       "names": [
         "remoteMethods"
@@ -2086,17 +2060,16 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-presets.ts",
-      "line": 2,
+      "line": 3,
       "module": "@deepseek-ai/cordis",
       "names": [
-        "symbols",
         "Context"
       ],
       "typeOnly": false
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-presets.ts",
-      "line": 3,
+      "line": 4,
       "module": "@deepseek-ai/dsh-agent-preset-registry",
       "names": [
         "default as AgentPresets"
@@ -2105,7 +2078,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-presets.ts",
-      "line": 4,
+      "line": 5,
       "module": "@deepseek-ai/dsh-agent-preset-registry/types",
       "names": [
         "AgentPresetDocument",
@@ -2115,7 +2088,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-presets.ts",
-      "line": 5,
+      "line": 6,
       "module": "@deepseek-ai/dsh-agent",
       "names": [
         "Agent"
@@ -2124,7 +2097,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-presets.ts",
-      "line": 7,
+      "line": 8,
       "module": "@deepseek-ai/dsh-typert-protocol",
       "names": [
         "remoteMethods"
@@ -2179,17 +2152,16 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-schedule.ts",
-      "line": 2,
+      "line": 3,
       "module": "@deepseek-ai/cordis",
       "names": [
-        "symbols",
         "Context"
       ],
       "typeOnly": false
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-schedule.ts",
-      "line": 3,
+      "line": 4,
       "module": "@deepseek-ai/dsh-schedule",
       "names": [
         "default as ScheduleService",
@@ -2201,7 +2173,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-schedule.ts",
-      "line": 4,
+      "line": 5,
       "module": "@deepseek-ai/dsh-session/types",
       "names": [
         "SessionId"
@@ -2210,7 +2182,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-schedule.ts",
-      "line": 6,
+      "line": 7,
       "module": "@deepseek-ai/dsh-typert-protocol",
       "names": [
         "remoteMethods"
@@ -2219,17 +2191,16 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-session-export.ts",
-      "line": 2,
+      "line": 3,
       "module": "@deepseek-ai/cordis",
       "names": [
-        "symbols",
         "Context"
       ],
       "typeOnly": false
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-session-export.ts",
-      "line": 3,
+      "line": 4,
       "module": "@deepseek-ai/dsh-session-log-export",
       "names": [
         "SESSION_LOG_EXPORT_PATH",
@@ -2239,7 +2210,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-session-export.ts",
-      "line": 4,
+      "line": 5,
       "module": "@deepseek-ai/dsh-session-log-export/registration",
       "names": [
         "registerSessionLogExport"
@@ -2248,7 +2219,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-session-export.ts",
-      "line": 6,
+      "line": 7,
       "module": "@deepseek-ai/dsh-client-connection",
       "names": [
         "(augmentation)"
@@ -2257,18 +2228,17 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-uploads.ts",
-      "line": 2,
+      "line": 3,
       "module": "@deepseek-ai/cordis",
       "names": [
         "FiberState",
-        "symbols",
         "Context"
       ],
       "typeOnly": false
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-uploads.ts",
-      "line": 3,
+      "line": 4,
       "module": "@deepseek-ai/dsh-client-file-upload",
       "names": [
         "FileUploads",
@@ -2279,7 +2249,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-uploads.ts",
-      "line": 4,
+      "line": 5,
       "module": "@deepseek-ai/dsh-client-connection",
       "names": [
         "(augmentation)"
@@ -2288,7 +2258,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-uploads.ts",
-      "line": 5,
+      "line": 6,
       "module": "@deepseek-ai/dsh-commands",
       "names": [
         "(augmentation)"
@@ -2297,7 +2267,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-uploads.ts",
-      "line": 6,
+      "line": 7,
       "module": "@deepseek-ai/dsh-agent",
       "names": [
         "Agent"
@@ -2306,7 +2276,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-uploads.ts",
-      "line": 7,
+      "line": 8,
       "module": "@deepseek-ai/dsh-attachment",
       "names": [
         "FileAttachmentRef",
@@ -2316,17 +2286,16 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-user-questions.ts",
-      "line": 2,
+      "line": 3,
       "module": "@deepseek-ai/cordis",
       "names": [
-        "symbols",
         "Context"
       ],
       "typeOnly": false
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-user-questions.ts",
-      "line": 3,
+      "line": 4,
       "module": "@deepseek-ai/dsh-user-questions",
       "names": [
         "default as UserQuestions"
@@ -2335,7 +2304,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-user-questions.ts",
-      "line": 4,
+      "line": 5,
       "module": "@deepseek-ai/dsh-typert-protocol",
       "names": [
         "remoteMethods"
@@ -2344,7 +2313,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-user-questions.ts",
-      "line": 5,
+      "line": 6,
       "module": "@deepseek-ai/dsh-agent",
       "names": [
         "Agent"
@@ -2353,17 +2322,16 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native.ts",
-      "line": 2,
+      "line": 3,
       "module": "@deepseek-ai/cordis",
       "names": [
-        "symbols",
         "Context"
       ],
       "typeOnly": false
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native.ts",
-      "line": 3,
+      "line": 4,
       "module": "@deepseek-ai/dsh-typert-protocol",
       "names": [
         "remoteMethods"
@@ -2372,7 +2340,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native.ts",
-      "line": 4,
+      "line": 5,
       "module": "@deepseek-ai/dsh-api-session-controller",
       "names": [
         "default as SessionController",
@@ -2383,7 +2351,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native.ts",
-      "line": 5,
+      "line": 6,
       "module": "@deepseek-ai/dsh-api-session-controller/types",
       "names": [
         "SessionCreateRequest",
@@ -2420,7 +2388,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native.ts",
-      "line": 14,
+      "line": 15,
       "module": "@deepseek-ai/dsh-session/types",
       "names": [
         "SessionId"
@@ -2429,7 +2397,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native.ts",
-      "line": 16,
+      "line": 17,
       "module": "@deepseek-ai/dsh-client-file-upload/types",
       "names": [
         "FileUploadReceiptId"
@@ -2438,7 +2406,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native.ts",
-      "line": 17,
+      "line": 18,
       "module": "@deepseek-ai/dsh-agent",
       "names": [
         "Agent"
@@ -2465,18 +2433,17 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 6,
+      "line": 7,
       "module": "@deepseek-ai/cordis",
       "names": [
         "FiberState",
-        "symbols",
         "Context"
       ],
       "typeOnly": false
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 7,
+      "line": 8,
       "module": "@deepseek-ai/dsh-plugin-manager",
       "names": [
         "default as PluginManager"
@@ -2485,7 +2452,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 8,
+      "line": 9,
       "module": "@deepseek-ai/dsh-settings",
       "names": [
         "applyConfigPathOp",
@@ -2496,7 +2463,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 9,
+      "line": 10,
       "module": "@deepseek-ai/dsh-plugin-manager/types",
       "names": [
         "PluginInfo",
@@ -2506,7 +2473,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 10,
+      "line": 11,
       "module": "@deepseek-ai/dsh-app-boot",
       "names": [
         "createConfigProjector",
@@ -2521,7 +2488,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 11,
+      "line": 12,
       "module": "@deepseek-ai/cordis-plugin-loader",
       "names": [
         "Entry"
@@ -2530,7 +2497,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 20,
+      "line": 21,
       "module": "@deepseek-ai/dsh-util-values",
       "names": [
         "snapshotJsonValue",
@@ -2597,17 +2564,16 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/remote-server-approval.ts",
-      "line": 2,
+      "line": 3,
       "module": "@deepseek-ai/cordis",
       "names": [
-        "symbols",
         "Context"
       ],
       "typeOnly": false
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/remote-server-approval.ts",
-      "line": 3,
+      "line": 4,
       "module": "@deepseek-ai/dsh-tools",
       "names": [
         "ToolRunContext"
@@ -5115,17 +5081,16 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-attachments.ts",
-      "line": 2,
+      "line": 3,
       "module": "@deepseek-ai/cordis",
       "names": [
-        "symbols",
         "Context"
       ],
       "typeOnly": false
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-attachments.ts",
-      "line": 3,
+      "line": 4,
       "module": "@deepseek-ai/dsh-agent",
       "names": [
         "Agent"
@@ -5134,7 +5099,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-attachments.ts",
-      "line": 4,
+      "line": 5,
       "module": "@deepseek-ai/dsh-attachment",
       "names": [
         "FileAttachmentRef",
@@ -5144,7 +5109,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-attachments.ts",
-      "line": 5,
+      "line": 6,
       "module": "@deepseek-ai/dsh-attachment-local",
       "names": [
         "AttachmentCleanupError",
@@ -5155,7 +5120,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-attachments.ts",
-      "line": 6,
+      "line": 7,
       "module": "@deepseek-ai/dsh-client-file-upload",
       "names": [
         "FileUploads",
@@ -5166,7 +5131,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-attachments.ts",
-      "line": 7,
+      "line": 8,
       "module": "@deepseek-ai/dsh-client-file-upload/types",
       "names": [
         "FileUploadReceiptId"
@@ -5175,7 +5140,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-attachments.ts",
-      "line": 8,
+      "line": 9,
       "module": "@deepseek-ai/dsh-llm",
       "names": [
         "isAgentLoopRequest",
@@ -5185,7 +5150,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-attachments.ts",
-      "line": 11,
+      "line": 12,
       "module": "@deepseek-ai/dsh-scope",
       "names": [
         "scopeChainOf",
@@ -5195,7 +5160,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-attachments.ts",
-      "line": 12,
+      "line": 13,
       "module": "@deepseek-ai/dsh-workspace",
       "names": [
         "Workspace"
@@ -5259,7 +5224,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 2,
+      "line": 3,
       "module": "@deepseek-ai/dsh-subagent",
       "names": [
         "default as SubagentRuntime"
@@ -5268,11 +5233,10 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 3,
+      "line": 4,
       "module": "@deepseek-ai/cordis",
       "names": [
         "FiberState",
-        "symbols",
         "Context",
         "Fiber"
       ],
@@ -5280,7 +5244,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 4,
+      "line": 5,
       "module": "@deepseek-ai/dsh-agent-loop",
       "names": [
         "default as AgentLoop"
@@ -5289,7 +5253,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 5,
+      "line": 6,
       "module": "@deepseek-ai/dsh-agent",
       "names": [
         "default as AgentRegistry"
@@ -5298,7 +5262,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 6,
+      "line": 7,
       "module": "@deepseek-ai/dsh-agent-preset-registry",
       "names": [
         "default as AgentPresets"
@@ -5307,7 +5271,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 7,
+      "line": 8,
       "module": "@deepseek-ai/dsh-agent",
       "names": [
         "Agent"
@@ -5316,7 +5280,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 8,
+      "line": 9,
       "module": "@deepseek-ai/dsh-session-persistence",
       "names": [
         "default as SessionPersistence"
@@ -5325,7 +5289,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 9,
+      "line": 10,
       "module": "@deepseek-ai/dsh-api-session-controller",
       "names": [
         "default as SessionController"
@@ -5334,7 +5298,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 10,
+      "line": 11,
       "module": "@deepseek-ai/dsh-api-workspace-files",
       "names": [
         "default as WorkspaceFiles"
@@ -5343,7 +5307,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 11,
+      "line": 12,
       "module": "@deepseek-ai/dsh-office-kit",
       "names": [
         "default as OfficeKit"
@@ -5352,7 +5316,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 12,
+      "line": 13,
       "module": "@deepseek-ai/dsh-api-session-controller/types",
       "names": [
         "SessionSummary"
@@ -5361,7 +5325,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 13,
+      "line": 14,
       "module": "@deepseek-ai/dsh-llm",
       "names": [
         "default as LlmRuntime"
@@ -5370,7 +5334,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 20,
+      "line": 21,
       "module": "@deepseek-ai/dsh-workspace",
       "names": [
         "Workspace"
@@ -5379,7 +5343,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 21,
+      "line": 22,
       "module": "@deepseek-ai/dsh-session",
       "names": [
         "Session",
@@ -5389,7 +5353,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 22,
+      "line": 23,
       "module": "@deepseek-ai/dsh-working-directory",
       "names": [
         "(augmentation)"
@@ -5398,7 +5362,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 32,
+      "line": 33,
       "module": "@deepseek-ai/dsh-session/types",
       "names": [
         "SessionId"
@@ -5407,7 +5371,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 35,
+      "line": 36,
       "module": "@deepseek-ai/dsh-attachment-local",
       "names": [
         "LocalAttachmentStore"
@@ -5416,7 +5380,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 38,
+      "line": 39,
       "module": "@deepseek-ai/dsh-client-file-upload",
       "names": [
         "FileUploads"
@@ -5425,7 +5389,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 40,
+      "line": 41,
       "module": "@deepseek-ai/dsh-goal",
       "names": [
         "default as GoalService"
@@ -5434,7 +5398,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 41,
+      "line": 42,
       "module": "@deepseek-ai/dsh-goal-round-driver",
       "names": [
         "* as GoalRoundDriver"
@@ -5443,7 +5407,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 42,
+      "line": 43,
       "module": "@deepseek-ai/dsh-session-log-export",
       "names": [
         "* as SessionLogExport"
@@ -5452,7 +5416,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 43,
+      "line": 44,
       "module": "@deepseek-ai/dsh-permission-presets",
       "names": [
         "default as PermissionPresetService"
@@ -5461,7 +5425,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 44,
+      "line": 45,
       "module": "@deepseek-ai/dsh-user-questions",
       "names": [
         "default as UserQuestions"
@@ -5470,7 +5434,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 45,
+      "line": 46,
       "module": "@deepseek-ai/dsh-schedule",
       "names": [
         "default as ScheduleService"
@@ -5479,7 +5443,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 46,
+      "line": 47,
       "module": "@deepseek-ai/dsh-message-feedback",
       "names": [
         "default as MessageFeedbackService"
@@ -5488,7 +5452,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 47,
+      "line": 48,
       "module": "@deepseek-ai/dsh-command-feedback",
       "names": [
         "* as CommandFeedback"
@@ -5497,7 +5461,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 49,
+      "line": 50,
       "module": "@deepseek-ai/dsh-cordis-host-runner",
       "names": [
         "CordisInspectRegistryService"
@@ -5506,7 +5470,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 50,
+      "line": 51,
       "module": "@deepseek-ai/dsh-tool-cordis/host",
       "names": [
         "* as NativeCordisInspectProviders"
@@ -5515,17 +5479,16 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-permissions.ts",
-      "line": 2,
+      "line": 3,
       "module": "@deepseek-ai/cordis",
       "names": [
-        "symbols",
         "Context"
       ],
       "typeOnly": false
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-permissions.ts",
-      "line": 3,
+      "line": 4,
       "module": "@deepseek-ai/dsh-fs",
       "names": [
         "FsError"
@@ -5534,7 +5497,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-permissions.ts",
-      "line": 4,
+      "line": 5,
       "module": "@deepseek-ai/dsh-sandbox",
       "names": [
         "SandboxExecutionPolicy",
@@ -5544,7 +5507,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-permissions.ts",
-      "line": 5,
+      "line": 6,
       "module": "@deepseek-ai/dsh-sandbox-policy",
       "names": [
         "default as SandboxPolicyService"
@@ -5553,7 +5516,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-permissions.ts",
-      "line": 6,
+      "line": 7,
       "module": "@deepseek-ai/dsh-agent",
       "names": [
         "Agent"
@@ -5562,7 +5525,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-permissions.ts",
-      "line": 7,
+      "line": 8,
       "module": "@deepseek-ai/dsh-session",
       "names": [
         "Session"
@@ -5593,7 +5556,6 @@
       "module": "@deepseek-ai/cordis",
       "names": [
         "FiberState",
-        "symbols",
         "Context",
         "Fiber"
       ],
@@ -5827,17 +5789,16 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-skills.ts",
-      "line": 3,
+      "line": 4,
       "module": "@deepseek-ai/cordis",
       "names": [
-        "symbols",
         "Context"
       ],
       "typeOnly": false
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-skills.ts",
-      "line": 4,
+      "line": 5,
       "module": "@deepseek-ai/dsh-agent",
       "names": [
         "default as AgentRegistry"
@@ -5846,7 +5807,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-skills.ts",
-      "line": 7,
+      "line": 8,
       "module": "@deepseek-ai/dsh-session/types",
       "names": [
         "SessionId"
@@ -5855,7 +5816,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/account-skills.ts",
-      "line": 8,
+      "line": 9,
       "module": "@deepseek-ai/dsh-working-directory",
       "names": [
         "(augmentation)"
@@ -5928,7 +5889,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/native-boot.ts",
-      "line": 3,
+      "line": 4,
       "module": "@deepseek-ai/cordis",
       "names": [
         "Context",
@@ -5938,7 +5899,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/native-boot.ts",
-      "line": 4,
+      "line": 5,
       "module": "@deepseek-ai/dsh-app-boot",
       "names": [
         "boot",
@@ -5952,7 +5913,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/native-boot.ts",
-      "line": 5,
+      "line": 6,
       "module": "@deepseek-ai/dsh-launch-environment",
       "names": [
         "DSH_LAUNCH_ENVIRONMENT_KEY",
@@ -5973,7 +5934,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
-      "line": 3,
+      "line": 4,
       "module": "@deepseek-ai/cordis-plugin-loader",
       "names": [
         "Entry"
@@ -6016,7 +5977,6 @@
       "names": [
         "Context",
         "FiberState",
-        "symbols",
         "Fiber"
       ],
       "typeOnly": false
@@ -6041,7 +6001,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/root.ts",
-      "line": 3,
+      "line": 4,
       "module": "@deepseek-ai/dsh-app-boot",
       "names": [
         "PluginPackages"
@@ -6050,18 +6010,17 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/root.ts",
-      "line": 5,
+      "line": 6,
       "module": "@deepseek-ai/cordis",
       "names": [
         "Context",
-        "Service",
-        "symbols"
+        "Service"
       ],
       "typeOnly": false
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/root.ts",
-      "line": 6,
+      "line": 7,
       "module": "@deepseek-ai/dsh-credentials",
       "names": [
         "credentialRef",
@@ -6071,7 +6030,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/root.ts",
-      "line": 9,
+      "line": 10,
       "module": "@deepseek-ai/dsh-cmdline",
       "names": [
         "AppShutdown"
@@ -6080,7 +6039,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/root.ts",
-      "line": 13,
+      "line": 14,
       "module": "@deepseek-ai/dsh-launch-environment",
       "names": [
         "createLaunchEnvironmentSnapshot"
@@ -6089,7 +6048,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/root.ts",
-      "line": 28,
+      "line": 29,
       "module": "@deepseek-ai/dsh-typert-protocol",
       "names": [
         "PeerScope"
@@ -7091,7 +7050,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/cloud-mcp-connections.ts",
-      "line": 31,
+      "line": 32,
       "name": "CloudMcpConnectionService",
       "base": "TypertRemoteService",
       "module": "@deepseek-ai/dsh-typert-protocol",
@@ -7108,7 +7067,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/cloud-model-key.ts",
-      "line": 47,
+      "line": 48,
       "name": "CloudModelKeyService",
       "base": "TypertRemoteService",
       "module": "@deepseek-ai/dsh-typert-protocol",
@@ -7128,7 +7087,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/cloud-plugins.ts",
-      "line": 21,
+      "line": 22,
       "name": "CloudPluginService",
       "base": "TypertRemoteService",
       "module": "@deepseek-ai/dsh-typert-protocol",
@@ -7144,7 +7103,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/cloud-projects.ts",
-      "line": 44,
+      "line": 45,
       "name": "CloudProjectsService",
       "base": "TypertRemoteService",
       "module": "@deepseek-ai/dsh-typert-protocol",
@@ -7171,7 +7130,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/cloud-skills.ts",
-      "line": 41,
+      "line": 42,
       "name": "CloudSkillService",
       "base": "TypertRemoteService",
       "module": "@deepseek-ai/dsh-typert-protocol",
@@ -7205,7 +7164,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-agent-factory.ts",
-      "line": 245,
+      "line": 246,
       "name": "AccountAgentLoop",
       "base": "AgentLoop",
       "module": "@deepseek-ai/dsh-agent-loop",
@@ -7224,7 +7183,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-commands.ts",
-      "line": 73,
+      "line": 74,
       "name": "AccountCommands",
       "base": "CommandRuntime",
       "module": "@deepseek-ai/dsh-commands",
@@ -7241,7 +7200,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-feedback.ts",
-      "line": 143,
+      "line": 144,
       "name": "AccountSessionFeedback",
       "base": "SessionFeedbackService",
       "module": "@deepseek-ai/dsh-command-feedback",
@@ -7254,7 +7213,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-feedback.ts",
-      "line": 173,
+      "line": 174,
       "name": "AccountMessageFeedback",
       "base": "MessageFeedbackService",
       "module": "@deepseek-ai/dsh-message-feedback",
@@ -7273,7 +7232,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 281,
+      "line": 278,
       "name": "AccountWorkspaceController",
       "base": "WorkspaceController",
       "module": "@deepseek-ai/dsh-api-workspace-controller",
@@ -7301,7 +7260,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 531,
+      "line": 528,
       "name": "AccountSettingsController",
       "base": "SettingsController",
       "module": "@deepseek-ai/dsh-api-settings-controller",
@@ -7316,7 +7275,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-goals.ts",
-      "line": 81,
+      "line": 82,
       "name": "AccountGoals",
       "base": "GoalService",
       "module": "@deepseek-ai/dsh-goal",
@@ -7343,7 +7302,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-office.ts",
-      "line": 97,
+      "line": 98,
       "name": "AccountOffice",
       "base": "OfficeKit",
       "module": "@deepseek-ai/dsh-office-kit",
@@ -7362,7 +7321,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-permissions.ts",
-      "line": 79,
+      "line": 80,
       "name": "AccountPermissions",
       "base": "PermissionPresetService",
       "module": "@deepseek-ai/dsh-permission-presets",
@@ -7383,7 +7342,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-plugin-inventory.ts",
-      "line": 64,
+      "line": 65,
       "name": "AccountPluginInventory",
       "base": "PluginInventoryGateway",
       "module": "@deepseek-ai/dsh-host-plugin-inventory",
@@ -7396,7 +7355,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-presets.ts",
-      "line": 68,
+      "line": 69,
       "name": "AccountPresets",
       "base": "AgentPresets",
       "module": "@deepseek-ai/dsh-agent-preset-registry",
@@ -7415,7 +7374,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-schedule.ts",
-      "line": 119,
+      "line": 120,
       "name": "AccountSchedule",
       "base": "ScheduleService",
       "module": "@deepseek-ai/dsh-schedule",
@@ -7455,7 +7414,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-uploads.ts",
-      "line": 62,
+      "line": 63,
       "name": "AccountFileUploads",
       "base": "FileUploads",
       "module": "@deepseek-ai/dsh-client-file-upload",
@@ -7472,7 +7431,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-user-questions.ts",
-      "line": 61,
+      "line": 62,
       "name": "AccountUserQuestions",
       "base": "UserQuestions",
       "module": "@deepseek-ai/dsh-user-questions",
@@ -7487,7 +7446,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native.ts",
-      "line": 380,
+      "line": 381,
       "name": "AccountSessionController",
       "base": "SessionController",
       "module": "@deepseek-ai/dsh-api-session-controller",
@@ -7539,7 +7498,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native.ts",
-      "line": 388,
+      "line": 389,
       "name": "AccountSkillCatalog",
       "base": "SessionSkillCatalog",
       "module": "@deepseek-ai/dsh-api-session-controller",
@@ -7552,7 +7511,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 89,
+      "line": 90,
       "name": "AccountPluginManager",
       "base": "PluginManager",
       "module": "@deepseek-ai/dsh-plugin-manager",
@@ -7766,7 +7725,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/root.ts",
-      "line": 99,
+      "line": 100,
       "name": "PeAccountRuntime",
       "base": "Service",
       "module": "@deepseek-ai/cordis",
@@ -8488,148 +8447,8 @@
       "centralized": false
     },
     {
-      "path": "packages/cloud/pe-cloud-api/src/account-service.ts",
-      "line": 98,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const target: unknown = Reflect.get(value, symbols.original)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/account-service.ts",
-      "line": 1266,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "registry-fibers"
-      ],
-      "code": "for (const runtime of owner.registry.values()) {",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/account-service.ts",
-      "line": 1268,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "registry-fibers"
-      ],
-      "code": "for (const fiber of runtime.fibers) {",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/capability-inventory.ts",
-      "line": 17,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const target: unknown = Reflect.get(value, symbols.original)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/cloud-mcp-connections.ts",
-      "line": 27,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "function original(value: object): object { const raw: unknown = Reflect.get(value, symbols.original)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/cloud-model-key.ts",
-      "line": 39,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const target: unknown = Reflect.get(value, symbols.original)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/cloud-plugins.ts",
-      "line": 15,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const target: unknown = Reflect.get(value, symbols.original)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/cloud-projects.ts",
-      "line": 23,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const target: unknown = Reflect.get(value, symbols.original)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/cloud-remote-servers.ts",
-      "line": 28,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "symbols.original); return raw !== null && typeof raw === 'object' ? raw : value }",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/cloud-skills.ts",
-      "line": 35,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const target: unknown = Reflect.get(value, symbols.original)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/cloud-skills.ts",
-      "line": 53,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const registry: unknown = scopedRegistry === undefined ? undefined : Reflect.get(scopedRegistry, symbols.original) ?? scopedRegistry",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/first-screen-events.ts",
-      "line": 96,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const skillIdentity: unknown = skills === undefined ? undefined : Reflect.get(skills, symbols.original) ?? skills",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/first-screen-events.ts",
-      "line": 121,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "if (current === undefined || (Reflect.get(current, symbols.original) ?? current) !== skillIdentity) unavailable()",
-      "centralized": false
-    },
-    {
       "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 16,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const target: unknown = Reflect.get(value, symbols.original)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 56,
+      "line": 57,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -8639,7 +8458,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 57,
+      "line": 58,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -8649,7 +8468,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 58,
+      "line": 59,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -8659,7 +8478,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 59,
+      "line": 60,
       "plugin": "pe-cloud-api",
       "categories": [
         "fiber-runtime",
@@ -8670,7 +8489,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 60,
+      "line": 61,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -8680,7 +8499,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 64,
+      "line": 65,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -8690,7 +8509,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 65,
+      "line": 66,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -8700,7 +8519,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 66,
+      "line": 67,
       "plugin": "pe-cloud-api",
       "categories": [
         "fiber-runtime",
@@ -8711,7 +8530,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 72,
+      "line": 73,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -8721,7 +8540,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 85,
+      "line": 86,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -8731,7 +8550,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 103,
+      "line": 104,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -8741,7 +8560,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 138,
+      "line": 139,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -8751,7 +8570,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 139,
+      "line": 140,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -8761,7 +8580,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 140,
+      "line": 141,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -8771,7 +8590,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 141,
+      "line": 142,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -8781,7 +8600,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 144,
+      "line": 145,
       "plugin": "pe-cloud-api",
       "categories": [
         "fiber-runtime"
@@ -8791,7 +8610,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 159,
+      "line": 160,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -8801,7 +8620,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 160,
+      "line": 161,
       "plugin": "pe-cloud-api",
       "categories": [
         "fiber-runtime",
@@ -8812,7 +8631,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 216,
+      "line": 217,
       "plugin": "pe-cloud-api",
       "categories": [
         "fiber-runtime"
@@ -8821,118 +8640,8 @@
       "centralized": false
     },
     {
-      "path": "packages/cloud/pe-cloud-api/src/model-key.ts",
-      "line": 45,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const target: unknown = Reflect.get(value, symbols.original)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/native-agent-factory.ts",
-      "line": 105,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "&& (Reflect.get(left, symbols.original) ?? left) === (Reflect.get(right, symbols.original) ?? right)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/native-commands.ts",
-      "line": 55,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const current = ctx.get('commands'), target: unknown = current === undefined ? undefined : Reflect.get(current, symbols.original) ?? current",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/native-commands.ts",
-      "line": 115,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const current = ctx.get('commands'), target: unknown = current === undefined ? undefined : Reflect.get(current, symbols.original) ?? current",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/native-feedback.ts",
-      "line": 78,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const original: unknown = scoped === undefined ? undefined : Reflect.get(scoped, symbols.original) ?? scoped",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/native-files.ts",
-      "line": 24,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const target: unknown = Reflect.get(value, symbols.original)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/native-files.ts",
-      "line": 56,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "registry-fibers"
-      ],
-      "code": "for (const runtime of ctx.registry.values()) {",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/native-files.ts",
-      "line": 58,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "registry-fibers"
-      ],
-      "code": "for (const fiber of runtime.fibers) {",
-      "centralized": false
-    },
-    {
       "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 105,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const target: unknown = Reflect.get(value, symbols.original)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 130,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "registry-fibers"
-      ],
-      "code": "for (const runtime of ctx.registry.values()) {",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 132,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "registry-fibers"
-      ],
-      "code": "for (const fiber of runtime.fibers) {",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 216,
+      "line": 213,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -8942,7 +8651,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 217,
+      "line": 214,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -8952,7 +8661,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 218,
+      "line": 215,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -8961,28 +8670,38 @@
       "centralized": false
     },
     {
-      "path": "packages/cloud/pe-cloud-api/src/native-goals.ts",
-      "line": 57,
+      "path": "packages/cloud/pe-cloud-api/src/native-inventory.ts",
+      "line": 29,
       "plugin": "pe-cloud-api",
       "categories": [
         "proxy-original"
       ],
-      "code": "const current = ctx.get('goals'), original: unknown = current === undefined ? undefined : Reflect.get(current, symbols.original) ?? current",
-      "centralized": false
+      "code": "export function nativeOriginal(value: object): unknown { return Reflect.get(value, symbols.original) }",
+      "centralized": true
     },
     {
-      "path": "packages/cloud/pe-cloud-api/src/native-office.ts",
-      "line": 52,
+      "path": "packages/cloud/pe-cloud-api/src/native-inventory.ts",
+      "line": 37,
       "plugin": "pe-cloud-api",
       "categories": [
-        "proxy-original"
+        "registry-fibers"
       ],
-      "code": "const target: unknown = Reflect.get(value, symbols.original)",
-      "centralized": false
+      "code": "for (const runtime of ctx.registry.values()) {",
+      "centralized": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-api/src/native-inventory.ts",
+      "line": 39,
+      "plugin": "pe-cloud-api",
+      "categories": [
+        "registry-fibers"
+      ],
+      "code": "for (const fiber of runtime.fibers) {",
+      "centralized": true
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-office.ts",
-      "line": 94,
+      "line": 95,
       "plugin": "pe-cloud-api",
       "categories": [
         "fiber-deref"
@@ -8992,27 +8711,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-office.ts",
-      "line": 138,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "registry-fibers"
-      ],
-      "code": "for (const runtime of ctx.registry.values()) {",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/native-office.ts",
-      "line": 140,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "registry-fibers"
-      ],
-      "code": "for (const fiber of runtime.fibers) {",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/native-office.ts",
-      "line": 143,
+      "line": 141,
       "plugin": "pe-cloud-api",
       "categories": [
         "fiber-records"
@@ -9021,128 +8720,8 @@
       "centralized": false
     },
     {
-      "path": "packages/cloud/pe-cloud-api/src/native-permissions.ts",
-      "line": 69,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const original: unknown = current === undefined ? undefined : Reflect.get(current, symbols.original) ?? current",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/native-plugin-inventory.ts",
-      "line": 54,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const original: unknown = current === undefined ? undefined : Reflect.get(current, symbols.original) ?? current",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/native-presets.ts",
-      "line": 59,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "if ((value === undefined ? undefined : Reflect.get(value, symbols.original) ?? value) !== installation.value) unavailable()",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/native-schedule.ts",
-      "line": 76,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const original: unknown = scoped === undefined ? undefined : Reflect.get(scoped, symbols.original) ?? scoped",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/native-session-export.ts",
-      "line": 24,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const target: unknown = Reflect.get(value, symbols.original)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/native-uploads.ts",
-      "line": 28,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const target: unknown = Reflect.get(value, symbols.original)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/native-uploads.ts",
-      "line": 119,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "registry-fibers"
-      ],
-      "code": "for (const runtime of ctx.registry.values()) {",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/native-uploads.ts",
-      "line": 121,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "registry-fibers"
-      ],
-      "code": "for (const fiber of runtime.fibers) {",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/native-user-questions.ts",
-      "line": 42,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const current = ctx.get('userQuestions'), original: unknown = current === undefined ? undefined : Reflect.get(current, symbols.original) ?? current",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/native.ts",
-      "line": 407,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const target: unknown = scoped === undefined ? undefined : Reflect.get(scoped, symbols.original) ?? scoped",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/native.ts",
-      "line": 637,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const target: unknown = Reflect.get(controller, symbols.original)",
-      "centralized": false
-    },
-    {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 57,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const target: unknown = Reflect.get(value, symbols.original)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 296,
+      "line": 297,
       "plugin": "pe-cloud-api",
       "categories": [
         "fiber-runtime"
@@ -9152,7 +8731,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 347,
+      "line": 348,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -9162,7 +8741,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 349,
+      "line": 350,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -9172,7 +8751,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 370,
+      "line": 371,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -9182,7 +8761,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 415,
+      "line": 416,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -9192,7 +8771,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 417,
+      "line": 418,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -9202,7 +8781,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 422,
+      "line": 423,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -9212,7 +8791,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 425,
+      "line": 426,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -9222,7 +8801,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 439,
+      "line": 440,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -9232,7 +8811,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 441,
+      "line": 442,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -9242,7 +8821,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 446,
+      "line": 447,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -9252,7 +8831,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 448,
+      "line": 449,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -9262,7 +8841,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 450,
+      "line": 451,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -9272,7 +8851,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 451,
+      "line": 452,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -9282,7 +8861,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 452,
+      "line": 453,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -9292,7 +8871,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 457,
+      "line": 458,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -9302,7 +8881,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 469,
+      "line": 470,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -9312,7 +8891,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 569,
+      "line": 570,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -9322,7 +8901,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 570,
+      "line": 571,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -9332,7 +8911,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 571,
+      "line": 572,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -9342,7 +8921,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 572,
+      "line": 573,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -9352,7 +8931,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 573,
+      "line": 574,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -9362,7 +8941,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 617,
+      "line": 618,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
@@ -9372,32 +8951,12 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 638,
+      "line": 639,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
       ],
       "code": "if (operation.kind === 'enabled' && entry.disabled === operation.enabled) throw new ConfigSaveOutcomeUnknown()",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/remote-server-approval.ts",
-      "line": 20,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const originalApproval: unknown = Reflect.get(approval, symbols.original) ?? approval",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/remote-server-approval.ts",
-      "line": 23,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const selectedOriginal: unknown = selected === undefined ? undefined : Reflect.get(selected, symbols.original) ?? selected",
       "centralized": false
     },
     {
@@ -9551,500 +9110,8 @@
       "centralized": false
     },
     {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-attachments.ts",
-      "line": 35,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const raw: unknown = Reflect.get(value, symbols.original)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 363,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "if (entry.moduleNamespace === FilesAccount) entries.push(entry)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 449,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const originalDirectory: unknown = Reflect.get(directory, symbols.original) ?? directory",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 453,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "|| [local, account, root].some(value => (Reflect.get(value, symbols.original) ?? value) !== originalDirectory)) {",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 605,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const rawAgents: unknown = agents === undefined ? undefined : Reflect.get(agents, symbols.original) ?? agents",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 606,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const rawPersistence: unknown = persistence === undefined ? undefined : Reflect.get(persistence, symbols.original) ?? persistence",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 626,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-builtins"
-      ],
-      "code": "const builtins = ctx.loader.builtins",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 796,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-builtins"
-      ],
-      "code": "Object.assign(builtins, entries, firstScreenEntries)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 827,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "if (entry.moduleNamespace !== provider) continue",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-native-integration.ts",
-      "line": 828,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "fiber-runtime",
-        "loader-entry"
-      ],
-      "code": "if (++count !== 1 || entry.fiber?.state !== FiberState.ACTIVE || entry.fiber.runtime?.callback !== provider) {",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-permissions.ts",
-      "line": 34,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const original: unknown = Reflect.get(policy, symbols.original) ?? policy",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-permissions.ts",
-      "line": 38,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "if (!(current instanceof SandboxPolicyService) || (Reflect.get(current, symbols.original) ?? current) !== original) denied()",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 81,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const target: unknown = Reflect.get(value, symbols.original)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 208,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "internal-events"
-      ],
-      "code": "ctx.on('loader/partial-dispose', (entry) => { revoke(entry) })",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 209,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "internal-events"
-      ],
-      "code": "ctx.on('loader/volatile-update', function (this: Fiber) { revoke(undefined, this) }, { global: true })",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 210,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "internal-events"
-      ],
-      "code": "ctx.on('internal/plugin', (fiber) => { revoke(undefined, fiber) })",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 211,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "internal-events"
-      ],
-      "code": "ctx.on('internal/status', (fiber) => { revoke(undefined, fiber) })",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 212,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "internal-events"
-      ],
-      "code": "ctx.on('internal/update', function (this: Fiber, _config, next) {",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 245,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "|| fact.entry.moduleNamespace !== fact.module) unavailable()",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 401,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "const plan = entry.prepareConfigUpdate(entry.options.config)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 403,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "return { id, entry, fiber, plan, module: entry.moduleNamespace }",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 407,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "fiber-runtime"
-      ],
-      "code": "if (preset.fiber.runtime?.callback !== AgentPreset || !object(config)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 416,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "|| loop.entry.options.name !== 'cordis:' + ACCOUNT_NATIVE_ENTRIES.agentLoop",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 430,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "fiber-runtime"
-      ],
-      "code": "const schema = installed.fiber.runtime?.Config",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 431,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "if (installed.entry.options.name !== expected.name || schema === undefined",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 432,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "|| !isDeepStrictEqual(installed.entry.options.config, expected.config)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 434,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "fiber-config"
-      ],
-      "code": "installed.fiber.resolveConfig(structuredClone(expected.config)))) refuse()",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 440,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "|| fact.entry.moduleNamespace !== fact.module || !fact.entry.isConfigPlanVersionCurrent(fact.plan)) unavailable()",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 448,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "|| fact.entry.moduleNamespace !== fact.module || !fact.entry.isConfigPlanVersionCurrent(fact.plan)) unavailable()",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 521,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "? fact.entry.options.id === this.config.agentLoopEntryId",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 523,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "if (facts === undefined || setting === undefined || !object(setting.entry.options.config)) unavailable()",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 529,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "const before = structuredClone(setting.entry.options.config) as Record<string, unknown>",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 543,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "|| setting.fiber.state !== FiberState.ACTIVE || setting.entry.moduleNamespace !== setting.module",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 546,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "const after: unknown = setting.entry.options.config",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 908,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "registry-fibers"
-      ],
-      "code": "for (const fiber of this.ctx.registry.get(SubagentRuntime)?.fibers ?? []) {",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 910,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "fiber-runtime"
-      ],
-      "code": "if (++native > 1 || fiber.state !== FiberState.ACTIVE || fiber.runtime?.callback !== SubagentRuntime",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 918,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "registry-fibers"
-      ],
-      "code": "for (const fiber of this.ctx.registry.get(namespace)?.fibers ?? []) {",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 920,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "fiber-runtime"
-      ],
-      "code": "if (++found > 1 || fiber.state !== FiberState.ACTIVE || fiber.runtime?.callback !== namespace.apply",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 921,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "|| fiber.entry?.moduleNamespace !== namespace || !object(config)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 940,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "registry-fibers"
-      ],
-      "code": "for (const runtime of this.ctx.registry.values()) for (const fiber of runtime.fibers) {",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 941,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "if (scopeOf(fiber.ctx) !== generation || fiber.entry === undefined || fiber.entry.options.group || fiber.entry.disabled) continue",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 952,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "const namespace: unknown = await entry.parent.tree.import(entry.options.name)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 959,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "fiber-runtime",
-        "loader-entry"
-      ],
-      "code": "if (fiber?.state !== FiberState.ACTIVE || entry.moduleNamespace !== namespace || fiber.runtime?.callback !== callback",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 961,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "|| !modules.some(row => row.moduleName === entry.options.name && row.baseUrl === entry.parent.tree.ctx.baseUrl)) refuse()",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 962,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "const plan = entry.prepareConfigUpdate(entry.options.config)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-policy.ts",
-      "line": 964,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "facts.push({ id: entry.options.id, entry, fiber, plan, module: namespace })",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/account-skills.ts",
-      "line": 19,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "const target: unknown = Reflect.get(value, symbols.original)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/native-boot.ts",
-      "line": 164,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "fiber-deref"
-      ],
-      "code": "if (!disposeRequested && message.fiber?.deref()?.state !== FiberState.UNLOADING) return",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/native-boot.ts",
-      "line": 198,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "const matches = entries.filter(entry => entry.options.id === id)",
-      "centralized": false
-    },
-    {
       "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
-      "line": 19,
+      "line": 20,
       "plugin": "pe-cloud-runtime",
       "categories": [
         "fiber-config"
@@ -10054,7 +9121,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
-      "line": 25,
+      "line": 26,
       "plugin": "pe-cloud-runtime",
       "categories": [
         "fiber-records"
@@ -10064,7 +9131,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
-      "line": 50,
+      "line": 51,
       "plugin": "pe-cloud-runtime",
       "categories": [
         "isolate-reflect-store"
@@ -10074,7 +9141,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
-      "line": 51,
+      "line": 52,
       "plugin": "pe-cloud-runtime",
       "categories": [
         "isolate-reflect-store"
@@ -10083,354 +9150,304 @@
       "centralized": true
     },
     {
-      "path": "packages/cloud/pe-cloud-runtime/src/office-profile.ts",
+      "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
+      "line": 59,
+      "plugin": "pe-cloud-runtime",
+      "categories": [
+        "proxy-original"
+      ],
+      "code": "export function nativeOriginal(value: object): unknown { return Reflect.get(value, symbols.original) }",
+      "centralized": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
+      "line": 65,
+      "plugin": "pe-cloud-runtime",
+      "categories": [
+        "loader-entry"
+      ],
+      "code": "export function nativeEntryModule(entry: Entry | undefined): Entry['moduleNamespace'] { return entry?.moduleNamespace }",
+      "centralized": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
+      "line": 71,
+      "plugin": "pe-cloud-runtime",
+      "categories": [
+        "loader-entry"
+      ],
+      "code": "export function nativeEntryId(entry: Entry): Entry['options']['id'] { return entry.options.id }",
+      "centralized": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
+      "line": 77,
+      "plugin": "pe-cloud-runtime",
+      "categories": [
+        "loader-entry"
+      ],
+      "code": "export function nativeEntryName(entry: Entry): Entry['options']['name'] { return entry.options.name }",
+      "centralized": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
+      "line": 83,
+      "plugin": "pe-cloud-runtime",
+      "categories": [
+        "loader-entry"
+      ],
+      "code": "export function nativeEntryConfig(entry: Entry): Entry['options']['config'] { return entry.options.config }",
+      "centralized": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
+      "line": 89,
+      "plugin": "pe-cloud-runtime",
+      "categories": [
+        "loader-entry"
+      ],
+      "code": "export function nativeEntryDisabled(entry: Entry): Entry['disabled'] { return entry.disabled }",
+      "centralized": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
       "line": 95,
       "plugin": "pe-cloud-runtime",
       "categories": [
         "loader-entry"
       ],
-      "code": "|| entry.disabled !== undefined && entry.disabled !== false || !record(entry.config)) refuse()",
-      "centralized": false
+      "code": "export function nativeEntryGroup(entry: Entry): Entry['options']['group'] { return entry.options.group }",
+      "centralized": true
     },
     {
-      "path": "packages/cloud/pe-cloud-runtime/src/office-profile.ts",
-      "line": 96,
+      "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
+      "line": 102,
+      "plugin": "pe-cloud-runtime",
+      "categories": [
+        "fiber-runtime"
+      ],
+      "code": "return fiber?.runtime?.callback",
+      "centralized": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
+      "line": 109,
+      "plugin": "pe-cloud-runtime",
+      "categories": [
+        "fiber-runtime"
+      ],
+      "code": "export function nativeConfigSchema(fiber: Fiber): NonNullable<Fiber['runtime']>['Config'] | undefined { return fiber.runtime?.Config }",
+      "centralized": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
+      "line": 117,
+      "plugin": "pe-cloud-runtime",
+      "categories": [
+        "fiber-config"
+      ],
+      "code": "return fiber.resolveConfig(config)",
+      "centralized": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
+      "line": 125,
       "plugin": "pe-cloud-runtime",
       "categories": [
         "loader-entry"
       ],
-      "code": "return entry.config",
-      "centralized": false
+      "code": "return entry.parent.tree.import(entry.options.name)",
+      "centralized": true
     },
     {
-      "path": "packages/cloud/pe-cloud-runtime/src/recipe-audit.ts",
-      "line": 45,
+      "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
+      "line": 132,
       "plugin": "pe-cloud-runtime",
       "categories": [
-        "proxy-original"
+        "loader-entry"
       ],
-      "code": "const target: unknown = Reflect.get(value, symbols.original)",
-      "centralized": false
+      "code": "export function nativeEntryBaseUrl(entry: Entry): Entry['parent']['tree']['ctx']['baseUrl'] { return entry.parent.tree.ctx.baseUrl }",
+      "centralized": true
     },
     {
-      "path": "packages/cloud/pe-cloud-runtime/src/recipe-audit.ts",
-      "line": 74,
+      "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
+      "line": 139,
       "plugin": "pe-cloud-runtime",
       "categories": [
-        "internal-events"
+        "registry-fibers"
       ],
-      "code": "owner.on('internal/plugin', () => { this.revoke('root-plugin') })",
-      "centralized": false
+      "code": "for (const runtime of ctx.registry.values()) yield* runtime.fibers",
+      "centralized": true
     },
     {
-      "path": "packages/cloud/pe-cloud-runtime/src/recipe-audit.ts",
-      "line": 75,
+      "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
+      "line": 148,
       "plugin": "pe-cloud-runtime",
       "categories": [
-        "internal-events"
+        "registry-fibers"
       ],
-      "code": "owner.on('internal/service', () => { this.revoke('root-service') })",
-      "centralized": false
+      "code": "return ctx.registry.get(plugin)?.fibers ?? []",
+      "centralized": true
     },
     {
-      "path": "packages/cloud/pe-cloud-runtime/src/recipe-audit.ts",
-      "line": 76,
+      "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
+      "line": 165,
       "plugin": "pe-cloud-runtime",
       "categories": [
-        "internal-events"
+        "loader-builtins"
       ],
-      "code": "owner.on('loader/entry-init', () => { this.revoke('entry-init') })",
-      "centralized": false
+      "code": "const builtins = ctx.loader.builtins",
+      "centralized": true
     },
     {
-      "path": "packages/cloud/pe-cloud-runtime/src/recipe-audit.ts",
-      "line": 77,
+      "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
+      "line": 171,
       "plugin": "pe-cloud-runtime",
       "categories": [
-        "internal-events"
+        "loader-builtins"
       ],
-      "code": "owner.on('loader/partial-dispose', () => { this.revoke('partial-dispose') })",
-      "centralized": false
+      "code": "Object.assign(builtins, modules)",
+      "centralized": true
     },
     {
-      "path": "packages/cloud/pe-cloud-runtime/src/recipe-audit.ts",
-      "line": 78,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "internal-events"
-      ],
-      "code": "owner.on('loader/volatile-update', () => { this.revoke('volatile-update') }, { global: true })",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/recipe-audit.ts",
-      "line": 79,
+      "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
+      "line": 179,
       "plugin": "pe-cloud-runtime",
       "categories": [
         "internal-events"
       ],
-      "code": "owner.on('loader/patch-context', (_entry, next) => { this.revoke('patch-context'); return next() })",
-      "centralized": false
+      "code": "ctx.on('loader/partial-dispose', (entry) => { revoke(entry) })",
+      "centralized": true
     },
     {
-      "path": "packages/cloud/pe-cloud-runtime/src/recipe-audit.ts",
-      "line": 83,
+      "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
+      "line": 180,
+      "plugin": "pe-cloud-runtime",
+      "categories": [
+        "internal-events"
+      ],
+      "code": "ctx.on('loader/volatile-update', function (this: Fiber) { revoke(undefined, this) }, { global: true })",
+      "centralized": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
+      "line": 181,
+      "plugin": "pe-cloud-runtime",
+      "categories": [
+        "internal-events"
+      ],
+      "code": "ctx.on('internal/plugin', (fiber) => { revoke(undefined, fiber) })",
+      "centralized": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
+      "line": 182,
+      "plugin": "pe-cloud-runtime",
+      "categories": [
+        "internal-events"
+      ],
+      "code": "ctx.on('internal/status', (fiber) => { revoke(undefined, fiber) })",
+      "centralized": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
+      "line": 183,
+      "plugin": "pe-cloud-runtime",
+      "categories": [
+        "internal-events"
+      ],
+      "code": "ctx.on('internal/update', function (this: Fiber, _config, next) {",
+      "centralized": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
+      "line": 195,
+      "plugin": "pe-cloud-runtime",
+      "categories": [
+        "internal-events"
+      ],
+      "code": "owner.on('internal/plugin', () => { revoke('root-plugin') })",
+      "centralized": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
+      "line": 196,
+      "plugin": "pe-cloud-runtime",
+      "categories": [
+        "internal-events"
+      ],
+      "code": "owner.on('internal/service', () => { revoke('root-service') })",
+      "centralized": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
+      "line": 197,
+      "plugin": "pe-cloud-runtime",
+      "categories": [
+        "internal-events"
+      ],
+      "code": "owner.on('loader/entry-init', () => { revoke('entry-init') })",
+      "centralized": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
+      "line": 198,
+      "plugin": "pe-cloud-runtime",
+      "categories": [
+        "internal-events"
+      ],
+      "code": "owner.on('loader/partial-dispose', () => { revoke('partial-dispose') })",
+      "centralized": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
+      "line": 199,
+      "plugin": "pe-cloud-runtime",
+      "categories": [
+        "internal-events"
+      ],
+      "code": "owner.on('loader/volatile-update', () => { revoke('volatile-update') }, { global: true })",
+      "centralized": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
+      "line": 200,
+      "plugin": "pe-cloud-runtime",
+      "categories": [
+        "internal-events"
+      ],
+      "code": "owner.on('loader/patch-context', (_entry, next) => { revoke('patch-context'); return next() })",
+      "centralized": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
+      "line": 201,
       "plugin": "pe-cloud-runtime",
       "categories": [
         "internal-events"
       ],
       "code": "owner.on('internal/update', function (this: Fiber, _config, next) {",
-      "centralized": false
+      "centralized": true
     },
     {
-      "path": "packages/cloud/pe-cloud-runtime/src/recipe-audit.ts",
-      "line": 143,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "const modules = rows.filter(row => row.moduleNamespace === expected.module)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/recipe-audit.ts",
-      "line": 146,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "if (entry === undefined || entry.disabled) { issue('root-entry-inactive'); continue }",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/recipe-audit.ts",
-      "line": 147,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "if (entry.moduleNamespace !== expected.module) { issue('root-module-replaced'); continue }",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/recipe-audit.ts",
-      "line": 153,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "const plan = entry.prepareConfigUpdate(entry.options.config)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/recipe-audit.ts",
-      "line": 155,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "facts.set(entry, { entry, fiber, plan, module: entry.moduleNamespace })",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/recipe-audit.ts",
-      "line": 169,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "const plan = entry.prepareConfigUpdate(entry.options.config)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/recipe-audit.ts",
-      "line": 171,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "facts.set(entry, { entry, fiber, plan, module: entry.moduleNamespace })",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/recipe-audit.ts",
-      "line": 175,
+      "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
+      "line": 213,
       "plugin": "pe-cloud-runtime",
       "categories": [
         "registry-fibers"
       ],
-      "code": "for (const runtime of root.registry.values()) {",
-      "centralized": false
+      "code": "for (const runtime of ctx.registry.values()) {",
+      "centralized": true
     },
     {
-      "path": "packages/cloud/pe-cloud-runtime/src/recipe-audit.ts",
-      "line": 177,
+      "path": "packages/cloud/pe-cloud-runtime/src/native-state.ts",
+      "line": 215,
       "plugin": "pe-cloud-runtime",
       "categories": [
         "registry-fibers"
       ],
       "code": "for (const fiber of runtime.fibers) {",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/recipe-audit.ts",
-      "line": 338,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "if (matches.length !== 1 || entry === undefined || !object(entry.moduleNamespace)) unavailable()",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/recipe-audit.ts",
-      "line": 339,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "roots.push({ role, entryId: entry.options.id, module: entry.moduleNamespace })",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/recipe-audit.ts",
-      "line": 343,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "registry-fibers"
-      ],
-      "code": "for (const runtime of root.registry.values()) {",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/recipe-audit.ts",
-      "line": 345,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "registry-fibers"
-      ],
-      "code": "for (const fiber of runtime.fibers) {",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/recipe-audit.ts",
-      "line": 366,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "providers.push({ key, entryId: entry.options.id, value: installed.value })",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/recipe-audit.ts",
-      "line": 390,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "if (nativeEntryFiber(entry) !== fiber || fiber.state !== FiberState.ACTIVE || entry.moduleNamespace !== module) throw new Error('changed')",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/recipe-audit.ts",
-      "line": 421,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "if (nativeEntryFiber(entry) !== fiber || fiber.state !== FiberState.ACTIVE || entry.moduleNamespace !== module) throw new Error('changed')",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/recipe-audit.ts",
-      "line": 456,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "if (nativeEntryFiber(entry) !== fiber || fiber.state !== FiberState.ACTIVE || entry.moduleNamespace !== module) throw new Error('changed')",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/root.ts",
-      "line": 936,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "|| (Reflect.get(current, symbols.original) ?? current) !== (Reflect.get(selectedAuth, symbols.original) ?? selectedAuth)) {",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/root.ts",
-      "line": 946,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "|| (Reflect.get(current, symbols.original) ?? current) !== (Reflect.get(selectedAuth, symbols.original) ?? selectedAuth)) {",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/root.ts",
-      "line": 957,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "|| (Reflect.get(current, symbols.original) ?? current) !== (Reflect.get(selectedPackages, symbols.original) ?? selectedPackages)) {",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/root.ts",
-      "line": 1023,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "|| (Reflect.get(current, symbols.original) ?? current) !== (Reflect.get(selectedAuth, symbols.original) ?? selectedAuth)) {",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/root.ts",
-      "line": 1032,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "if (!hasRootFetch(current) || (Reflect.get(current, symbols.original) ?? current)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/root.ts",
-      "line": 1033,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "!== (Reflect.get(auth, symbols.original) ?? auth)) throw new AccountMountPrerequisiteError()",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/root.ts",
-      "line": 1055,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "if (!hasReadCarrier(current) || (Reflect.get(current, symbols.original) ?? current)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-runtime/src/root.ts",
-      "line": 1056,
-      "plugin": "pe-cloud-runtime",
-      "categories": [
-        "proxy-original"
-      ],
-      "code": "!== (Reflect.get(selectedAuth, symbols.original) ?? selectedAuth)) throw new AccountMountPrerequisiteError()",
-      "centralized": false
+      "centralized": true
     },
     {
       "path": "packages/cloud/pe-opensandbox/src/account-port.ts",
@@ -11549,7 +10566,7 @@
     {
       "路径": "packages/api/gateway/src/index.ts",
       "类别": "云端定制",
-      "原因": "加了 createNodeStreamTransport、远程事件队列上限参数、inspectInvocation 三个扩展点，同时把流清理从“不等待、只打日志”改成“等待并保留失败”（改默认）",
+      "原因": "加了 createNodeStreamTransport、远程事件队列上限参数、inspectInvocation 三个扩展点，同时把流清理从“不等待、只打日志”改成“等待并保留失败”（改默认）；Node mux 可选失败投影只提供默认不变口子，私密错误文本策略在 Access",
       "撤销条件": "三个扩展点保留；清理语义改动拆成独立补丁，提上游或回退",
       "处置": "搬进插件",
       "这一程的状态": "没动",
@@ -11675,11 +10692,11 @@
     {
       "路径": "packages/session-query/session-query/src/cold-read.ts",
       "类别": "云端定制",
-      "原因": "新增两种冷读函数（保留句柄关闭失败、取消后结算）；原函数不变，但 observation.ts 默认改用新函数",
+      "原因": "新增两种冷读函数（保留句柄关闭失败、取消后结算）；原函数不变，但 observation.ts 默认改用新函数；当前原生观察器不消费旧清理认证助手/异常类，生产代码无调用；撤回通用取消认证要求及其专用分支测试",
       "撤销条件": "随取消结算加固一起提上游或回退",
-      "处置": "搬进插件",
-      "这一程的状态": "没动",
-      "changed": true
+      "处置": "撤掉",
+      "这一程的状态": "已撤",
+      "changed": false
     },
     {
       "路径": "vendor/loader/src/index.ts",
@@ -12098,11 +11115,11 @@
     {
       "路径": "packages/session-query/session-query/src/config.ts",
       "类别": "扩展点",
-      "原因": "两个新错误类 SessionQuerySettledStatAbortError、SessionQuerySettledReadAbortError",
+      "原因": "两个新错误类 SessionQuerySettledStatAbortError、SessionQuerySettledReadAbortError；当前原生观察器不消费旧清理认证助手/异常类，生产代码无调用；撤回通用取消认证要求及其专用分支测试",
       "撤销条件": "随取消结算加固一起提上游或回退",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
+      "处置": "撤掉",
+      "这一程的状态": "已撤",
+      "changed": false
     },
     {
       "路径": "packages/mcp/mcp-client/src/transport.ts",
@@ -12368,11 +11385,11 @@
     {
       "路径": "packages/session-query/session-query/src/index.ts",
       "类别": "登记",
-      "原因": "导出两个新错误类",
+      "原因": "导出两个新错误类；当前原生观察器不消费旧清理认证助手/异常类，生产代码无调用；撤回通用取消认证要求及其专用分支测试",
       "撤销条件": "随取消结算加固一起提上游或回退",
       "处置": "撤掉",
-      "这一程的状态": "没动",
-      "changed": true
+      "这一程的状态": "已撤",
+      "changed": false
     },
     {
       "路径": "packages/api/remotes/src/remote-events.ts",

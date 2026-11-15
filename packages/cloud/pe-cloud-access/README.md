@@ -254,3 +254,5 @@ The bounded optional `configuration.mcp: { manage: true }` is emitted only from 
 Focused tests use real PostgreSQL, native Connection/Gateway and memory socket pairs to verify shared HTTP/WS Peer, revocation, expiry and retained cleanup. Account borrows are fixtures rather than the product factory; Loader account boot and running Agent task isolation remain unverified.
 
 </details>
+
+Admitted Node muxes replace generic `gateway/internal` diagnostics with fixed public text and empty details. Remote failures with other codes retain their native codes and messages. The projection does not change the original stream cleanup outcome or release retained account responsibility.

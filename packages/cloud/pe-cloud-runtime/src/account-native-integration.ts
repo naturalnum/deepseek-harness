@@ -1,6 +1,7 @@
 /** Factory-owned native API/execution installation; files and storage authorization precede production boot. */
+import { nativeOriginal, nativeEntryModule, nativeCallback, nativeInstallBuiltins, nativeEntryFiber } from './native-state.ts'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
-import { FiberState, symbols, type Context, type Fiber } from '@deepseek-ai/cordis'
+import { FiberState, type Context, type Fiber } from '@deepseek-ai/cordis'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import AgentPresets from '@deepseek-ai/dsh-agent-preset-registry'
@@ -360,7 +361,7 @@ export class AccountNativeIntegration {
         if (++visited > input.maxNativeInventoryEntries) {
           throw new AccountRuntimeError('cloud/account-unavailable', 'Native files inventory exceeds its explicit limit')
         }
-        if (entry.moduleNamespace === FilesAccount) entries.push(entry)
+        if (nativeEntryModule(entry) === FilesAccount) entries.push(entry)
         if (entries.length > 1) throw new AccountRuntimeError('cloud/account-unavailable', 'Native files account entry is duplicated')
       }
       if (entries.length !== 1 || entries[0]?.fiber?.state !== FiberState.ACTIVE) {
@@ -446,11 +447,11 @@ export class AccountNativeIntegration {
           if (directory === undefined) {
             throw new AccountRuntimeError('cloud/account-unavailable', 'Native instruction sources require the original WorkingDirectory provider')
           }
-          const originalDirectory: unknown = Reflect.get(directory, symbols.original) ?? directory
+          const originalDirectory: unknown = nativeOriginal(directory) ?? directory
           const currentCwd = (): string => {
             const local = agent.ctx.get('workingDirectory'), account = ctx.get('workingDirectory'), root = ctx.root.get('workingDirectory')
             if (local === undefined || account === undefined || root === undefined
-              || [local, account, root].some(value => (Reflect.get(value, symbols.original) ?? value) !== originalDirectory)) {
+              || [local, account, root].some(value => (nativeOriginal(value) ?? value) !== originalDirectory)) {
               throw new AccountRuntimeError('cloud/stale-generation', 'The native instruction WorkingDirectory provider changed')
             }
             return local.get(agent.session)
@@ -602,8 +603,8 @@ export class AccountNativeIntegration {
         reserveSubagent === undefined ? undefined : depth => reserveSubagent(binding, depth))
       this.loopFiber = owner.fiber
       const agents = owner.get('agents'), persistence = owner.get('sessionPersistence')
-      const rawAgents: unknown = agents === undefined ? undefined : Reflect.get(agents, symbols.original) ?? agents
-      const rawPersistence: unknown = persistence === undefined ? undefined : Reflect.get(persistence, symbols.original) ?? persistence
+      const rawAgents: unknown = agents === undefined ? undefined : nativeOriginal(agents) ?? agents
+      const rawPersistence: unknown = persistence === undefined ? undefined : nativeOriginal(persistence) ?? persistence
       this.agents = rawAgents instanceof AgentRegistry ? rawAgents : undefined
       this.persistence = rawPersistence instanceof SessionPersistence ? rawPersistence : undefined
       return this.loop
@@ -623,7 +624,6 @@ export class AccountNativeIntegration {
         api.installLlmGuard(owner, approved.allowedModel)
       },
     }
-    const builtins = ctx.loader.builtins
     const pluginManager = api.providers.pluginManager
     const entries = {
       [ACCOUNT_NATIVE_ENTRIES.runtime]: RuntimeAccount,
@@ -788,12 +788,7 @@ export class AccountNativeIntegration {
         },
       },
     }
-    for (const key of [...Object.keys(entries), ...Object.keys(firstScreenEntries)]) {
-      if (Object.hasOwn(builtins, key)) {
-        throw new AccountRuntimeError('cloud/invalid-config', 'A fixed native account builtin has already been installed')
-      }
-    }
-    Object.assign(builtins, entries, firstScreenEntries)
+    nativeInstallBuiltins(ctx, { ...entries, ...firstScreenEntries })
     this.bootstrap = async () => {
       this.input.assertRootCurrent()
       mountCurrent(binding)
@@ -824,8 +819,9 @@ export class AccountNativeIntegration {
           if (++visited > input.maxNativeInventoryEntries) {
             throw new AccountRuntimeError('cloud/account-unavailable', 'Native writer inventory exceeds its explicit limit')
           }
-          if (entry.moduleNamespace !== provider) continue
-          if (++count !== 1 || entry.fiber?.state !== FiberState.ACTIVE || entry.fiber.runtime?.callback !== provider) {
+          if (nativeEntryModule(entry) !== provider) continue
+          if (++count !== 1 || nativeEntryFiber(entry)?.state !== FiberState.ACTIVE
+            || nativeCallback(nativeEntryFiber(entry)) !== provider) {
             throw new AccountRuntimeError('cloud/account-unavailable', 'The original guarded native writer is inactive or replaced')
           }
         }

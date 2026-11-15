@@ -1,7 +1,8 @@
 /** Native Office provider identity and bounded Remote declaration audit. */
+import { nativeOriginal, nativeAccountFibers } from './native-inventory.ts'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
-import { FiberState, symbols, type Context, type Fiber } from '@deepseek-ai/cordis'
+import { FiberState, type Context, type Fiber } from '@deepseek-ai/cordis'
 import OfficeKit, {
   OfficeKitError, type Config as NativeOfficeConfig, type OfficeKitRequest, type OfficeKitResult,
   type OfficeImagesRequest, type OfficeImagesResult, type OfficeConversionRequest,
@@ -49,7 +50,7 @@ function knownConversionFailure(cause: unknown): boolean {
 
 function original(value: object | undefined): object | undefined {
   if (value === undefined) return undefined
-  const target: unknown = Reflect.get(value, symbols.original)
+  const target: unknown = nativeOriginal(value)
   return target !== null && typeof target === 'object' ? target : value
 }
 
@@ -135,20 +136,16 @@ export function createNativeOffice(ctx: Context, binding: AccountBinding, curren
   const scan = (): void => {
     let remaining = maximum
     const found = new Map<string, { value: object; fiber: Fiber }>()
-    for (const runtime of ctx.registry.values()) {
-      if (--remaining < 0) unavailable()
-      for (const fiber of runtime.fibers) {
+    for (const fiber of nativeAccountFibers(ctx, () => { if (--remaining < 0) unavailable() })) {
+      if (fiber.ctx.root !== ctx.root || fiber.state !== FiberState.ACTIVE) continue
+      for (const entry of fiber.provisions) {
         if (--remaining < 0) unavailable()
-        if (fiber.ctx.root !== ctx.root || fiber.state !== FiberState.ACTIVE) continue
-        for (const entry of fiber.provisions) {
-          if (--remaining < 0) unavailable()
-          const key = entry.name, installed: unknown = entry.value
-          if (entry.ctx.fiber !== fiber || (key !== 'fs' && key !== 'workspaceFiles' && key !== 'officeKit')) continue
-          if (installed === null || typeof installed !== 'object' || found.has(key)) unavailable()
-          const unwrapped = original(installed)
-          if (unwrapped === undefined) unavailable()
-          found.set(key, { value: unwrapped, fiber })
-        }
+        const key = entry.name, installed: unknown = entry.value
+        if (entry.ctx.fiber !== fiber || (key !== 'fs' && key !== 'workspaceFiles' && key !== 'officeKit')) continue
+        if (installed === null || typeof installed !== 'object' || found.has(key)) unavailable()
+        const unwrapped = original(installed)
+        if (unwrapped === undefined) unavailable()
+        found.set(key, { value: unwrapped, fiber })
       }
     }
     for (const [key, expected] of [['fs', fs], ['workspaceFiles', files], ['officeKit', value]] as const) {

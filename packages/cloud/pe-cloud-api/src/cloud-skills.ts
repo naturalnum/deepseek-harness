@@ -1,5 +1,6 @@
 /** Independent skill Remote using the existing exact Peer/Use carrier and account save owner. */
-import { symbols, type Context } from '@deepseek-ai/cordis'
+import { nativeOriginal } from './native-inventory.ts'
+import { type Context } from '@deepseek-ai/cordis'
 import { Remote, remoteMethods, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import SkillRegistry from '@deepseek-ai/dsh-skill'
 import { CloudAccountFiles } from '@deepseek-ai/dsh-pe-cloud-files'
@@ -32,7 +33,7 @@ export interface CloudSkillPreparation extends ModelKeyPeerConsumer {
 declare module '@deepseek-ai/cordis' { interface Context { cloudSkills: CloudSkillService } }
 const methods = ['current', 'publish', 'installed', 'details', 'install', 'update', 'uninstall', 'download', 'readFile'] as const
 function original(value: object): object {
-  const target: unknown = Reflect.get(value, symbols.original)
+  const target: unknown = nativeOriginal(value)
   return target !== null && typeof target === 'object' ? target : value
 }
 function unavailable(): never { throw new CloudApiError('cloud/account-unavailable', 'The original skill capability is unavailable.') }
@@ -50,7 +51,7 @@ export class CloudSkillService extends TypertRemoteService {
     saves: ConfigSaveBarrier) {
     api.assertInstalled(ctx)
     const scopedRegistry = ctx.get('skills')
-    const registry: unknown = scopedRegistry === undefined ? undefined : Reflect.get(scopedRegistry, symbols.original) ?? scopedRegistry
+    const registry: unknown = scopedRegistry === undefined ? undefined : nativeOriginal(scopedRegistry) ?? scopedRegistry
     const managed: unknown = input.managed
     if (managed === undefined || ctx.get('cloudSkills') !== undefined || ctx.root.get('cloudSkills') !== undefined
       || !(input.files instanceof CloudAccountFiles) || input.files.binding !== api.binding || saves.binding !== api.binding

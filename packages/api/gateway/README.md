@@ -121,3 +121,5 @@ None.
 </details>
 
 The ./stream-protocol export supplies the shared Remote stream framing and parser to native Desktop callers. These callers use the same authenticated WebSocket endpoint as the browser client.
+
+The optional `createNodeStreamTransport` failure projection changes only the error fields sent by that admitted Node mux. Omission preserves native error messages. The original transport retains iterator, cleanup and resource settlement ownership.

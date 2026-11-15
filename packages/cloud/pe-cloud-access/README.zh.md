@@ -254,3 +254,5 @@ Root 显式配置 `accountAdministration: { maxAccounts, maxPageSize, initialAdm
 定向测试使用真实 PostgreSQL、原生 Connection/Gateway 和内存 socket 对验证 HTTP/WS 共用 Peer、撤销、到期及清理保留。账户借用是测试夹具，并非产品工厂；尚未通过 Loader 启动账户图或验证运行中的 Agent 任务隔离。
 
 </details>
+
+已准入 Node mux 将通用 `gateway/internal` 诊断替换为固定公开文本与空详情。其他代码的 Remote 失败保留原生代码和消息。该投影不改变原流清理结果，也不释放仍持有的账号责任。

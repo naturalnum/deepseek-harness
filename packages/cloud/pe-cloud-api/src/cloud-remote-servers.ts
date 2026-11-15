@@ -1,5 +1,6 @@
 /** Account-native management Remote over original Peer/Use, private files/credentials and native tool execution. */
-import { symbols, type Context } from '@deepseek-ai/cordis'
+import { nativeOriginal } from './native-inventory.ts'
+import { type Context } from '@deepseek-ai/cordis'
 import { z } from 'zod'
 import { Remote, remoteMethods, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { installRemoteServerTools, uploadedSshConfig } from '@deepseek-ai/dsh-remote-server-cloud'
@@ -24,8 +25,7 @@ export interface CloudRemoteServerPreparation extends ModelKeyPeerConsumer {
 }
 declare module '@deepseek-ai/cordis' { interface Context { cloudRemoteServers: CloudRemoteServerService } }
 function unavailable(): never { throw new CloudApiError('cloud/account-unavailable', 'Account remote-server management is unavailable.') }
-function original(value: object): object { const raw: unknown = Reflect.get(value,
-  symbols.original); return raw !== null && typeof raw === 'object' ? raw : value }
+function original(value: object): object { const raw: unknown = nativeOriginal(value); return raw !== null && typeof raw === 'object' ? raw : value }
 
 /** Fixed audited management endpoint; it cannot execute an SSH command or select an account/path from JSON. */
 export class CloudRemoteServerService extends TypertRemoteService {

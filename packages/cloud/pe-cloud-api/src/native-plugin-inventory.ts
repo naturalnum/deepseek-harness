@@ -1,5 +1,6 @@
 /** Account admission around the original read-only Loader inventory. */
-import { symbols, type Context } from '@deepseek-ai/cordis'
+import { nativeOriginal } from './native-inventory.ts'
+import { type Context } from '@deepseek-ai/cordis'
 import PluginInventoryGateway, { type PluginInventorySnapshot } from '@deepseek-ai/dsh-host-plugin-inventory'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
@@ -51,7 +52,7 @@ export function createNativePluginInventory(ctx: Context, binding: AccountBindin
     if (policy.manifest.recipeVersion !== binding.recipeVersion) unavailable()
     if (owner.value !== undefined) {
       const current = ctx.get('pluginInventory')
-      const original: unknown = current === undefined ? undefined : Reflect.get(current, symbols.original) ?? current
+      const original: unknown = current === undefined ? undefined : nativeOriginal(current) ?? current
       if (original !== owner.value) unavailable()
     }
   }

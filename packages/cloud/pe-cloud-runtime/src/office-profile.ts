@@ -90,10 +90,10 @@ export function selectOfficeProfile(config: RuntimeRootConfig, accountId: Accoun
     const actual = composeProfileEntries(ctx, readProfilePatches('dsh', profile))
     const find = (rows: Row[], id: string, name: string): Json => {
       if (rows.length > maxEntries) refuse()
-      const matches = rows.filter(row => row.id === id), entry = matches[0]
-      if (matches.length !== 1 || entry === undefined || entry.name !== name || entry.group === true
-        || entry.disabled !== undefined && entry.disabled !== false || !record(entry.config)) refuse()
-      return entry.config
+      const matches = rows.filter(row => row.id === id), composed = matches[0]
+      if (matches.length !== 1 || composed === undefined || composed.name !== name || composed.group === true
+        || composed.disabled !== undefined && composed.disabled !== false || !record(composed.config)) refuse()
+      return composed.config
     }
     return values.map((row) => {
       const original = find(baseline, row.id, row.name)

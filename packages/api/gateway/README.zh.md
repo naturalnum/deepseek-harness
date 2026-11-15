@@ -121,3 +121,5 @@ Client waterfall 的 Context 解析保持同步。解析器可以返回借用的
 </details>
 
 ./stream-protocol 导出为原生桌面调用方提供共享的 Remote 流帧格式和解析器。它们与浏览器客户端使用同一个经过认证的 WebSocket 端点。
+
+`createNodeStreamTransport` 可选的失败投影只改变该已准入 Node mux 发送的错误字段。省略时保留原生错误消息。迭代器、清理与资源结算仍由原传输持有。

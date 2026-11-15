@@ -1,5 +1,6 @@
 /** Original per-Session file policy at the cloud provider's mutation call. */
-import { symbols, type Context } from '@deepseek-ai/cordis'
+import { nativeOriginal } from './native-state.ts'
+import { type Context } from '@deepseek-ai/cordis'
 import { FsError } from '@deepseek-ai/dsh-fs'
 import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
@@ -31,11 +32,11 @@ export function createAccountFileMutationGuard(
   assertCurrent()
   const policy = ctx.get('sandboxPolicy')
   if (!(policy instanceof SandboxPolicyService)) denied()
-  const original: unknown = Reflect.get(policy, symbols.original) ?? policy
+  const original: unknown = nativeOriginal(policy) ?? policy
   return (override) => {
     assertCurrent()
     const current = ctx.get('sandboxPolicy')
-    if (!(current instanceof SandboxPolicyService) || (Reflect.get(current, symbols.original) ?? current) !== original) denied()
+    if (!(current instanceof SandboxPolicyService) || (nativeOriginal(current) ?? current) !== original) denied()
     const standing = current.resolve({ session })
     assertCurrent()
     if (standing.workspaceRoot !== workspaceRoot || standing.sessionId !== session.id || !Object.hasOwn(MODE_RANK, standing.mode)) denied()
