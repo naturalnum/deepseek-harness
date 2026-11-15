@@ -80,6 +80,8 @@ index 启动输入分两层，按页面所代表的 Peer 计算。`collectIndexI
 <details>
 <summary>实现细节——点击展开</summary>
 
+`renderPublicIndex()` 仅渲染通过 `webserver/public-index-inject` 提供的行，不构造 Peer。贡献方须明确提供公共资源或公开启动值。该渲染不调用需要 Peer 的注入监听器或原始 index tap；正常认证的 `renderIndex(html, peer)` 继续保留两者。命名路由及兜底所有权不变。
+
 ### 设计理念
 
 本包是一个普通路由注册表，唯一的 harness 词汇是 index 渲染所代表的 Peer：`WebServer` 继承 Cordis `Service`，持有三张路由表、回退 slot、原始 index 转换列表，以及 `webserver/index-inject` 事件，index 渲染器经其收集行。index 渲染每次响应组合两层：`renderIndex` 先把包含提示性 `script-preload` 行的全新注入表渲染进正文，再按注册顺序应用原始转换；`applyIndexTaps` 只运行转换。upgrade handler 拥有协议握手与连接内容；webserver 只交付原始 socket 与 request。`host`、`port`、`protocol` getter 与 `getOrigin()` 暴露其他插件据以自适应的组合期事实（例如 directory-picker 选择器），而显式的 `tls: null` 会归一为未设置监听，使 `protocol` 只有一个来源。

@@ -70,6 +70,8 @@ Remote carriers occupy the original ingress operations through actual transfer a
 
 The `/frontend` Loader entry serves the public login document and static assets through the original `frontend-static` responder. For a Cloud profile that declares its own frontend row instead of mounting the standard Web bundle, replace the profile's `@deepseek-ai/dsh-host-frontend-static` row with `@deepseek-ai/dsh-pe-cloud-access/frontend`, preserve its id and absolute `distIndex`, and remove `indexAuth`. Do not mount both fallback owners. The distribution directory and every index injection must contain only public assets; named authentication, bootstrap, API and WS routes keep their original admission. Ordinary native profiles retain Connection authentication.
 
+The public index uses `WebServer.renderPublicIndex()` and only the explicit `webserver/public-index-inject` contributions. It creates no Peer and does not call the authenticated index sources or raw index taps. The original Request/Response static resource retains path containment and GET/HEAD behavior. Public module/bootstrap contributors must provide only public artifacts and parsed public deployment inputs.
+
 ### Request bindings
 
 Preserve every carrier-field occurrence for `parseRequestExpectation`; missing, repeated, empty, padded or control-character values fail with HTTP 409. After real authentication, compare the expected account before owner lookup, then compare the generation after acquiring the current graph. Pure comparison success grants no Peer, project scope or business permission; `AccountUse.assertCurrent()` remains required before dispatch and every WS logical stream.

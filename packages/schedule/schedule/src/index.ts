@@ -11,7 +11,7 @@ import { delegationDepthOf } from '@deepseek-ai/dsh-subagent'
 import { SessionId as toSessionId, type SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionActivity } from '@deepseek-ai/dsh-workspace'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
-import { ScheduleRuntime, type ScheduleRuntimeLimits } from './runtime.ts'
+import { ScheduleRuntime, type ScheduleDispatchAdmission, type ScheduleRuntimeLimits } from './runtime.ts'
 import { scheduleDomain, scheduleTaskSchema, type ScheduleTask } from './storage.ts'
 import { deliveryHistoryPage } from './delivery-history.ts'
 import { createScheduleRecord, updateScheduleRecord } from './update.ts'
@@ -27,6 +27,7 @@ import type {
 export type * from './client.ts'
 export { scheduleDomain } from './storage.ts'
 export type { ScheduleTask } from './storage.ts'
+export type { ScheduleDispatchAdmission } from './runtime.ts'
 export type { RecurringOccurrence } from './domain.ts'
 export { formatScheduleLocalTime } from './domain.ts'
 export {
@@ -239,6 +240,9 @@ export class ScheduleService extends TypertRemoteService {
   private runtime: ScheduleRuntime | undefined
   private resolveWebAgent: ((sessionId: SessionId) => Promise<Agent>) | undefined
   private stopping = false
+  private dispatchAdmission: ScheduleDispatchAdmission | undefined
+  private pendingOperations = 0
+  private pendingNotifications = 0
 
   /**
    * @param ctx - Host services owning storage, dispatch, and Session restoration.
@@ -312,7 +316,7 @@ export class ScheduleService extends TypertRemoteService {
         (sessionId) => {
           if (this.resolveWebAgent === undefined) throw new Error('schedule: no Session activation provider')
           return this.resolveWebAgent(sessionId)
-        })
+        }, this.dispatchAdmission)
       this.runtime.requestDrive()
       return cleanup
     })
@@ -343,6 +347,48 @@ export class ScheduleService extends TypertRemoteService {
 
   async [Service.init](): Promise<void> {
     await this.initialized
+  }
+
+  /** Install an embedding's dispatch admission before initialization starts dispatch.
+   * @param admission - One immutable registration over actual stored tasks; rejection does not acknowledge or automatically retry delivery.
+   * @returns Nothing. Late, duplicate, or stopping registrations throw; Native callers may omit registration.
+   */
+  installDispatchAdmission(admission: ScheduleDispatchAdmission): void {
+    if (this.runtime !== undefined || this.dispatchAdmission !== undefined || this.stopping) {
+      throw new Error('Schedule dispatch admission must be installed once before initialization')
+    }
+    this.dispatchAdmission = admission
+  }
+
+  /** Reconsider overdue tasks after an embedding becomes ready.
+   * @returns Completion of initialization and the rescan request, without claiming delivery acknowledgement.
+   */
+  async resumeDispatch(): Promise<void> {
+    await this.initialized
+    if (this.stopping || this.runtime === undefined) throw new Error('Schedule service is stopping')
+    this.runtime.requestDrive()
+  }
+
+  /** Observe original dispatch, management writes, and post-commit notices.
+   * @returns Whether initialization finished and no admitted work or reused-target execution remains; a future timer is idle.
+   */
+  isDispatchIdle(): boolean {
+    return this.runtime !== undefined && this.pendingOperations === 0 && this.pendingNotifications === 0
+      && this.runtime.isDispatchIdle()
+  }
+
+  /** Prepare an embedding check inside the management FIFO before a task write.
+   * @param _before - Stored task; undefined only for creation.
+   * @param _after - Proposed task; undefined only for deletion.
+   * @param _actorSessionId - Acting Agent Session, or undefined for Remote and Host maintenance calls.
+   * @returns An optional synchronous check repeated immediately before persistence. Accepted writes retain their original settlement.
+   */
+  protected async prepareMutation(
+    _before: ScheduleTask | undefined,
+    _after: ScheduleTask | undefined,
+    _actorSessionId: SessionId | undefined,
+  ): Promise<(() => void) | undefined> {
+    return undefined
   }
 
   /** Read effective delivery limits without loading or activating a task.
@@ -398,6 +444,9 @@ export class ScheduleService extends TypertRemoteService {
         createdAt, updatedAt: createdAt,
         deliveryHistory: { records: [], earlierRecordsUnavailable: false, earlierRecordsPruned: false },
       })
+      const recheck = await this.prepareMutation(undefined, task, actorSessionId)
+      signal?.throwIfAborted()
+      recheck?.()
       await domain.table('tasks').put(id, task)
       this.emitChanged()
       this.runtime?.requestDrive()
@@ -408,20 +457,22 @@ export class ScheduleService extends TypertRemoteService {
 
   /**
    * Read one page of Host tasks without activating target Sessions.
-   * @param request - Optional activity filter, page size, and offset.
+   * @param request - Optional existing-Session target and activity filters, page size, and offset; omission keeps all targets.
    * @returns The requested page and total matching task count.
    */
   async list(request: ScheduleListRequest = {}): Promise<ScheduleListResult> {
     const { limit, offset } = resolveListPage(request)
     const items = (await this.entries())
+      .filter(entry => request.targetSessionId === undefined
+        || (entry.target.kind === 'session' && entry.target.sessionId === request.targetSessionId))
       .filter(entry => request.active === undefined || (entry.status === 'active') === request.active)
     const page = items.slice(offset, offset + limit)
     return { items: page, shown: page.length, total: items.length, limit, offset }
   }
 
   /**
-   * Remote form of the shared Host-wide list.
-   * @param request - Optional activity filter, page size, and offset.
+   * Remote form of the shared list, retaining Host-wide selection when no target filter is supplied.
+   * @param request - Optional existing-Session target and activity filters, page size, and offset.
    * @returns The requested page and total matching task count.
    */
   @Remote('list')
@@ -520,10 +571,9 @@ export class ScheduleService extends TypertRemoteService {
   async deleteInactive(): Promise<ScheduleDeleteInactiveResult> {
     return this.serialize<ScheduleDeleteInactiveResult>(async () => {
       const tasks = (await this.getDomain()).table('tasks')
-      const ended = [...tasks.entries()]
-        .filter(([, task]) => task.status === 'ended')
-        .map(([id]) => id)
-      return { deleted: await this.removeRows(ended, 'schedule ended-task removal failed', false) }
+      const ended = [...tasks.entries()].filter(([, task]) => task.status === 'ended').map(([, task]) => task)
+      const recheck = await this.prepareRemoval(ended, undefined)
+      return { deleted: await this.removeRows(ended.map(task => task.record.id), 'schedule ended-task removal failed', false, recheck) }
     })
   }
 
@@ -572,6 +622,9 @@ export class ScheduleService extends TypertRemoteService {
         return { id: request.id, code: 'schedule_conflict' }
       }
       if (request.action === 'delete') {
+        const recheck = await this.prepareMutation(current, undefined, actorSessionId)
+        signal?.throwIfAborted()
+        recheck?.()
         await tasks.delete(request.id)
         this.emitChanged()
         this.runtime?.requestDrive()
@@ -584,6 +637,9 @@ export class ScheduleService extends TypertRemoteService {
         signal?.throwIfAborted()
       }
       const task = revisedTask(current, request.patch, target, actorSessionId, Date.now())
+      const recheck = await this.prepareMutation(current, task, actorSessionId)
+      signal?.throwIfAborted()
+      recheck?.()
       await tasks.put(request.id, task)
       this.emitChanged()
       this.runtime?.requestDrive()
@@ -737,7 +793,10 @@ export class ScheduleService extends TypertRemoteService {
    * Callers queue inside the serialized operation, so teardown, which drains that queue first, cannot overtake it.
    */
   private queueNotification(task: ScheduleTask, actorSessionId: SessionId | undefined, change: ScheduleChangeKind): void {
-    this.notifications = this.notifications.then(() => this.notify(task, actorSessionId, change))
+    this.pendingNotifications += 1
+    this.notifications = this.notifications.then(() => this.notify(task, actorSessionId, change)).finally(() => {
+      this.pendingNotifications -= 1
+    })
   }
 
   /**
@@ -756,9 +815,19 @@ export class ScheduleService extends TypertRemoteService {
       const domain = await this.getDomain()
       const active = activeSessionTasks(domain, sessionId)
       if (active.length === 0) return
-      await this.removeRows(active.map(task => task.record.id), 'schedule stop failed', true)
+      const recheck = await this.prepareRemoval(active, sessionId)
+      await this.removeRows(active.map(task => task.record.id), 'schedule stop failed', true, recheck)
       for (const task of active) this.queueNotification(task, sessionId, 'deleted')
     })
+  }
+
+  private async prepareRemoval(tasks: readonly ScheduleTask[], actorSessionId: SessionId | undefined): Promise<() => void> {
+    const checks: (() => void)[] = []
+    for (const task of tasks) {
+      const check = await this.prepareMutation(task, undefined, actorSessionId)
+      if (check !== undefined) checks.push(check)
+    }
+    return () => { for (const check of checks) check() }
   }
 
   /**
@@ -772,13 +841,16 @@ export class ScheduleService extends TypertRemoteService {
    * @param ids - rows to remove.
    * @param label - failure message prefix naming the operation that owned them.
    * @param rearm - whether the rows were armed, so the pending timer must be recomputed.
+   * @param recheck - Prepared embedding checks repeated after obtaining the domain, before the batch write starts.
    * @returns the number of rows this call removed.
    */
-  private async removeRows(ids: readonly ScheduleRecord['id'][], label: string, rearm: boolean): Promise<number> {
+  private async removeRows(ids: readonly ScheduleRecord['id'][], label: string, rearm: boolean, recheck: () => void): Promise<number> {
     if (ids.length === 0) return 0
+    const tasks = (await this.getDomain()).table('tasks')
+    recheck()
     let removed: number
     try {
-      removed = await (await this.getDomain()).table('tasks').deleteMany(ids)
+      removed = await tasks.deleteMany(ids)
     } catch (error: unknown) {
       // A rejection never establishes which rows landed, and the backend can
       // report `unknown-state` after removing some of them. Announce the change
@@ -794,7 +866,8 @@ export class ScheduleService extends TypertRemoteService {
 
   private serialize<T>(work: () => Promise<T>): Promise<T> {
     if (this.stopping) return Promise.reject(new Error('Schedule service is stopping'))
-    const pending = this.chain.then(work)
+    this.pendingOperations += 1
+    const pending = this.chain.then(work).finally(() => { this.pendingOperations -= 1 })
     this.chain = pending.catch(() => undefined) // Preserve FIFO progress after the caller receives the failure.
     return pending
   }

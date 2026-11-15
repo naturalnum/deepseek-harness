@@ -107,6 +107,8 @@ An update may replace title, prompt, typed timing, target, or activity. Omitted 
 
 `expectedUpdatedAt` is an optional optimistic comparison. A string compares with the saved revision; explicit `null` compares with an absent revision. Mismatch returns `schedule_conflict`. An edit of a row without a revision creates one; later revisions advance monotonically even if the clock rolls back. Cancellation is checked before the write begins, and a started durable write is not rolled back.
 
+`ScheduleListRequest.targetSessionId` optionally filters explicit existing-Session targets before counting and paging; omission keeps all targets. It does not match involved Sessions or reserved creation targets. An embedding may override the original `prepareMutation()` to check the actual before/after rows inside the management FIFO, returning a synchronous check repeated after preparation and before persistence. Batch deletion rechecks every row before the original batch; accepted writes retain their original settlement.
+
 <a id="timing-edits"></a>
 ## Timing edits
 
@@ -154,6 +156,22 @@ Shared management service; reads and management writes never activate a Session,
 `sessionPersistence` supplies header-only target validation and the `session/flush` listener that acknowledges durable inbox delivery through `ctx.sessions.flush()`.
 
 ```ts cordis-catalog
+/** Install an embedding's dispatch admission before initialization starts dispatch.
+ * @param admission - One immutable registration over actual stored tasks; rejection does not acknowledge or automatically retry delivery.
+ * @returns Nothing. Late, duplicate, or stopping registrations throw; Native callers may omit registration.
+ */
+installDispatchAdmission(admission: ScheduleDispatchAdmission): void
+
+/** Reconsider overdue tasks after an embedding becomes ready.
+ * @returns Completion of initialization and the rescan request, without claiming delivery acknowledgement.
+ */
+async resumeDispatch(): Promise<void>
+
+/** Observe original dispatch, management writes, and post-commit notices.
+ * @returns Whether initialization finished and no admitted work or reused-target execution remains; a future timer is idle.
+ */
+isDispatchIdle(): boolean
+
 /** Read effective delivery limits without loading or activating a task.
  * @returns The configured minimum spacing between deliveries that each create a Session, in seconds.
  */
@@ -181,14 +199,14 @@ async create( request: ScheduleCreateRequest, actorSessionId?: SessionId, signal
 
 /**
  * Read one page of Host tasks without activating target Sessions.
- * @param request - Optional activity filter, page size, and offset.
+ * @param request - Optional existing-Session target and activity filters, page size, and offset; omission keeps all targets.
  * @returns The requested page and total matching task count.
  */
 async list(request: ScheduleListRequest = {}): Promise<ScheduleListResult>
 
 /**
- * Remote form of the shared Host-wide list.
- * @param request - Optional activity filter, page size, and offset.
+ * Remote form of the shared list, retaining Host-wide selection when no target filter is supplied.
+ * @param request - Optional existing-Session target and activity filters, page size, and offset.
  * @returns The requested page and total matching task count.
  */
 @Remote('list') async remoteList(request: ScheduleListRequest): Promise<ScheduleListResult>

@@ -158,10 +158,13 @@ async function fixture(account = 'a', selected = true) {
         if (llm === undefined) throw new Error('Native LLM did not mount')
         llm.registerAdapter(['approved', 'foreign'], adapter)
       } },
-      'models-controller': { inject: [...SessionController.inject, 'peAccount'], Config: SessionController.Config,
-        apply(scope: Context, config: ConstructorParameters<typeof SessionController>[1]) {
-          createNativeController(scope, binding, assertCurrent, policy, guards, config)
-        } },
+      'models-controller': class {
+        static inject = [...SessionController.inject, 'peAccount']
+        static Config = SessionController.Config
+        constructor(scope: Context, config: ConstructorParameters<typeof SessionController>[1]) {
+          return createNativeController(scope, binding, assertCurrent, policy, guards, config)
+        }
+      },
     })
   })
   const peer: PeerScope = { id: brandString<PeerId>('native-model-' + account), ctx, principal: { kind: 'owner' },

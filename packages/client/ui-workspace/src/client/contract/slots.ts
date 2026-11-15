@@ -60,7 +60,13 @@ import type { createWorkspaceViewStore } from '../stores.ts'
 declare module '@deepseek-ai/dsh-client-ui-context-menu/client' {
   interface ContextMenuTargetMap {
     /** Registered Workspace header; path and title belong to the clicked row. */
-    workspace: { readonly workspaceId: WorkspaceId; readonly path: string; readonly displayTitle: string }
+    workspace: {
+      readonly workspaceId: WorkspaceId
+      readonly path: string
+      readonly displayTitle: string
+      /** Localized deployment restriction captured with this row's menu gesture. */
+      readonly deleteDisabledReason?: string | undefined
+    }
   }
 }
 

@@ -70,6 +70,23 @@ describe('AssistantMarkdown local-path images', () => {
     expect(openFile).toHaveBeenCalledExactlyOnceWith('predictions.csv', undefined)
   })
 
+  it.each([
+    { streaming: true, enabled: true, text: '- predictions.csv' },
+    { streaming: false, enabled: false, text: '- predictions.csv' },
+    { streaming: false, enabled: true, text: '- ../private.csv\n- report.csv --flag\n- javascript:alert(1)' },
+  ])('keeps filenames inert outside an opted-in settled filename item: %j', ({ streaming, enabled, text }) => {
+    const openFile = vi.fn()
+    const view = render(
+      <MarkdownDelegateProvider openFile={openFile}>
+        <AssistantMarkdown renderSlot={() => null} useDisclosure={useDisclosure} useGroupAction={useSearchableHidden}
+          usePresentation={useDetailedPresentation} blocks={[textBlock(text)]}
+          streaming={streaming} standaloneFileLinks={enabled} loadImage={unusedImageLoader} t={t} />
+      </MarkdownDelegateProvider>,
+    )
+    expect(view.queryAllByRole('button')).toHaveLength(0)
+    expect(openFile).not.toHaveBeenCalled()
+  })
+
   it.each([BASE, 'dsh-app://app/'])('renders a local image in closing prose through %s', (base) => {
     vi.spyOn(document, 'baseURI', 'get').mockReturnValue(base)
     const { container } = render(

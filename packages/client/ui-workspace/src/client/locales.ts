@@ -376,6 +376,7 @@ export const ja = {
   'time.months': '{n}か月',
   'time.years': '{n}年',
   'time.ago': '{t}前',
+  'delete.unavailable': 'この環境ではワークスペースを削除できません',
 } satisfies Record<keyof typeof en, string>
 
 /** Spanish dictionary, checked against the English keys. */
@@ -499,6 +500,7 @@ export const es = {
   'time.months': '{n}mo',
   'time.years': '{n}y',
   'time.ago': 'Hace {t}',
+  'delete.unavailable': 'La eliminación de espacios de trabajo no está disponible en este despliegue',
 } satisfies Record<keyof typeof en, string>
 
 /** French dictionary, checked against the English keys. */
@@ -622,6 +624,7 @@ export const fr = {
   'time.months': '{n}mo',
   'time.years': '{n}y',
   'time.ago': 'Il y a {t}',
+  'delete.unavailable': 'La suppression d’espaces de travail n’est pas disponible dans ce déploiement',
 } satisfies Record<keyof typeof en, string>
 
 /** German dictionary, checked against the English keys. */
@@ -745,6 +748,7 @@ export const de = {
   'time.months': '{n}mo',
   'time.years': '{n}y',
   'time.ago': 'Vor {t}',
+  'delete.unavailable': 'Das Löschen von Arbeitsbereichen ist in dieser Bereitstellung nicht verfügbar',
 } satisfies Record<keyof typeof en, string>
 
 /** Russian dictionary, checked against the English keys. */
@@ -868,6 +872,7 @@ export const ru = {
   'time.months': '{n}mo',
   'time.years': '{n}y',
   'time.ago': '{t} назад',
+  'delete.unavailable': 'Удаление рабочих пространств недоступно в этом развёртывании',
 } satisfies Record<keyof typeof en, string>
 
 /** Portuguese dictionary, checked against the English keys. */
@@ -991,4 +996,5 @@ export const pt = {
   'time.months': '{n} mês',
   'time.years': '{n}s',
   'time.ago': '{t} atrás',
+  'delete.unavailable': 'A eliminação de espaços de trabalho não está disponível nesta instalação',
 } satisfies Record<keyof typeof en, string>

@@ -49,7 +49,7 @@ const nativeRpc: Readonly<Record<string, Pick<EndpointExposure, 'handlerId' | 'g
   'agentPresets/select': { handlerId: 'native:agentPresets', guard: 'account-session' },
   'pluginInventory/list': { handlerId: 'native:pluginInventory', guard: 'authenticated-account' },
   'schedule/catalog': { handlerId: 'native:schedule', guard: 'authenticated-account' },
-  ...Object.fromEntries(['list', 'history', 'delete', 'update'].map(method => [
+  ...Object.fromEntries(['list', 'history', 'edit'].map(method => [
     'schedule/' + method, { handlerId: 'native:schedule', guard: 'account-session' as const },
   ])),
   ...Object.fromEntries(['list', 'put', 'delete'].map(method => [

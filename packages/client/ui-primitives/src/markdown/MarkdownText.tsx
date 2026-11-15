@@ -34,6 +34,7 @@ function renderSettled(
   fileMentions: MarkdownFileMentions | undefined,
   pathImages: MarkdownPathImages | undefined,
   omitHtml: boolean,
+  standaloneFileLinks: boolean,
 ): ReactNode[] {
   const root = parseGfmWithMath(text)
   const targets = createReferenceTargets()
@@ -44,6 +45,7 @@ function renderSettled(
     fileMentions,
     pathImages,
     omitHtml,
+    standaloneFileLinks,
     targets,
     footnoteOrder: [],
     footnoteCounts: new Map(),
@@ -188,6 +190,7 @@ class StreamingRenderer {
  */
 export const MarkdownText = memo(function MarkdownText({
   text, streaming = false, labels, fileMentions, pathImages, variant = 'body', omitHtml = false, textInteractionSource = false,
+  standaloneFileLinks = false,
 }: {
   text: string
   streaming?: boolean
@@ -197,20 +200,22 @@ export const MarkdownText = memo(function MarkdownText({
   variant?: 'body' | 'compact'
   omitHtml?: boolean
   textInteractionSource?: boolean
+  /** Enable simple filename-only list items through the scoped file opener, after settlement. */
+  standaloneFileLinks?: boolean
 }) {
   const streamRef = useRef<StreamingRenderer | null>(null)
   const streamLabelsRef = useRef<MarkdownLabels>(labels)
   const children = useMemo(() => {
     if (!streaming) {
       streamRef.current = null
-      return renderSettled(text, labels, fileMentions, pathImages, omitHtml)
+      return renderSettled(text, labels, fileMentions, pathImages, omitHtml, standaloneFileLinks)
     }
     if (streamRef.current === null || streamLabelsRef.current !== labels || streamRef.current.omitHtml !== omitHtml) {
       streamRef.current = new StreamingRenderer(labels, omitHtml)
       streamLabelsRef.current = labels
     }
     return streamRef.current.render(text)
-  }, [text, streaming, labels, fileMentions, pathImages, omitHtml])
+  }, [text, streaming, labels, fileMentions, pathImages, omitHtml, standaloneFileLinks])
   return <div className={clsx(css.markdown, variant === 'compact' && css.compact)}
     data-text-interaction-source={textInteractionSource ? '' : undefined}
     data-markdown-variant={variant === 'compact' ? variant : undefined}

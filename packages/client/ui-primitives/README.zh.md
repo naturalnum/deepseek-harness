@@ -38,6 +38,8 @@ kind: "package-library"
 <a id="component-catalog"></a>
 ### 组件目录
 
+`ConfigField` 是受控的 Schema 字段：调用方拥有其值、选项、验证、本地化标签和写入/重置动作。`LightningMark` 复用现有装饰标记，接受标准图标大小和类名属性；两者均不拥有服务或持久化。
+
 在功能包里写控件之前，先查这张表。插件无法导入另一个插件的组件，因此本包是控件唯一可以共享的地方：合适的就复用，有意的视觉差异提升成 prop，而不是另起一份拷贝。
 
 | 导出 | 是什么 |
@@ -138,6 +140,8 @@ kind: "package-library"
 -----
 
 <a id="understand-the-implementation"></a>
+显式设置 `standaloneFileLinks` 后，已完成回复里只含简单文件名的列表项复用同一个作用域 `openFile` 回调。默认和流式渲染保留普通文本，路径、命令和 URL 不在此范围。
+
 ## 理解实现
 
 `Button` 的 `md` 使用 H36/R12，`sm` 使用 H28/R8，包含描边控件。`outline` 变体保留 0.5px 透明边框用于布局，并通过内阴影绘制描边。描边宽度读取 ui-theme 随设备像素比更新的 `--dsh-hairline-width`，未安装主题时回退到 0.5px。功能样式通过 `--dsh-button-outline-color` 定制描边颜色，并保留边框宽度、透明边框颜色和 box-shadow。菜单与卡片遵循[共享圆角规则](../../../docs/web-styling.zh.md#corner-radii-and-settings-cards)；功能样式保留控件几何。

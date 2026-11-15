@@ -9,6 +9,7 @@
     "src/archive.ts",
     "src/index.ts",
     "src/markdown.ts",
+    "src/registration.ts",
     "src/routes.ts"
   ],
   "references": [

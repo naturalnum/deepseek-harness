@@ -881,6 +881,27 @@ describe('real Loader composition', () => {
       + '<script>(globalThis.__DSH_BOOT_READY__ ??= Promise.withResolvers()).resolve()</script>')
   })
 
+  it('renders only explicit public injections without constructing a Peer or calling private taps', async () => {
+    const loaded = await loadComposition(), server = loaded.webServer
+    const privateInjection = vi.fn(() => { throw new Error('A private injection needs a Peer') })
+    const privateTap = vi.fn(() => { throw new Error('A private raw tap must not run here') })
+    loaded.on('webserver/index-inject', privateInjection)
+    server.tapIndex(privateTap)
+    let current = 'first'
+    const stop = loaded.on('webserver/public-index-inject', (table) => {
+      table.push({ kind: 'global', name: '__PUBLIC_BOOT__', value: current })
+    })
+    expect(server.renderPublicIndex('<head></head><body>login</body>'))
+      .toContain('globalThis["__PUBLIC_BOOT__"] = "first"')
+    current = 'second'
+    expect(server.renderPublicIndex('<head></head><body>login</body>'))
+      .toContain('globalThis["__PUBLIC_BOOT__"] = "second"')
+    stop()
+    expect(server.renderPublicIndex('<head></head><body>login</body>')).not.toContain('__PUBLIC_BOOT__')
+    expect(privateInjection).not.toHaveBeenCalled()
+    expect(privateTap).not.toHaveBeenCalled()
+  })
+
   it('serves HTTPS to a verifying client and reports the https protocol', { timeout: 60_000 }, async () => {
     const fixture = await tlsFixture()
     const tls = { certFile: fixture.certFile, keyFile: fixture.keyFile }

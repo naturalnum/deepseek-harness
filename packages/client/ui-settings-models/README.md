@@ -105,6 +105,8 @@ Concurrent `ModelsSettingsStore.load()` callers resolve after the current refres
 
 The notice step owns its exact copy in `src/client/locales.ts` and its acknowledgement version in `src/onboarding-copy.ts`. Authenticated browsers compare and write `ui-settings-general.welcomeNoticeVersion` through the shared configuration form; only an explicit Continue records the current version, and an unavailable namespace or a refused write leaves the notice unacknowledged. Users who acknowledged an earlier version see the current notice again. The DeepSeek step targets `deepseek-official` in `llm-deepseek` and renders the existing `ProviderEditor` in credential-only mode inside the shared onboarding modal; `credentials.set` stays the only secret write, and no provider settings are changed.
 
+An account page may supply a captured `credentialEdit` for one exact named reference. The credential-only editor retains that intent until it closes, blocks a null preparation, checks the reference at submission, and uses only the captured store/remove callbacks; a failure does not replay a write. Without it, native credential behavior is unchanged. `modelCatalogOnly` limits the editor to model rows: it hides credentials, endpoint and retry controls and neither migrates unrelated stored retry policy nor writes it. Server-side settings validation and revision checks remain authoritative.
+
 </details>
 
 -----

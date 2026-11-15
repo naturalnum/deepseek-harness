@@ -233,6 +233,8 @@ export interface MarkdownRenderContext {
   readonly fileMentions: MarkdownFileMentions | undefined
   /** Local-path image vocabulary; absent wherever no rewriting owner exists. */
   readonly pathImages: MarkdownPathImages | undefined
+  /** Explicit completed-reply option for filename-only list items. */
+  readonly standaloneFileLinks?: boolean
   /** Raw HTML renders nothing instead of literal text. */
   readonly omitHtml: boolean
   /** Inside an anchor's children: interactive mentions must not nest there. */
@@ -494,6 +496,12 @@ function renderListItem(
   key: Key,
   context: MarkdownRenderContext,
 ): ReactNode {
+  const paragraph = item.children.length === 1 ? item.children[0] : undefined
+  const text = paragraph?.type === 'paragraph' && paragraph.children.length === 1 ? paragraph.children[0] : undefined
+  if (!context.streaming && context.standaloneFileLinks === true && typeof item.checked !== 'boolean'
+    && text?.type === 'text' && /^[\p{L}\p{N}_-][\p{L}\p{N}_.-]*\.[A-Za-z0-9]{1,12}$/u.test(text.value)) {
+    return <li key={key}>{renderAnchor(text.value, [text.value], 'file')}</li>
+  }
   const entries = renderBlockEntries(item.children, context)
   const task = typeof item.checked === 'boolean'
   if (task) {

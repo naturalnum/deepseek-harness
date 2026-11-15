@@ -12,8 +12,9 @@ export const zh = {
   'dialog.session': 'Session：{sessionId}',
   'dialog.preparingTitle': '正在导出 Session',
   'dialog.preparingDescription': '正在准备包含指定 Session、子 Session 和附件的 ZIP 文件',
-  'dialog.successTitle': 'Session 导出已开始下载',
-  'dialog.successDescription': '浏览器正在下载 Session ZIP 文件。',
+  'dialog.successTitle': '已请求下载 Session',
+  'dialog.successDescription': '请查看浏览器的下载记录；如果下载未开始，可点击下方链接。',
+  'dialog.manualDownload': '下载 Session ZIP',
   'dialog.errorTitle': 'Session 导出失败',
   'dialog.close': '关闭',
   'dialog.commandFailed': '无法启动 Session 导出。',
@@ -30,8 +31,9 @@ export const en: Record<keyof typeof zh, string> = {
   'dialog.session': 'Session: {sessionId}',
   'dialog.preparingTitle': 'Exporting Session',
   'dialog.preparingDescription': 'Preparing a ZIP containing the selected Session, its sub-Sessions, and attachments.',
-  'dialog.successTitle': 'Session download started',
-  'dialog.successDescription': 'The browser is downloading the Session ZIP.',
+  'dialog.successTitle': 'Session download requested',
+  'dialog.successDescription': 'Check your browser downloads. If the download did not start, use the link below.',
+  'dialog.manualDownload': 'Download Session ZIP',
   'dialog.errorTitle': 'Session export failed',
   'dialog.close': 'Close',
   'dialog.commandFailed': 'Could not start the Session export.',
@@ -51,11 +53,12 @@ export const ja = {
   'dialog.session': 'セッション: {sessionId}',
   'dialog.preparingTitle': 'セッションをエクスポート中',
   'dialog.preparingDescription': '指定のセッション、そのサブセッション、添付ファイルを含むZIPを準備しています。',
-  'dialog.successTitle': 'セッションのダウンロードを開始しました',
-  'dialog.successDescription': 'ブラウザがセッションZIPをダウンロードしています。',
+  'dialog.successTitle': 'Session のダウンロードを要求しました',
+  'dialog.successDescription': 'ブラウザーのダウンロード履歴を確認してください。開始されていない場合は下のリンクを使用してください。',
   'dialog.errorTitle': 'セッションのエクスポートに失敗しました',
   'dialog.close': '閉じる',
   'dialog.commandFailed': 'セッションのエクスポートを開始できませんでした。',
+  'dialog.manualDownload': 'Session ZIP をダウンロード',
 } satisfies Record<keyof typeof en, string>
 
 /** Spanish dictionary, checked against the English keys. */
@@ -69,11 +72,12 @@ export const es = {
   'dialog.session': 'Sesión: {sessionId}',
   'dialog.preparingTitle': 'Sesión de exportación',
   'dialog.preparingDescription': 'Preparar un ZIP que contenga la sesión seleccionada, sus subsesiones y archivos adjuntos.',
-  'dialog.successTitle': 'Descarga de sesión iniciada',
-  'dialog.successDescription': 'El navegador está descargando el ZIP de la sesión.',
+  'dialog.successTitle': 'Descarga de la sesión solicitada',
+  'dialog.successDescription': 'Comprueba las descargas del navegador. Si la descarga no comenzó, usa el enlace de abajo.',
   'dialog.errorTitle': 'Error al exportar la sesión',
   'dialog.close': 'Cerrar',
   'dialog.commandFailed': 'No se pudo iniciar la exportación de la sesión.',
+  'dialog.manualDownload': 'Descargar ZIP de la sesión',
 } satisfies Record<keyof typeof en, string>
 
 /** French dictionary, checked against the English keys. */
@@ -87,11 +91,12 @@ export const fr = {
   'dialog.session': 'Session : {sessionId}',
   'dialog.preparingTitle': "Session d'exportation",
   'dialog.preparingDescription': "Préparation d'un ZIP contenant la session sélectionnée, ses sous-sessions et les pièces jointes.",
-  'dialog.successTitle': 'Le téléchargement de la session a commencé',
-  'dialog.successDescription': 'Le navigateur télécharge le ZIP de la session.',
+  'dialog.successTitle': 'Téléchargement de la session demandé',
+  'dialog.successDescription': 'Consultez les téléchargements du navigateur. Si le téléchargement n’a pas commencé, utilisez le lien ci-dessous.',
   'dialog.errorTitle': "Échec de l'exportation de la session",
   'dialog.close': 'Fermer',
   'dialog.commandFailed': "Impossible de démarrer l'exportation de session.",
+  'dialog.manualDownload': 'Télécharger le ZIP de la session',
 } satisfies Record<keyof typeof en, string>
 
 /** German dictionary, checked against the English keys. */
@@ -105,11 +110,12 @@ export const de = {
   'dialog.session': 'Sitzung: {sessionId}',
   'dialog.preparingTitle': 'Sitzung exportieren',
   'dialog.preparingDescription': 'Vorbereiten einer ZIP-Datei mit der ausgewählten Sitzung, ihren Untersitzungen und Anhängen.',
-  'dialog.successTitle': 'Sitzungsdownload gestartet',
-  'dialog.successDescription': 'Der Browser lädt die Sitzungs-ZIP herunter.',
+  'dialog.successTitle': 'Session-Download angefordert',
+  'dialog.successDescription': 'Prüfe die Downloads deines Browsers. Falls der Download nicht begonnen hat, nutze den folgenden Link.',
   'dialog.errorTitle': 'Der Sitzungsexport ist fehlgeschlagen',
   'dialog.close': 'Schließen',
   'dialog.commandFailed': 'Der Sitzungsexport konnte nicht gestartet werden.',
+  'dialog.manualDownload': 'Session-ZIP herunterladen',
 } satisfies Record<keyof typeof en, string>
 
 /** Russian dictionary, checked against the English keys. */
@@ -123,11 +129,12 @@ export const ru = {
   'dialog.session': 'Сеанс: {sessionId}',
   'dialog.preparingTitle': 'Экспорт сеанса',
   'dialog.preparingDescription': 'Подготовка ZIP-файла, содержащего выбранный сеанс, его подсеансы и вложения.',
-  'dialog.successTitle': 'Загрузка сеанса началась',
-  'dialog.successDescription': 'Браузер загружает ZIP-файл сеанса.',
+  'dialog.successTitle': 'Запрошено скачивание сессии',
+  'dialog.successDescription': 'Проверьте загрузки браузера. Если скачивание не началось, воспользуйтесь ссылкой ниже.',
   'dialog.errorTitle': 'Экспорт сеанса не удался',
   'dialog.close': 'Закрыть',
   'dialog.commandFailed': 'Не удалось начать экспорт сеанса.',
+  'dialog.manualDownload': 'Скачать ZIP сессии',
 } satisfies Record<keyof typeof en, string>
 
 /** Portuguese dictionary, checked against the English keys. */
@@ -141,9 +148,10 @@ export const pt = {
   'dialog.session': 'Sessão: {sessionId}',
   'dialog.preparingTitle': 'Exportando Sessão',
   'dialog.preparingDescription': 'Preparando um ZIP contendo a sessão selecionada, suas subsessões e anexos.',
-  'dialog.successTitle': 'Download da sessão iniciado',
-  'dialog.successDescription': 'O navegador está baixando o ZIP da sessão.',
+  'dialog.successTitle': 'Transferência da sessão solicitada',
+  'dialog.successDescription': 'Verifique as transferências do navegador. Se a transferência não começou, use a ligação abaixo.',
   'dialog.errorTitle': 'Falha na exportação da sessão',
   'dialog.close': 'Fechar',
   'dialog.commandFailed': 'Não foi possível iniciar a exportação da sessão.',
+  'dialog.manualDownload': 'Transferir ZIP da sessão',
 } satisfies Record<keyof typeof en, string>

@@ -1,7 +1,7 @@
 /** Host declaration and optional public Web inputs; no business service or HTTP route. */
 import { FiberState, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type {} from '@deepseek-ai/dsh-host-webserver'
+import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-client-modules'
 import { CloudWebManifestSchema, parseCloudWebManifest } from './config.ts'
 import type { CloudNativeManagement, CloudNativeSessionControl, CloudWebManifest } from './types.ts'
@@ -80,9 +80,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         ...(manifest.client.nativeManagement ?? []).flatMap(group => NATIVE_MANAGEMENT_CLIENT_PACKAGES[group]),
       ])], baseUrl, { activate: true },
     ), 'pe-cloud-client: browser BFF services')
-    owner.on('webserver/index-inject', (rows) => {
+    const injectPublic = (rows: IndexInjection[]): void => {
       rows.push({ kind: 'global', name: '__DSH_CLOUD_WEB__', value: manifest })
-    })
+    }
+    owner.on('webserver/index-inject', injectPublic)
+    owner.on('webserver/public-index-inject', injectPublic)
   })
   await supplier
   if (supplier.state !== FiberState.ACTIVE) throw new Error('Cloud Web native module supplier did not activate')

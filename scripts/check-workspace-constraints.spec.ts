@@ -347,6 +347,25 @@ describe('package payload constraints', () => {
     ])
   })
 
+  it.each([
+    ['packages/host/frontend-static', 'resource'],
+    ['packages/session-query/session-log-export', 'registration'],
+  ])('publishes the original Host helper facet for %s', (dir, helper) => {
+    const manifest = JSON.parse(readFileSync(new URL(`../${dir}/package.json`, import.meta.url), 'utf8')) as WorkspaceManifest['manifest']
+    expect(checkWorkspaceManifest({ dir, manifest })).toEqual([])
+    expect(checkWorkspaceManifest({ dir, manifest: {
+      ...manifest, exports: { ...manifest.exports, [`./${helper}`]: undefined },
+    } })).toContainEqual(expect.stringContaining(`exports["./${helper}"] must expose`))
+    expect(checkWorkspaceManifest({ dir, manifest: {
+      ...manifest, exports: { ...manifest.exports, [`./${helper}`]: {
+        types: `./lib/types/${helper}.d.ts`, default: './lib/index.js',
+      } },
+    } })).toContainEqual(expect.stringContaining(`exports["./${helper}"] must expose`))
+    expect(checkWorkspaceManifest({ dir, manifest: {
+      ...manifest, files: manifest.files!.filter(file => file !== 'lib/types/**/*.js'),
+    } })).toContainEqual(expect.stringContaining('package.json files must be'))
+  })
+
   it('publishes tools entry points and shared runtime chunks', () => {
     const dir = 'packages/core/tools'
     const manifest = JSON.parse(readFileSync(new URL(`../${dir}/package.json`, import.meta.url), 'utf8')) as WorkspaceManifest['manifest']

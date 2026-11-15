@@ -1,8 +1,9 @@
 /** Bounded native notifications and selected interactive requests on the original account Gateway. */
 import { isAbsolute } from 'node:path'
 import { FiberState, symbols, type Context, type Fiber } from '@deepseek-ai/cordis'
-import Gateway, { projectRemoteEventRequest, type TypertRemoteEventFrame,
+import Gateway, { type TypertRemoteEventFrame,
   type TypertRemoteEventDispatch, type TypertRemoteEventInvocation } from '@deepseek-ai/dsh-api-gateway'
+import { projectRemoteEventRequest } from '@deepseek-ai/dsh-api-gateway/stream-protocol'
 import { createRemoteWaterfallListener } from '@deepseek-ai/dsh-api-remotes'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { isRemoteJsonValue } from '@deepseek-ai/dsh-typert-protocol'

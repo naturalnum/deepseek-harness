@@ -2582,6 +2582,22 @@ describe('WorkspaceBrowser', () => {
     expect(screen.queryByRole('dialog', { name: '删除工作区' })).toBeNull()
   })
 
+  it('blocks a previously opened delete dialog when the deployment restriction arrives', () => {
+    const deleteWorkspace = vi.fn(async () => {})
+    const browser = mount({
+      useWorkspaces: hook(workspaceState([workspace('alpha', [], 'Alpha')])), deleteWorkspace,
+    })
+    browser.openDialog(wid('alpha'), 'Alpha', 'delete')
+    rerender(browser, { workspaceDeleteDisabledReason: 'unavailable' })
+    const confirm = screen.getByRole<HTMLButtonElement>('button', { name: '删除工作区' })
+    expect(confirm.disabled).toBe(true)
+    expect(screen.getByRole('status').textContent).toBe(zh['delete.unavailable'])
+    fireEvent.click(confirm)
+    expect(deleteWorkspace).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    expect(screen.queryByRole('dialog', { name: '删除工作区' })).toBeNull()
+  })
+
   it('keeps the delete dialog open on failure and allows retry or cancellation', async () => {
     const deleteWorkspace = vi.fn()
       .mockRejectedValueOnce(new Error('storage unavailable'))

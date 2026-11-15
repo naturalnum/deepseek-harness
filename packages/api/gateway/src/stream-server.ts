@@ -51,6 +51,70 @@ export interface RemoteStreamMuxServerOptions {
   readonly compression: boolean
 }
 
+/** Host-owned frame and logical-stream limits for an externally admitted Node carrier. */
+export interface NodeStreamTransportOptions {
+  /** Positive finite integral complete WebSocket message byte limit, enforced by ws before delivery. */
+  readonly maxFrameBytes: number
+  /**
+   * Reserve before any logical stream table or inbox allocation; a throw closes the carrier.
+   * @param endpoint - decoded native logical endpoint.
+   * @returns synchronous exactly-once actual settlement notification; unknown retains owner responsibility.
+   * The notification must not wait for its own transport or Peer close.
+   */
+  readonly acquireStream: (endpoint: string) => (status: 'confirmed' | 'unknown') => void
+}
+
+/** Package-private marker separating actual stream cleanup failures from business failures. */
+export class StreamCleanupError extends Error {
+  /** First actual cleanup failure; nested markers retain the original failure. */
+  readonly failure: unknown
+
+  /** @param failure - first actual cleanup failure, retained without replacing its identity. */
+  constructor(failure: unknown) {
+    const actual = failure instanceof StreamCleanupError ? failure.failure : failure
+    super('Remote stream cleanup did not complete.', { cause: actual })
+    this.failure = actual
+  }
+}
+
+/**
+ * Identify the exact carrier cancellation or Gateway's native cancellation failure.
+ * @param error - actual iterator rejection.
+ * @param signal - signal whose cancellation the iterator observes.
+ * @returns whether this rejection is expected cancellation rather than failed cleanup.
+ */
+export function isStreamCancellation(error: unknown, signal: AbortSignal): boolean {
+  return signal.aborted && (error === signal.reason || remoteErrorOf(error)?.code === 'gateway/cancelled')
+}
+
+/**
+ * Require a provided iterator return to acknowledge completion, not another yield.
+ * @param result - actual optional return result.
+ * @throws StreamCleanupError when the iterator still reports unfinished cleanup.
+ */
+export function assertStreamReturned(result: IteratorResult<unknown> | undefined): void {
+  if (result !== undefined && result.done !== true) {
+    throw new StreamCleanupError(new Error('Remote stream iterator return did not complete.'))
+  }
+}
+
+/** Node carrier using the native stream mux and a fixed, admitted Peer. */
+export interface NodeStreamTransport {
+  /**
+   * Accept an upgrade after outer authentication and Host/Origin checks.
+   * @param request - admitted upgrade request.
+   * @param socket - socket transferred to the native mux.
+   * @param head - bytes already read after the upgrade headers.
+   */
+  handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void
+  /**
+   * Terminate sockets and await iterator cleanup; repeated calls share completion.
+   * @returns fulfillment after every actual stream and Peer effect cleanup has settled.
+   * @throws the first actual cleanup failure, after all other cleanup has settled.
+   */
+  close(): Promise<void>
+}
+
 /** Own the no-server WebSocket acceptor and every active logical stream. */
 export class RemoteStreamMuxServer {
   private readonly server: WebSocketServer
@@ -60,22 +124,30 @@ export class RemoteStreamMuxServer {
   private readonly connections = new Set<Promise<void>>()
   private readonly missedHeartbeats = new WeakMap<WebSocket, number>()
   private heartbeatTimer: NodeJS.Timeout | undefined
+  private closing: Promise<void> | undefined
+  private failure_: { readonly error: unknown } | undefined
 
   /**
    * @param open - Gateway stream dispatcher.
    * @param failure - Gateway error-to-wire mapper.
    * @param options - heartbeat interval, uplink inbox bound, and compression setting for accepted connections.
+   * @param admission - optional externally owned frame and actual logical-stream resource admission.
    */
   constructor(
     private readonly open: RemoteStreamOpener,
     private readonly failure: RemoteStreamFailureMapper,
     options: RemoteStreamMuxServerOptions,
+    private readonly admission?: NodeStreamTransportOptions,
   ) {
     this.heartbeatIntervalMs = options.heartbeatIntervalMs
     this.streamInboxBytes = options.streamInboxBytes
     this.compression = options.compression
+    if (admission !== undefined && (!Number.isSafeInteger(admission.maxFrameBytes) || admission.maxFrameBytes < 1)) {
+      throw new Error('api gateway: maxFrameBytes must be a positive safe integer')
+    }
     this.server = new WebSocketServer({
       noServer: true,
+      ...admission === undefined ? {} : { maxPayload: admission.maxFrameBytes },
       // `ws` ignores its own `threshold` option while context takeover is
       // enabled, so the mux decides per frame in send().
       perMessageDeflate: options.compression ? { zlibDeflateOptions: { level: 1 } } : false,
@@ -92,6 +164,10 @@ export class RemoteStreamMuxServer {
    * @param peer - Peer the upgrade was admitted as.
    */
   handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer, peer: PeerScope): void {
+    if (this.closing !== undefined) {
+      rejectRemoteStreamUpgrade(socket, 409)
+      return
+    }
     this.server.handleUpgrade(req, socket, head, (websocket) => {
       const release = bindPeer(websocket, peer)
       if (release === undefined) return
@@ -101,20 +177,30 @@ export class RemoteStreamMuxServer {
       const bound: BoundStreamOpener = (endpoint, payload, uplink, control, window) =>
         this.open(endpoint, payload, uplink, peer, control, window)
       const connection = new RemoteStreamMuxConnection(
-        websocket, bound, this.failure, this.streamInboxBytes, this.compression, alive,
+        websocket, bound, this.failure, this.streamInboxBytes, this.compression, alive, this.admission,
       )
-      const done = connection.run().catch((error: unknown) => {
-        console.error('[api-gateway] Remote stream connection failed:', error)
-      }).then(async () => { await release() }).catch((error: unknown) => {
-        console.error('[api-gateway] Remote stream scope cleanup failed:', error)
-      })
+      const done = this.serve(connection, release)
       this.connections.add(done)
-      void done.then(() => { this.connections.delete(done) })
+      void done.then(() => { this.connections.delete(done) }, (error: unknown) => {
+        this.failure_ ??= { error }
+        this.connections.delete(done)
+      })
     })
   }
 
-  /** Terminate all sockets and wait until every iterator has returned. */
-  async close(): Promise<void> {
+  /** Seal upgrades and join every stream and Peer cleanup, retaining the first actual failure. */
+  close(): Promise<void> {
+    return this.closing ??= this.closeActual()
+  }
+
+  private async serve(connection: RemoteStreamMuxConnection, release: () => unknown): Promise<void> {
+    let failure: { readonly error: unknown } | undefined
+    try { await connection.run() } catch (error) { failure = { error } }
+    try { await release() } catch (error) { failure ??= { error } }
+    if (failure !== undefined) throw failure.error
+  }
+
+  private async closeActual(): Promise<void> {
     clearInterval(this.heartbeatTimer)
     this.heartbeatTimer = undefined
     for (const socket of this.server.clients) socket.terminate()
@@ -123,8 +209,9 @@ export class RemoteStreamMuxServer {
       if (error === undefined) closed.resolve()
       else closed.reject(error)
     })
-    await closed.promise
-    await Promise.all(this.connections)
+    const results = await Promise.allSettled([closed.promise, ...this.connections])
+    for (const result of results) if (result.status === 'rejected') this.failure_ ??= { error: result.reason }
+    if (this.failure_ !== undefined) throw this.failure_.error
   }
 
   /** Start one `unref()` timer after the first upgrade; it spans empty-client periods until close(). */
@@ -158,9 +245,14 @@ interface ActiveStream {
   done: Promise<void>
 }
 
+/** The mux observed its carrier close before it attempted the queued write. */
+class CarrierClosedBeforeWriteError extends Error {}
+
 class RemoteStreamMuxConnection {
   private readonly streams = new Map<string, ActiveStream>()
   private writes = Promise.resolve()
+  private carrierClosed = false
+  private failure_: { readonly error: unknown } | undefined
 
   constructor(
     private readonly socket: WebSocket,
@@ -169,6 +261,7 @@ class RemoteStreamMuxConnection {
     private readonly streamInboxBytes: number,
     private readonly compression: boolean,
     private readonly alive: () => void,
+    private readonly options?: NodeStreamTransportOptions,
   ) {}
 
   /**
@@ -181,7 +274,7 @@ class RemoteStreamMuxConnection {
    */
   async run(): Promise<void> {
     const closed = new Promise<void>((resolve) => {
-      this.socket.once('close', resolve)
+      this.socket.once('close', () => { this.carrierClosed = true; resolve() })
       this.socket.once('error', () => { this.socket.terminate() })
       this.socket.on('pong', this.alive)
       this.socket.on('message', (data, isBinary) => {
@@ -200,7 +293,8 @@ class RemoteStreamMuxConnection {
     await closed
     const active = [...this.streams.values()]
     for (const stream of active) stream.stop(new Error('Remote stream socket closed'))
-    await Promise.all(active.map(stream => stream.done))
+    await Promise.allSettled(active.map(stream => stream.done))
+    if (this.failure_ !== undefined) throw this.failure_.error
   }
 
   /**
@@ -210,6 +304,7 @@ class RemoteStreamMuxConnection {
    * protocol violation that closes the socket.
    */
   private receive(text: string): void {
+    if (this.socket.readyState !== WebSocket.OPEN) return
     const message = parseRemoteStreamClientMessage(text)
     switch (message.type) {
       case 'open': {
@@ -240,6 +335,11 @@ class RemoteStreamMuxConnection {
     if (this.streams.has(message.streamId)) {
       throw new Error(`api gateway: duplicate Remote stream id ${JSON.stringify(message.streamId)}`)
     }
+    let settle: ReturnType<NodeStreamTransportOptions['acquireStream']> | undefined
+    try { settle = this.options?.acquireStream(message.endpoint) } catch {
+      this.socket.terminate()
+      return
+    }
     const abort = new AbortController()
     // Created before the opener resolves so items the Client sends right
     // after `open` wait in the inbox instead of being lost.
@@ -254,10 +354,23 @@ class RemoteStreamMuxConnection {
       done: Promise.resolve(),
     }
     this.streams.set(message.streamId, active)
-    const done = this.pump(message.streamId, message.endpoint, message.payload, active)
+    const done = this.complete(message, active, settle)
     active.done = done
     const remove = (): void => { this.streams.delete(message.streamId) }
-    void done.then(remove, remove)
+    void done.then(remove, (error: unknown) => {
+      this.failure_ ??= { error: error instanceof StreamCleanupError ? error.failure : error }
+      remove()
+    })
+  }
+
+  private async complete(
+    message: Extract<RemoteStreamClientMessage, { readonly type: 'open' }>, active: ActiveStream,
+    settle: ReturnType<NodeStreamTransportOptions['acquireStream']> | undefined,
+  ): Promise<void> {
+    let failure: { readonly error: unknown } | undefined
+    try { await this.pump(message.streamId, message.endpoint, message.payload, active) } catch (error) { failure = { error } }
+    try { settle?.(failure === undefined ? 'confirmed' : 'unknown') } catch (error) { failure ??= { error } }
+    if (failure !== undefined) throw failure.error
   }
 
   private async pump(
@@ -267,20 +380,43 @@ class RemoteStreamMuxConnection {
     active: ActiveStream,
   ): Promise<void> {
     let outcome: { readonly failed: false } | { readonly failed: true; readonly error: unknown }
+    let iterator: AsyncIterator<unknown> | undefined
+    let cleanup: { readonly error: unknown } | undefined
+    // The signal can change while a carrier write is pending.
+    const isAborted = (): boolean => active.abort.signal.aborted
     try {
       const source = await this.open(endpoint, payload, active.inbox, active.abort, {
         maxBytes: this.streamInboxBytes,
         frameOverheadBytes: Buffer.byteLength(JSON.stringify({ type: 'item', streamId, value: null }), 'utf8') - 'null'.length,
       })
-      for await (const value of source) {
-        await this.send({ type: 'item', streamId, value })
+      iterator = source[Symbol.asyncIterator]()
+      while (true) {
+        const next = await iterator.next()
+        if (next.done || active.abort.signal.aborted) break
+        try {
+          await this.send({ type: 'item', streamId, value: next.value })
+        } catch (error) {
+          // Only the mux's own close-before-write result is known to be a
+          // carrier cancellation. Callback and serialization failures keep
+          // their existing unknown-cleanup semantics.
+          if (!isAborted() || !(error instanceof CarrierClosedBeforeWriteError)) throw error
+          break
+        }
       }
       outcome = { failed: false }
     } catch (error) {
+      if (error instanceof StreamCleanupError) cleanup = { error }
+      else if (iterator !== undefined && active.abort.signal.aborted && !isStreamCancellation(error, active.abort.signal)) {
+        cleanup = { error: new StreamCleanupError(error) }
+      }
       outcome = { failed: true, error }
+    } finally {
+      // Close uplink first to wake a downlink awaiting its input, then join actual return.
+      active.inbox.fail(new Error('Remote stream ended'))
+      try { assertStreamReturned(await iterator?.return?.()) } catch (error) { cleanup ??= { error: new StreamCleanupError(error) } }
+      await active.inbox.return()
     }
-    // The downlink has settled; later uplink frames cannot change the outcome.
-    active.inbox.fail(new Error('Remote stream ended'))
+    if (cleanup !== undefined) throw cleanup.error
     if (active.abort.signal.aborted) {
       // A Remote failure as the abort reason is the Gateway or this mux failing
       // the stream (a rejected or overflowing uplink item, or an item after
@@ -321,7 +457,9 @@ class RemoteStreamMuxConnection {
     }
     const delivery = this.writes.then(() => new Promise<void>((resolve, reject) => {
       if (this.socket.readyState !== WebSocket.OPEN) {
-        reject(new Error('api gateway: Remote stream socket is closed'))
+        reject(this.carrierClosed
+          ? new CarrierClosedBeforeWriteError('api gateway: Remote stream socket is closed')
+          : new Error('api gateway: Remote stream socket is closed'))
         return
       }
       let queued = false

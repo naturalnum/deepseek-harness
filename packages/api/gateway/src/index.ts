@@ -37,6 +37,7 @@ import {
 import type {
   InvokeRemoteRequest,
   PendingRemoteEventInfo,
+  RemoteEventQueueLimits,
   TypertGateway,
   TypertGatewayErrorCode,
   TypertGatewayWireStream,
@@ -48,7 +49,12 @@ import type {
 } from './types.ts'
 import {
   RemoteStreamMuxServer,
+  StreamCleanupError,
+  isStreamCancellation,
+  assertStreamReturned,
   rejectRemoteStreamUpgrade,
+  type NodeStreamTransport,
+  type NodeStreamTransportOptions,
 } from './stream-server.ts'
 import {
   REMOTE_EVENT_STREAM_ENDPOINT,
@@ -72,6 +78,7 @@ import {
 export type {
   InvokeRemoteRequest,
   PendingRemoteEventInfo,
+  RemoteEventQueueLimits,
   TypertGateway,
   TypertGatewayErrorCode,
   TypertGatewayWireStream,
@@ -83,6 +90,8 @@ export type {
   TypertRemoteEventSource,
 } from './types.ts'
 export type { RemoteEventHostInfo } from './stream-protocol.ts'
+export { projectRemoteEventRequest } from './stream-protocol.ts'
+export type { NodeStreamTransport, NodeStreamTransportOptions } from './stream-server.ts'
 
 interface GatewayErrorOptions {
   readonly cause?: unknown
@@ -120,6 +129,7 @@ interface RegisteredRemoteEventSource {
   readonly lifetime: AbortController
   readonly done: Promise<void>
   readonly host: RemoteEventHostInfo
+  readonly limits?: RemoteEventQueueLimits
 }
 
 interface RemoteEventClient {
@@ -231,6 +241,42 @@ export class TypertGatewayService extends Service implements TypertGateway {
   private remoteEvents: RegisteredRemoteEventSource | undefined
   private readonly remoteEventClients = new Map<RemoteEventClientId, RemoteEventClient>()
   private readonly pendingRemoteEvents = new Map<RemoteEventId, PendingRemoteEvent>()
+  private readonly nodeTransportConfig: ResolvedConfig
+
+  /**
+   * Create a native Node mux pinned to an externally authenticated Peer.
+   * The caller owns authentication, Host/Origin checks, and the Peer's lifetime.
+   * @param peer - fixed live Peer selected by the external carrier.
+   * @param beforeOpen - synchronous guard before each logical-stream dispatch; a throw refuses that stream.
+   * @param options - optional frame limit and pre-allocation logical resource reservation; settlement is synchronous.
+   * @returns carrier closed explicitly or when the calling Context unloads.
+   */
+  createNodeStreamTransport(
+    peer: PeerScope, beforeOpen: (endpoint: string) => void, options?: NodeStreamTransportOptions,
+  ): NodeStreamTransport {
+    const mux = new RemoteStreamMuxServer(
+      (endpoint, payload, uplink, admittedPeer, control, window) => {
+        beforeOpen(endpoint)
+        return this.openWireStream(endpoint, payload, uplink, admittedPeer, control.signal, control, window)
+      },
+      this.wireStream.failure,
+      {
+        heartbeatIntervalMs: this.nodeTransportConfig.websocketHeartbeatIntervalMs,
+        streamInboxBytes: this.nodeTransportConfig.streamInboxBytes,
+        compression: this.nodeTransportConfig.websocketCompression === 'deflate',
+      },
+      options,
+    )
+    let closing: Promise<void> | undefined
+    const dispose = this.ctx.effect(() => () => mux.close(), 'api-gateway: admitted Node stream transport')
+    return {
+      handleUpgrade: (request, socket, head) => { mux.handleUpgrade(request, socket, head, peer) },
+      close: () => closing ??= (async () => {
+        const results = await Promise.allSettled([mux.close(), Promise.resolve().then(() => dispose())])
+        for (const result of results) if (result.status === 'rejected') throw result.reason
+      })(),
+    }
+  }
 
   /**
    * Register the Gateway against the active Typert registry.
@@ -242,6 +288,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
   constructor(ctx: Context, config: Config) {
     super(ctx, 'typertGateway')
     const resolved = config as ResolvedConfig
+    this.nodeTransportConfig = resolved
     ctx.on('internal/service', () => {
       this.srcClaims = undefined
     })
@@ -265,10 +312,12 @@ export class TypertGatewayService extends Service implements TypertGateway {
           },
         )
         const releases = new Set<Promise<void>>()
+        let cleanupFailure: { readonly error: unknown } | undefined
         webCtx.effect(function* () {
           yield async () => {
-            await mux.close()
-            await Promise.all(releases)
+            try { await mux.close() } catch (error) { cleanupFailure ??= { error } }
+            await Promise.allSettled(releases)
+            if (cleanupFailure !== undefined) throw cleanupFailure.error
           }
           const route: WebUpgradeRoute = {
             path: REMOTE_STREAM_MUX_PATH,
@@ -281,11 +330,13 @@ export class TypertGatewayService extends Service implements TypertGateway {
               const release = (): void => {
                 // release removes the API Peer synchronously, before awaiting
                 // scope cleanup or any logical-stream iterator's return.
-                const done = admission.release().catch((error: unknown) => {
-                  console.error('[api-gateway] Peer release failed:', error)
-                })
+                let done: Promise<void>
+                try { done = admission.release() } catch (error) { cleanupFailure ??= { error }; return }
                 releases.add(done)
-                void done.then(() => { releases.delete(done) })
+                void done.then(() => { releases.delete(done) }, (error: unknown) => {
+                  cleanupFailure ??= { error }
+                  releases.delete(done)
+                })
               }
               const closed = (): void => {
                 socket.removeListener('error', release)
@@ -347,24 +398,30 @@ export class TypertGatewayService extends Service implements TypertGateway {
    * Register the sole application-selected forwarded-event source.
    * @param source - stream factory installed by the Remote assembly.
    * @param host - stable Host facts included in each Client generation's opening frame.
+   * @param limits - optional positive finite per-client item, resident-byte and complete-frame limits; no defaults.
    * @returns disposer removing this source and cancelling its active streams.
    */
   registerRemoteEvents(
     source: TypertRemoteEventSource,
     host: RemoteEventHostInfo,
+    limits?: RemoteEventQueueLimits,
   ): () => Promise<void> {
+    const queueLimits = limits === undefined ? undefined : remoteEventQueueLimits(limits)
     if (this.remoteEvents !== undefined) {
       throw new Error('typert gateway: forwarded Remote event source is already registered')
     }
     const lifetime = new AbortController()
     const stream = source(lifetime.signal)
+    let failure: { readonly error: unknown } | undefined
     const done = this.consumeRemoteEvents(stream, lifetime.signal).catch((error: unknown) => {
+      if (queueLimits !== undefined && !isStreamCancellation(error, lifetime.signal)) failure ??= { error }
       if (this.remoteEvents?.lifetime !== lifetime || lifetime.signal.aborted) return
       this.closeRemoteEvents(error)
       this.remoteEvents = undefined
       lifetime.abort(error)
     })
-    const registration: RegisteredRemoteEventSource = { lifetime, done, host: { home: host.home } }
+    const registration: RegisteredRemoteEventSource = { lifetime, done, host: { home: host.home },
+      ...queueLimits === undefined ? {} : { limits: queueLimits } }
     this.remoteEvents = registration
     return async () => {
       if (this.remoteEvents === registration) {
@@ -374,6 +431,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
         this.closeRemoteEvents(error)
       }
       await registration.done
+      if (failure !== undefined) throw failure.error
     }
   }
 
@@ -546,7 +604,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
   ): Promise<AsyncIterable<unknown>> {
     if (endpoint === REMOTE_EVENT_STREAM_ENDPOINT) {
       // A Gateway-owned stream reads no uplink: releasing it now keeps its items out of the bounded inbox.
-      releaseUplink(uplink)
+      await releaseUplink(uplink)
       assertPeerLive(peer, endpoint)
       requireInteractions(peer, endpoint)
       return this.openRemoteEvents(payload, signal, peer)
@@ -589,19 +647,22 @@ export class TypertGatewayService extends Service implements TypertGateway {
     const client: RemoteEventClient = {
       peer,
       id: clientId,
-      queue: new RemoteEventQueue(),
+      queue: new RemoteEventQueue(registration.limits),
       signal: lifetime,
       deliveries: new Map(),
       principal: peer.principal,
       // oxlint-disable-next-line typescript/no-unnecessary-condition -- other packages merge non-owner kinds into PrincipalMap.
       answers: peer.principal.kind === 'owner',
     }
+    const ready = { ...REMOTE_EVENT_STREAM_READY, clientId, host: registration.host }
+    client.queue.frameBytes(ready)
     this.remoteEventClients.set(clientId, client)
-    if (client.answers) {
-      for (const pending of this.pendingRemoteEvents.values()) this.deliverRemoteEvent(pending, client)
-    }
     try {
-      yield { ...REMOTE_EVENT_STREAM_READY, clientId, host: registration.host }
+      if (client.answers) {
+        for (const pending of this.pendingRemoteEvents.values()) this.deliverRemoteEvent(pending, client)
+      }
+      client.queue.assertAvailable()
+      yield ready
       yield* client.queue.iterate(lifetime)
     } finally {
       this.removeRemoteEventClient(client)
@@ -645,7 +706,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
         if (resources === undefined) continue
         if (this.ctx.remoteAccess.decide({ principal: client.principal, action: `event:${frame.event}`, resources }).kind === 'deny') continue
       }
-      client.queue.push(wire)
+      this.queueRemoteEvent(client, wire)
     }
   }
 
@@ -715,7 +776,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
   private deliverRemoteEvent(pending: PendingRemoteEvent, client: RemoteEventClient): void {
     pending.deliveries.add(client)
     client.deliveries.set(pending.id, pending)
-    client.queue.push(pending.frame)
+    this.queueRemoteEvent(client, pending.frame)
   }
 
   private receiveRemoteEventResult(
@@ -742,6 +803,10 @@ export class TypertGatewayService extends Service implements TypertGateway {
   private removeRemoteEventDelivery(pending: PendingRemoteEvent, client: RemoteEventClient): void {
     pending.deliveries.delete(client)
     client.deliveries.delete(pending.id)
+  }
+
+  private queueRemoteEvent(client: RemoteEventClient, frame: RemoteEventWireFrame): void {
+    if (!client.queue.push(frame)) this.removeRemoteEventClient(client)
   }
 
   private removeRemoteEventClient(client: RemoteEventClient): void {
@@ -771,7 +836,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
       type: 'cancel',
       eventId: pending.id,
     }
-    for (const client of clients) client.queue.push(cancellation)
+    for (const client of clients) this.queueRemoteEvent(client, cancellation)
   }
 
   private closeRemoteEvents(reason: unknown): void {
@@ -1199,27 +1264,66 @@ type RemoteEventWireFrame =
   | RemoteEventInvocationFrame
   | RemoteEventCancellationFrame
 
+function remoteEventQueueLimits(input: RemoteEventQueueLimits): Readonly<RemoteEventQueueLimits> {
+  for (const value of [input.maxQueuedEvents, input.maxQueuedBytes, input.maxFrameBytes]) {
+    if (!Number.isSafeInteger(value) || value < 1) throw new TypeError('Remote event queue limits must be positive finite safe integers')
+  }
+  return Object.freeze({ maxQueuedEvents: input.maxQueuedEvents, maxQueuedBytes: input.maxQueuedBytes,
+    maxFrameBytes: input.maxFrameBytes })
+}
+
 /** Pull-driven queue owned by one connected Client event generation. */
 class RemoteEventQueue {
-  private readonly frames = new Deque<RemoteEventWireFrame>()
+  private readonly frames = new Deque<{ readonly frame: RemoteEventWireFrame; readonly bytes: number }>()
   private waiter: (() => void) | undefined
   private closed = false
+  private bytes = 0
+  private failure: { readonly error: unknown } | undefined
 
-  push(frame: RemoteEventWireFrame): void {
-    if (this.closed) return
-    this.frames.pushBack(frame)
-    this.waiter?.()
+  constructor(private readonly limits?: Readonly<RemoteEventQueueLimits>) {}
+
+  frameBytes(frame: RemoteEventWireFrame | RemoteEventReadyFrame): number {
+    if (this.limits === undefined) return 0
+    const bytes = Buffer.byteLength(JSON.stringify(frame), 'utf8')
+    if (bytes > this.limits.maxFrameBytes) throw new RangeError('Remote event frame exceeds its explicit byte limit')
+    return bytes
+  }
+
+  assertAvailable(): void {
+    if (this.failure !== undefined) throw this.failure.error
+  }
+
+  push(frame: RemoteEventWireFrame): boolean {
+    if (this.closed) return false
+    try {
+      if (this.limits !== undefined && this.frames.size >= this.limits.maxQueuedEvents) {
+        throw new RangeError('Remote event client exceeds its explicit queued-event limit')
+      }
+      const bytes = this.frameBytes(frame)
+      if (this.limits !== undefined && bytes > this.limits.maxQueuedBytes - this.bytes) {
+        throw new RangeError('Remote event client exceeds its explicit resident-byte limit')
+      }
+      this.frames.pushBack({ frame, bytes })
+      this.bytes += bytes
+      this.waiter?.()
+      return true
+    } catch (error) {
+      this.failure ??= { error }
+      this.end()
+      return false
+    }
   }
 
   end(): void {
     if (this.closed) return
     this.closed = true
+    if (this.limits !== undefined) { this.frames.clear(); this.bytes = 0 }
     this.waiter?.()
   }
 
   /**
    * Yield buffered and later frames until the queue ends or `signal` aborts.
-   * An abort discards the frames still buffered, so a revoked Peer receives none of them.
+   * Limited queues retain their first overflow failure and discard resident frames on closure.
    * @param signal - Client generation lifetime.
    * @returns the queued wire frames in push order.
    */
@@ -1228,13 +1332,22 @@ class RemoteEventQueue {
     signal.addEventListener('abort', abort, { once: true })
     try {
       while (true) {
-        while (this.frames.size > 0 && !signal.aborted) yield this.frames.popFront() as RemoteEventWireFrame
+        this.assertAvailable()
+        while (this.frames.size > 0 && !signal.aborted) {
+          this.assertAvailable()
+          const item = this.frames.popFront()
+          if (item === undefined) break
+          this.bytes -= item.bytes
+          yield item.frame
+        }
+        this.assertAvailable()
         if (this.closed || signal.aborted) return
         await new Promise<void>((resolve) => { this.waiter = resolve })
         this.waiter = undefined
       }
     } finally {
       signal.removeEventListener('abort', abort)
+      this.end()
     }
   }
 }
@@ -1336,22 +1449,26 @@ async function *cancellableStream(
   const { signal } = invocation
   const asyncFactory: unknown = Reflect.get(source, Symbol.asyncIterator)
   const syncFactory: unknown = Reflect.get(source, Symbol.iterator)
-  const iterator = typeof asyncFactory === 'function'
-    ? Reflect.apply(asyncFactory, source, []) as AsyncIterator<unknown>
-    : Reflect.apply(syncFactory as (...args: never[]) => Iterator<unknown>, source, [])
+  let iterator: AsyncIterator<unknown> | Iterator<unknown> | undefined
+  let pending: Promise<IteratorResult<unknown>> | undefined
   let rejectAbort: ((error: unknown) => void) | undefined
   const onAbort = (): void => {
     rejectAbort?.(streamAbortFailure(endpoint, signal.reason))
   }
   signal.addEventListener('abort', onAbort, { once: true })
   try {
+    iterator = typeof asyncFactory === 'function'
+      ? Reflect.apply(asyncFactory, source, []) as AsyncIterator<unknown>
+      : Reflect.apply(syncFactory as (...args: never[]) => Iterator<unknown>, source, [])
     while (true) {
       if (signal.aborted) throw streamAbortFailure(endpoint, signal.reason)
       // Reusing a pending cancellation promise retains every completed race.
       const aborted = new Promise<never>((_resolve, reject) => { rejectAbort = reject })
       // next() can abort and throw synchronously before the race subscribes.
       void aborted.catch(() => undefined)
-      const next = await Promise.race([Promise.resolve(iterator.next()), aborted])
+      pending = Promise.resolve(iterator.next())
+      const next = await Promise.race([pending, aborted])
+      pending = undefined
       rejectAbort = undefined
       if (next.done === true) return
       yield next.value
@@ -1359,10 +1476,20 @@ async function *cancellableStream(
   } finally {
     rejectAbort = undefined
     signal.removeEventListener('abort', onAbort)
-    // The uplink closes first so a method blocked on `uplink.next()` unwinds
-    // before its iterator is asked to return.
-    await invocation.close()
-    await iterator.return?.()
+    // Uplink finish wakes blocked consumers before downlink return; join both even if either fails.
+    let cleanup: { readonly error: unknown } | undefined
+    const retain = async (work: Promise<unknown>, read = false): Promise<void> => {
+      try { await work } catch (error) {
+        if (read && (!signal.aborted || isStreamCancellation(error, signal))) return
+        cleanup ??= { error }
+      }
+    }
+    await Promise.all([
+      retain(invocation.close()),
+      retain(Promise.resolve().then(async () => { assertStreamReturned(await iterator?.return?.()) })),
+      retain(Promise.resolve(pending), true),
+    ])
+    if (cleanup !== undefined) throw new StreamCleanupError(cleanup.error)
   }
 }
 
@@ -1396,6 +1523,9 @@ class UplinkDecoder implements AsyncIterable<unknown>, AsyncIterator<unknown> {
     for (const read of this.interrupted) read.reject(failure)
   }
   private closed = false
+  private readonly reads = new Set<Promise<IteratorResult<unknown>>>()
+  private closing: Promise<IteratorResult<unknown>> | undefined
+  private failure_: { readonly error: unknown } | undefined
 
   constructor(
     uplink: AsyncIterable<unknown>,
@@ -1423,7 +1553,13 @@ class UplinkDecoder implements AsyncIterable<unknown>, AsyncIterator<unknown> {
     void interrupted.promise.catch(() => undefined)
     let next: IteratorResult<unknown>
     try {
-      next = await Promise.race([this.source.next(), interrupted.promise])
+      const actual = Promise.resolve(this.source.next())
+      this.reads.add(actual)
+      void actual.then(() => { this.reads.delete(actual) }, (error: unknown) => {
+        if ((this.closed || this.signal.aborted) && !isStreamCancellation(error, this.signal)) this.failure_ ??= { error }
+        this.reads.delete(actual)
+      })
+      next = await Promise.race([actual, interrupted.promise])
     } finally {
       this.interrupted.delete(interrupted)
     }
@@ -1445,15 +1581,19 @@ class UplinkDecoder implements AsyncIterable<unknown>, AsyncIterator<unknown> {
     return { value, done: false }
   }
 
-  /** Downlink finished or the method stopped reading: unread uplink items are dropped. */
+  /** Drop unread items, wake consumers and await actual source return and pending reads. */
   return(): Promise<IteratorResult<unknown>> {
-    if (!this.closed) {
-      this.finish()
-      // The carrier owns the source iterator; a generator blocked in next()
-      // completes this return once it yields, so it is not awaited here.
-      void Promise.resolve().then(() => this.source.return?.()).catch(() => undefined)
-    }
-    return Promise.resolve(UPLINK_DONE)
+    return this.closing ??= this.closeActual()
+  }
+
+  private async closeActual(): Promise<IteratorResult<unknown>> {
+    this.finish()
+    const returned = Promise.resolve().then(async () => { assertStreamReturned(await this.source.return?.()) }).catch((error: unknown) => {
+      this.failure_ ??= { error }
+    })
+    await Promise.allSettled([returned, ...this.reads])
+    if (this.failure_ !== undefined) throw new StreamCleanupError(this.failure_.error)
+    return UPLINK_DONE
   }
 
   private finish(): void {
@@ -1471,6 +1611,7 @@ class UplinkDecoder implements AsyncIterable<unknown>, AsyncIterator<unknown> {
 class GatewayInvocation implements RemoteInvocation {
   private decoder: UplinkDecoder | undefined
   private taken = false
+  private closing: Promise<void> | undefined
 
   get uplinkWindow(): RemoteInvocation['uplinkWindow'] { return this.uplink_.window }
 
@@ -1504,26 +1645,28 @@ class GatewayInvocation implements RemoteInvocation {
    * The downlink finished: release the uplink. Unread items are dropped, and a
    * carrier iterable the method never took is returned so it stops producing;
    * a later `uplink()` throws like a second one would.
-   * @returns settles once a taken uplink has closed.
+   * @returns actual taken or unread uplink cleanup, including pending source reads.
    */
-  async close(): Promise<void> {
-    if (this.decoder !== undefined) {
-      await this.decoder.return()
-      return
-    }
+  close(): Promise<void> {
+    return this.closing ??= this.closeActual()
+  }
+
+  private async closeActual(): Promise<void> {
     this.taken = true
-    releaseUplink(this.uplink_.source)
+    try {
+      if (this.decoder !== undefined) await this.decoder.return()
+      else await releaseUplink(this.uplink_.source)
+    } catch (error) { throw new StreamCleanupError(error) }
   }
 }
 
 /**
- * Return a carrier uplink nobody will read, so it drops later items instead of
- * buffering them. The carrier owns the iterator and `return()` is not awaited:
- * a generator blocked in `next()` completes it only once it yields.
+ * Return a carrier uplink nobody will read and retain its actual cleanup result.
  * @param source - the carrier's uplink iterable.
+ * @returns actual iterator return completion.
  */
-function releaseUplink(source: AsyncIterable<unknown>): void {
-  void Promise.resolve().then(() => source[Symbol.asyncIterator]().return?.()).catch(() => undefined)
+async function releaseUplink(source: AsyncIterable<unknown>): Promise<void> {
+  try { assertStreamReturned(await source[Symbol.asyncIterator]().return?.()) } catch (error) { throw new StreamCleanupError(error) }
 }
 
 function rpcFailure(error: unknown): ConnectionRpcResult {

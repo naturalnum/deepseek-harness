@@ -38,6 +38,8 @@ Compose feature UI from these atoms whenever the web client needs a standard con
 <a id="component-catalog"></a>
 ### Component catalog
 
+`ConfigField` is a controlled schema field: callers own its value, choices, validation, localized labels and write/reset actions. `LightningMark` reuses the existing decorative mark with the standard icon size and class props; neither component owns a service or persistence.
+
 Check this table before writing a control in a feature package. A plugin cannot import another plugin's component, so this package is the only place a control can be shared: reuse what fits, and lift a deliberate visual difference into a prop rather than starting a second copy.
 
 | Export | What it is |
@@ -138,6 +140,8 @@ The atoms cannot read the application locale, so every piece of user-facing copy
 -----
 
 <a id="understand-the-implementation"></a>
+With `standaloneFileLinks`, completed filename-only list items use the same scoped `openFile` callback. The default and streaming renders stay plain text; paths, commands, and URLs are excluded.
+
 ## Understand the implementation
 
 `Button` uses H36/R12 for `md` and H28/R8 for `sm`, including outlined controls. The `outline` variant preserves a transparent 0.5px layout border and paints its stroke with an inset shadow. The stroke reads ui-theme's DPR-aware `--dsh-hairline-width`, with a 0.5px fallback outside the theme. Feature classes customize its color through `--dsh-button-outline-color` and preserve the border width, transparent border color, and box-shadow. Menus and cards follow the [shared radius rules](../../../docs/web-styling.md#corner-radii-and-settings-cards); feature classes preserve control geometry.

@@ -2,7 +2,8 @@ import { Context } from '@deepseek-ai/cordis'
 import { Deque } from '@deepseek-ai/dsh-deque'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import { expect, it, onTestFinished, vi } from 'vitest'
-import { SessionHistoryController } from '../src/history.ts'
+import { HistoryController } from '../src/history/controller.ts'
+import { WebController } from '../src/web/controller.ts'
 import { installSessionReadTestServices, testSessionPersistence } from './test-remote.ts'
 
 it('does not re-buffer a real Session event when an earlier observer aborts during the same dispatch', async () => {
@@ -16,7 +17,7 @@ it('does not re-buffer a real Session event when an earlier observer aborts duri
   }) as never)
   const id = SessionId('worker3-actual-session-follow')
   ctx.on('session/event', (session) => { if (session.id === id) abort.abort() }, { global: true })
-  const history = new SessionHistoryController(ctx, () => { throw new Error('No promotion expected') })
+  const history = new WebController(ctx, new HistoryController(ctx), () => { throw new Error('No promotion expected') })
   const push = vi.spyOn(Deque.prototype, 'pushBack')
   const next = history.follow({ address: { kind: 'session', sessionId: id }, assistantStream: true }, abort.signal)[Symbol.asyncIterator]().next()
   let settled = false
@@ -47,7 +48,7 @@ it.each(['session/created', 'agent/assistant-stream'] as const)(
     const id = SessionId(`captured-${type}`)
     if (type === 'session/created') ctx.on('session/created', () => { abort.abort() }, { global: true })
     else ctx.on('agent/assistant-stream', () => { abort.abort() }, { global: true })
-    const history = new SessionHistoryController(ctx, () => { throw new Error('No promotion expected') })
+    const history = new WebController(ctx, new HistoryController(ctx), () => { throw new Error('No promotion expected') })
     const push = vi.spyOn(Deque.prototype, 'pushBack')
     const snapshotEvents = vi.fn(() => [{ type: 'turn/start', seq: 0 }])
     const session = { id, seq: 0, firstLiveSeq: 0, snapshotEvents }
@@ -65,17 +66,17 @@ it.each(['session/created', 'agent/assistant-stream'] as const)(
   },
 )
 
-it('already-aborted follow does not start a provider read and clears once', async () => {
+it('rejects already-aborted follow before buffer registration or provider reads', async () => {
   const ctx = new Context(), abort = new AbortController()
   onTestFinished(async () => { vi.restoreAllMocks(); await ctx.fiber.dispose() })
   await ctx.plugin(SessionStore)
   installSessionReadTestServices(ctx)
   const stat = vi.fn(() => Promise.resolve(undefined))
   ctx.provide('sessionPersistence', testSessionPersistence(ctx, { stat }) as never)
-  const history = new SessionHistoryController(ctx, () => { throw new Error('No promotion expected') })
+  const history = new WebController(ctx, new HistoryController(ctx), () => { throw new Error('No promotion expected') })
   const clear = vi.spyOn(Deque.prototype, 'clear')
   abort.abort(new Error('before request'))
   await expect(history.follow({ address: { kind: 'session', sessionId: SessionId('worker3-preabort') } }, abort.signal)[Symbol.asyncIterator]().next()).rejects.toBeDefined()
   expect(stat).not.toHaveBeenCalled()
-  expect(clear).toHaveBeenCalledTimes(1)
+  expect(clear).not.toHaveBeenCalled()
 })

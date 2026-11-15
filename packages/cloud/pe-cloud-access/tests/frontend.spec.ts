@@ -64,11 +64,17 @@ function address(context: Context, path: string): string {
   return `http://127.0.0.1:${String(context.webServer.port)}${path}`
 }
 
-it('serves only public files with the original index transforms and HTTP errors, without native Connection', async () => {
+it('serves only public files and explicit public injections with native HTTP errors, without native Connection', async () => {
   const context = await composition()
   expect(context.get('connection')).toBeUndefined()
-  context.on('webserver/index-inject', (rows) => { rows.push({ kind: 'script-preload', src: 'plugins/boot.js' }) })
-  context.webServer.tapIndex(html => html.replace('<head>', '<head><script>window.PUBLIC_MARK=1</script>'))
+  context.on('webserver/public-index-inject', (rows) => { rows.push(
+    { kind: 'script-preload', src: 'plugins/boot.js' },
+    { kind: 'script', placement: 'head', text: 'window.PUBLIC_MARK=1' },
+  ) })
+  const privateInjection = vi.fn(() => { throw new Error('Private injections require their original Peer') })
+  const privateTap = vi.fn(() => { throw new Error('Private raw taps must not run on the public index') })
+  context.on('webserver/index-inject', privateInjection)
+  context.webServer.tapIndex(privateTap)
   for (const path of ['/', '/index.html', '/?view=test']) {
     const response = await fetch(address(context, path)), body = await response.text()
     expect(response.status).toBe(200)
@@ -78,6 +84,8 @@ it('serves only public files with the original index transforms and HTTP errors,
     expect(body.indexOf('<base href="./">')).toBeLessThan(body.indexOf('plugins/boot.js'))
     expect(body).toContain('window.PUBLIC_MARK=1')
   }
+  expect(privateInjection).not.toHaveBeenCalled()
+  expect(privateTap).not.toHaveBeenCalled()
   for (const [path, status] of [['/missing', 404], ['/empty', 404], ['/..%2fprivate.txt', 403], ['/bad%00path', 400]] as const) {
     const response = await fetch(address(context, path))
     expect(response.status).toBe(status)

@@ -378,6 +378,12 @@ function mount(
       renderSlotChain,
       renderFactorySlot,
       selectWorkspace: retargetWorkspace,
+      readContentWidth: () => {
+        const raw = localStorage.getItem('dsh.conversation.contentWidth')
+        const value = raw === null ? NaN : Number(raw)
+        return Number.isFinite(value) && value > 0 ? value : null
+      },
+      writeContentWidth: (width) => { localStorage.setItem('dsh.conversation.contentWidth', String(width)) },
       t,
     }
     const useFactorySlot = ((name: string, fallback: (props: never) => ReactNode) => (

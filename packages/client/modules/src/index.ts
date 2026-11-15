@@ -89,6 +89,8 @@ interface ResolvedPkgMeta {
 
 /** One active Loader source and the browser package manifest it resolves to. */
 interface ClientPackageSource extends ResolvedPkgMeta {
+  /** Whether this declaration also activates the browser plugin. */
+  activate: boolean
   /** Loader specifier from the active row. */
   loaderName: string
   /** Resolution base of the config tree that owns the row. */
@@ -527,7 +529,7 @@ function buildBatch(
 }
 
 /** Graph row for one bundle rev (the reference carries the rev as its cache-busting query). */
-function graphRow(id: string, rev: string, fields: WebBootRowFields): WebBootEntry {
+function graphRow(id: string, rev: string, fields: WebBootRowFields, activate = true): WebBootEntry {
   return {
     id,
     url: comboReference([id], rev),
@@ -535,6 +537,7 @@ function graphRow(id: string, rev: string, fields: WebBootRowFields): WebBootEnt
     ...(fields.inject !== undefined ? { inject: fields.inject } : {}),
     ...(fields.immediately ? { immediately: true } : {}),
     ...(fields.external.length > 0 ? { external: fields.external } : {}),
+    ...activate ? {} : { activate: false },
   }
 }
 
@@ -653,6 +656,7 @@ export class ClientModuleRegistry extends Service {
   private readonly release: WebBootRelease
   private readonly table = new Map<string, WebPluginRecord>()
   private readonly sources = new Map<string, ClientPackageSource>()
+  private readonly declaredSources = new Map<string, ClientPackageSource>()
   private readonly rebuildListeners = new Set<(id: string, rev: string) => void>()
   private readonly graphListeners = new Set<() => void>()
   private readonly dirty = new Set<string>()
@@ -707,9 +711,9 @@ export class ClientModuleRegistry extends Service {
       )
     }
     ctx.inject(['webServer'], registerWebCarrier)
-    ctx.on('webserver/index-inject', (table) => {
-      table.push(...bootInjections(this.composed))
-    })
+    const injectBoot = (table: IndexInjection[]): void => { table.push(...bootInjections(this.composed)) }
+    ctx.on('webserver/index-inject', injectBoot)
+    ctx.on('webserver/public-index-inject', injectBoot)
   }
 
   /**
@@ -718,6 +722,49 @@ export class ClientModuleRegistry extends Service {
    */
   graph(): WebBootGraph {
     return this.composed
+  }
+
+  /**
+   * Declare browser packages without activating their Host plugins.
+   * Invalid declarations or missing artifacts reject the batch and withdraw its sources.
+   * @param packages - approved package specifiers whose manifests declare dsh.client.
+   * @param baseUrl - resolution base of the deployment-owned package installation.
+   * @param options - optional activation choice; false supplies modules only, while omission or true also activates plugins.
+   * @returns awaitable disposer removing these declarations, also called when the caller unloads.
+   */
+  registerClientPackages(packages: readonly string[], baseUrl: string, options?: { readonly activate?: boolean }): () => Promise<void> {
+    const sources = packages.map((loaderName) => {
+      const resolved = this.resolveMeta(loaderName, baseUrl)
+      if (resolved === null) throw new Error(`client-modules: ${loaderName} does not declare dsh.client`)
+      return { ...resolved, loaderName, baseUrl, sourceKey: this.sourceKey(loaderName, baseUrl), activate: options?.activate !== false }
+    })
+    const seen = new Set<string>()
+    for (const source of sources) {
+      if (seen.has(source.sourceKey) || this.declaredSources.has(source.sourceKey)) {
+        throw new Error(`client-modules: duplicate browser declaration ${source.loaderName}`)
+      }
+      if (!source.activate && this.sources.has(source.sourceKey)) {
+        throw new Error(`client-modules: module-only declaration conflicts with active Host entry ${source.loaderName}`)
+      }
+      seen.add(source.sourceKey)
+    }
+    const refresh = (): void => {
+      for (const source of sources) this.dirty.add(source.loaderName)
+      this.flush((error) => { throw error })
+    }
+    const dispose = this.ctx.effect(() => {
+      for (const source of sources) this.declaredSources.set(source.sourceKey, source)
+      try { refresh() } catch (error) {
+        for (const source of sources) this.declaredSources.delete(source.sourceKey)
+        refresh()
+        throw error
+      }
+      return () => {
+        for (const source of sources) this.declaredSources.delete(source.sourceKey)
+        refresh()
+      }
+    }, 'client-modules: declared browser packages')
+    return () => Promise.resolve(dispose())
   }
 
   /**
@@ -780,7 +827,7 @@ export class ClientModuleRegistry extends Service {
     if (rev === record.entry.rev) return rev
     const bundle = readFileSync(record.meta.clientPath)
     record.baseline = baseline
-    record.entry = graphRow(id, rev, record.meta)
+    record.entry = graphRow(id, rev, record.meta, record.entry.activate !== false)
     record.bundle = bundle
     this.composed = this.compose()
     for (const notify of this.rebuildListeners) {
@@ -1042,10 +1089,18 @@ export class ClientModuleRegistry extends Service {
    */
   private processOne(entryName: string, entries: readonly Entry[], onError: (err: Error) => void): boolean {
     const nextSources = new Map<string, ClientPackageSource>()
+    for (const [key, source] of this.declaredSources) {
+      if (source.loaderName === entryName) nextSources.set(key, source)
+    }
     for (const entry of entries) {
       if (entry.fiber === undefined || entry.disabled) continue
       const source = this.resolveSource(entry)
-      if (source !== undefined) nextSources.set(source.sourceKey, source)
+      if (source !== undefined) {
+        if (nextSources.get(source.sourceKey)?.activate === false) {
+          throw new Error(`client-modules: active Host entry conflicts with module-only declaration ${source.loaderName}`)
+        }
+        nextSources.set(source.sourceKey, source)
+      }
     }
 
     const affectedPackages = new Set<string>()
@@ -1077,7 +1132,7 @@ export class ClientModuleRegistry extends Service {
     }
     const resolved = this.resolveMeta(loaderName, baseUrl)
     if (resolved === null) return undefined
-    return { ...resolved, loaderName, baseUrl, sourceKey: this.sourceKey(loaderName, baseUrl) }
+    return { ...resolved, loaderName, baseUrl, sourceKey: this.sourceKey(loaderName, baseUrl), activate: true }
   }
 
   private reconcilePackage(packageName: string): boolean {
@@ -1098,7 +1153,7 @@ export class ClientModuleRegistry extends Service {
     const { clientPath } = source.meta
     // Startup and HMR share revisions so unchanged artifacts survive a server restart.
     const baseline = this.readClientBundle(packageName, clientPath, () => this.captureArtifactBaseline(clientPath))
-    const entry = graphRow(packageName, artifactRevision(baseline), source.meta)
+    const entry = graphRow(packageName, artifactRevision(baseline), source.meta, source.activate)
     const current = this.table.get(packageName)
     // A restart that finds the same manifest and bundle metadata leaves the published graph as it is, unread.
     const unchanged = current?.sourceKey === source.sourceKey

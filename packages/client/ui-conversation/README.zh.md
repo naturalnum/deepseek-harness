@@ -237,4 +237,6 @@ selector 必须是 owner currency 的纯函数。非 null 返回值作为 `match
 
 无。
 
+Conversation Factory 为正文宽度读写捕获页面持久化端口。局部宽度控件通过原 Factory 注入接收这些回调；普通页面保留浏览器存储，账号页面保留其原作用域端口。
+
 </details>

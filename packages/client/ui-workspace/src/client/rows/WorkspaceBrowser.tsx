@@ -254,7 +254,7 @@ type SessionTreeProps = Pick<
   WorkspaceBrowserProps,
   'useSessionStatus' | 'startSession' | 'open' | 'renderFactorySlot' | 'useContextMenuTarget' | 'useContextMenu'
   | 'insertWorkspaceBefore' | 't' | 'usePanelInfo'
-  | 'useSessionAccess' | 'useWorkspaceAccess'
+  | 'useSessionAccess' | 'useWorkspaceAccess' | 'workspaceDeleteDisabledReason'
 > & PropsRenderSlots<
   | 'sidebar.workspaces.session.row.action'
   | 'sidebar.session.row.trailing'
@@ -314,7 +314,7 @@ function EmptySessions({ rowState, onLeaveArchivedOnly, t }: Pick<SessionTreePro
 function SessionTree({
   list, useSessionStatus, startSession, open, workspaces, ungroupedSessionIds,
   rowState, onLeaveArchivedOnly,
-  workspaceReady, animationResetKey, usePanelInfo, useSessionAccess, useWorkspaceAccess,
+  workspaceReady, animationResetKey, usePanelInfo, useSessionAccess, useWorkspaceAccess, workspaceDeleteDisabledReason,
   onSessionRenameRequest,
   renderSlot, renderFactorySlot, useContextMenuTarget, useContextMenu,
   insertWorkspaceBefore,
@@ -556,6 +556,7 @@ function SessionTree({
           group={group}
           renderFactorySlot={renderFactorySlot} useContextMenu={useContextMenu} useContextMenuTarget={useContextMenuTarget}
           useWorkspaceAccess={useWorkspaceAccess}
+          workspaceDeleteDisabledReason={workspaceDeleteDisabledReason}
           containsCurrentDescendant={currentAncestors.has(group.key)}
           home={home}
           t={t}
@@ -908,6 +909,7 @@ export function WorkspaceBrowser({
   notifyArchivedNotOpenable,
   renameWorkspace, useWorkspaceActionRequest, settleWorkspaceAction,
   deleteWorkspace,
+  workspaceDeleteDisabledReason,
   insertWorkspaceBefore,
   unarchiveSession,
   createWorkspace,
@@ -1396,6 +1398,7 @@ export function WorkspaceBrowser({
             )
             : (
               <SessionTree
+                workspaceDeleteDisabledReason={workspaceDeleteDisabledReason}
                 useSessionAccess={useSessionAccess}
                 useWorkspaceAccess={useWorkspaceAccess}
                 usePanelInfo={usePanelInfo}
@@ -1429,7 +1432,7 @@ export function WorkspaceBrowser({
 
       {workspaceActionRequest !== null && <WorkspaceDialogs key={`${workspaceActionRequest.action}/${workspaceActionRequest.workspaceId}`}
         request={workspaceActionRequest} workspaces={workspaces} renameWorkspace={renameWorkspace} deleteWorkspace={deleteWorkspace}
-        settleWorkspaceAction={settleWorkspaceAction} t={t} />}
+        settleWorkspaceAction={settleWorkspaceAction} workspaceDeleteDisabledReason={workspaceDeleteDisabledReason} t={t} />}
     </div>
   )
 }

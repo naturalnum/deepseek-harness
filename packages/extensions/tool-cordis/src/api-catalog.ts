@@ -622,6 +622,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the graph served as `window.__DSH_BOOT__`.',
       },
       {
+        signature: 'registerClientPackages(packages: readonly string[], baseUrl: string, options?: { readonly activate?: boolean }): () => Promise<void>',
+        description: 'Declare browser packages without activating their Host plugins. Invalid declarations or missing artifacts reject the batch and withdraw its sources.',
+        parameters: [{ name: 'packages', description: 'approved package specifiers whose manifests declare dsh.client.' }, { name: 'baseUrl', description: 'resolution base of the deployment-owned package installation.' }, { name: 'options', description: 'optional activation choice; false supplies modules only, while omission or true also activates plugins.' }],
+        returns: 'awaitable disposer removing these declarations, also called when the caller unloads.',
+      },
+      {
         signature: 'clientPath(id: string): string | undefined',
         description: 'Absolute path of an entry\'s client bundle.',
         parameters: [{ name: 'id', description: 'entry id (package name).' }],
@@ -3670,6 +3676,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Manage profile files and apply their declared reload lifecycle.',
     methods: [
       {
+        signature: 'registerSaveHook(hook: PluginSaveSubmissionHook): () => Promise<void>',
+        description: 'Install the sole hook for this manager\'s native state-change submissions. Stop and settle protected operations before withdrawing the hook.',
+        parameters: [{ name: 'hook', description: 'synchronous admission and typed ChangeResult observation.' }],
+        returns: 'awaitable disposer; caller unload also removes the hook.',
+        throws: ['If a hook is already installed.'],
+      },
+      {
+        signature: 'registerSelectionGuard(guard: PluginSelectionGuard): () => Promise<void>',
+        description: 'Bind the sole native selection guard; entry and bundle writes share preparation, persistence and reconcile.',
+        parameters: [{ name: 'guard', description: 'Original owner policy, not a replacement patch composer or supplied stop list.' }],
+        returns: 'Disposer; the caller retains this fiber until actual updates settle.',
+      },
+      {
+        signature: 'changeFailureOutcome(result: ChangeResult): \'not-published\' | \'unknown\' | undefined',
+        description: 'Read the original guarded writer\'s actual replacement disposition without changing its ChangeResult.',
+        parameters: [{ name: 'result', description: 'Exact native result object; copies and unrelated failures have no receipt.' }],
+        returns: 'Owner-observed zero-publication refusal or unknown after replacement was entered.',
+      },
+      {
         signature: '@Remote async readBundleDetail(name: string, language: string, options?: { npmFileSources?: NpmFileSource[] }): Promise<BundleDetail>',
         description: 'Read a bundle\'s long description: the Markdown file its locale `meta.detail` names in `language`, otherwise its README. An installed bundle is read from its directory without network access; an official bundle the installation offers before it is installed is read from the npm file CDNs at its offered version. Nothing is cached.',
         parameters: [{ name: 'name', description: 'the bundle\'s package name, as `listBundles()` lists it.' }, { name: 'language', description: 'the display language, such as `zh-CN`; documents fall back through its prefixes to English.' }, { name: 'options', description: '`npmFileSources` names npm file CDNs to ask first for an offered bundle, in order, such as the one a Client measured as fastest; configured CDNs it omits follow, and CDNs that are not configured are not asked.' }],
@@ -3759,6 +3784,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Unload and remove a profile-owned bundle dependency through dsh plugin\'s pnpm path; a selected name no dependency holds is only deselected.',
         parameters: [{ name: 'name', description: 'Installed dependency or selected bundle name.' }],
         returns: 'Removal diagnostics and the remaining profile state.',
+      },
+      {
+        signature: 'previewBundleSelection(name: string, enabled: boolean, maximum: number, application: \'reconcile\' | \'restart\' = \'reconcile\'): Promise<ProfileConfigUpdatePlan>',
+        description: 'Inspect the complete original bundle composition without writing or activating entries.',
+        parameters: [{ name: 'name', description: 'Preinstalled native bundle name.' }, { name: 'enabled', description: 'Desired selection.' }, { name: 'maximum', description: 'Bound on composed rows.' }, { name: 'application', description: 'Whether the original caller will reconcile or restart the graph.' }],
+        returns: 'Opaque original profile plan; the writer prepares and checks it again under this same lock.',
       },
     ],
   },
@@ -4039,6 +4070,24 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Shared management service; reads and management writes never activate a Session, and only delivery creates or resumes one.\n\n`sessionPersistence` supplies header-only target validation and the `session/flush` listener that acknowledges durable inbox delivery through `ctx.sessions.flush()`.',
     methods: [
       {
+        signature: 'installDispatchAdmission(admission: ScheduleDispatchAdmission): void',
+        description: 'Install an embedding\'s dispatch admission before initialization starts dispatch.',
+        parameters: [{ name: 'admission', description: 'One immutable registration over actual stored tasks; rejection does not acknowledge or automatically retry delivery.' }],
+        returns: 'Nothing. Late, duplicate, or stopping registrations throw; Native callers may omit registration.',
+      },
+      {
+        signature: 'async resumeDispatch(): Promise<void>',
+        description: 'Reconsider overdue tasks after an embedding becomes ready.',
+        parameters: [],
+        returns: 'Completion of initialization and the rescan request, without claiming delivery acknowledgement.',
+      },
+      {
+        signature: 'isDispatchIdle(): boolean',
+        description: 'Observe original dispatch, management writes, and post-commit notices.',
+        parameters: [],
+        returns: 'Whether initialization finished and no admitted work or reused-target execution remains; a future timer is idle.',
+      },
+      {
         signature: '@Remote(\'deliveryLimits\') deliveryLimits(): { readonly newSessionIntervalSeconds: number }',
         description: 'Read effective delivery limits without loading or activating a task.',
         parameters: [],
@@ -4059,13 +4108,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       {
         signature: 'async list(request: ScheduleListRequest = {}): Promise<ScheduleListResult>',
         description: 'Read one page of Host tasks without activating target Sessions.',
-        parameters: [{ name: 'request', description: 'Optional activity filter, page size, and offset.' }],
+        parameters: [{ name: 'request', description: 'Optional existing-Session target and activity filters, page size, and offset; omission keeps all targets.' }],
         returns: 'The requested page and total matching task count.',
       },
       {
         signature: '@Remote(\'list\') async remoteList(request: ScheduleListRequest): Promise<ScheduleListResult>',
-        description: 'Remote form of the shared Host-wide list.',
-        parameters: [{ name: 'request', description: 'Optional activity filter, page size, and offset.' }],
+        description: 'Remote form of the shared list, retaining Host-wide selection when no target filter is supplied.',
+        parameters: [{ name: 'request', description: 'Optional existing-Session target and activity filters, page size, and offset.' }],
         returns: 'The requested page and total matching task count.',
       },
       {
@@ -5732,6 +5781,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
+        signature: 'createNodeStreamTransport( peer: PeerScope, beforeOpen: (endpoint: string) => void, options?: NodeStreamTransportOptions, ): NodeStreamTransport',
+        description: 'Create a native Node mux pinned to an externally authenticated Peer. The caller owns authentication, Host/Origin checks, and the Peer\'s lifetime.',
+        parameters: [{ name: 'peer', description: 'fixed live Peer selected by the external carrier.' }, { name: 'beforeOpen', description: 'synchronous guard before each logical-stream dispatch; a throw refuses that stream.' }, { name: 'options', description: 'optional frame limit and pre-allocation logical resource reservation; settlement is synchronous.' }],
+        returns: 'carrier closed explicitly or when the calling Context unloads.',
+      },
+      {
         signature: 'hasLiveClient(): boolean',
         description: 'Check for an active owner Client event stream, the only kind that can answer forwarded waterfalls.',
         parameters: [],
@@ -5744,9 +5799,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'detached event names and Agent identities.',
       },
       {
-        signature: 'registerRemoteEvents( source: TypertRemoteEventSource, host: RemoteEventHostInfo, ): () => Promise<void>',
+        signature: 'registerRemoteEvents( source: TypertRemoteEventSource, host: RemoteEventHostInfo, limits?: RemoteEventQueueLimits, ): () => Promise<void>',
         description: 'Register the sole application-selected forwarded-event source.',
-        parameters: [{ name: 'source', description: 'stream factory installed by the Remote assembly.' }, { name: 'host', description: 'stable Host facts included in each Client generation\'s opening frame.' }],
+        parameters: [{ name: 'source', description: 'stream factory installed by the Remote assembly.' }, { name: 'host', description: 'stable Host facts included in each Client generation\'s opening frame.' }, { name: 'limits', description: 'optional positive finite per-client item, resident-byte and complete-frame limits; no defaults.' }],
         returns: 'disposer removing this source and cancelling its active streams.',
       },
       {
@@ -5945,6 +6000,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Render one index.html body for one Peer: the structured injection table first, then the raw `tapIndex` transforms over the result.',
         parameters: [{ name: 'html', description: 'the raw index.html body.' }, { name: 'peer', description: 'the Peer the page speaks for.' }],
         returns: 'the transformed body.',
+      },
+      {
+        signature: 'renderPublicIndex(html: string): string',
+        description: 'Render an unauthenticated document using explicitly public contributions only.',
+        parameters: [{ name: 'html', description: 'Raw public index document.' }],
+        returns: 'Public injection rows applied to the document; Peer-specific sources and raw index taps are not called.',
       },
     ],
   },
@@ -6896,6 +6957,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'Collect the structured index injection table for the page `peer` speaks for.',
     description: 'Collect the structured index injection table for the page `peer` speaks for. Emitted on every index render and every worker boot-payload request; listeners push their current rows, so a row\'s data is read fresh at emit time.',
     parameters: [{ name: 'table', description: 'Mutable row table; listeners append in activation order.' }, { name: 'peer', description: 'The Peer the rendered page speaks for.' }],
+  },
+  {
+    name: 'webserver/public-index-inject',
+    mode: 'emit',
+    signature: '\'webserver/public-index-inject\'(table: IndexInjection[]): void',
+    summary: 'Collect only explicitly public assets and bootstrap values, without an account or Peer.',
+    description: 'Collect only explicitly public assets and bootstrap values, without an account or Peer.',
+    parameters: [{ name: 'table', description: 'Mutable public row table; contributors append no private state.' }],
   },
   {
     name: 'workflow/agent-end',
@@ -9762,6 +9831,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface NativeUserQuestions {\n    readonly value: UserQuestions;\n    inspect(): ExposureInventory;\n}',
   },
   {
+    name: 'NodeStreamTransport',
+    declaration: 'export interface NodeStreamTransport {\n    handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void;\n    close(): Promise<void>;\n}',
+  },
+  {
+    name: 'NodeStreamTransportOptions',
+    declaration: 'export interface NodeStreamTransportOptions {\n    readonly maxFrameBytes: number;\n    readonly acquireStream: (endpoint: string) => (status: \'confirmed\' | \'unknown\') => void;\n}',
+  },
+  {
     name: 'NormalizationPolicy',
     declaration: 'export interface NormalizationPolicy {\n    maxPixels: number;\n    maxDimension: number;\n    maxBytes: number;\n}',
   },
@@ -10067,7 +10144,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PluginManager',
-    declaration: 'export class PluginManager extends TypertRemoteService {\n    static inject;\n    static Config: z<Config>;\n    constructor(ctx: Context, config: Config);\n    @Remote\n    async readBundleDetail(name: string, language: string, options?: {\n        npmFileSources?: NpmFileSource[];\n    }): Promise<BundleDetail>;\n    @Remote\n    listVersionExemptions(): {\n        exemptions: Record<string, string[]>;\n        warnings: string[];\n    };\n    @Remote\n    setVersionExemption(packageVersion: string, runtimeVersion: string, enabled: boolean, acceptRisk?: boolean): Promise<ChangeResult>;\n    @Remote\n    async listPlugins(): Promise<PluginInfo[]>;\n    @Remote\n    listBundles(): Promise<BundleInfo[]>;\n    @Remote\n    async registries(): Promise<PluginRegistries>;\n    @Remote\n    async inspect(spec: string, options?: InspectOptions, signal?: AbortSignal): Promise<PluginSpecInspection>;\n    @Remote\n    async listVersions(name: string, options?: ListVersionsOptions, signal?: AbortSignal): Promise<PluginVersionList>;\n    @Remote\n    async updateBundle(name: string, version: string, options?: UpdateBundleOptions): Promise<PluginUpdateResult>;\n    @Remote\n    setPluginEnabled(id: PluginEntryId, enabled: boolean): Promise<ChangeResult>;\n    @Remote\n    setBundleEnabled(name: string, enabled: boolean): Promise<ChangeResult>;\n    @Remote\n    installBundle(spec: string, options?: InstallBundleOptions): Promise<ChangeResult>;\n    @Remote\n    async waitForInstall(requestId: PluginInstallRequestId): Prom /* …truncated — full shape in source */',
+    declaration: 'export class PluginManager extends TypertRemoteService {\n    static inject;\n    static Config: z<Config>;\n    constructor(ctx: Context, config: Config);\n    registerSaveHook(hook: PluginSaveSubmissionHook): () => Promise<void>;\n    registerSelectionGuard(guard: PluginSelectionGuard): () => Promise<void>;\n    changeFailureOutcome(result: ChangeResult): \'not-published\' | \'unknown\' | undefined;\n    @Remote\n    async readBundleDetail(name: string, language: string, options?: {\n        npmFileSources?: NpmFileSource[];\n    }): Promise<BundleDetail>;\n    @Remote\n    listVersionExemptions(): {\n        exemptions: Record<string, string[]>;\n        warnings: string[];\n    };\n    @Remote\n    setVersionExemption(packageVersion: string, runtimeVersion: string, enabled: boolean, acceptRisk?: boolean): Promise<ChangeResult>;\n    @Remote\n    async listPlugins(): Promise<PluginInfo[]>;\n    @Remote\n    listBundles(): Promise<BundleInfo[]>;\n    @Remote\n    async registries(): Promise<PluginRegistries>;\n    @Remote\n    async inspect(spec: string, options?: InspectOptions, signal?: AbortSignal): Promise<PluginSpecInspection>;\n    @Remote\n    async listVersions(name: string, options?: ListVersionsOptions, signal?: AbortSignal): Promise<PluginVersionList>;\n    @Remote\n    async updateBundle(name: string, version: string, options?: UpdateBundleOptions): Promise<PluginUpdateResult>;\n    @Remote\n    setPluginEnabled(id: PluginEntryId, enabled: boolean): Promise<ChangeResult>;\n    @Remote\n    setBundl /* …truncated — full shape in source */',
   },
   {
     name: 'PluginManagerSnapshot',
@@ -10112,6 +10189,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PluginRegistries',
     declaration: 'export interface PluginRegistries {\n    readonly registry: Registry;\n    readonly fallbackRegistries: readonly string[];\n    readonly resolved: string | null;\n}',
+  },
+  {
+    name: 'PluginSaveOperation',
+    declaration: 'export interface PluginSaveOperation {\n    readonly stage: ChangeResult[\'stage\'];\n    readonly reason: PluginChange[\'reason\'];\n}',
+  },
+  {
+    name: 'PluginSaveSubmissionHook',
+    declaration: 'export interface PluginSaveSubmissionHook {\n    submit(operation: PluginSaveOperation, submit: () => Promise<ChangeResult>): Promise<ChangeResult>;\n}',
+  },
+  {
+    name: 'PluginSelectionGuard',
+    declaration: 'export interface PluginSelectionGuard {\n    readonly maxRegistryEntries: number;\n    application?(): \'reconcile\' | \'restart\';\n    assertCurrent(): void;\n    check(plan: ProfileConfigUpdatePlan, target: Readonly<{\n        kind: \'entry\';\n        id: PluginEntryId;\n    }> | Readonly<{\n        kind: \'bundle\';\n        name: string;\n    }>, enabled: boolean): void | Promise<void>;\n}',
   },
   {
     name: 'PluginSpecInspection',
@@ -10494,6 +10583,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface RemoteEventHostInfo {\n    readonly home: string;\n}',
   },
   {
+    name: 'RemoteEventQueueLimits',
+    declaration: 'export interface RemoteEventQueueLimits {\n    readonly maxQueuedEvents: number;\n    readonly maxQueuedBytes: number;\n    readonly maxFrameBytes: number;\n}',
+  },
+  {
     name: 'RemoteExecOutcome',
     declaration: 'export type RemoteExecOutcome = {\n    readonly kind: \'completed\';\n    readonly exitCode: number;\n    readonly stdout: BoundedOutput;\n    readonly stderr: BoundedOutput;\n} | {\n    readonly kind: \'connect-failed\';\n    readonly failure: ConnectFailure;\n    readonly detail: string;\n} | {\n    readonly kind: \'timeout\';\n    readonly timeoutMs: number;\n    readonly stdout: BoundedOutput;\n    readonly stderr: BoundedOutput;\n} | {\n    readonly kind: \'cancelled\';\n    readonly stdout: BoundedOutput;\n    readonly stderr: BoundedOutput;\n} | {\n    readonly kind: \'ambiguous\';\n    readonly exitCode: 255;\n    readonly detail: string;\n};',
   },
@@ -10754,6 +10847,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ScheduleDeliveryRecord extends ScheduleDeliveryReceipt {\n    readonly prompt?: string;\n}',
   },
   {
+    name: 'ScheduleDispatchAdmission',
+    declaration: 'export type ScheduleDispatchAdmission = (task: ScheduleTask) => Promise<() => void>;',
+  },
+  {
     name: 'ScheduleEditRequest',
     declaration: 'export type ScheduleEditRequest = {\n    readonly id: ScheduleId;\n    readonly action: \'update\';\n    readonly patch: SchedulePatch;\n    readonly expectedUpdatedAt?: string | null;\n} | {\n    readonly id: ScheduleId;\n    readonly action: \'delete\';\n    readonly expectedUpdatedAt?: string | null;\n};',
   },
@@ -10771,7 +10868,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ScheduleListRequest',
-    declaration: 'export interface ScheduleListRequest {\n    readonly active?: boolean;\n    readonly limit?: number;\n    readonly offset?: number;\n}',
+    declaration: 'export interface ScheduleListRequest {\n    readonly targetSessionId?: SessionId;\n    readonly active?: boolean;\n    readonly limit?: number;\n    readonly offset?: number;\n}',
   },
   {
     name: 'ScheduleListResult',
@@ -10799,7 +10896,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ScheduleService',
-    declaration: 'export class ScheduleService extends TypertRemoteService {\n    static inject;\n    static Config: z<Config>;\n    constructor(ctx: Context, config: Config);\n    async [Service.init](): Promise<void>;\n    @Remote(\'deliveryLimits\')\n    deliveryLimits(): {\n        readonly newSessionIntervalSeconds: number;\n    };\n    @Remote(\'create\')\n    async remoteCreate(request: ScheduleCreateRequest, signal?: AbortSignal): Promise<ScheduleCatalogEntry>;\n    async create(request: ScheduleCreateRequest, actorSessionId?: SessionId, signal?: AbortSignal): Promise<ScheduleCatalogEntry>;\n    async list(request: ScheduleListRequest = {}): Promise<ScheduleListResult>;\n    @Remote(\'list\')\n    async remoteList(request: ScheduleListRequest): Promise<ScheduleListResult>;\n    @Remote(\'catalog\')\n    async catalog(): Promise<ScheduleCatalogEntry[]>;\n    @Remote(\'view\')\n    async view(request: ScheduleViewRequest): Promise<ScheduleViewResult>;\n    async history(request: ScheduleDeliveryHistoryRequest): Promise<ScheduleDeliveryHistoryResult>;\n    @Remote(\'history\')\n    async remoteHistory(request: ScheduleDeliveryHistoryRequest): Promise<ScheduleDeliveryHistoryResult>;\n    @Remote(\'run\')\n    async run(request: ScheduleRunRequest, signal?: AbortSignal): Promise<ScheduleRunResult>;\n    @Remote(\'deleteInactive\')\n    async deleteInactive(): Promise<ScheduleDeleteInactiveResult>;\n    @Remote(\'edit\')\n    async remoteEdit(request: ScheduleEditRequest, signal?: AbortSignal): Promise<ScheduleEditResult>;\n    async ed /* …truncated — full shape in source */',
+    declaration: 'export class ScheduleService extends TypertRemoteService {\n    static inject;\n    static Config: z<Config>;\n    constructor(ctx: Context, config: Config);\n    async [Service.init](): Promise<void>;\n    installDispatchAdmission(admission: ScheduleDispatchAdmission): void;\n    async resumeDispatch(): Promise<void>;\n    isDispatchIdle(): boolean;\n    @Remote(\'deliveryLimits\')\n    deliveryLimits(): {\n        readonly newSessionIntervalSeconds: number;\n    };\n    @Remote(\'create\')\n    async remoteCreate(request: ScheduleCreateRequest, signal?: AbortSignal): Promise<ScheduleCatalogEntry>;\n    async create(request: ScheduleCreateRequest, actorSessionId?: SessionId, signal?: AbortSignal): Promise<ScheduleCatalogEntry>;\n    async list(request: ScheduleListRequest = {}): Promise<ScheduleListResult>;\n    @Remote(\'list\')\n    async remoteList(request: ScheduleListRequest): Promise<ScheduleListResult>;\n    @Remote(\'catalog\')\n    async catalog(): Promise<ScheduleCatalogEntry[]>;\n    @Remote(\'view\')\n    async view(request: ScheduleViewRequest): Promise<ScheduleViewResult>;\n    async history(request: ScheduleDeliveryHistoryRequest): Promise<ScheduleDeliveryHistoryResult>;\n    @Remote(\'history\')\n    async remoteHistory(request: ScheduleDeliveryHistoryRequest): Promise<ScheduleDeliveryHistoryResult>;\n    @Remote(\'run\')\n    async run(request: ScheduleRunRequest, signal?: AbortSignal): Promise<ScheduleRunResult>;\n    @Remote(\'deleteInactive\')\n    async deleteInactive(): Promise<ScheduleDeleteInac /* …truncated — full shape in source */',
   },
   {
     name: 'ScheduleSessionCreateSpec',
@@ -10812,6 +10909,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ScheduleTargetRequest',
     declaration: 'export type ScheduleTargetRequest = {\n    readonly kind: \'session\';\n    readonly sessionId: SessionId;\n} | {\n    readonly kind: \'new_once\';\n    readonly create?: ScheduleSessionCreateSpec;\n} | {\n    readonly kind: \'new\';\n    readonly create?: ScheduleSessionCreateSpec;\n};',
+  },
+  {
+    name: 'ScheduleTask',
+    declaration: 'export type ScheduleTask = z.infer<typeof scheduleTaskSchema>;',
   },
   {
     name: 'ScheduleTiming',

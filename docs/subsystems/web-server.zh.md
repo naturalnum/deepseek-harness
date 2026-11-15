@@ -293,6 +293,12 @@ collectIndexInjections(peer: PeerScope): IndexInjection[]
  * @returns the transformed body.
  */
 renderIndex(html: string, peer: PeerScope): string
+
+/** Render an unauthenticated document using explicitly public contributions only.
+ * @param html Raw public index document.
+ * @returns Public injection rows applied to the document; Peer-specific sources and raw index taps are not called.
+ */
+renderPublicIndex(html: string): string
 ```
 
 Source: [`packages/host/webserver/src/index.ts`](../../packages/host/webserver/src/index.ts)
@@ -342,6 +348,22 @@ Collect the structured index injection table for the page `peer` speaks for. Emi
  * @mode emit
  */
 'webserver/index-inject'(table: IndexInjection[], peer: PeerScope): void
+```
+
+Source: [`packages/host/webserver/src/index.ts`](../../packages/host/webserver/src/index.ts)
+
+<a id="webserverpublic-index-inject--emit"></a>
+
+#### `webserver/public-index-inject` — emit
+
+Collect only explicitly public assets and bootstrap values, without an account or Peer.
+
+```ts cordis-catalog
+/** Collect only explicitly public assets and bootstrap values, without an account or Peer.
+ * @param table Mutable public row table; contributors append no private state.
+ * @mode emit
+ */
+'webserver/public-index-inject'(table: IndexInjection[]): void
 ```
 
 Source: [`packages/host/webserver/src/index.ts`](../../packages/host/webserver/src/index.ts)

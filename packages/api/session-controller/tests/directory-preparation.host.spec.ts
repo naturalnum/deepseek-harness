@@ -6,6 +6,7 @@ import { Context } from '@deepseek-ai/cordis'
 import DefaultModel from '@deepseek-ai/dsh-agent-default-model'
 import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deepseek-ai/dsh-agent-loop-testkit'
 import RemoteAccess from '@deepseek-ai/dsh-api-remote-access'
+import Gateway from '@deepseek-ai/dsh-api-gateway'
 import SessionQueryEngine from '@deepseek-ai/dsh-session-query'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -24,6 +25,7 @@ async function fixture(prepare?: (cwd: string) => Promise<void>) {
   onTestFinished(async () => { await ctx.fiber.dispose(); rmSync(home, { recursive: true, force: true }) })
   await ctx.plugin(TypertRegistry)
   await ctx.plugin(RemoteAccess)
+  await ctx.plugin(Gateway)
   await mountAgentLoopTestDependencies(ctx, { workingDirectory: true })
   await mountAgentLoopTestHarness(ctx)
   await ctx.plugin(DefaultModel, { provider: 'directory-fixture', model: 'unused' })
@@ -36,21 +38,13 @@ async function fixture(prepare?: (cwd: string) => Promise<void>) {
     maxImagePixels: 1_024, maxImageDimension: 32, mediaTypes: ['image/png'],
   } })
   class PreparedController extends SessionController {
-    constructor(owner: Context, private readonly prepareDirectory: (cwd: string) => Promise<void>) {
-      super(owner, { nativeOpen: false })
-    }
-
     protected override ensureProjectDirectory(cwd: string): Promise<void> {
-      return this.prepareDirectory(cwd)
+      if (prepare === undefined) throw new Error('The fixture directory override is absent.')
+      return prepare(cwd)
     }
   }
-  let controller: SessionController | undefined
-  await ctx.plugin({
-    inject: SessionController.inject,
-    apply(scope) {
-      controller = prepare === undefined ? new SessionController(scope, { nativeOpen: false }) : new PreparedController(scope, prepare)
-    },
-  })
+  await ctx.plugin(prepare === undefined ? SessionController : PreparedController, { nativeOpen: false })
+  const controller = ctx.get('sessionController')
   if (controller === undefined) throw new Error('The native Controller did not mount.')
   return { ctx, home, controller }
 }
@@ -80,7 +74,7 @@ it('retains the default directory failure before native Agent or Session creatio
   expect(ctx.sessions.list()).toEqual([])
 })
 
-it('captures but does not invoke the override during super construction, then awaits it without default Node fallback', async () => {
+it('keeps directory preparation outside construction and awaits the override without default Node fallback', async () => {
   const entered = Promise.withResolvers<undefined>()
   const release = Promise.withResolvers<undefined>()
   const prepare = vi.fn(async (_cwd: string) => { entered.resolve(undefined); await release.promise })

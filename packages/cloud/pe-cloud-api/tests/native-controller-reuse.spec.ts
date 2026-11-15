@@ -134,13 +134,15 @@ async function fixture(accountId = 'reuse', firstScreen = false, skills = false)
   const policy = new ExposurePolicy(manifest)
   policy.audit(manifest)
   let controller: SessionController | undefined
-  await ctx.plugin({
-    inject: [...SessionController.inject, 'workingDirectory', 'peAccount'],
-    apply(scope) {
+  class NativeControllerEntry {
+    static inject = [...SessionController.inject, 'workingDirectory', 'peAccount']
+    constructor(scope: Context) {
       instances++
       controller = createNativeController(scope, binding, assertCurrent, policy, guards, { nativeOpen: false })
-    },
-  })
+      return controller
+    }
+  }
+  await ctx.plugin(NativeControllerEntry)
   if (controller === undefined) throw new Error('Fixture controller did not mount.')
   const peer: PeerScope = {
     id: brandString<PeerId>('controller-reuse-' + accountId), ctx, principal: { kind: 'owner' },
@@ -529,7 +531,12 @@ it('guards real native prompt and fork before super, then preserves actual Agent
   expect(nativePrompt).toHaveBeenCalledOnce()
   expect(nativeFork).toHaveBeenCalledOnce()
   expect(result.sessionId).not.toBe(created.sessionId)
-  expect(ctx.sessions.get(result.sessionId)!.header).toMatchObject({ cwd: project, parentSession: created.sessionId, isSeeded: true })
+  const fork = ctx.sessions.get(result.sessionId)!
+  expect(fork.header).toMatchObject({ cwd: project, isSeeded: true })
+  expect(fork.header.parentSession).toBeUndefined()
+  expect(fork.inheritedEventCount).toBeGreaterThan(0)
+  expect(fork.snapshotEvents().slice(0, fork.inheritedEventCount))
+    .toEqual(ctx.sessions.get(created.sessionId)!.snapshotEvents().slice(0, fork.inheritedEventCount))
 })
 
 it('keeps cancel synchronous using the real attached Agent, account binding and committed WorkingDirectory only', async () => {

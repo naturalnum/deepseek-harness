@@ -66,6 +66,8 @@ The host serves built client bundles, so `pnpm run build` must have produced eac
 <details>
 <summary>Implementation internals — click to expand</summary>
 
+A trusted deployment may register explicit browser packages through `registerClientPackages()` without mounting their Host entry. Each package must declare its real client artifact; `activate: false` supplies the module while keeping its browser plugin inactive. Declaration withdrawal removes its sources through the original graph rebuild. Current artifact revisions and indexed Loader entries remain authoritative. The registry contributes only its browser artifact graph to the explicit public index event, as well as the normal Peer-rendered index.
+
 This section explains how the module system is built; observable behavior is covered in [Use this package](#use-this-package).
 
 ### Design concept

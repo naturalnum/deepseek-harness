@@ -84,7 +84,7 @@ The bounded `ordinary-profile-ready` info event is emitted only from the origina
 
 ### Account policy
 
-The account goals builtin installs the original `goal-round-driver` once beneath the same Loader owner as the guarded Native goal service. Armed goals continue through the original Agent inbox after user-turn quiescence; Native pause, clear, round limits and driver disposal retain their behavior. Account admission and generation checks remain on the original goal and Agent operations.
+The account goals builtin returns the original guarded Goal service from its constructor, so the same Cordis Fiber runs inherited `Service.init` before becoming ACTIVE. Its original `goal-round-driver` is installed once as a child of that owner and waits for the actual Goal service dependency; it creates no second Goal service. Armed goals continue through the original Agent inbox after user-turn quiescence; Native pause, clear, round limits and driver disposal retain their behavior. Account admission and generation checks remain on the original goal and Agent operations.
 
 The actual Root request supplies one shared project/model/Preset policy to Controller, AgentLoop and LLM admission. Its required `accountPolicy` fields select exact deployment data; none opens business admission.
 
@@ -326,6 +326,8 @@ Resource loading requires the exact published Agent, original WorkingDirectory a
 
 <details>
 <summary>Working context for maintainers — click to expand</summary>
+
+The HTTP MCP composition fixture selects the original Native tool executor through an explicit account recipe entry. Schema rendering and batches use that account ToolsService and its normal guarded pipeline; missing or withdrawn selection remains unavailable.
 
 None.
 

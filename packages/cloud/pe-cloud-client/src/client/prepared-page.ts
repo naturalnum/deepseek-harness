@@ -1,6 +1,6 @@
 /** Canonical bootstrap preparation and the page owner consumed by the real Cloud Loader entry. */
 import { prepareWorkspaceManagement } from './workspace-management.ts'
-import { symbols, type Context } from '@deepseek-ai/cordis'
+import { FiberState, symbols, type Context } from '@deepseek-ai/cordis'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import { installConnection, type ConnectionHandle, type ConnectionWebSocketFactory, type RpcFetch } from '@deepseek-ai/dsh-client-connection/client'
 import { createSnapshotStore, type ClientPersistence } from '@deepseek-ai/dsh-client-store'
@@ -309,6 +309,12 @@ export class PreparedCloudPage {
     // The installer owns this provider while its Cloud Loader fiber is still activating.
     this.connection = ctx.get('connection', false) as ConnectionHandle
     this.activation = ctx
+    ctx.on('internal/status', (fiber, previous) => {
+      if (fiber !== ctx.fiber || previous !== FiberState.ACTIVE || fiber.state === FiberState.ACTIVE) return
+      // Cordis publishes this transition before notifying the Connection's dependents.
+      this.nativeOptions.beforeDispose()
+      this.stopAfterFailure()
+    }, { global: true })
     ctx.inject(['slots'], (scope) => {
       this.assertCurrent(scope)
       const slots = scope.root.slots

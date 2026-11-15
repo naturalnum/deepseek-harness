@@ -507,22 +507,25 @@ export class AccountNativeIntegration {
         maxQueuedEvents: firstScreenInput.maxQueuedEvents, maxQueuedBytes: firstScreenInput.maxQueuedBytes,
       } },
     })
-    const controller = {
-      inject: [...SessionController.inject, 'peCloudApi'], Config: SessionController.Config,
-      apply(owner: Context, config: ConstructorParameters<typeof SessionController>[1]) {
-        api.createController(owner, sessionGuards(owner), config)
-      },
+    const controller = class {
+      static inject = [...SessionController.inject, 'peCloudApi']
+      static Config = SessionController.Config
+      constructor(owner: Context, config: ConstructorParameters<typeof SessionController>[1]) {
+        return api.createController(owner, sessionGuards(owner), config)
+      }
     }
     const commands = {
       inject: ['peCloudApi', 'agents'],
       apply(owner: Context) { api.createCommands(owner, sessionGuards(owner)) },
     }
-    const goals = {
-      inject: [...GoalService.inject, 'peCloudApi'], Config: GoalService.Config,
-      async apply(owner: Context, config: ConstructorParameters<typeof GoalService>[1]) {
-        api.createGoals(owner, sessionGuards(owner), config)
-        await owner.plugin(GoalRoundDriver)
-      },
+    const goals = class {
+      static inject = [...GoalService.inject, 'peCloudApi']
+      static Config = GoalService.Config
+      constructor(owner: Context, config: ConstructorParameters<typeof GoalService>[1]) {
+        const service = api.createGoals(owner, sessionGuards(owner), config)
+        owner.plugin(GoalRoundDriver)
+        return service
+      }
     }
     const sessionExport = {
       inject: [...SessionLogExport.inject, 'peCloudApi', 'sessionQuery', 'sessionPersistence', 'attachments', 'sessions'],
@@ -593,19 +596,24 @@ export class AccountNativeIntegration {
         CommandFeedback.apply(owner)
       },
     }
-    const agentLoop = {
-      inject: [...AgentLoop.inject, 'peCloudApi'], Config: AgentLoop.Config,
-      apply: (owner: Context, config: ConstructorParameters<typeof AgentLoop>[1]) => {
-        const reserveSubagent = input.reserveSubagent
-        this.loop = api.createAgentLoop(owner, requireGuards(owner).agents, config,
-          reserveSubagent === undefined ? undefined : depth => reserveSubagent(binding, depth))
-        this.loopFiber = owner.fiber
-        const agents = owner.get('agents'), persistence = owner.get('sessionPersistence')
-        const rawAgents: unknown = agents === undefined ? undefined : Reflect.get(agents, symbols.original) ?? agents
-        const rawPersistence: unknown = persistence === undefined ? undefined : Reflect.get(persistence, symbols.original) ?? persistence
-        this.agents = rawAgents instanceof AgentRegistry ? rawAgents : undefined
-        this.persistence = rawPersistence instanceof SessionPersistence ? rawPersistence : undefined
-      },
+    const createAgentLoop = (owner: Context, config: ConstructorParameters<typeof AgentLoop>[1]) => {
+      const reserveSubagent = input.reserveSubagent
+      this.loop = api.createAgentLoop(owner, requireGuards(owner).agents, config,
+        reserveSubagent === undefined ? undefined : depth => reserveSubagent(binding, depth))
+      this.loopFiber = owner.fiber
+      const agents = owner.get('agents'), persistence = owner.get('sessionPersistence')
+      const rawAgents: unknown = agents === undefined ? undefined : Reflect.get(agents, symbols.original) ?? agents
+      const rawPersistence: unknown = persistence === undefined ? undefined : Reflect.get(persistence, symbols.original) ?? persistence
+      this.agents = rawAgents instanceof AgentRegistry ? rawAgents : undefined
+      this.persistence = rawPersistence instanceof SessionPersistence ? rawPersistence : undefined
+      return this.loop
+    }
+    const agentLoop = class {
+      static inject = [...AgentLoop.inject, 'peCloudApi']
+      static Config = AgentLoop.Config
+      constructor(owner: Context, config: ConstructorParameters<typeof AgentLoop>[1]) {
+        return createAgentLoop(owner, config)
+      }
     }
     const llm = {
       inject: ['peCloudApi', 'peCloudFiles', 'fs', 'workspaceRegistry'],

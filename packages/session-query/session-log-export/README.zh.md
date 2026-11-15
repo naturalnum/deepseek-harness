@@ -94,6 +94,8 @@ Web bundle 将本包与 Connection、`dsh-commands`、`dsh-client-ui-commands`�
 <details>
 <summary>实现细节——点击展开</summary>
 
+`/registration` 模块注册原导出命令和 ZIP 路由，并可在读取 Session 前检查准入。回调接收解析后的 Session 身份与原 Fetch 请求，返回原 ZIP 流及清理过程持续使用的取消信号。也可返回 `{ signal, assertCurrent }`；原路由在准备根日志前以及 flush、根读取完成后同步复核准入，再发布 ZIP 响应。注册检查在 Loader 所有者退出后拒绝。原生插件挂载还会注册 Markdown 复制；单独使用 ZIP 注册模块不开放该额外路由。
+
 本节解释本包如何接入导出控件，并指出实现它的代码位置；可观察行为已在[使用本包](#use-this-package)中完整说明。
 
 ### 设计拆分
@@ -113,6 +115,8 @@ Host 路由是由该功能拥有的精确 Fetch 路由贡献。Connection 应用
 Header 向 Markdown 复制控制器请求被点击的 Session。点击期间，控制器在加载文档相对的 `api/session.markdown?sessionId=<id>` 路由的同时请求延迟的 `ClipboardItem` 写入；其他宿主在准备完成后回退到共享剪贴板助手。Host 路由通过 `ctx.sessionQuery.readSession` 读取完整的 live-preferred 逻辑日志，并把事件交给纯格式化器。它另外通过 `ctx.get('sessionPersistence')?.stat` 获取选中已物化产物的路径，并把可选路径传给格式化器；元数据读取失败属于经过清理的准备失败。该读取是分离的导出观察：不创建 Agent、不保留 Session，也不写入 Session 数据。Session 不存在时返回 404，其他读取失败返回经过清理的 500。
 
 控制器持有一个进行中的操作和一个 `shell.overlay` 浮层条目。第二个 Header 请求加入该进行中的操作，因此剪贴板及其提示始终描述第一次点击的 Session。准备 promise 与已接受的剪贴板写入都会被观察，所有拒绝都被包含。释放会中止读取、阻止后续文本进入由 Promise 提供的 Blob、抑制提示，并等待已接受的剪贴板工作完成。
+
+可选的应用所属 `sessionLogDownloadIntegration` 在插件激活前绑定现有认证 HEAD 载体和配套的 GET 导航 URL。成功弹窗只报告已请求下载，并保留该确切 URL 和文件名作为手动链接；它无法确认浏览器接受或完成下载。原生弹窗顺序、每个 Session 一个在途操作、取消和卸载等待保持不变。未提供该集成时使用普通文档相对浏览器载体。
 
 </details>
 

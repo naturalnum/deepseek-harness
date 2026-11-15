@@ -15,7 +15,7 @@ import type { MessageSource, UserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { Session, SessionId, SessionLogOffset, type SessionEvent } from '@deepseek-ai/dsh-session'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import { createScope } from '@deepseek-ai/dsh-scope'
-import FileUploads from '@deepseek-ai/dsh-client-file-upload'
+import FileUploads, { FileUploadIntakeUnconfirmedError } from '@deepseek-ai/dsh-client-file-upload'
 import type { FileUploadReceiptId } from '@deepseek-ai/dsh-client-file-upload/types'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { ApiSessionAgentController } from '../src/agent.ts'
@@ -402,17 +402,27 @@ describe('Session file uploads', () => {
     }))
   })
 
-  it('publishes no receipt when its exact Agent is disposed during storage', async () => {
-    const { uploads, agent, saveFile, disposeAgent } = await uploadHarness()
+  it('retains unconfirmed intake without a receipt after its exact Agent is disposed during storage', async () => {
+    const { ctx, uploads, agent, saveFile, disposeAgent } = await uploadHarness()
+    const logger = ctx.logger
     const saved = Promise.withResolvers<FileAttachmentRef>()
     saveFile.mockReturnValueOnce(saved.promise)
     const uploading = uploads.upload(agent, { data: 'AAAA', name: 'late.bin' }, new AbortController().signal)
+    const settlement = uploading.then(() => undefined, (error: unknown) => error)
     await vi.waitFor(() => { expect(saveFile).toHaveBeenCalledOnce() })
     await disposeAgent()
     saved.resolve({
       attachmentId: AttachmentId(`sha256:${'ab'.repeat(32)}`), name: 'late.bin', bytes: 3,
     })
-    await expect(uploading).rejects.toMatchObject({ code: 'session/not-found' })
+    const failure = await settlement
+    expect(failure).toBeInstanceOf(FileUploadIntakeUnconfirmedError)
+    expect(failure).toMatchObject({ cause: expect.any(RemoteError) })
+    expect(failure).toMatchObject({ cause: { code: 'session/not-found', details: { sessionId: agent.id } } })
+    await expect(uploads.upload(agent, { data: 'AAAA', name: 'next.bin' }, new AbortController().signal))
+      .rejects.toMatchObject({ code: 'session/attachment-invalid', details: { reason: 'FILE_UPLOAD_CAPACITY' } })
+    expect(saveFile).toHaveBeenCalledOnce()
+    await ctx.fiber.dispose()
+    expect(logger.buffer.some(message => message.args.some(arg => arg instanceof FileUploadIntakeUnconfirmedError))).toBe(true)
   })
 
   it('resolves a cold ordinary Agent and releases the resolver with its registering fiber', async () => {

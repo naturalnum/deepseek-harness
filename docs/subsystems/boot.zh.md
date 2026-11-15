@@ -252,6 +252,27 @@ Manage profile files and apply their declared reload lifecycle.
 
 ```ts cordis-catalog
 /**
+ * Install the sole hook for this manager's native state-change submissions.
+ * Stop and settle protected operations before withdrawing the hook.
+ * @param hook - synchronous admission and typed ChangeResult observation.
+ * @returns awaitable disposer; caller unload also removes the hook.
+ * @throws If a hook is already installed.
+ */
+registerSaveHook(hook: PluginSaveSubmissionHook): () => Promise<void>
+
+/** Bind the sole native selection guard; entry and bundle writes share preparation, persistence and reconcile.
+ * @param guard Original owner policy, not a replacement patch composer or supplied stop list.
+ * @returns Disposer; the caller retains this fiber until actual updates settle.
+ */
+registerSelectionGuard(guard: PluginSelectionGuard): () => Promise<void>
+
+/** Read the original guarded writer's actual replacement disposition without changing its ChangeResult.
+ * @param result Exact native result object; copies and unrelated failures have no receipt.
+ * @returns Owner-observed zero-publication refusal or unknown after replacement was entered.
+ */
+changeFailureOutcome(result: ChangeResult): 'not-published' | 'unknown' | undefined
+
+/**
  * Read a bundle's long description: the Markdown file its locale `meta.detail` names in `language`, otherwise its
  * README. An installed bundle is read from its directory without network access; an official bundle the installation
  * offers before it is installed is read from the npm file CDNs at its offered version. Nothing is cached.
@@ -385,6 +406,15 @@ Manage profile files and apply their declared reload lifecycle.
  * @returns Removal diagnostics and the remaining profile state.
  */
 @Remote removeBundle(name: string): Promise<ChangeResult>
+
+/** Inspect the complete original bundle composition without writing or activating entries.
+ * @param name Preinstalled native bundle name.
+ * @param enabled Desired selection.
+ * @param maximum Bound on composed rows.
+ * @param application Whether the original caller will reconcile or restart the graph.
+ * @returns Opaque original profile plan; the writer prepares and checks it again under this same lock.
+ */
+previewBundleSelection(name: string, enabled: boolean, maximum: number, application: 'reconcile' | 'restart' = 'reconcile'): Promise<ProfileConfigUpdatePlan>
 ```
 
 Source: [`packages/boot/plugin-manager/src/index.ts`](../../packages/boot/plugin-manager/src/index.ts)

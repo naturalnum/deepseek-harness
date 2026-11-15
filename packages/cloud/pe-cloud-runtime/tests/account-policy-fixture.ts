@@ -224,15 +224,19 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
         maxImagePixels: 1024, maxImageDimension: 32, mediaTypes: ['image/png'] },
       admitPromptContent: (content: unknown) => Promise.resolve(content) })
     } }
-    const loop = { inject: [...AgentLoop.inject, 'peCloudApi'], Config: AgentLoop.Config,
-      apply(owner: Context, options: ConstructorParameters<typeof AgentLoop>[1]) {
-        requireApi().createAgentLoop(owner, requireGuards().agents, options,
+    const loop = class {
+      static inject = [...AgentLoop.inject, 'peCloudApi']
+      static Config = AgentLoop.Config
+      constructor(owner: Context, options: ConstructorParameters<typeof AgentLoop>[1]) {
+        return requireApi().createAgentLoop(owner, requireGuards().agents, options,
           reserveChild === undefined ? undefined : depth => reserveChild(owner.peAccount, depth))
       } }
-    const controller = { inject: [...SessionController.inject, 'peCloudApi'], Config: SessionController.Config,
-      apply(owner: Context, options: ConstructorParameters<typeof SessionController>[1]) {
+    const controller = class {
+      static inject = [...SessionController.inject, 'peCloudApi']
+      static Config = SessionController.Config
+      constructor(owner: Context, options: ConstructorParameters<typeof SessionController>[1]) {
         const binding = owner.peAccount
-        requireApi().createController(owner, { ...requireGuards().sessions, projectDirectory: { binding,
+        return requireApi().createController(owner, { ...requireGuards().sessions, projectDirectory: { binding,
           prepare: async (cwd) => {
             if (files === undefined) throw new Error('Component files absent')
             const workspace = requireGuards().projectForDirectory(cwd)
@@ -406,11 +410,12 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
               apply(scope: Context) { eventOwner = scope } },
           })
         }
-        const presetRegistry = presetOptions === undefined ? AgentPresets : {
-          inject: AgentPresets.inject, Config: AgentPresets.Config,
-          apply(scope: Context, config: ConstructorParameters<typeof AgentPresets>[1]) {
-            requireApi().createPresets(scope, config, requireGuards().presets, firstScreen?.maxFrameBytes ?? 65536)
-          },
+        const presetRegistry = presetOptions === undefined ? AgentPresets : class {
+          static inject = AgentPresets.inject
+          static Config = AgentPresets.Config
+          constructor(scope: Context, config: ConstructorParameters<typeof AgentPresets>[1]) {
+            return requireApi().createPresets(scope, config, requireGuards().presets, firstScreen?.maxFrameBytes ?? 65536)
+          }
         }
         Object.assign(owner.loader.builtins, {
           'b1-spawn': Spawn,

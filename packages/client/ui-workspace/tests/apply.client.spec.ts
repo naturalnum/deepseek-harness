@@ -1031,6 +1031,12 @@ it('captures Workspace menu requests, rechecks mutable access, and withdraws reg
   menu.select('workspace.rename/rename')
   expect(browser.hooks.workspaceActionRequest.getSnapshot()).toEqual({ action: 'rename', workspaceId: 'alpha', displayTitle: 'Alpha', storedTitle: 'alpha' })
   browser.settleWorkspaceAction()
+  const restricted = b.ctx.contextMenus.resolve({ ...target, value: { ...target.value, deleteDisabledReason: 'Deployment unavailable' } })
+  await restricted.ready
+  expect(restricted.source.getSnapshot().find(item => item.id === 'workspace.delete/delete'))
+    .toMatchObject({ disabled: true, label: expect.stringContaining('Deployment unavailable') })
+  restricted.select('workspace.delete/delete')
+  expect(browser.hooks.workspaceActionRequest.getSnapshot()).toBeNull()
   const removed = b.ctx.contextMenus.resolve(target)
   await removed.ready
   b.setWorkspaces(workspaceState([]))

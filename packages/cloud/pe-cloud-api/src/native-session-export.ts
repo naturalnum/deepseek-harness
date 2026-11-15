@@ -1,6 +1,7 @@
 /** Account admission for the original streaming Session-log ZIP route. */
 import { symbols, type Context } from '@deepseek-ai/cordis'
-import { registerSessionLogExport, SESSION_LOG_EXPORT_PATH, type Config } from '@deepseek-ai/dsh-session-log-export'
+import { SESSION_LOG_EXPORT_PATH, type Config } from '@deepseek-ai/dsh-session-log-export'
+import { registerSessionLogExport } from '@deepseek-ai/dsh-session-log-export/registration'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import type { NativeSessionGuards } from './native.ts'
@@ -73,7 +74,7 @@ export function createNativeSessionExport(
     await guards.assertSessionProject(sessionId)
     signal.throwIfAborted()
     admit(request.method)
-    return signal
+    return { signal, assertCurrent: () => { admit(request.method) } }
   })
   return { inspect() {
     installed()

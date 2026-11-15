@@ -10,15 +10,25 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type {} from '@deepseek-ai/dsh-client-ui-context-menu/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { IconCopyOutlineRegular, IconDownloadOutlineRegular, IconPaperPlaneOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
-import { SessionLogDownloadController } from './controller.ts'
+import { downloadUrl, SessionLogDownloadController } from './controller.ts'
 import { SessionMarkdownCopyController } from './copy-controller.ts'
 import { SessionMarkdownCopyToast, type SessionMarkdownCopyToastInjected } from './CopyToast.tsx'
 import { SessionLogDownloadDialog, type SessionLogDownloadDialogInjected } from './Dialog.tsx'
 import { en, ja, es, fr, de, ru, pt, NS, zh, type SessionLogDownloadKey } from './locales.ts'
 
+/** Host application carriers captured before the native download plugin activates. */
+export interface SessionLogDownloadIntegration {
+  /** Fetch the native HEAD preflight through the application's existing authenticated carrier. */
+  readonly fetch: (input: string | URL, init?: RequestInit) => Promise<Response>
+  /** Bind the same native GET route for the browser download manager. */
+  readonly navigationUrl: (input: string | URL) => string
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     sessionLogDownload: SessionLogDownloadController
+    /** Optional application-owned HTTP and navigation binding; omission retains ordinary browser carriers. */
+    sessionLogDownloadIntegration: SessionLogDownloadIntegration
   }
 }
 
@@ -38,7 +48,9 @@ export const inject = ['slots', 'locale', 'contextMenus']
  * @param ctx - browser context carrying slots and locale services.
  */
 export function apply(ctx: ClientContext): void {
-  const controller = new SessionLogDownloadController()
+  const integration = ctx.get('sessionLogDownloadIntegration')
+  const controller = new SessionLogDownloadController(integration?.fetch, downloadUrl,
+    integration === undefined ? undefined : url => integration.navigationUrl(url))
   const copyController = new SessionMarkdownCopyController()
   ctx.provide('sessionLogDownload', controller)
   ctx.effect(() => async () => { await controller.dispose() }, 'session-log-download: browser download lifecycle')

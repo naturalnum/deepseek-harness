@@ -216,6 +216,18 @@ export const ja = {
   'settings.invalid.absolute': 'ワークスペースからの相対パスを使用してください。',
   'settings.invalid.parent': 'パスに . や .. のセグメントは使用できません。',
   'settings.invalid.glob': 'パスにワイルドカード * ? [ ] { } ! は使用できません。',
+  'cancel': 'キャンセル',
+  'upload': 'アップロード',
+  'download': 'ダウンロード',
+  'uploadOptions': 'アップロードのオプション',
+  'uploadFolder': 'フォルダーをアップロード',
+  'newFolder': '新しいフォルダー',
+  'untitledFolder': '名前のないフォルダー',
+  'selectFile': '{name} を選択',
+  'transferFailed': 'アップロードは完了しませんでした。完了したファイルは保持されています。更新してから未完了のファイルを再試行してください。',
+  'cancelledUnknown': 'アップロードを停止しました。再試行する前に更新して完了したファイルを確認してください。',
+  'downloadFailed': 'ダウンロードできません。ファイルを確認して再試行してください。',
+  'folderFailed': '作成を確認できません。更新して確認し、名前やアクセス権を修正してから再試行してください。',
 } satisfies Record<keyof typeof en, string>
 
 /** Spanish dictionary, checked against the English keys. */
@@ -273,6 +285,18 @@ export const es = {
   'settings.invalid.absolute': 'Use una ruta relativa al espacio de trabajo.',
   'settings.invalid.parent': 'La ruta no puede contener segmentos «.» ni «..».',
   'settings.invalid.glob': 'La ruta no puede contener comodines * ? [ ] { } !.',
+  'cancel': 'Cancelar',
+  'upload': 'Subir',
+  'download': 'Descargar',
+  'uploadOptions': 'Opciones de carga',
+  'uploadFolder': 'Subir carpeta',
+  'newFolder': 'Nueva carpeta',
+  'untitledFolder': 'Carpeta sin título',
+  'selectFile': 'Seleccionar {name}',
+  'transferFailed': 'La carga no se completó. Los archivos completados se conservan; actualiza antes de reintentar los pendientes.',
+  'cancelledUnknown': 'La carga se detuvo. Actualiza para comprobar los archivos completados antes de reintentar.',
+  'downloadFailed': 'No se pudo descargar. Comprueba el archivo y vuelve a intentarlo.',
+  'folderFailed': 'La creación no está confirmada. Actualiza para comprobarlo, corrige el nombre o el acceso y vuelve a intentarlo.',
 } satisfies Record<keyof typeof en, string>
 
 /** French dictionary, checked against the English keys. */
@@ -330,6 +354,18 @@ export const fr = {
   'settings.invalid.absolute': 'Utilisez un chemin relatif à l’espace de travail.',
   'settings.invalid.parent': 'Le chemin ne peut pas contenir de segments « . » ou « .. ».',
   'settings.invalid.glob': 'Le chemin ne peut pas contenir les caractères génériques * ? [ ] { } !.',
+  'cancel': 'Annuler',
+  'upload': 'Téléverser',
+  'download': 'Télécharger',
+  'uploadOptions': 'Options de téléversement',
+  'uploadFolder': 'Téléverser un dossier',
+  'newFolder': 'Nouveau dossier',
+  'untitledFolder': 'Dossier sans titre',
+  'selectFile': 'Sélectionner {name}',
+  'transferFailed': 'Le téléversement n’est pas terminé. Les fichiers terminés sont conservés ; actualisez avant de réessayer les autres.',
+  'cancelledUnknown': 'Le téléversement a été arrêté. Actualisez pour vérifier les fichiers terminés avant de réessayer.',
+  'downloadFailed': 'Téléchargement impossible. Vérifiez le fichier et réessayez.',
+  'folderFailed': 'La création n’est pas confirmée. Actualisez pour vérifier, corrigez le nom ou les droits d’accès, puis réessayez.',
 } satisfies Record<keyof typeof en, string>
 
 /** German dictionary, checked against the English keys. */
@@ -387,6 +423,18 @@ export const de = {
   'settings.invalid.absolute': 'Verwenden Sie einen Pfad relativ zum Arbeitsbereich.',
   'settings.invalid.parent': 'Der Pfad darf keine Segmente . oder .. enthalten.',
   'settings.invalid.glob': 'Der Pfad darf keine Platzhalter * ? [ ] { } ! enthalten.',
+  'cancel': 'Abbrechen',
+  'upload': 'Hochladen',
+  'download': 'Herunterladen',
+  'uploadOptions': 'Upload-Optionen',
+  'uploadFolder': 'Ordner hochladen',
+  'newFolder': 'Neuer Ordner',
+  'untitledFolder': 'Unbenannter Ordner',
+  'selectFile': '{name} auswählen',
+  'transferFailed': 'Der Upload wurde nicht abgeschlossen. Fertige Dateien bleiben erhalten. Aktualisiere vor einem erneuten Versuch mit den übrigen Dateien.',
+  'cancelledUnknown': 'Der Upload wurde gestoppt. Aktualisiere und prüfe fertige Dateien, bevor du es erneut versuchst.',
+  'downloadFailed': 'Herunterladen nicht möglich. Prüfe die Datei und versuche es erneut.',
+  'folderFailed': 'Die Erstellung ist unbestätigt. Aktualisiere zur Prüfung, korrigiere Namen oder Zugriff und versuche es erneut.',
 } satisfies Record<keyof typeof en, string>
 
 /** Russian dictionary, checked against the English keys. */
@@ -444,6 +492,18 @@ export const ru = {
   'settings.invalid.absolute': 'Укажите путь относительно рабочей области.',
   'settings.invalid.parent': 'Путь не может содержать сегменты «.» или «..».',
   'settings.invalid.glob': 'Путь не может содержать подстановочные знаки * ? [ ] { } !.',
+  'cancel': 'Отмена',
+  'upload': 'Загрузить',
+  'download': 'Скачать',
+  'uploadOptions': 'Параметры загрузки',
+  'uploadFolder': 'Загрузить папку',
+  'newFolder': 'Новая папка',
+  'untitledFolder': 'Папка без названия',
+  'selectFile': 'Выбрать {name}',
+  'transferFailed': 'Загрузка не завершена. Готовые файлы сохранены; обновите список, прежде чем повторять загрузку остальных.',
+  'cancelledUnknown': 'Загрузка остановлена. Обновите список и проверьте готовые файлы перед повторной попыткой.',
+  'downloadFailed': 'Не удалось скачать файл. Проверьте его и повторите попытку.',
+  'folderFailed': 'Создание не подтверждено. Обновите список, проверьте результат, исправьте имя или права доступа и повторите попытку.',
 } satisfies Record<keyof typeof en, string>
 
 /** Portuguese dictionary, checked against the English keys. */
@@ -501,4 +561,16 @@ export const pt = {
   'settings.invalid.absolute': 'Use um caminho relativo ao espaço de trabalho.',
   'settings.invalid.parent': 'O caminho não pode conter segmentos “.” ou “..”.',
   'settings.invalid.glob': 'O caminho não pode conter curingas * ? [ ] { } !.',
+  'cancel': 'Cancelar',
+  'upload': 'Enviar',
+  'download': 'Transferir',
+  'uploadOptions': 'Opções de envio',
+  'uploadFolder': 'Enviar pasta',
+  'newFolder': 'Nova pasta',
+  'untitledFolder': 'Pasta sem título',
+  'selectFile': 'Selecionar {name}',
+  'transferFailed': 'O envio não foi concluído. Os ficheiros concluídos foram mantidos; atualize antes de tentar os restantes novamente.',
+  'cancelledUnknown': 'O envio parou. Atualize para verificar os ficheiros concluídos antes de tentar novamente.',
+  'downloadFailed': 'Não foi possível transferir. Verifique o ficheiro e tente novamente.',
+  'folderFailed': 'A criação não foi confirmada. Atualize para verificar, corrija o nome ou o acesso e tente novamente.',
 } satisfies Record<keyof typeof en, string>

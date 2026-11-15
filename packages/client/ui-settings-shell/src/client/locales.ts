@@ -77,6 +77,9 @@ export const ja = {
   'saving': '保存中…',
   'saveFailed': 'デプロイがこれらの値を受け付けませんでした。修正のため残されています。',
   'invalidNumber': '数値を入力するか、空欄のままにするとデフォルトが使用されます。',
+  'maxTimeoutMs': 'コマンドの最大タイムアウト (ms)',
+  'maxTimeoutMsHint': '各コマンドが要求できる最大タイムアウト。',
+  'managedOutputHint': 'この管理対象実行環境がストリームごとに保持する最大出力量。',
 } satisfies Record<keyof typeof en, string>
 
 /** Spanish dictionary, checked against the English keys. */
@@ -95,6 +98,9 @@ export const es = {
   saving: 'Guardando…',
   saveFailed: 'El despliegue no aceptó estos valores; quedaron para que usted los corrigiera.',
   invalidNumber: 'Ingrese un número o déjelo en blanco para usar el valor predeterminado.',
+  'maxTimeoutMs': 'Tiempo de espera máximo del comando (ms)',
+  'maxTimeoutMsHint': 'El tiempo de espera máximo que puede solicitar un comando.',
+  'managedOutputHint': 'Salida máxima retenida por flujo por este ejecutor administrado.',
 } satisfies Record<keyof typeof en, string>
 
 /** French dictionary, checked against the English keys. */
@@ -113,6 +119,9 @@ export const fr = {
   saving: 'Sauvegarde…',
   saveFailed: "Le déploiement n'a pas accepté ces valeurs ; ils vous ont été laissés à corriger.",
   invalidNumber: 'Entrez un numéro ou laissez ce champ vide pour utiliser la valeur par défaut.',
+  'maxTimeoutMs': 'Délai maximal des commandes (ms)',
+  'maxTimeoutMsHint': 'Le délai maximal qu’une commande peut demander.',
+  'managedOutputHint': 'Sortie maximale conservée par flux par cet exécuteur géré.',
 } satisfies Record<keyof typeof en, string>
 
 /** German dictionary, checked against the English keys. */
@@ -131,6 +140,9 @@ export const de = {
   saving: 'Speichern…',
   saveFailed: 'Die Bereitstellung hat diese Werte nicht akzeptiert. Sie mussten sie korrigieren.',
   invalidNumber: 'Geben Sie eine Zahl ein oder lassen Sie das Feld leer, um den Standardwert zu verwenden.',
+  'maxTimeoutMs': 'Maximales Befehlszeitlimit (ms)',
+  'maxTimeoutMsHint': 'Das maximale Zeitlimit, das ein Befehl anfordern kann.',
+  'managedOutputHint': 'Maximale Ausgabemenge, die diese verwaltete Ausführung pro Stream aufbewahrt.',
 } satisfies Record<keyof typeof en, string>
 
 /** Russian dictionary, checked against the English keys. */
@@ -149,6 +161,9 @@ export const ru = {
   saving: 'Сохранение…',
   saveFailed: 'Развертывание не приняло эти значения; их оставили вам на исправление.',
   invalidNumber: 'Введите число или оставьте поле пустым, чтобы использовать значение по умолчанию.',
+  'maxTimeoutMs': 'Максимальное время ожидания команды (мс)',
+  'maxTimeoutMsHint': 'Максимальное время ожидания, которое может запросить команда.',
+  'managedOutputHint': 'Максимальный объём вывода, сохраняемый этим управляемым исполнителем для каждого потока.',
 } satisfies Record<keyof typeof en, string>
 
 /** Portuguese dictionary, checked against the English keys. */
@@ -167,4 +182,7 @@ export const pt = {
   saving: 'Salvando…',
   saveFailed: 'A implantação não aceitou esses valores; eles foram deixados para você corrigir.',
   invalidNumber: 'Insira um número ou deixe em branco para usar o padrão.',
+  'maxTimeoutMs': 'Tempo limite máximo do comando (ms)',
+  'maxTimeoutMsHint': 'O tempo limite máximo que um comando pode solicitar.',
+  'managedOutputHint': 'Saída máxima retida por fluxo por este executor gerido.',
 } satisfies Record<keyof typeof en, string>

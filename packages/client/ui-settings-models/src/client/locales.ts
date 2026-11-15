@@ -546,6 +546,13 @@ export const ja = {
   'onboardingSave': '保存して続ける',
   'onboardingSaving': '保存中…',
   'keyRequired': '続けるにはAPIキーを入力してください。',
+  'editKey': 'API キーを編集',
+  'removeKey': 'API キーを削除',
+  'removeKeyTitle': 'この API キーを削除しますか？',
+  'removeKeyDescription': '保存済みの API キーのみが削除されます。プロバイダーとモデルの設定は保持されます。',
+  'removingKey': 'API キーを削除中…',
+  'keyPreparing': 'API キーエディターを準備中…',
+  'keyEditUnavailable': 'この編集画面は利用できません。閉じてから開き直し、現在の状態を確認してください。',
 } satisfies Record<keyof typeof en, string>
 
 /** Spanish dictionary, checked against the English keys. */
@@ -723,6 +730,13 @@ export const es = {
   onboardingSave: 'Guardar y continuar',
   onboardingSaving: 'Guardando…',
   keyRequired: 'Ingrese una clave API para continuar.',
+  'editKey': 'Editar clave de API',
+  'removeKey': 'Eliminar clave de API',
+  'removeKeyTitle': '¿Eliminar esta clave de API?',
+  'removeKeyDescription': 'Solo se elimina la clave de API guardada. Se conservan los ajustes del proveedor y del modelo.',
+  'removingKey': 'Eliminando clave de API…',
+  'keyPreparing': 'Preparando el editor de claves de API…',
+  'keyEditUnavailable': 'Esta página de edición no está disponible. Ciérrala y ábrela de nuevo para comprobar el estado actual.',
 } satisfies Record<keyof typeof en, string>
 
 /** French dictionary, checked against the English keys. */
@@ -900,6 +914,13 @@ export const fr = {
   onboardingSave: 'Enregistrer et continuer',
   onboardingSaving: 'Sauvegarde…',
   keyRequired: 'Entrez une clé API pour continuer.',
+  'editKey': 'Modifier la clé API',
+  'removeKey': 'Supprimer la clé API',
+  'removeKeyTitle': 'Supprimer cette clé API ?',
+  'removeKeyDescription': 'Seule la clé API enregistrée est supprimée. Les paramètres du fournisseur et des modèles sont conservés.',
+  'removingKey': 'Suppression de la clé API…',
+  'keyPreparing': 'Préparation de l’éditeur de clé API…',
+  'keyEditUnavailable': 'Cette page d’édition est indisponible. Fermez-la et rouvrez-la pour vérifier l’état actuel.',
 } satisfies Record<keyof typeof en, string>
 
 /** German dictionary, checked against the English keys. */
@@ -1077,6 +1098,13 @@ export const de = {
   onboardingSave: 'Speichern und fortfahren',
   onboardingSaving: 'Speichern…',
   keyRequired: 'Geben Sie einen API-Schlüssel ein, um fortzufahren.',
+  'editKey': 'API-Schlüssel bearbeiten',
+  'removeKey': 'API-Schlüssel entfernen',
+  'removeKeyTitle': 'Diesen API-Schlüssel entfernen?',
+  'removeKeyDescription': 'Nur der gespeicherte API-Schlüssel wird entfernt. Anbieter- und Modelleinstellungen bleiben erhalten.',
+  'removingKey': 'API-Schlüssel wird entfernt…',
+  'keyPreparing': 'API-Schlüsseleditor wird vorbereitet…',
+  'keyEditUnavailable': 'Diese Bearbeitungsseite ist nicht verfügbar. Schließe sie und öffne sie erneut, um den aktuellen Status zu prüfen.',
 } satisfies Record<keyof typeof en, string>
 
 /** Russian dictionary, checked against the English keys. */
@@ -1254,6 +1282,13 @@ export const ru = {
   onboardingSave: 'Сохранить и продолжить',
   onboardingSaving: 'Сохранение…',
   keyRequired: 'Введите ключ API, чтобы продолжить.',
+  'editKey': 'Изменить ключ API',
+  'removeKey': 'Удалить ключ API',
+  'removeKeyTitle': 'Удалить этот ключ API?',
+  'removeKeyDescription': 'Будет удалён только сохранённый ключ API. Настройки провайдера и моделей сохранятся.',
+  'removingKey': 'Удаление ключа API…',
+  'keyPreparing': 'Подготовка редактора ключа API…',
+  'keyEditUnavailable': 'Эта страница редактирования недоступна. Закройте и откройте её заново, чтобы проверить текущее состояние.',
 } satisfies Record<keyof typeof en, string>
 
 /** Portuguese dictionary, checked against the English keys. */
@@ -1431,4 +1466,11 @@ export const pt = {
   onboardingSave: 'Salvar e continuar',
   onboardingSaving: 'Salvando…',
   keyRequired: 'Insira uma chave de API para continuar.',
+  'editKey': 'Editar chave de API',
+  'removeKey': 'Remover chave de API',
+  'removeKeyTitle': 'Remover esta chave de API?',
+  'removeKeyDescription': 'Apenas a chave de API guardada é removida. As definições do fornecedor e dos modelos são mantidas.',
+  'removingKey': 'A remover chave de API…',
+  'keyPreparing': 'A preparar o editor de chaves de API…',
+  'keyEditUnavailable': 'Esta página de edição não está disponível. Feche-a e volte a abri-la para verificar o estado atual.',
 } satisfies Record<keyof typeof en, string>

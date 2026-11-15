@@ -5,6 +5,7 @@ import Sessions, { SessionId } from '@deepseek-ai/dsh-session'
 import Projections from '@deepseek-ai/dsh-session-projection'
 import DefaultModel from '@deepseek-ai/dsh-agent-default-model'
 import RemoteAccess from '@deepseek-ai/dsh-api-remote-access'
+import Gateway from '@deepseek-ai/dsh-api-gateway'
 import Typert from '@deepseek-ai/dsh-typert-registry'
 import Query from '@deepseek-ai/dsh-session-query'
 import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deepseek-ai/dsh-agent-loop-testkit'
@@ -113,8 +114,8 @@ it('rejects invalid native budgets before yielding a baseline and preserves omit
 it('reads the protected buffer hook after original Controller construction without changing its Remote method', async () => {
   const ctx = new Context(), abort = new AbortController()
   onTestFinished(async () => { abort.abort(); await ctx.fiber.dispose() })
-  await ctx.plugin(Typert); await ctx.plugin(RemoteAccess)
-  await mountAgentLoopTestDependencies(ctx)
+  await ctx.plugin(Typert); await ctx.plugin(RemoteAccess); await ctx.plugin(Gateway)
+  await mountAgentLoopTestDependencies(ctx, { workingDirectory: true })
   await mountAgentLoopTestHarness(ctx)
   await ctx.plugin(DefaultModel, { provider: 'unused', model: 'unused' })
   class ExactQuery extends Query {
@@ -135,7 +136,8 @@ it('reads the protected buffer hook after original Controller construction witho
     }
   }
   await ctx.plugin(LimitedController, { nativeOpen: false })
-  const controller = ctx.sessionController
+  const controller = ctx.get('sessionController')
+  if (controller === undefined) throw new Error('The original limited Controller did not mount.')
   expect(reads).toBe(0)
   const markers = remoteMethods(controller).filter(row => row.method === 'control')
   expect(markers).toHaveLength(1)

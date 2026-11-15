@@ -107,6 +107,8 @@ Remote 路由提供 `create`、`list`、`catalog`、`view`、`history`、`edit`�
 
 `expectedUpdatedAt` 是可选的乐观比较。字符串与已存修订比较；显式 `null` 与缺失的修订比较。不一致时返回 `schedule_conflict`。编辑没有修订的行会创建修订；即使时钟回拨，后续修订仍单调递增。开始写入前检查取消，已经开始的持久写入不回滚。
 
+`ScheduleListRequest.targetSessionId` 可在计数及分页前按显式已有 Session 目标过滤；省略时保留全部目标。涉及的 Session 与创建预留不算匹配。嵌入方可以重写原 `prepareMutation()`，在管理 FIFO 内检查实际修改前后的行，并返回同步检查，供准备完成后、持久化开始前再次执行。批量删除在原批量写入前复查全部行；已接受写入保留原结算责任。
+
 <a id="timing-edits"></a>
 ## 时间编辑
 
@@ -154,6 +156,22 @@ Shared management service; reads and management writes never activate a Session,
 `sessionPersistence` supplies header-only target validation and the `session/flush` listener that acknowledges durable inbox delivery through `ctx.sessions.flush()`.
 
 ```ts cordis-catalog
+/** Install an embedding's dispatch admission before initialization starts dispatch.
+ * @param admission - One immutable registration over actual stored tasks; rejection does not acknowledge or automatically retry delivery.
+ * @returns Nothing. Late, duplicate, or stopping registrations throw; Native callers may omit registration.
+ */
+installDispatchAdmission(admission: ScheduleDispatchAdmission): void
+
+/** Reconsider overdue tasks after an embedding becomes ready.
+ * @returns Completion of initialization and the rescan request, without claiming delivery acknowledgement.
+ */
+async resumeDispatch(): Promise<void>
+
+/** Observe original dispatch, management writes, and post-commit notices.
+ * @returns Whether initialization finished and no admitted work or reused-target execution remains; a future timer is idle.
+ */
+isDispatchIdle(): boolean
+
 /** Read effective delivery limits without loading or activating a task.
  * @returns The configured minimum spacing between deliveries that each create a Session, in seconds.
  */
@@ -181,14 +199,14 @@ async create( request: ScheduleCreateRequest, actorSessionId?: SessionId, signal
 
 /**
  * Read one page of Host tasks without activating target Sessions.
- * @param request - Optional activity filter, page size, and offset.
+ * @param request - Optional existing-Session target and activity filters, page size, and offset; omission keeps all targets.
  * @returns The requested page and total matching task count.
  */
 async list(request: ScheduleListRequest = {}): Promise<ScheduleListResult>
 
 /**
- * Remote form of the shared Host-wide list.
- * @param request - Optional activity filter, page size, and offset.
+ * Remote form of the shared list, retaining Host-wide selection when no target filter is supplied.
+ * @param request - Optional existing-Session target and activity filters, page size, and offset.
  * @returns The requested page and total matching task count.
  */
 @Remote('list') async remoteList(request: ScheduleListRequest): Promise<ScheduleListResult>

@@ -5,13 +5,15 @@ import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-
 import type { WorkspaceActionRequest, WorkspaceBrowserProps } from '../contract/slots.ts'
 import css from './WorkspaceBrowser.module.css'
 
-type Props = Pick<WorkspaceBrowserProps, 'renameWorkspace' | 'deleteWorkspace' | 'settleWorkspaceAction' | 't'> & {
-  request: WorkspaceActionRequest
-  workspaces: readonly WorkspaceView[]
-}
+type Props = Pick<WorkspaceBrowserProps,
+  'renameWorkspace' | 'deleteWorkspace' | 'settleWorkspaceAction' | 'workspaceDeleteDisabledReason' | 't'> & {
+    request: WorkspaceActionRequest
+    workspaces: readonly WorkspaceView[]
+  }
 
 /** @param props - captured request, current Workspace list, and existing mutations. @returns the active dialog. */
-export function WorkspaceDialogs({ request, workspaces, renameWorkspace, deleteWorkspace, settleWorkspaceAction, t }: Props) {
+export function WorkspaceDialogs({ request, workspaces, renameWorkspace, deleteWorkspace,
+  settleWorkspaceAction, workspaceDeleteDisabledReason, t }: Props) {
   const composingRef = useRef(false)
   const renameTarget = request.action === 'rename' ? request : null
   const [renameDraft, setRenameDraft] = useState(request.displayTitle)
@@ -61,7 +63,7 @@ export function WorkspaceDialogs({ request, workspaces, renameWorkspace, deleteW
   }
   const confirmDelete = () => {
     /* v8 ignore next -- the Modal is absent without a target and its button is disabled while deleting. */
-    if (deleting || deleteTarget === null) return
+    if (deleting || deleteTarget === null || workspaceDeleteDisabledReason !== undefined) return
     setDeleting(true)
     setDeleteCommittedId(null)
     setDeleteError(null)
@@ -126,7 +128,7 @@ export function WorkspaceDialogs({ request, workspaces, renameWorkspace, deleteW
           <Button
             variant="outline"
             className={css.deleteAction}
-            disabled={deleting}
+            disabled={deleting || workspaceDeleteDisabledReason !== undefined}
             onClick={confirmDelete}
           >
             {t('delete.workspace')}
@@ -135,6 +137,7 @@ export function WorkspaceDialogs({ request, workspaces, renameWorkspace, deleteW
       )}
     >
       {deleting && <div className={css.deleteStatus} role="status">{t('delete.pending')}</div>}
+      {workspaceDeleteDisabledReason !== undefined && <div role="status">{t('delete.unavailable')}</div>}
       {deleteError !== null && <div className={css.renameError} role="alert">{deleteError}</div>}
     </Modal>
   </>

@@ -24,12 +24,17 @@
     },
     "./src/*": "./src/*",
     "./package.json": "./package.json",
-    "./locale/*.json": "./locale/*.json"
+    "./locale/*.json": "./locale/*.json",
+    "./registration": {
+      "types": "./lib/types/registration.d.ts",
+      "default": "./lib/types/registration.js"
+    }
   },
   "files": [
     "locale/*.json",
     "lib/index.js",
     "lib/client.js",
+    "lib/types/**/*.js",
     "lib/types/**/*.d.ts",
     "lib/types/**/*.d.ts.map",
     "lib/**/*.js.map",

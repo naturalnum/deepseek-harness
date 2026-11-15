@@ -42,6 +42,11 @@ declare module '@deepseek-ai/cordis' {
      * @mode emit
      */
     'webserver/index-inject'(table: IndexInjection[], peer: PeerScope): void
+    /** Collect only explicitly public assets and bootstrap values, without an account or Peer.
+     * @param table Mutable public row table; contributors append no private state.
+     * @mode emit
+     */
+    'webserver/public-index-inject'(table: IndexInjection[]): void
   }
 }
 
@@ -737,6 +742,16 @@ export class WebServer extends Service {
    */
   renderIndex(html: string, peer: PeerScope): string {
     return this.applyIndexTaps(renderIndexInjections(html, this.collectIndexInjections(peer)))
+  }
+
+  /** Render an unauthenticated document using explicitly public contributions only.
+   * @param html Raw public index document.
+   * @returns Public injection rows applied to the document; Peer-specific sources and raw index taps are not called.
+   */
+  renderPublicIndex(html: string): string {
+    const table: IndexInjection[] = []
+    this.ctx.emit('webserver/public-index-inject', table)
+    return renderIndexInjections(html, table)
   }
 }
 

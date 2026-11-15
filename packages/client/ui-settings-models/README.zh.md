@@ -105,6 +105,8 @@ Models 页面包含 **DeepSeek 账号**（`deepseek-account`，英文为 **DeepS
 
 预览版说明在 `src/client/locales.ts` 中持有精确文案，并在 `src/onboarding-copy.ts` 中持有确认版本。认证浏览器通过共享配置表单比较并写入 `ui-settings-general.welcomeNoticeVersion`；只有显式点击「继续」才会记录当前版本；命名空间不可用或写入被拒时，声明保持未确认状态。已确认旧版的用户会再次看到当前说明。DeepSeek 步骤面向 `llm-deepseek` 中的 `deepseek-official`，在共享引导模态框内以仅凭据模式渲染既有 `ProviderEditor`；`credentials.set` 仍是唯一的机密写入，且不改变任何提供商设置。
 
+账号页面可以为一个确切的命名引用提供捕获的 `credentialEdit`。仅密钥编辑器在关闭前保留该意图，拒绝空准备结果，提交时核对引用，并只使用已捕获的保存/删除回调；失败不会重放写入。未提供时保留原生密钥行为。`modelCatalogOnly` 将编辑器限制为模型行：隐藏密钥、端点和重试控件，不迁移也不写入无关的已存重试配置。服务端设置验证和版本检查仍是权威。
+
 </details>
 
 -----

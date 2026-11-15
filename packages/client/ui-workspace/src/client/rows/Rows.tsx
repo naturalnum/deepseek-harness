@@ -229,7 +229,8 @@ type ProjectRowItemProps = {
   /** Host account home; POSIX home-rooted hover paths display as `~`. */
   home?: string | undefined
   t: RowTranslate
-} & Pick<WorkspaceBrowserProps, 'useWorkspaceAccess' | 'renderFactorySlot' | 'useContextMenuTarget' | 'useContextMenu'>
+} & Pick<WorkspaceBrowserProps,
+  'useWorkspaceAccess' | 'renderFactorySlot' | 'useContextMenuTarget' | 'useContextMenu' | 'workspaceDeleteDisabledReason'>
 
 /** The header actions one row offers; an absent create offers no New Session button. */
 interface ProjectRowActions {
@@ -279,7 +280,7 @@ function WorkspaceProjectRow({ workspaceId, ...props }: ProjectRowItemProps & { 
 
 function ProjectRow({
   group, containsCurrentDescendant = false, onToggle, drag: offeredDrag, home, newShortcut, t, actions,
-  renderFactorySlot, useContextMenuTarget, useContextMenu,
+  renderFactorySlot, useContextMenuTarget, useContextMenu, workspaceDeleteDisabledReason,
 }: Omit<ProjectRowItemProps, 'onCreate'> & { actions: ProjectRowActions }) {
   const { getTriggerProps } = useContextMenu()
   const drag = actions.reorder ? offeredDrag : undefined
@@ -291,7 +292,8 @@ function ProjectRow({
   const menuOpen = useContextMenuTarget(target => target?.kind === 'workspace' && target.value.workspaceId === row.workspaceId)
   const dragPreview = useRowDragPreview(css.dragPreview as string, DRAG_PREVIEW_PROPERTIES)
   const workspaceMenuTarget = row.workspaceId !== undefined && row.cwd !== undefined
-    ? { workspaceId: row.workspaceId, path: row.cwd } : undefined
+    ? { workspaceId: row.workspaceId, path: row.cwd,
+      ...workspaceDeleteDisabledReason === undefined ? {} : { deleteDisabledReason: t('delete.unavailable') } } : undefined
   const ownRow = (
     <div
       className={clsx(css.projectRow, menuOpen && css.menuOpen)}

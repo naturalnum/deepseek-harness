@@ -899,6 +899,7 @@ export const ja = {
   'detailInvalid': 'プラグインが無効な詳細ファイルを宣言しています。',
   'detailFailed': '詳細を読み込めませんでした。',
   'detailFootnotes': '脚注',
+  'actionRestricted': 'この環境では変更できません',
 } satisfies Record<keyof typeof en, string>
 
 /** Spanish dictionary, checked against the English keys. */
@@ -1196,6 +1197,7 @@ export const es = {
   detailInvalid: 'El complemento declara un archivo de detalles no válido.',
   detailFailed: 'No se pudieron leer los detalles.',
   detailFootnotes: 'Notas a pie de página',
+  'actionRestricted': 'Los cambios no están disponibles en este entorno',
 } satisfies Record<keyof typeof en, string>
 
 /** French dictionary, checked against the English keys. */
@@ -1493,6 +1495,7 @@ export const fr = {
   detailInvalid: 'Le plugin déclare un fichier de détails invalide.',
   detailFailed: 'Impossible de lire les détails.',
   detailFootnotes: 'Notes de bas de page',
+  'actionRestricted': 'Les modifications ne sont pas disponibles dans cet environnement',
 } satisfies Record<keyof typeof en, string>
 
 /** German dictionary, checked against the English keys. */
@@ -1790,6 +1793,7 @@ export const de = {
   detailInvalid: 'Das Plugin deklariert eine ungültige Detaildatei.',
   detailFailed: 'Die Details konnten nicht gelesen werden.',
   detailFootnotes: 'Fußnoten',
+  'actionRestricted': 'Änderungen sind in dieser Umgebung nicht verfügbar',
 } satisfies Record<keyof typeof en, string>
 
 /** Russian dictionary, checked against the English keys. */
@@ -2087,6 +2091,7 @@ export const ru = {
   detailInvalid: 'Плагин объявляет неверный файл сведений.',
   detailFailed: 'Подробности прочитать не удалось.',
   detailFootnotes: 'Сноски',
+  'actionRestricted': 'Изменения недоступны в этой среде',
 } satisfies Record<keyof typeof en, string>
 
 /** Portuguese dictionary, checked against the English keys. */
@@ -2384,4 +2389,5 @@ export const pt = {
   detailInvalid: 'O plugin declara um arquivo de detalhes inválido.',
   detailFailed: 'Não foi possível ler os detalhes.',
   detailFootnotes: 'Notas de rodapé',
+  'actionRestricted': 'As alterações não estão disponíveis neste ambiente',
 } satisfies Record<keyof typeof en, string>

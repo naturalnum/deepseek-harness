@@ -2,7 +2,8 @@ import { Context } from '@deepseek-ai/cordis'
 import { Deque } from '@deepseek-ai/dsh-deque'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import { expect, it, onTestFinished, vi } from 'vitest'
-import { SessionHistoryController } from '../src/history.ts'
+import { HistoryController } from '../src/history/controller.ts'
+import { WebController } from '../src/web/controller.ts'
 import { installSessionReadTestServices, testSessionPersistence } from './test-remote.ts'
 
 it('detaches and clears follow event buffering on abort while waiting for actual observation', async () => {
@@ -16,7 +17,7 @@ it('detaches and clears follow event buffering on abort while waiting for actual
     async stat() { entered.resolve(undefined); await release.promise; return undefined },
   }) as never)
   const id = SessionId('pending-follow-buffer')
-  const history = new SessionHistoryController(ctx, () => { throw new Error('No promotion expected') })
+  const history = new WebController(ctx, new HistoryController(ctx), () => { throw new Error('No promotion expected') })
   const push = vi.spyOn(Deque.prototype, 'pushBack')
   const pushFront = vi.spyOn(Deque.prototype, 'pushFront')
   const clear = vi.spyOn(Deque.prototype, 'clear')
@@ -31,18 +32,18 @@ it('detaches and clears follow event buffering on abort while waiting for actual
   ctx.emit('session/event', { id } as never, { type: 'turn/start', seq: 0 } as never)
   ctx.emit('session/created', session as never)
   ctx.emit('agent/assistant-stream', { agent, frame } as never)
-  expect(push).toHaveBeenCalledTimes(2)
-  expect(pushFront).toHaveBeenCalledTimes(1)
+  expect(push).toHaveBeenCalledTimes(4)
+  expect(pushFront).toHaveBeenCalledTimes(2)
   abort.abort(new Error('carrier cancelled'))
-  expect(clear).toHaveBeenCalledTimes(1)
+  expect(clear).toHaveBeenCalledTimes(2)
   for (let i = 0; i < 10; i += 1) ctx.emit('session/event', { id } as never, { type: 'turn/start', seq: i } as never)
   ctx.emit('session/created', session as never)
   ctx.emit('agent/assistant-stream', { agent, frame } as never)
-  expect(push).toHaveBeenCalledTimes(2)
-  expect(pushFront).toHaveBeenCalledTimes(1)
+  expect(push).toHaveBeenCalledTimes(4)
+  expect(pushFront).toHaveBeenCalledTimes(2)
   await Promise.resolve()
   expect(settled).toBe(false)
   release.resolve(undefined)
   await expect(pending).rejects.toBeDefined()
-  expect(clear).toHaveBeenCalledTimes(1)
+  expect(clear).toHaveBeenCalledTimes(2)
 })

@@ -164,6 +164,8 @@ Pause 关闭顶层准入，但允许已登记工作完成；只有静止、无�
 
 显式账户配方入口可通过 runtime 私有 builtin 选择原生 Commands、Goals、Agent 预设、权限预设、UserQuestions、反馈及 Session 日志导出。这些服务保留原生注册表、投影、修订号、队列与持久化。预设适配通过共享 Runtime 策略取得生效的继承默认值，不改写原生声明；显式选中的默认值仍受可选择 id 策略约束。每个实际 RPC、流或 Fetch 注册都须匹配已审核开放清单及原 provider 身份；浏览器选择控件本身不授权操作。模型目录使用与 prompt 调度相同的批准 provider/model 路由过滤，保留原生 effort 元数据，并在原生选择提交点复核准入。
 
+账户 Schedule 适配器仅选择 `catalog`、`list`、`history` 和 `edit`。`edit` 保留原生 `update` 与 `delete` 两种动作。Cloud 列表必须指定已有目标 `targetSessionId`，保持仅活动任务，并在返回分页前限制整个匹配集合。目标、涉及的 Session 及回执检查复用原账户/项目准入；管理检查在原生 FIFO 内、持久化开始前再次执行。继承的 `create`、`view`、`run`、`deleteInactive` 和 `deliveryLimits` Remote 仍关闭，`new` 与 `new_once` 目标也关闭。可信 Host 创建保留原准备、写入及结算所有者。就绪与空闲观察复用[原 Schedule 运行时](../../schedule/schedule/README.zh.md)，不新增调度器。
+
 Commands 在附件准入之后、原生 handler 执行之前复核原账户及 Agent。原生问答及授权 waterfall 复用 Remote 投影器及结果协议；已交付但未回答的请求仍占用同一事件条数与完整帧字节预算，直到结算。结果在结算前复核原账户、Agent 及 Session。原生取消、销毁及重连保留其原有未决请求行为。反馈沿用原生排队 JSONL 写入和账户范围的匿名展示身份；已经开始的写入在准入关闭后仍保留原有 flush/close 责任。
 
 权限控件要求实际执行限制的 Files/Shell 及原签发 execution port。原生 read-only、workspace-write、danger-full-access 三档保留原有名称及 ask/ask/never 授权行为，并受账户沙盒约束；保留的命令/服务或实时子 Agent 会阻止切换，子级不得超过祖先模式。完整访问不授予宿主路径、其他账户、可信运行文件的写权限或更大配额。初始权限播种要求执行限制已安装；公开目录及修改仍要求业务准入。原生日志导出在读取前及发送 ZIP 前检查账户/项目准入；请求、代际和注册取消共同管理流。ZIP 格式与清理仍由原生实现负责。
@@ -233,11 +235,14 @@ Root 可通过 `native.workspaceTransfers` 显式设置 `maxFileBytes`、`maxFil
 
 必需集成缺失时，账户入口明确失败。
 
+- 原生清单准入要求完整选中图符合其显式访问预算。被拒绝的图保持不可用；本次集成不证明完整原生组合已满足该上界。
+- 使用新原生 Header 的受保护普通 fork 在原 Controller、Factory 与共享策略缺少可信来源观察交接时保持关闭。`isSeeded` 或 Header 字段本身不授予权限。
+
 - 生产原生清单提取、传输选路、项目核验和绑定签发仍需集成；本包不发布 ready。策略测试证明视图隔离；独立的原生 Loader 测试检查真实公开 handler 元数据。安装测试使用显式 runtime 绑定及自有 Node 路径，不代表生产 owner 或存储授权。
 - F06 对所有可达原生 writer 的提交覆盖及 runtime 装配仍不完整。协调器和已审核的原生适配不构成完整 F06 验收；账户入口中的模型选择和未经批准的配置写入保持关闭。
 - 其他凭据 provider 及任意 manager/package 写入仍在固定控制范围外。Watch 刷新和可选监听器工作保留原生语义，安装 hook 不代表它们已被核定为持久保存。
 - 通用 F09 影响预检及任意 PluginManager 修改保持关闭；托管技能修改要求单独审核的目录能力，单独选择的单引用 Key 服务使用自身有限策略。
-- 原生 Profile 测试覆盖默认模型、Settings、直接 editor、本地 credentials、constructor 期迁移及迟到的启动/写入结算。实际私有 Controller 装配测试覆盖原生 Gateway 派发、创建、prompt、fork、同步 cancel 及恢复尝试的先后顺序。完整账户持久化恢复、认证 Web 及完整云端配方验收仍需集成；产品构建及这些检查由主控负责。
+- 原生 Profile 测试覆盖默认模型、Settings、直接 editor、本地 credentials、constructor 期迁移及迟到的启动/写入结算。私有 Controller 装配测试覆盖原生 Gateway 派发、创建、prompt、同步 cancel 及恢复尝试的先后顺序。其中普通 fork 的 Header 检查使用原生 AgentLoop testkit，不构成生产受保护 Factory 的来源交接验证。完整账户持久化恢复、认证 Web 及完整云端配方验收仍需集成；产品构建及这些检查由主控负责。
 - 历史测试使用真实 JSONL 读取和冷 follow 恢复。普通 AgentLoop 激活使用共享项目/model/Preset 策略；生产 ready 还要求原 storage owner、准备期审核及实际 runtime ready 提交。其他激活及 child 路径在单独完成作用域审核前继续拒绝。
 
 <a id="dev-note"></a>

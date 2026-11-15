@@ -8,16 +8,17 @@ it('reconsiders an overdue stored task after native resolution becomes available
   const f = await harness()
   try {
     const agent = agentFor(f.ctx, 'ready-later')
-    const task = await f.service.create(agent.session.id, { title: 'Due', prompt: 'Check report', after_seconds: 1 })
+    const task = await f.service.create({ title: 'Due', prompt: 'Check report',
+      timing: { kind: 'after', after_seconds: 1 }, target: { kind: 'session', sessionId: agent.session.id } }, agent.session.id)
     await vi.advanceTimersByTimeAsync(1000)
     expect(f.resolve).toHaveBeenCalledOnce()
-    expect(await f.service.list({ sessionId: agent.session.id })).toMatchObject([{ id: task.id }])
+    expect((await f.service.list({ targetSessionId: agent.session.id, active: true })).items).toMatchObject([{ id: task.id }])
     f.resolve.mockResolvedValue({ agent })
     await f.service.resumeDispatch()
     await vi.advanceTimersByTimeAsync(0)
     expect(agent.followup).toHaveBeenCalledOnce()
     expect(agent.followup.mock.calls[0]![0]).toMatchObject({ source: { kind: 'schedule' } })
-    expect(await f.service.list({ sessionId: agent.session.id })).toEqual([])
+    expect((await f.service.list({ targetSessionId: agent.session.id, active: true })).items).toEqual([])
     await f.service.resumeDispatch()
     await vi.advanceTimersByTimeAsync(0)
     expect(agent.followup).toHaveBeenCalledOnce()
@@ -29,10 +30,13 @@ it('retains the ready rescan when the original first resolution is still settlin
   vi.useFakeTimers()
   vi.setSystemTime(new Date('2026-11-01T01:00:00.000Z'))
   const f = await harness(), pending = Promise.withResolvers<never>()
+  // The fixture owns rejection even if preparation fails before the native resolver consumes this wait.
+  void pending.promise.catch(() => undefined)
   try {
     const agent = agentFor(f.ctx, 'ready-during-resolution')
     f.resolve.mockImplementationOnce(() => pending.promise)
-    await f.service.create(agent.session.id, { title: 'Due', prompt: 'Check report', after_seconds: 1 })
+    await f.service.create({ title: 'Due', prompt: 'Check report',
+      timing: { kind: 'after', after_seconds: 1 }, target: { kind: 'session', sessionId: agent.session.id } }, agent.session.id)
     await vi.advanceTimersByTimeAsync(1000)
     expect(f.resolve).toHaveBeenCalledTimes(1)
     f.resolve.mockResolvedValue({ agent })
@@ -48,6 +52,6 @@ it('refuses to install or replace delivery admission after native initialization
   const f = await harness()
   try {
     expect(() => { f.service.installDispatchAdmission(async () => () => {}) })
-      .toThrow('Schedule delivery admission is unavailable')
+      .toThrow('Schedule dispatch admission must be installed once before initialization')
   } finally { await f.ctx.fiber.dispose() }
 })

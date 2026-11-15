@@ -53,6 +53,8 @@ Web 内置定义来自 `dsh-web-app` bundle。定义使用普通插件行；注�
 <details>
 <summary>实现细节 — 点击展开</summary>
 
+嵌入方可以重写 `assertSelectionCurrent()`，在既有单 Agent 队列内检查选择，并在重新挂载后、提交 Session 选择前再次检查。原 Agent 维护操作继续持有重新挂载及销毁责任。原生组合不增加选择限制。`presetForSession()` 读取注册表原先等待就绪的投影句柄，包括已不在名单中的历史选择。
+
 每个声明在启动时创建注册表拥有的 scope 和内存 Loader 树。更新或移除声明会让旧代际退役；Agent、子 Agent 和临时历史读取各自持有引用，最后一个引用释放后才销毁插件树。插件注册继承 preset scope，Agent scope 的父链接决定可见性；Agent loop 仍由宿主共享。
 
 preset 的服务提供方及其消费方必须共享同一个 `cordis:group` 隔离 realm。条目局部隔离不会沿 Agent 注册 scope 传播：组外的普通 Context 查找（包括 `agent.ctx`）仍选择 Host realm。`agentPresets.serviceFor()` 显式检查保留的组合，不改变普通服务查找。

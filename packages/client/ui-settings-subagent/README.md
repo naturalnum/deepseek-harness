@@ -41,6 +41,8 @@ One **Save** writes both sections through their own namespaces, each fenced by t
 
 The Host half is an empty `apply`, present only so the package holds a Loader row the client module system serves the browser half for. The browser half binds each namespace through `ctx.configForms.get`: `SubagentLimitsCardController` stages the limits over the shared `SettingsFormModel` of `ui-primitives`, with a field spec that admits safe whole numbers at or above each field's floor; `SubagentModelSelectionCardController` keeps its own draft because its two fields save as one revision-fenced `mutate`, joins the stored routes with `remote.session.modelCatalog()`, and re-reads the catalogue on `llm/adapters-updated` and `settings/document-updated` while a connection reset drops its draft. `subagentCardFace` composes the two into the one face `SubagentCard` renders inside the shared `SettingsForm`, whose save validates both and writes the dirty ones. The page registers into the Plugins page's `plugins.item` slot through `ctx.configForms.whileServed` over both namespaces.
 
+An optional `subagentSettingsIntegration` selects a served limits namespace and an explicit field allowlist. The original limits controller and settings form are reused; writes recheck the same live binding inside the shared send queue and after settlement. Removing the integration withdraws its page and restores the native namespace. Omission preserves native limits and model-selection behavior.
+
 </details>
 
 -----

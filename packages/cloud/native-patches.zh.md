@@ -86,3 +86,13 @@ Native Chat 保留原[装饰性运行指示器](../client/ui-chat/src/client/cha
 配置计划计算和原准备状态由 app-boot 持有，profile 在原 Loader 上安装检查器；框架仅保留检查入口、变更计数、异步预留与原生应用。直接[树命令](../../vendor/loader/src/config/tree.ts)在分配 id、修改列表、移动父节点/store 或写配置前先检查。Runtime 对规范 Fiber 身份、有效配置、提供方与隔离记录的读取集中于 [native-state](pe-cloud-runtime/src/native-state.ts)，原取消、关闭和结果未知责任不变。
 
 原 Session Controller 在 Service 初始化时将嵌入方准备、模型检查及有限控制缓冲接到既有 Agent、Command 和 Control 所有者。[准备与结算规则](../api/session-controller/README.zh.md)保留 Native 默认行为、受保护工厂与 SessionPreparation、原回执及未知结果。Cloud 提供既有账号策略，仅暴露已审核方法；不新增 Session 存储、迁移或运行时所有者。
+
+原 Host Schedule 运行时接收一次可选的初始化前投递准入，输入为已存任务及其显式目标和回执。准备阶段异步等待后、预留、创建 Session、恢复唤醒及入队前复查。已接受消息仍由原链路完成 flush 和回执。就绪重扫与空闲观察复用同一运行时、修改 FIFO、通知及执行槽；原生默认行为、保留限制、间隔及未知写入不变。Cloud 目标授权由其适配器另行提供。
+
+同一 Schedule 管理 FIFO 提供 `prepareMutation(before, after, actorSessionId)`，供嵌入方根据实际已存行与拟写行检查准入。其同步复查在异步准备完成后、每次原 put/delete 或批量删除开始前执行。拒绝检查不启动写入或变更通知；已接受写入保留原结算及未知结果。
+
+Plugin Manager 在原 profile 写入流程周围保留一个可选保存提交钩子及一个选择检查器。entry 与 bundle 选择准备实际 profile 组合，检查原生计划和发布结果归属，并保留原生应用、重启、诊断及未知结果所有权。受控预览不持久化或激活条目；不安装钩子的原生调用者保留既有行为。
+
+Agent 预设选择在原 Agent 队列和维护操作中、追加已提交选择前复查可选嵌入方准入。账户策略读取所属注册表带类型的 `presetForSession()`，不按字符串投影键读取。原生 ZIP 导出注册保留原 Fetch 响应、ZIP 流和清理；嵌入方可以在任何读取前授权实际解析的 Session，并提供结算前持续使用的取消信号。原生挂载保留独立的 Markdown 路由。
+
+公共兜底所有者通过 resource 模块复用原生静态 Request/Response 响应器。WebServer 将明确公共注入行与需要 Peer 的首页来源及原始 tap 分开渲染，原生认证渲染不变。Client Modules 可以明确声明浏览器包，而不激活其 Host 入口，继续检查当前产物修订并沿原图撤回；仅模块声明在浏览器端也保持未激活。

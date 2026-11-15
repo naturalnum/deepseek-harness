@@ -488,6 +488,8 @@ export interface ScheduleCreateRequest {
 
 /** Host-wide task list request. */
 export interface ScheduleListRequest {
+  /** Restrict to explicit existing-Session targets before counting or paging; omission keeps all targets. */
+  readonly targetSessionId?: SessionId
   /** `true` lists only active tasks; `false` lists only paused and ended tasks; omission lists all tasks. */
   readonly active?: boolean
   /** Page size from 1 through 500; the default is 100. */

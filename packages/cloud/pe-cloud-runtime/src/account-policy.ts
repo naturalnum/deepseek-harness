@@ -334,7 +334,7 @@ class AccountPolicy {
 
   private sessionPreset(session: Session): string {
     this.approvedPreset(session.header.agentPreset)
-    return this.approvedPreset(this.provider('sessionProjections').stateOf(session, 'agentPreset')).id
+    return this.approvedPreset(this.provider('agentPresets').presetForSession(session)).id
   }
 
   observedProject(id: SessionId, header: SessionHeader): Workspace {

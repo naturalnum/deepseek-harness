@@ -67,6 +67,8 @@ application combo 脚本只携带每个插件的 `client.js` 入口，并在启�
 <details>
 <summary>实现细节——点击展开</summary>
 
+可信部署可以通过 `registerClientPackages()` 明确注册浏览器包，而不挂载其 Host 入口。每个包须声明真实 Client 产物；`activate: false` 提供模块但不激活其浏览器插件。撤回声明经原图重建移除相应来源。当前产物修订及已索引 Loader 条目仍为依据。注册表向明确公共 index 事件以及正常 Peer 渲染的 index 提供浏览器产物图。
+
 本节解释模块系统的构建方式；可观察行为已在[使用本包](#use-this-package)中说明。
 
 ### 设计理念

@@ -312,7 +312,7 @@ it('keeps unselected native Session controls absent from bootstrap owner reads',
 
 const scheduleRpc: readonly EndpointExposure[] = [
   { endpoint: 'schedule/catalog', handlerId: 'native:schedule', guard: 'authenticated-account' },
-  ...['list', 'history', 'delete', 'update'].map(method => ({
+  ...['list', 'history', 'edit'].map(method => ({
     endpoint: 'schedule/' + method, handlerId: 'native:schedule', guard: 'account-session' as const,
   })),
 ]
@@ -346,7 +346,7 @@ it('combines bootstrap with the original Schedule service inventory and detects 
   expect(() => { result.assertCurrent() }).toThrow()
 })
 
-it('admits the five selected native Schedule routes and rechecks the original owner', async () => {
+it('admits the selected native Schedule routes and rechecks the original owner', async () => {
   const f = await fixture(scheduleRpc), result = await f.produce()
   for (const row of scheduleRpc) expect(f.auditedRpc).toHaveBeenCalledWith(row.endpoint)
   result.assertCurrent()
@@ -368,7 +368,7 @@ it.each(scheduleRpc.flatMap(row => [
   expect(f.auditedRpc).not.toHaveBeenCalledWith(row.endpoint)
 })
 
-it.each(['create', 'pause', 'resume', 'other'])('rejects the unapproved schedule/%s endpoint', async (method) => {
+it.each(['create', 'view', 'run', 'deleteInactive', 'deliveryLimits', 'delete', 'update', 'pause', 'resume', 'other'])('rejects the unapproved schedule/%s endpoint', async (method) => {
   const row: EndpointExposure = { endpoint: 'schedule/' + method, handlerId: 'native:schedule', guard: 'account-session' }
   const f = await fixture([row])
   await expect(f.produce()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })

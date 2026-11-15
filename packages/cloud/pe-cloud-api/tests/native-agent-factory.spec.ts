@@ -9,6 +9,7 @@ import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-test
 import SessionQueryEngine from '@deepseek-ai/dsh-session-query'
 import { SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
 import * as Jsonl from '@deepseek-ai/dsh-session-persistence-jsonl'
+import { JsonlSessionHandle } from '@deepseek-ai/dsh-session-persistence-jsonl/src/storage.ts'
 import { LlmAdapter, createUserMessage, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-working-directory'
 import { brandString } from '@deepseek-ai/dsh-brand'
@@ -78,10 +79,14 @@ async function fixture(install = true) {
   }
   const mount = async (config = AgentLoop.Config({ agents: [] })): Promise<AgentLoop> => {
     let loop: AgentLoop | undefined
-    await ctx.plugin({
-      inject: [...AgentLoop.inject, 'peAccount'],
-      apply(scope) { loop = createNativeAgentLoop(scope, binding, assertCurrent, guards, config) },
-    })
+    class NativeFactoryEntry {
+      static inject = [...AgentLoop.inject, 'peAccount']
+      constructor(scope: Context) {
+        loop = createNativeAgentLoop(scope, binding, assertCurrent, guards, config)
+        return loop
+      }
+    }
+    await ctx.plugin(NativeFactoryEntry)
     if (loop === undefined) throw new Error('Fixture factory did not mount.')
     return loop
   }
@@ -195,11 +200,11 @@ it('preserves original setup/commit ordering and publishes exactly the prepared 
     originalPrepared(agent)
     const liveAgent = f.ctx.agents.get(agent.id), liveSession = f.ctx.sessions.get(agent.id)
     const published = liveAgent !== undefined
+    expect(liveSession === agent.session).toBe(true)
     if (published) {
       expect(liveAgent === agent).toBe(true)
-      expect(liveSession === agent.session).toBe(true)
       expect(commits).toBe(1)
-    } else expect(liveSession === undefined).toBe(true)
+    }
     checkpoints.push({ committed: commits === 1, published })
   })
   const handle = await f.ctx.agents.create({ ...options, setup: async (_scope, agent) => {
@@ -207,7 +212,7 @@ it('preserves original setup/commit ordering and publishes exactly the prepared 
     setupCalls++
     return { commit(): void {
       expect(f.ctx.agents.get(agent.id) === undefined).toBe(true)
-      expect(f.ctx.sessions.get(agent.id) === undefined).toBe(true)
+      expect(f.ctx.sessions.get(agent.id) === agent.session).toBe(true)
       expect(checkpoints).toContainEqual({ committed: false, published: false })
       commits++
     } }
@@ -475,13 +480,19 @@ it('waits for post-commit native append settlement and rejects graph-aborted pub
   let settled = false
   vi.spyOn(f.ctx.sessionPersistence, 'create').mockImplementationOnce(async (...args) => {
     const handle = await storedCreate(...args)
-    const append = handle.append.bind(handle)
+    if (!(handle instanceof JsonlSessionHandle)) throw new Error('The original JSONL write owner is required.')
+    const drain = handle.drainLive.bind(handle)
     const close = handle.close.bind(handle)
-    vi.spyOn(handle, 'append').mockImplementationOnce(async (...batch) => {
-      entered.resolve(undefined)
-      await release.promise
-      await append(...batch)
-      appended = true
+    let draining: Promise<void> | undefined
+    const heldDrain = vi.spyOn(handle, 'drainLive').mockImplementation(() => {
+      draining ??= (async () => {
+        entered.resolve(undefined)
+        await release.promise
+        heldDrain.mockRestore()
+        await drain()
+        appended = true
+      })()
+      return draining
     })
     vi.spyOn(handle, 'close').mockImplementation(async () => { await close(); closed() })
     return handle
@@ -489,6 +500,9 @@ it('waits for post-commit native append settlement and rejects graph-aborted pub
   const enterAgent = vi.spyOn(f.ctx.agents, 'enter')
   const enterSession = vi.spyOn(f.ctx.sessions, 'enter')
   const options = f.createOptions('post-commit')
+  f.ctx.on('agent/created', async ({ agent }) => {
+    if (agent.id === options.sessionId) await f.ctx.sessionPersistence.flush()
+  })
   const work = f.ctx.agents.create({ ...options, setup: (_scope, agent) => {
     agent.session.append('model/selection', f.model)
     return { commit(): void { committed = true } }
@@ -506,8 +520,8 @@ it('waits for post-commit native append settlement and rejects graph-aborted pub
   await expect(work).rejects.toBe(reason)
   expect(appended).toBe(true)
   expect(closed).toHaveBeenCalledOnce()
-  expect(enterAgent).not.toHaveBeenCalled()
-  expect(enterSession).not.toHaveBeenCalled()
+  expect(enterAgent).toHaveBeenCalledOnce()
+  expect(enterSession).toHaveBeenCalledOnce()
   expect(f.ctx.agents.get(options.sessionId)).toBeUndefined()
   expect(f.ctx.sessions.get(options.sessionId)).toBeUndefined()
   const writer = await f.ctx.sessionPersistence.open(options.sessionId, 'write')

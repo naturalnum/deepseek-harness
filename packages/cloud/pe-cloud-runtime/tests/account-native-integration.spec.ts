@@ -49,6 +49,7 @@ import Sessions, { Session, SessionId } from '@deepseek-ai/dsh-session'
 import Projections from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import Tools from '@deepseek-ai/dsh-tools'
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import FsLocal from '@deepseek-ai/dsh-fs-local'
 import WorkingDirectory from '@deepseek-ai/dsh-working-directory'
 import DefaultModel from '@deepseek-ai/dsh-agent-default-model'
@@ -247,11 +248,12 @@ async function fixture(options: {
   const dependencies = { async apply(ctx: Context) {
     await ctx.plugin(Typert)
     await ctx.plugin(RemoteAccess)
-    if (options.firstScreen || options.instructionSources !== undefined) await ctx.plugin(Gateway)
+    await ctx.plugin(Gateway)
     await ctx.plugin(Sessions)
     await ctx.plugin(Projections)
     await ctx.plugin(SystemPrompt, {})
     await ctx.plugin(Tools, {})
+    if (options.instructionSources !== undefined) await ctx.plugin(NativeToolExecutor)
     await ctx.plugin(Agents)
     // Native-only tests own these Node directories. This local provider never supplies product quota approval.
     await ctx.plugin(Storage)
@@ -281,9 +283,10 @@ async function fixture(options: {
     { id: 'default-model', name: 'cordis:m8s-model', config: options.instructionSources === undefined
       ? { provider: 'unused', model: 'unused' } : { provider: 'local-text', model: 'plain-text' } },
     { id: 'working-directory', name: 'cordis:m8s-working-directory' },
-    ...options.nativeFiles ? [{ id: 'sandbox-policy', name: 'cordis:m8s-sandbox-policy',
+    ...options.nativeFiles || options.office ? [{ id: 'sandbox-policy', name: 'cordis:m8s-sandbox-policy',
       config: { mode: 'workspace-write', workspaceRoot: project } }] : [],
-    ...options.auditedFileCalls || options.installFileApi ? [{ id: 'native-file-api', name: 'cordis:' + names.workspaceFiles,
+    ...options.auditedFileCalls || options.installFileApi || options.office ? [{
+      id: 'native-file-api', name: 'cordis:' + names.workspaceFiles,
       config: { maxBytes: 4096, maxFileBytes: 4096, maxLines: 20, maxEntries: 20 } }] : [],
     ...options.office ? [{ id: 'native-office', name: 'cordis:' + names.officeToPdf, config: { maxInputBytes: 16 } }] : [],
     ...options.instructionSources === undefined ? [] : [
@@ -405,14 +408,20 @@ async function fixture(options: {
       }
       if (options.controllerEntered !== undefined) {
         const plugin: unknown = ctx.loader.builtins[names.controller]
-        if (plugin === null || typeof plugin !== 'object') throw new Error('Actual Controller wrapper is absent')
-        const apply: unknown = Reflect.get(plugin, 'apply')
-        if (typeof apply !== 'function') throw new Error('Actual Controller apply is absent')
-        ctx.loader.builtins[names.controller] = { inject: [...NativeController.inject, 'peCloudApi'], Config: NativeController.Config,
-          async apply(owner: Context, config: ConstructorParameters<typeof NativeController>[1]) {
-            options.controllerEntered?.(owner)
-            await Reflect.apply(apply, plugin, [owner, config])
-          } }
+        if (typeof plugin !== 'function') throw new Error('Actual Controller constructor is absent')
+        ctx.loader.builtins[names.controller] = class {
+          static inject = [...NativeController.inject, 'peCloudApi']
+          static Config = NativeController.Config
+          constructor(owner: Context, config: ConstructorParameters<typeof NativeController>[1]) {
+            const service = Reflect.construct(plugin, [owner, config])
+            const unobserve = owner.on('internal/status', (fiber) => {
+              if (fiber !== owner.fiber || fiber.state !== FiberState.ACTIVE) return
+              unobserve()
+              options.controllerEntered?.(owner)
+            }, { global: true })
+            return service
+          }
+        }
       }
     },
   }
@@ -529,7 +538,7 @@ it('boots the actual factory NativeLoader with API hooks, guarded native provide
   expect(f.guards).toHaveBeenCalledTimes(1)
   const denied = { code: 'cloud/account-unavailable' }
   await expect(ctx.peCloudApi.assertBootstrapCurrent(ctx)).rejects.toMatchObject(denied)
-  // Unpublished authority cannot replace the original native Typert Gateway absent from this fixture.
+  // Unpublished component authority cannot replace the original graph and bootstrap policy.
   await expect(ctx.peCloudApi.auditPrepared(ctx)).rejects.toThrow('Bootstrap requires the original guarded native providers and shared policy.')
   await expect(ctx.sessionController.create({ cwd: f.project })).rejects.toMatchObject(denied)
   await expect(ctx.agents.create({ sessionId: SessionId('must-not-write'), meta: { cwd: f.project } })).rejects.toMatchObject(denied)
@@ -701,10 +710,14 @@ it.each(['complete', 'fail'] as const)('defers Controller project access while d
   })
   const starting = f.start()
   let settled = false
-  void starting.then(() => { settled = true })
+  void starting.then(() => { settled = true }, () => { settled = true })
+  const premature = starting.then((outcome) => {
+    if (outcome.status === 'failed') throw outcome.cause
+    throw new Error('Native assembly finished before the held directory verification settled')
+  })
   try {
-    const ctx = await directoryEntered.promise
-    const controllerScope = await controllerEntered.promise
+    const ctx = await Promise.race([directoryEntered.promise, premature])
+    const controllerScope = await Promise.race([controllerEntered.promise, premature])
     expect(controllerScope.root).toBe(ctx)
     expect(ctx.get('fs')).toBeInstanceOf(FsLocal)
     const filesEntry = [...ctx.loader.entries()].find(entry => entry.options.id === 'files')
@@ -1280,12 +1293,14 @@ it('retains replacement verification inside the real unpublished native bootstra
     throw failure
   } })
   const started = f.start()
-  const rejected = expect(started).rejects.toBe(failure)
-  const api = await entered.promise
+  const rejected = started.then(() => undefined, (error: unknown) => error)
+  const api = await Promise.race([entered.promise, started.then(() => {
+    throw new Error('Native bootstrap completed without entering replacement verification')
+  })])
   expect(f.factory.inspect().slots).toBe(0)
   await expect(f.factory.borrowCurrent(api.binding)).rejects.toMatchObject({ code: 'cloud/stale-generation' })
   hold.resolve(undefined)
-  await rejected
+  expect(await rejected).toBe(failure)
   await expect(f.finishBootstrap()).rejects.toBe(failure)
   expect(f.factory.inspect().slots).toBe(0)
 })

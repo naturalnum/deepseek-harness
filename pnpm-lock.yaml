@@ -2187,6 +2187,9 @@ importers:
       hosted-git-info:
         specifier: ^9.0.3
         version: 9.0.3
+      js-yaml:
+        specifier: ^4.3.2
+        version: 4.3.2
       semver:
         specifier: ^7.8.5
         version: 7.8.5
@@ -2200,6 +2203,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:~
         version: link:../../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: workspace:~
+        version: link:../../../vendor/include
       '@deepseek-ai/cordis-plugin-loader':
         specifier: workspace:~
         version: link:../../../vendor/loader
@@ -2260,6 +2266,9 @@ importers:
       '@types/hosted-git-info':
         specifier: ^3.0.5
         version: 3.0.5
+      '@types/js-yaml':
+        specifier: ^4.0.9
+        version: 4.0.9
       '@types/semver':
         specifier: ^7.8.0
         version: 7.8.0

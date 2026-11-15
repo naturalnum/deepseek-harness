@@ -358,7 +358,7 @@ export interface ChatViewInjected {
     save: (position: ChatScrollPosition | null) => void
     read: () => ChatScrollPosition | null
   }
-  forkAt: (seq: number) => void
+  forkAt: (seq: number, onFailure?: () => void) => void
 }
 
 /** Session-owned node sources shared with the view, plus the flow's connection state. */

@@ -14,6 +14,8 @@ import * as FileUploadClient from '@deepseek-ai/dsh-client-file-upload/client'
 import * as NativeSessionExport from '@deepseek-ai/dsh-session-log-export/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import Shortcuts from '@deepseek-ai/dsh-client-shortcuts/client'
+import * as ContextMenus from '@deepseek-ai/dsh-client-ui-context-menu/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ClientFileUploadHooks } from '@deepseek-ai/dsh-client-file-upload/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -646,7 +648,8 @@ it.each(['duplicate bind', 'provider replacement'] as const)('rejects upload %s 
     await Promise.allSettled([preparation.dispose(), app.entry.dispose()])
     reports.mockRestore()
   })
-  await expect(page.start(app.entry)).rejects.toThrow(conflict === 'duplicate bind' ? 'already bound' : 'entries did not activate')
+  await expect(page.start(app.entry)).rejects.toThrow(conflict === 'duplicate bind'
+    ? 'already bound' : 'Cloud page native startup did not activate its prepared Loader owner')
   expect(app.mounted()).toBe(false)
   expect(f.fetcher).toHaveBeenCalledOnce()
 })
@@ -734,6 +737,8 @@ it.each([undefined, 128])('reads only the captured optional download limit %s', 
 async function mountNativeSessionExport(ctx: Context): Promise<void> {
   await ctx.plugin(SlotRegistry).await()
   ctx.provide('locale', new LocaleRuntime(ctx))
+  await ctx.plugin(Shortcuts).await()
+  await ctx.plugin(ContextMenus).await()
   const host = ({ renderSlot }: PropsRenderSlots<'conversation.session.header.utilities'>) =>
     renderSlot('conversation.session.header.utilities', {})
   ctx.slots.register({ name: 'root', children: {

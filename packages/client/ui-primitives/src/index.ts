@@ -140,3 +140,5 @@ export type { QuotePreviewProps, QuotePreviewRemoval, QuoteSummary } from './Quo
 export { formatQuoteText } from './markdown/quote-text.ts'
 
 export type { MarkdownMenuTarget } from './markdown/MarkdownDelegate.tsx'
+export { ConfigField, type ConfigFieldProps } from './ConfigField.tsx'
+export { LightningMark } from './LightningMark.tsx'

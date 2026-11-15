@@ -94,6 +94,8 @@ The dialog shows a preparation error when the preflight fails before ZIP streami
 <details>
 <summary>Implementation internals — click to expand</summary>
 
+The `/registration` module registers the original export command and ZIP route with optional admission before Session reads. The callback receives the parsed Session identity and original Fetch request and returns the signal retained through ZIP streaming and cleanup. It may instead return `{ signal, assertCurrent }`; the original route checks that synchronous admission before root preparation and after the flush and root read, before publishing a ZIP response. The registration check refuses after its Loader owner withdraws. Native plugin mounting also registers Markdown copy; the ZIP registration module alone does not expose that additional route.
+
 This section explains how the package wires the export control and points at the code that realizes it; the observable behavior is fully covered in [Use this package](#use-this-package).
 
 ### Design split
@@ -113,6 +115,8 @@ The Host route is a feature-owned exact Fetch contribution. Connection applies i
 The Header asks the Markdown copy controller for the clicked Session. During the click, the controller requests the deferred `ClipboardItem` write while it loads the document-relative `api/session.markdown?sessionId=<id>` route; other hosts fall back to the shared clipboard helper after preparation. The Host route reads the complete live-preferred logical log through `ctx.sessionQuery.readSession` and passes those events to the pure formatter. It separately asks `ctx.get('sessionPersistence')?.stat` for the selected materialized artifact path and passes that optional path to the formatter; a metadata-read failure is a sanitized preparation failure. The read is a detached export observation: it creates no Agent, retains no Session, and writes no Session data. It answers 404 for an absent Session and a sanitized 500 for every other read failure.
 
 The controller holds one pending operation and one `shell.overlay` toast entry. A second Header request joins the pending operation, so the clipboard and its notice always describe the first click's Session. Both the preparation promise and the admitted clipboard write are observed; every rejection is contained. Disposal aborts the read, prevents later text from reaching the promised Blob, suppresses notices, and awaits admitted clipboard work.
+
+An optional application-owned `sessionLogDownloadIntegration` binds the existing authenticated HEAD carrier and the matching GET navigation URL before the plugin activates. The success dialog reports that a download was requested and retains that exact URL and filename as a manual link; it cannot confirm browser acceptance or completion. The native modal order, one in-flight operation per Session, cancellation and disposal waits remain unchanged. Without the integration, ordinary document-relative browser carriers are used.
 
 </details>
 

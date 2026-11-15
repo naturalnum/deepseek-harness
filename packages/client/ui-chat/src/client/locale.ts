@@ -641,6 +641,8 @@ export const ja = {
   'json.truncated': '… 省略表示、全{total}文字',
   'clock.md': '{m}/{d}',
   'clock.ymd': '{y}-{m}-{d}',
+  'forkFailure.title': '分岐を開けませんでした',
+  'forkFailure.description': '分岐を開けませんでした。すでに作成されている可能性があります。再試行する前に会話一覧を確認してください。現在の会話は変更されていません。',
 } satisfies Record<keyof typeof en, string>
 
 /** Spanish dictionary, checked against the English keys. */
@@ -852,6 +854,8 @@ export const es = {
   'json.truncated': '… truncado, caracteres {total} en total',
   'clock.md': '{m}/{d}',
   'clock.ymd': '{y}-{m}-{d}',
+  'forkFailure.title': 'No se pudo abrir la rama',
+  'forkFailure.description': 'No se pudo abrir la rama. Puede que ya exista. Comprueba la lista de conversaciones antes de reintentar; la conversación actual no ha cambiado.',
 } satisfies Record<keyof typeof en, string>
 
 /** French dictionary, checked against the English keys. */
@@ -1063,6 +1067,8 @@ export const fr = {
   'json.truncated': '… tronqué, nombre total de caractères {total}',
   'clock.md': '{m}/{d}',
   'clock.ymd': '{y}-{m}-{d}',
+  'forkFailure.title': 'Impossible d’ouvrir la branche',
+  'forkFailure.description': 'La branche n’a pas pu être ouverte. Elle existe peut-être déjà. Vérifiez la liste des conversations avant de réessayer ; la conversation actuelle n’a pas changé.',
 } satisfies Record<keyof typeof en, string>
 
 /** German dictionary, checked against the English keys. */
@@ -1274,6 +1280,8 @@ export const de = {
   'json.truncated': '… gekürzt, {total} Zeichen insgesamt',
   'clock.md': '{m}/{d}',
   'clock.ymd': '{y}-{m}-{d}',
+  'forkFailure.title': 'Der Zweig konnte nicht geöffnet werden',
+  'forkFailure.description': 'Der Zweig konnte nicht geöffnet werden. Er ist möglicherweise bereits vorhanden. Prüfe vor einem erneuten Versuch die Gesprächsliste; das aktuelle Gespräch ist unverändert.',
 } satisfies Record<keyof typeof en, string>
 
 /** Russian dictionary, checked against the English keys. */
@@ -1485,6 +1493,8 @@ export const ru = {
   'json.truncated': '… усечено, всего символов {total}',
   'clock.md': '{m}/{d}',
   'clock.ymd': '{y}-{m}-{d}',
+  'forkFailure.title': 'Не удалось открыть ветку',
+  'forkFailure.description': 'Не удалось открыть ветку. Возможно, она уже существует. Перед повторной попыткой проверьте список бесед; текущая беседа не изменилась.',
 } satisfies Record<keyof typeof en, string>
 
 /** Portuguese dictionary, checked against the English keys. */
@@ -1696,4 +1706,6 @@ export const pt = {
   'json.truncated': '… truncado, {total} caracteres no total',
   'clock.md': '{m}/{d}',
   'clock.ymd': '{y}-{m}-{d}',
+  'forkFailure.title': 'Não foi possível abrir a ramificação',
+  'forkFailure.description': 'Não foi possível abrir a ramificação. Pode já existir. Verifique a lista de conversas antes de tentar novamente; a conversa atual não foi alterada.',
 } satisfies Record<keyof typeof en, string>

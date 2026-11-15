@@ -1210,6 +1210,12 @@ export const ja = {
   'terminal.expandRest': '… 残り{n}行',
   'terminal.sendInput': '(入力を送信)',
   'terminal.session': 'ターミナル {sessionId}',
+  'input.stopUnconfirmed': '生成が停止したか確認できませんでした。現在の状態を確認してください。',
+  'image.intakeUnavailable': 'この環境では画像メッセージを利用できません。',
+  'image.typeUnavailable': 'この環境ではこの画像形式を利用できません。',
+  'file.uploadUnconfirmed': 'アップロード結果を確認できません。再送信しないでください。',
+  'file.uploadTooLarge': 'ファイルがアップロードのサイズ上限を超えています。小さいファイルを選択してください。',
+  'file.uploadPreviousSession': 'ファイルは前のセッションにアップロードされました。削除して選択し直してください。',
 } satisfies Record<keyof typeof en, string>
 
 /** Spanish dictionary, checked against the English keys. */
@@ -1608,6 +1614,12 @@ export const es = {
   'detail.schedule.active': 'Habilitado',
   'detail.schedule.paused': 'Pausada',
   'detail.schedule.ended': 'Finalizada',
+  'input.stopUnconfirmed': 'No se pudo confirmar si se detuvo la generación. Comprueba su estado actual.',
+  'image.intakeUnavailable': 'Los mensajes con imágenes no están disponibles en este entorno.',
+  'image.typeUnavailable': 'Este tipo de imagen no está disponible en este entorno.',
+  'file.uploadUnconfirmed': 'No se ha confirmado el resultado de la carga. No vuelvas a enviarla.',
+  'file.uploadTooLarge': 'El archivo supera el límite de carga. Elige un archivo más pequeño.',
+  'file.uploadPreviousSession': 'El archivo se cargó en la sesión anterior. Quítalo y selecciónalo de nuevo.',
 } satisfies Record<keyof typeof en, string>
 
 /** French dictionary, checked against the English keys. */
@@ -2006,6 +2018,12 @@ export const fr = {
   'detail.schedule.active': 'Activé',
   'detail.schedule.paused': 'Suspendue',
   'detail.schedule.ended': 'Terminée',
+  'input.stopUnconfirmed': 'Impossible de confirmer l’arrêt de la génération. Vérifiez son état actuel.',
+  'image.intakeUnavailable': 'Les messages avec images ne sont pas disponibles dans cet environnement.',
+  'image.typeUnavailable': 'Ce type d’image n’est pas disponible dans cet environnement.',
+  'file.uploadUnconfirmed': 'Le résultat du téléversement n’est pas confirmé. Ne le renvoyez pas.',
+  'file.uploadTooLarge': 'Le fichier dépasse la taille limite de téléversement. Choisissez un fichier plus petit.',
+  'file.uploadPreviousSession': 'Le fichier a été téléversé dans la session précédente. Retirez-le et sélectionnez-le à nouveau.',
 } satisfies Record<keyof typeof en, string>
 
 /** German dictionary, checked against the English keys. */
@@ -2404,6 +2422,12 @@ export const de = {
   'detail.schedule.active': 'Aktiviert',
   'detail.schedule.paused': 'Pausiert',
   'detail.schedule.ended': 'Beendet',
+  'input.stopUnconfirmed': 'Ob die Generierung gestoppt wurde, konnte nicht bestätigt werden. Prüfe den aktuellen Status.',
+  'image.intakeUnavailable': 'Bildnachrichten sind in dieser Umgebung nicht verfügbar.',
+  'image.typeUnavailable': 'Dieser Bildtyp ist in dieser Umgebung nicht verfügbar.',
+  'file.uploadUnconfirmed': 'Das Upload-Ergebnis ist unbestätigt. Sende die Datei nicht erneut.',
+  'file.uploadTooLarge': 'Die Datei überschreitet das Upload-Limit. Wähle eine kleinere Datei.',
+  'file.uploadPreviousSession': 'Die Datei wurde in die vorherige Sitzung hochgeladen. Entferne sie und wähle sie erneut aus.',
 } satisfies Record<keyof typeof en, string>
 
 /** Russian dictionary, checked against the English keys. */
@@ -2802,6 +2826,12 @@ export const ru = {
   'detail.schedule.active': 'Включено',
   'detail.schedule.paused': 'Приостановлена',
   'detail.schedule.ended': 'Завершена',
+  'input.stopUnconfirmed': 'Не удалось подтвердить остановку генерации. Проверьте её текущее состояние.',
+  'image.intakeUnavailable': 'Сообщения с изображениями недоступны в этой среде.',
+  'image.typeUnavailable': 'Этот тип изображений недоступен в этой среде.',
+  'file.uploadUnconfirmed': 'Результат загрузки не подтверждён. Не отправляйте файл повторно.',
+  'file.uploadTooLarge': 'Файл превышает допустимый размер загрузки. Выберите файл меньшего размера.',
+  'file.uploadPreviousSession': 'Файл загружен в предыдущую сессию. Удалите вложение и выберите файл заново.',
 } satisfies Record<keyof typeof en, string>
 
 /** Portuguese dictionary, checked against the English keys. */
@@ -3200,4 +3230,10 @@ export const pt = {
   'detail.schedule.active': 'Habilitado',
   'detail.schedule.paused': 'Pausada',
   'detail.schedule.ended': 'Concluída',
+  'input.stopUnconfirmed': 'Não foi possível confirmar se a geração parou. Verifique o estado atual.',
+  'image.intakeUnavailable': 'Mensagens com imagens não estão disponíveis neste ambiente.',
+  'image.typeUnavailable': 'Este tipo de imagem não está disponível neste ambiente.',
+  'file.uploadUnconfirmed': 'O resultado do envio não foi confirmado. Não envie novamente.',
+  'file.uploadTooLarge': 'O ficheiro excede o limite de envio. Escolha um ficheiro menor.',
+  'file.uploadPreviousSession': 'O ficheiro foi enviado para a sessão anterior. Remova-o e selecione-o novamente.',
 } satisfies Record<keyof typeof en, string>

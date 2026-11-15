@@ -80,6 +80,8 @@ A listen failure (for example EADDRINUSE) rejects plugin initialization with the
 <details>
 <summary>Implementation internals — click to expand</summary>
 
+`renderPublicIndex()` renders only rows contributed to `webserver/public-index-inject`, without constructing a Peer. Contributors declare public assets or public bootstrap values explicitly. The render does not call Peer-specific injection listeners or raw index taps; normal authenticated `renderIndex(html, peer)` retains both. Named routes and fallback ownership remain unchanged.
+
 ### Design concept
 
 The package is a plain route registry whose only harness vocabulary is the Peer an index render speaks for: `WebServer` extends Cordis `Service` and holds three route tables plus the fallback slot, the raw index-tap list, and the `webserver/index-inject` event the index renderer gathers rows through. Index rendering composes two layers per response: `renderIndex` renders the fresh injection table, including advisory `script-preload` rows, into the body, then applies the raw taps in registration order; `applyIndexTaps` runs the taps alone. The upgrade handler owns the protocol handshake and connection contents; the webserver only delivers the raw socket and request. `host`, `port`, and `protocol` getters and `getOrigin()` expose composition-time facts other plugins adapt to (for example the directory-picker chooser), and an explicit `tls: null` normalizes to an unset listener, so `protocol` has a single source.

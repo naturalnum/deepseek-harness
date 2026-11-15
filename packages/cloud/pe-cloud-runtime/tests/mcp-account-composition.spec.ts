@@ -1,4 +1,7 @@
-/** Real native Loader, AccountPolicy, Gateway, Agent and HTTP MCP composition; authentication uses one synthetic Peer edge. */
+/**
+ * Real native Loader, AccountPolicy, Gateway, Agent and HTTP MCP composition with an explicitly selected Native executor.
+ * Authentication uses one synthetic Peer edge; executor selection and settlement use their original account owner.
+ */
 import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { ToolCallId, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
@@ -10,6 +13,7 @@ import { textResponse, toolCallResponse } from '../../../core/agent-loop/tests/m
 import { policyFixture } from './account-policy-fixture.ts'
 import { startHttpMcpFixture } from '../../../mcp/mcp-client/tests/http-fixture.ts'
 import * as nativeTransport from '../../../mcp/mcp-client/src/transport.ts'
+import * as NativeToolExecutor from '../../../core/tool-executor-native/src/index.ts'
 import Credentials from '@deepseek-ai/dsh-credentials-local'
 import { AccountMcpConnections } from '../../pe-cloud-api/src/mcp-connection-runtime.ts'
 
@@ -34,8 +38,12 @@ async function account(name: string, selectedPolicy: ApprovedMcpConnections = po
       defaultId: 'cloud-chat', declarations: [{ entryId: 'cloud-preset', selectable: true, config: { id: 'cloud-chat', plugins: [
         { id: 'persona', name: 'cordis:m8z-persona', config: { prefix: 'Reply briefly.', complete: true, includeRuntimeContext: false } },
       ] } }],
-      extraEntries: [{ id: 'mcp-connections', name: 'cordis:fixture-mcp-connections' }],
+      extraEntries: [
+        { id: 'mcp-tool-executor', name: 'cordis:fixture-mcp-tool-executor' },
+        { id: 'mcp-connections', name: 'cordis:fixture-mcp-connections' },
+      ],
       prepare(ctx, binding, guards) {
+        ctx.loader.builtins['fixture-mcp-tool-executor'] = NativeToolExecutor
         ctx.loader.builtins['fixture-mcp-connections'] = {
           inject: ['peCloudApi', 'peCloudFiles', 'workspaceRegistry', 'typertGateway', 'tools', 'storageDomain', 'credentials'],
           async apply(owner: Context) {
@@ -464,7 +472,6 @@ it('rechecks the original login inside the actual native credential mutation and
   const external = await startHttpMcpFixture()
   try {
     const a = await account('mcp-credential-revoke'), initial = await a.invokeMcp({ action: 'list' })
-    // oxlint-disable-next-line typescript/unbound-method -- Invoked below with the original provider as explicit receiver.
     const modify = Credentials.prototype.modifyRecord
     const gate = vi.spyOn(Credentials.prototype, 'modifyRecord').mockImplementation(function (this: Credentials, key, mutate) {
       a.revokeLogin()

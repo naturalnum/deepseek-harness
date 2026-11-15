@@ -81,6 +81,8 @@ export async function harness(options: {
   pool?: MemoryMediaPool
   backend?: StorageBackend
   direct?: true
+  serviceClass?: typeof ScheduleService
+  beforeDirectInit?: (service: ScheduleService) => void
   sessionController?: false
   config?: Config
 } = {}) {
@@ -117,12 +119,14 @@ export async function harness(options: {
   ctx.provide('sessionPersistence', { stat } as never)
   await options.beforeService?.(ctx, facility)
   let fiber: Context['fiber']
+  const ServiceClass = options.serviceClass ?? ScheduleService
   if (options.direct) {
-    const service = new ScheduleService(ctx, options.config ?? {})
+    const service = new ServiceClass(ctx, options.config ?? {})
+    options.beforeDirectInit?.(service)
     await service[Service.init]()
     fiber = ctx.fiber
   } else {
-    fiber = await ctx.plugin(ScheduleService, options.config)
+    fiber = await ctx.plugin(ServiceClass, options.config)
   }
   const resolveAgent = async (sessionId: SessionId): Promise<Agent> => {
     const controller = ctx.get('sessionController')

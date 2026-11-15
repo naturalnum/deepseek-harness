@@ -354,6 +354,13 @@ export class AgentPresetRegistry extends TypertRemoteService {
     return preset
   }
 
+  /** Recheck an embedding's preset selection admission at the queued operation and commit points.
+   * @param _agent Original Agent being rebound before its first turn.
+   * @param _agentPreset Requested preset identity.
+   * @returns Nothing. Native compositions impose no additional restriction.
+   */
+  protected assertSelectionCurrent(_agent: Agent, _agentPreset: string): void {}
+
   /** Select a preset before a session starts its first turn. A Session whose
    * log records the preset and whose Agent runs its current revision keeps its
    * composition; nothing is logged or announced.
@@ -364,6 +371,7 @@ export class AgentPresetRegistry extends TypertRemoteService {
   @Remote('select')
   async select(agent: Agent, agentPreset: string): Promise<string> {
     const turn = (this.switches.get(agent.id) ?? Promise.resolve()).then(async () => {
+      this.assertSelectionCurrent(agent, agentPreset)
       const boundary = this.owner.agents.turnBoundaryOf(agent.session)
       if (boundary.openTurnStartSeq !== null || boundary.lastTurn > 0) {
         throw new RemoteError('agent-preset/locked', 'This session has already started', { sessionId: agent.id, agentPreset })
@@ -371,9 +379,12 @@ export class AgentPresetRegistry extends TypertRemoteService {
       const current = this.definitions.get(agentPreset)?.generation
       if (current !== undefined && this.generationFor(agent.ctx) === current
         && this.agentPresetProjectionHandle.stateOf(agent.session) === agentPreset) return agentPreset
-      const preset = await this.recompose(agent.ctx, agentPreset)
-      agent.session.append('agent-preset/selected', { agentPreset: preset.id })
-      return preset.id
+      return agent.runMaintenance(async () => {
+        const preset = await this.recompose(agent.ctx, agentPreset)
+        this.assertSelectionCurrent(agent, preset.id)
+        agent.session.append('agent-preset/selected', { agentPreset: preset.id })
+        return preset.id
+      })
     })
     const guard = turn.catch(() => undefined)
     this.switches.set(agent.id, guard)

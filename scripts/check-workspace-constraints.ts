@@ -605,6 +605,12 @@ export function checkWorkspaceManifest({ dir, manifest }: WorkspaceManifest): st
       && !hasExportPair(manifest, './pipeline', './lib/types/pipeline.d.ts', './lib/pipeline.js')) {
       errors.push(`${label}: exports["./pipeline"] must expose lib/types/pipeline.d.ts and lib/pipeline.js`)
     }
+    const helper = manifest.name === '@deepseek-ai/dsh-host-frontend-static' ? 'resource'
+      : manifest.name === '@deepseek-ai/dsh-session-log-export' ? 'registration' : undefined
+    if (helper !== undefined && !hasExportPair(manifest, `./${helper}`,
+      `./lib/types/${helper}.d.ts`, `./lib/types/${helper}.js`)) {
+      errors.push(`${label}: exports["./${helper}"] must expose lib/types/${helper}.d.ts and lib/types/${helper}.js`)
+    }
     const expectedFiles = expectedDshPackageFiles(manifest, detailDocumentFiles(join(root, dir)))
     if (!sameStringList(manifest.files, expectedFiles)) {
       errors.push(`${label}: package.json files must be ${JSON.stringify(expectedFiles)}`)

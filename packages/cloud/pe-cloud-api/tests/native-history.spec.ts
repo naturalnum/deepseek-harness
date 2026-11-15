@@ -7,7 +7,6 @@ import { Socket } from 'node:net'
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Gateway from '@deepseek-ai/dsh-api-gateway'
-import * as NativeStreamServer from '@deepseek-ai/dsh-api-gateway/src/stream-server.ts'
 import RemoteAccess from '@deepseek-ai/dsh-api-remote-access'
 import SessionController from '@deepseek-ai/dsh-api-session-controller'
 import type { SessionAddress } from '@deepseek-ai/dsh-api-session-controller/types'
@@ -94,10 +93,14 @@ async function fixture(exposure: 'history' | 'closed' | 'rpc-follow' = 'history'
   const policy = new ExposurePolicy(manifest)
   policy.audit(manifest)
   let controller: SessionController | undefined
-  await ctx.plugin({
-    inject: [...SessionController.inject, 'peAccount'],
-    apply(scope) { controller = createNativeController(scope, binding, assertCurrent, policy, guards, { nativeOpen: false }) },
-  })
+  class NativeHistoryEntry {
+    static inject = [...SessionController.inject, 'peAccount']
+    constructor(scope: Context) {
+      controller = createNativeController(scope, binding, assertCurrent, policy, guards, { nativeOpen: false })
+      return controller
+    }
+  }
+  await ctx.plugin(NativeHistoryEntry)
   if (controller === undefined) throw new Error('Fixture Controller did not mount.')
   const peer: PeerScope = {
     id: brandString<PeerId>('native-history'), ctx, principal: { kind: 'owner' },
@@ -118,10 +121,10 @@ async function fixture(exposure: 'history' | 'closed' | 'rpc-follow' = 'history'
     namespace: 'session', method: 'page', args: { request: { address, throughSeq } }, peer,
     ...signal === undefined ? {} : { signal },
   })
-  const follow = async (address: SessionAddress) => {
+  const follow = async (address: SessionAddress, activate = false) => {
     const cancel = new AbortController()
     const source = await ctx.typertGateway.stream({
-      namespace: 'session', method: 'follow', args: { request: { address, assistantStream: true } }, peer, signal: cancel.signal,
+      namespace: 'session', method: 'follow', args: { request: { address, activate, assistantStream: true } }, peer, signal: cancel.signal,
     })
     const iterator = source[Symbol.asyncIterator]()
     streams.push(async () => { cancel.abort(); await iterator.return?.() })
@@ -221,7 +224,7 @@ it('refuses a page result when graph admission closes during the real native rea
   await rejected
 })
 
-it('retains inherited Remote markers and native follow snapshot, delayed cold promotion and event delivery', async () => {
+it('retains inherited Remote markers, an opening snapshot, explicit cold activation and native event delivery', async () => {
   const f = await fixture()
   for (const name of ['page', 'follow']) {
     expect(remoteMethods(f.controller).filter(marker => (marker.exportName ?? marker.method) === name)).toHaveLength(1)
@@ -229,11 +232,9 @@ it('retains inherited Remote markers and native follow snapshot, delayed cold pr
   const address = await f.cold()
   const resume = vi.spyOn(f.ctx.agents, 'resume')
   const requireStream = vi.spyOn(f.policy, 'requireStream')
-  const baseline = f.listeners()
-  const { iterator } = await f.follow(address)
-  await expect(iterator.next()).resolves.toMatchObject({ value: { type: 'snapshot', cursor: -1, records: [] } })
+  const { iterator } = await f.follow(address, true)
   expect(resume).not.toHaveBeenCalled()
-  expect(f.listeners()).toEqual(baseline.map(count => count + 1))
+  await expect(iterator.next()).resolves.toMatchObject({ value: { type: 'snapshot', cursor: -1, records: [] } })
   const next = iterator.next()
   void next.catch(() => {})
   await vi.waitFor(() => { expect(f.ctx.agents.get(address.sessionId)).toBeDefined() })
@@ -250,7 +251,7 @@ it('retains inherited Remote markers and native follow snapshot, delayed cold pr
   expect(f.listeners()).toEqual(withAgent.map(count => count - 1))
 })
 
-it.each(['gateway', 'controller'] as const)('does not promote when the caller aborts after the %s snapshot', async (entry) => {
+it.each(['gateway', 'controller'] as const)('keeps a passive read unactivated when the caller aborts after the %s snapshot', async (entry) => {
   const f = await fixture()
   const address = await f.cold()
   const baseline = f.listeners()
@@ -260,6 +261,7 @@ it.each(['gateway', 'controller'] as const)('does not promote when the caller ab
   const iterator = stream?.iterator ?? f.controller.follow({ address, assistantStream: true }, cancel.signal)[Symbol.asyncIterator]()
   if (stream === undefined) onTestFinished(async () => { cancel.abort(); await iterator.return?.() })
   await expect(iterator.next()).resolves.toMatchObject({ value: { type: 'snapshot' } })
+  expect(resume).not.toHaveBeenCalled()
   cancel.abort()
   await expect(iterator.next()).rejects.toMatchObject(entry === 'gateway' ? { code: 'gateway/cancelled' } : { name: 'AbortError' })
   expect(resume).not.toHaveBeenCalled()
@@ -267,7 +269,30 @@ it.each(['gateway', 'controller'] as const)('does not promote when the caller ab
   expect(f.listeners()).toEqual(baseline)
 })
 
-it('checks before the next native advance so a closed graph cannot begin post-snapshot promotion', async () => {
+it.each(['gateway', 'controller'] as const)('does not activate after cancellation wins the actual %s opening read', async (entry) => {
+  const f = await fixture()
+  const address = await f.cold()
+  const baseline = f.listeners()
+  const resume = vi.spyOn(f.ctx.agents, 'resume')
+  const stream = entry === 'gateway' ? await f.follow(address, true) : undefined
+  const cancel = stream?.cancel ?? new AbortController()
+  const iterator = stream?.iterator
+    ?? f.controller.follow({ address, activate: true, assistantStream: true }, cancel.signal)[Symbol.asyncIterator]()
+  if (stream === undefined) onTestFinished(async () => { cancel.abort(); await iterator.return?.() })
+  const observeSession = f.ctx.sessionQuery.observeSession.bind(f.ctx.sessionQuery)
+  const observe = vi.spyOn(f.ctx.sessionQuery, 'observeSession').mockImplementation(async (id, options) => {
+    const observation = await observeSession(id, options)
+    if (options?.projectionMode === 'all') cancel.abort()
+    return observation
+  })
+  await expect(iterator.next()).rejects.toMatchObject(entry === 'gateway' ? { code: 'gateway/cancelled' } : { name: 'AbortError' })
+  expect(observe).toHaveBeenCalledWith(address.sessionId, expect.objectContaining({ projectionMode: 'all' }))
+  expect(resume).not.toHaveBeenCalled()
+  expect(f.ctx.agents.get(address.sessionId)).toBeUndefined()
+  expect(f.listeners()).toEqual(baseline)
+})
+
+it('checks a closed graph before the next passive native advance', async () => {
   const f = await fixture()
   const address = await f.cold()
   const baseline = f.listeners()
@@ -284,9 +309,9 @@ it('checks before the next native advance so a closed graph cannot begin post-sn
 it('checks again after an awaited native frame before delivering data', async () => {
   const f = await fixture()
   const address = await f.cold()
-  const { iterator } = await f.follow(address)
+  const { iterator } = await f.follow(address, true)
   await iterator.next()
-  // A real empty-history resume announces its native end-seed suffix before waiting for new events.
+  // Explicit activation announces the native end-seed suffix before waiting for new events.
   await expect(iterator.next()).resolves.toMatchObject({ value: { type: 'event', event: { type: 'session/end-seed' } } })
   await vi.waitFor(() => { expect(f.ctx.agents.get(address.sessionId)).toBeDefined() })
   const next = iterator.next()
@@ -299,7 +324,7 @@ it('checks again after an awaited native frame before delivering data', async ()
 it.each(['caller', 'graph'] as const)('propagates %s cancellation into a waiting native iterator and cleans listeners', async (kind) => {
   const f = await fixture()
   const address = await f.cold()
-  const { iterator, cancel } = await f.follow(address)
+  const { iterator, cancel } = await f.follow(address, true)
   await iterator.next()
   await expect(iterator.next()).resolves.toMatchObject({ value: { type: 'event', event: { type: 'session/end-seed' } } })
   await vi.waitFor(() => { expect(f.ctx.agents.get(address.sessionId)).toBeDefined() })
@@ -323,7 +348,6 @@ it.each([
   const returnFailure = new Error('Native follow return failed after actual cleanup')
   const returned = vi.fn()
   if (failReturn) {
-    // oxlint-disable-next-line typescript/unbound-method -- Delegate with each invocation's actual receiver below.
     const follow = SessionController.prototype.follow
     vi.spyOn(SessionController.prototype, 'follow').mockImplementation(function (this: SessionController, request, signal) {
       const source = follow.call(this, request, signal)
@@ -361,16 +385,6 @@ it.each([
     bindingFields: { accountHeader: 'x-pe-account', generationHeader: 'x-pe-generation', accountQuery: 'peAccount', generationQuery: 'peGeneration' },
   }
   const failures: unknown[] = []
-  const gatewayCancellationChecks: { aborted: boolean; sameReason: boolean; errorCode: unknown; cancelled: boolean }[] = []
-  const isCancellation = NativeStreamServer.isStreamCancellation
-  vi.spyOn(NativeStreamServer, 'isStreamCancellation').mockImplementation((error: unknown, signal) => {
-    const cancelled = isCancellation(error, signal)
-    gatewayCancellationChecks.push({
-      aborted: signal.aborted, sameReason: error === signal.reason,
-      errorCode: error !== null && typeof error === 'object' && 'code' in error ? error.code : undefined, cancelled,
-    })
-    return cancelled
-  })
   const transportCreation = vi.spyOn(Gateway.prototype, 'createNodeStreamTransport')
   const registry = new LoginPeerRegistry({ ...settings, sessionRecheckLeadMs: 0 }, auth, {
     borrow: async (binding) => { expect(binding).toBe(f.binding); return use },
@@ -446,7 +460,7 @@ it.each([
     client.write('GET /api/remote.mux HTTP/1.1\r\nHost: 127.0.0.1:4100\r\nOrigin: http://127.0.0.1:4100\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n')
     await handshake.promise
     const body = Buffer.from(JSON.stringify({
-      type: 'open', streamId: 'history', endpoint: 'session/follow', payload: { args: { request: { address, assistantStream: true } } },
+      type: 'open', streamId: 'history', endpoint: 'session/follow', payload: { args: { request: { address, activate: true, assistantStream: true } } },
     }))
     expect(body.length).toBeLessThan(65536)
     const header = Buffer.alloc(8)
@@ -477,7 +491,7 @@ it.each([
       expect.soft(transportFailure).toBeUndefined()
       expect.soft(closeFailure).toBeUndefined()
       expect.soft(failures).toEqual([])
-      expect.soft(release, JSON.stringify({ gatewayCancellationChecks })).toHaveBeenCalledOnce()
+      expect.soft(release).toHaveBeenCalledOnce()
       expect.soft(registry.reservedPeers).toBe(0)
     }
     expect.soft(f.listeners()).toEqual(withAgent.map(count => count - 1))

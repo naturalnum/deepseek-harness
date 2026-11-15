@@ -112,7 +112,6 @@ export function apply(ctx: ClientContext): void {
   // still the active scope stalls browser boot with no error at all. The
   // template this follows (ui-conversation's definition registry) is built at
   // its own apply top level for the same reason.
-  const persistence = ctx.get('clientPersistence')
   const t = ctx.locale.bind(NS)
   const tabs = new SidebarRightTabRegistry(ctx)
   const views = new SidebarSessionViews(ctx.sessions)
@@ -135,7 +134,6 @@ export function apply(ctx: ClientContext): void {
       openWithFocus: (sessionId, open) => { openWithPaneFocus(document, sessionId, open) },
       closeWithFocus: (sessionId, paneId, close) => { closeWithPaneFocus(document, sessionId, paneId, close) },
     },
-    persistence,
   )
   ctx.effect(() => ctx.slots.inject('contextMenu.icon', () => ctx.slots.register({
     name: 'contextMenu.icon', key: 'sidebar.close',

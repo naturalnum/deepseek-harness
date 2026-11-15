@@ -237,4 +237,6 @@ Serialization of the empty retry message depends on the adapter. Prefix reuse de
 
 None.
 
+The Conversation Factory captures the page persistence port for transcript width reads and writes. Its local width controls receive these callbacks through the original Factory injection; ordinary pages retain browser storage, while an account page keeps its original scoped port.
+
 </details>

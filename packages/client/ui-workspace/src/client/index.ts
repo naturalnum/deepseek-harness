@@ -101,12 +101,17 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+/** Deployment-specific reason that Workspace removal is not available. */
+export type WorkspaceDeleteDisabledReason = 'unavailable'
+
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface GlobalStandardProps {
     /** Selector hook over the pure Workspace Controller snapshot. */
     useWorkspaces: SnapshotSelectorHook<WorkspaceSnapshot>
     /** Whether the current Peer may call `action` on one Workspace resource. */
     useWorkspaceAccess: (workspaceId: WorkspaceId, action: RemoteEndpoint) => boolean
+    /** An optional deployment restriction; absence preserves native Workspace deletion. */
+    workspaceDeleteDisabledReason?: WorkspaceDeleteDisabledReason | undefined
   }
 
   interface LocaleNamespaceMap {
@@ -149,7 +154,7 @@ export function apply(ctx: Context): void {
   // store: the browser declares the handle, and the UiWorkspace service writes
   // view order through the same instance the renderer hands the browser.
   const viewHandle = createWorkspaceViewStore()
-  const viewInstance = viewHandle.create()
+  const viewInstance = viewHandle.create(undefined, ctx.get('clientPersistence'))
   const viewStore: typeof viewHandle = { ...viewHandle, create: () => viewInstance }
   const rowToast = createSnapshotStore<RowToastState | null>(null)
   let toastSeq = 0
@@ -273,10 +278,10 @@ export function apply(ctx: Context): void {
       uiWorkspace.forkSession(sessionId, (childId) => {
         ctx.get('productAnalytics')?.track('branch_session_click', { session_id: childId, parent_session_id: sessionId, click_position: 'sidebar' })
       }, { allowMigration: false }).catch((error: unknown) => {
-        if (error instanceof Error && error.name === 'SessionForkError'
-          && (error as SessionForkError).rpcError.code === 'session/migration-required') {
-          notify({ kind: 'forkRequiresOpen', sessionId })
-        }
+        const code = error instanceof Error && error.name === 'SessionForkError'
+          ? (error as SessionForkError).rpcError.code : undefined
+        if (code === 'session/migration-required') notify({ kind: 'forkRequiresOpen', sessionId })
+        else notify({ kind: 'shortcutForkFailed', reason: code === 'session/fork-unavailable' ? 'unavailable' : 'failed' })
       })
     },
   })
@@ -329,9 +334,12 @@ export function apply(ctx: Context): void {
   }), 'workspace: rename menu action')
   ctx.effect(() => ctx.contextMenus.register({
     id: 'workspace.delete', target: 'workspace', order: 300,
-    resolve: ({ workspaceId, displayTitle }) => ctx.remoteAccess.source('workspace', workspaceId, 'workspace/delete').getSnapshot()
-      ? [{ id: 'delete', label: ctx.locale.bind(NS)('delete.workspace'), icon: { key: 'workspace.delete' }, danger: true, separatorBefore: true,
-        run: () => { requestWorkspaceAction(workspaceId, displayTitle, 'delete') } }] : [],
+    resolve: ({ workspaceId, displayTitle, deleteDisabledReason }) =>
+      ctx.remoteAccess.source('workspace', workspaceId, 'workspace/delete').getSnapshot()
+        ? [{ id: 'delete', label: ctx.locale.bind(NS)('delete.workspace')
+          + (deleteDisabledReason === undefined ? '' : ` — ${deleteDisabledReason}`),
+        icon: { key: 'workspace.delete' }, danger: true, separatorBefore: true, disabled: deleteDisabledReason !== undefined,
+        run: () => { if (deleteDisabledReason === undefined) requestWorkspaceAction(workspaceId, displayTitle, 'delete') } }] : [],
   }), 'workspace: delete menu action')
   const browserInjected = (): WorkspaceBrowserInjected => ({
     settleWorkspaceAction: () => { workspaceActionRequest.set(null) },

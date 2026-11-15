@@ -59,7 +59,7 @@ function piAiNamespace(): SettingsNamespaceView {
   }
 }
 
-function setup(namespace: SettingsNamespaceView, settingsPath: string[] = []) {
+function setup(namespace: SettingsNamespaceView, settingsPath: string[] = [], modelCatalogOnly = false) {
   const writeSettings = vi.fn<ModelsOperations['writeSettings']>(() => Promise.resolve({ kind: 'written', view: namespace }))
   const operations: ModelsOperations = {
     storeCredential: vi.fn(() => Promise.resolve(undefined)),
@@ -69,11 +69,28 @@ function setup(namespace: SettingsNamespaceView, settingsPath: string[] = []) {
   }
   const onClose = vi.fn()
   render(<ProviderEditor provider="route" displayName="Route" namespace={namespace} schema={settingsSchema}
-    settingsPath={settingsPath} operations={operations} t={key => en[key]} readOnly={false} onClose={onClose} />)
+    settingsPath={settingsPath} operations={operations} t={key => en[key]} readOnly={false}
+    modelCatalogOnly={modelCatalogOnly} onClose={onClose} />)
   return { writeSettings, onClose }
 }
 
 const mode = () => screen.getByRole<HTMLSelectElement>('combobox', { name: en.retryPolicy })
+
+it('keeps a model-only edit from migrating or editing the unrelated stored retry policy', async () => {
+  const namespace = deepSeekNamespace({ user: {
+    models: [{ id: 'first' }], retryPolicy: { backoff: { maxDelayMs: 2_000 } },
+  } })
+  const { writeSettings } = setup(namespace, [], true)
+  fireEvent.click(screen.getByText(en.customized))
+  expect(screen.queryByRole('group', { name: en.retryPolicy })).toBeNull()
+  expect(screen.queryByLabelText(en.keyInput)).toBeNull()
+  expect(screen.queryByLabelText(en.baseUrl)).toBeNull()
+  fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'updated' } })
+  fireEvent.click(screen.getByRole('button', { name: en.apply }))
+  await waitFor(() => { expect(writeSettings).toHaveBeenCalledExactlyOnceWith('llm-deepseek',
+    [{ op: 'set', path: ['models'], value: [{ id: 'updated' }] }], 3) })
+})
+
 const input = (label: string) => screen.getByLabelText<HTMLInputElement>(label)
 const CODE_LABELS: Record<string, string> = {
   EMPTY_RESPONSE: en.retryCodeEmptyResponse,
