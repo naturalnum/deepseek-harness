@@ -37,7 +37,7 @@ kind: "package-reference"
 
 宿主半侧是一个空的 `apply`，只为让本包占一条 Loader 行，客户端模块系统据此送出浏览器半侧。浏览器半侧通过 `ctx.configForms.get` 绑定当前平台组装的 shell 执行器条目（非 Windows 为 `bash-sandbox`，Windows 为 `pwsh-sandbox`），用 `ui-primitives` 的共享 `SettingsFormModel` 在 `ShellCardController` 里维护暂存表单，并通过 `ctx.configForms.whileServed` 把 `ShellCard` 注册进插件页的 `plugins.item` slot：Host 服务任一执行器条目时注册，停止服务时注销。页面文案在本包的 `settings.shell` 字典里；`SettingsForm` 框架的文案以 props 传入。
 
-作用域内的 `shellSettingsCard` 提供方将原卡片提供给可信组合，用于显示实际受管只读限制。它不注册另一个设置写入方，也不改变本地 Shell 页默认行为。
+作用域内的 `shellSettingsCard` 提供方将原卡片提供给可信组合，用于显示实际受管只读限制。可选的 `timeoutLimit` 携带上限值及渲染时求值的标签和提示回调，`outputHint` 在渲染时提供输出提示；省略时保留本地两个字段与原文案。它不注册另一个设置写入方，也不改变本地 Shell 页默认行为。
 
 </details>
 

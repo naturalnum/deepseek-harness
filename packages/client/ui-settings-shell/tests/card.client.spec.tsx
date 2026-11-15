@@ -50,6 +50,8 @@ describe('ShellCard', () => {
 
     expect(screen.getByLabelText(en.timeoutMs)).toBeTruthy()
     expect(screen.getByLabelText(en.maxOutputBytes)).toBeTruthy()
+    expect(document.querySelectorAll('input')).toHaveLength(2)
+    expect(screen.getByText(en.maxOutputBytesHint)).toBeTruthy()
     expect(screen.queryByText(en.title)).toBeNull()
   })
 
@@ -124,13 +126,17 @@ describe('ShellCard', () => {
   })
 })
 
-it('renders all managed limits in the native Terminal form as read-only values', () => {
+it('renders an explicitly labelled timeout ceiling without changing the form actions', () => {
   const store = createSnapshotStore<ShellCardState>({ ...settled, writable: false, timeoutMs: field('1234'), maxOutputBytes: field('91011') })
   const noop = () => {}
   const props = { view: 'page', t, useShellCard: bindSnapshotSelector(store), edit: noop, resetField: noop,
-    save: noop, discard: noop, managedMaxTimeoutMs: 5678 } as ShellCardProps
+    save: noop, discard: noop,
+    timeoutLimit: { milliseconds: 5678, label: () => 'Provider timeout ceiling', hint: () => 'Provider maximum duration' },
+    outputHint: () => 'Provider retained output'  } as ShellCardProps
   render(<ShellCard {...props} />)
-  for (const [label, value] of [[en.timeoutMs, '1234'], [en.maxTimeoutMs, '5678'], [en.maxOutputBytes, '91011']]) {
+  expect(screen.getByText('Provider maximum duration')).toBeTruthy()
+  expect(screen.getByText('Provider retained output')).toBeTruthy()
+  for (const [label, value] of [[en.timeoutMs, '1234'], ['Provider timeout ceiling', '5678'], [en.maxOutputBytes, '91011']]) {
     const input = screen.getByLabelText(label!) as HTMLInputElement
     expect(input.value).toBe(value)
     expect(input.disabled).toBe(true)

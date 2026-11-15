@@ -85,6 +85,7 @@
     "src/client/management/plugins/catalog-reader.ts",
     "src/client/management/plugins/install.tsx",
     "src/client/management/plugins/managed-terminal.tsx",
+    "src/client/management/plugins/managed-terminal-locales.ts",
     "src/client/management/plugins/native-integration.ts",
     "src/client/management/plugins/NativePluginConfigurationSection.tsx",
     "src/client/management/plugins/PluginEditPanel.tsx",

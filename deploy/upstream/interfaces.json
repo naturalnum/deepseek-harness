@@ -1,7 +1,7 @@
 {
   "counts": {
-    "native_source_files": 203,
-    "non_seam_files": 85,
+    "native_source_files": 202,
+    "non_seam_files": 84,
     "uncentralized_internal_lines": 0
   },
   "imports": [
@@ -9602,10 +9602,10 @@
     {
       "路径": "packages/client/ui-settings-shell/src/client/ShellCard.tsx",
       "类别": "扩展点",
-      "原因": "可选属性 managedMaxTimeoutMs，传入时多显示一行受管上限",
-      "撤销条件": "可在 pe-cloud-client 自写只读终端卡片（内容很少），则本文件不用改",
+      "原因": "只接可选timeoutLimit数值及渲染时标签/提示回调；省略仍原生两字段与原提示，Cloud词典保留语言切换",
+      "撤销条件": "原生提供同等带标签的只读限额展示口后撤回；保留实际只读限额与账号撤卡",
       "处置": "留作口子",
-      "这一程的状态": "没动",
+      "这一程的状态": "已按新原生重加",
       "changed": true
     },
     {
@@ -9620,11 +9620,11 @@
     {
       "路径": "packages/client/ui-settings-shell/src/client/locales.ts",
       "类别": "云端定制",
-      "原因": "受管终端的 3 条文案",
-      "撤销条件": "同上",
+      "原因": "受管终端3条文案及8语言原文全部搬入Cloud的managed-terminal-locales；本文件精确恢复固定原生目标",
+      "撤销条件": "已由Cloud原页面词典及原卡片普通数据口子承担；无原生本地文案改动",
       "处置": "搬进插件",
-      "这一程的状态": "没动",
-      "changed": true
+      "这一程的状态": "已搬",
+      "changed": false
     },
     {
       "路径": "packages/client/ui-settings-subagent/src/client/SubagentLimitsFields.tsx",

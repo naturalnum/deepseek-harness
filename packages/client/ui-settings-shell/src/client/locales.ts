@@ -6,7 +6,6 @@ import type { SettingsFormLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 export type ShellSettingsLocaleKey =
   | 'title' | 'description'
   | 'timeoutMs' | 'timeoutMsHint' | 'maxOutputBytes' | 'maxOutputBytesHint'
-  | 'maxTimeoutMs' | 'maxTimeoutMsHint' | 'managedOutputHint'
   | 'overridden' | 'reset' | 'readOnly' | 'unavailable'
   | 'save' | 'saving' | 'saveFailed' | 'invalidNumber'
 
@@ -18,9 +17,6 @@ export const en: Record<ShellSettingsLocaleKey, string> = {
   timeoutMsHint: 'How long one command may run before it is terminated.',
   maxOutputBytes: 'Output cap per stream (bytes)',
   maxOutputBytesHint: 'Output beyond this spills to a temporary file rather than being lost.',
-  maxTimeoutMs: 'Maximum command timeout (ms)',
-  maxTimeoutMsHint: 'The maximum timeout any command can request.',
-  managedOutputHint: 'Maximum output retained per stream by this managed executor.',
   overridden: 'Overridden',
   reset: 'Reset to default',
   readOnly: 'This deployment stores settings read-only.',
@@ -39,9 +35,6 @@ export const zh: Record<ShellSettingsLocaleKey, string> = {
   timeoutMsHint: '单条命令允许运行多久，超时即终止。',
   maxOutputBytes: '单流输出上限（字节）',
   maxOutputBytesHint: '超出部分会转存到临时文件，而不是被丢弃。',
-  maxTimeoutMs: '命令超时上限（毫秒）',
-  maxTimeoutMsHint: '单条命令可以请求的最大超时时间。',
-  managedOutputHint: '受管执行器为每个输出流保留的最大字节数。',
   overridden: '已覆盖',
   reset: '恢复默认',
   readOnly: '本部署的设置为只读。',
@@ -77,9 +70,6 @@ export const ja = {
   'saving': '保存中…',
   'saveFailed': 'デプロイがこれらの値を受け付けませんでした。修正のため残されています。',
   'invalidNumber': '数値を入力するか、空欄のままにするとデフォルトが使用されます。',
-  'maxTimeoutMs': 'コマンドの最大タイムアウト (ms)',
-  'maxTimeoutMsHint': '各コマンドが要求できる最大タイムアウト。',
-  'managedOutputHint': 'この管理対象実行環境がストリームごとに保持する最大出力量。',
 } satisfies Record<keyof typeof en, string>
 
 /** Spanish dictionary, checked against the English keys. */
@@ -98,9 +88,6 @@ export const es = {
   saving: 'Guardando…',
   saveFailed: 'El despliegue no aceptó estos valores; quedaron para que usted los corrigiera.',
   invalidNumber: 'Ingrese un número o déjelo en blanco para usar el valor predeterminado.',
-  'maxTimeoutMs': 'Tiempo de espera máximo del comando (ms)',
-  'maxTimeoutMsHint': 'El tiempo de espera máximo que puede solicitar un comando.',
-  'managedOutputHint': 'Salida máxima retenida por flujo por este ejecutor administrado.',
 } satisfies Record<keyof typeof en, string>
 
 /** French dictionary, checked against the English keys. */
@@ -119,9 +106,6 @@ export const fr = {
   saving: 'Sauvegarde…',
   saveFailed: "Le déploiement n'a pas accepté ces valeurs ; ils vous ont été laissés à corriger.",
   invalidNumber: 'Entrez un numéro ou laissez ce champ vide pour utiliser la valeur par défaut.',
-  'maxTimeoutMs': 'Délai maximal des commandes (ms)',
-  'maxTimeoutMsHint': 'Le délai maximal qu’une commande peut demander.',
-  'managedOutputHint': 'Sortie maximale conservée par flux par cet exécuteur géré.',
 } satisfies Record<keyof typeof en, string>
 
 /** German dictionary, checked against the English keys. */
@@ -140,9 +124,6 @@ export const de = {
   saving: 'Speichern…',
   saveFailed: 'Die Bereitstellung hat diese Werte nicht akzeptiert. Sie mussten sie korrigieren.',
   invalidNumber: 'Geben Sie eine Zahl ein oder lassen Sie das Feld leer, um den Standardwert zu verwenden.',
-  'maxTimeoutMs': 'Maximales Befehlszeitlimit (ms)',
-  'maxTimeoutMsHint': 'Das maximale Zeitlimit, das ein Befehl anfordern kann.',
-  'managedOutputHint': 'Maximale Ausgabemenge, die diese verwaltete Ausführung pro Stream aufbewahrt.',
 } satisfies Record<keyof typeof en, string>
 
 /** Russian dictionary, checked against the English keys. */
@@ -161,9 +142,6 @@ export const ru = {
   saving: 'Сохранение…',
   saveFailed: 'Развертывание не приняло эти значения; их оставили вам на исправление.',
   invalidNumber: 'Введите число или оставьте поле пустым, чтобы использовать значение по умолчанию.',
-  'maxTimeoutMs': 'Максимальное время ожидания команды (мс)',
-  'maxTimeoutMsHint': 'Максимальное время ожидания, которое может запросить команда.',
-  'managedOutputHint': 'Максимальный объём вывода, сохраняемый этим управляемым исполнителем для каждого потока.',
 } satisfies Record<keyof typeof en, string>
 
 /** Portuguese dictionary, checked against the English keys. */
@@ -182,7 +160,4 @@ export const pt = {
   saving: 'Salvando…',
   saveFailed: 'A implantação não aceitou esses valores; eles foram deixados para você corrigir.',
   invalidNumber: 'Insira um número ou deixe em branco para usar o padrão.',
-  'maxTimeoutMs': 'Tempo limite máximo do comando (ms)',
-  'maxTimeoutMsHint': 'O tempo limite máximo que um comando pode solicitar.',
-  'managedOutputHint': 'Saída máxima retida por fluxo por este executor gerido.',
 } satisfies Record<keyof typeof en, string>

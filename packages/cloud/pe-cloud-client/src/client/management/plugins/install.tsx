@@ -15,6 +15,7 @@ import { createPagePluginCatalog } from './catalog-reader.ts'
 import { createNativePluginManagerIntegration } from './native-integration.ts'
 import { NativePluginConfigurationSection } from './NativePluginConfigurationSection.tsx'
 import { managedTerminalCard } from './managed-terminal.tsx'
+import { MANAGED_TERMINAL_NAMESPACE, managedTerminalDictionaries } from './managed-terminal-locales.ts'
 import { PLUGIN_MANAGEMENT_NAMESPACE } from './locales.ts'
 
 // FiberState is a cross-package const enum and is not exported at runtime.
@@ -45,6 +46,11 @@ export function installCloudPluginCatalog(parent: Context, page: PreparedCloudPa
           : owner.locale.resolveText(metadata.description) }
     }, report)
     const removers = new Set<() => void>()
+    owner.effect(() => {
+      const remove = owner.locale.register(MANAGED_TERMINAL_NAMESPACE, managedTerminalDictionaries)
+      removers.add(remove)
+      return () => { removers.delete(remove); remove() }
+    }, 'pe-cloud-client: managed Terminal copy')
     let terminal: ReturnType<typeof managedTerminalCard> | undefined
     let terminalLimits: import('@deepseek-ai/dsh-pe-cloud-api/types').PluginManagerSnapshot['terminal']
     const terminalOwner = owner.inject(['shellSettingsCard'], (scope) => {

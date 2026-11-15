@@ -11,7 +11,16 @@ export type ShellCardProps =
   PropsRuntime<'plugins.item'>
   & PropsLocale<'settings.shell'>
   & InjectFace<ShellCardFace>
-  & { readonly managedMaxTimeoutMs?: number }
+  & {
+    /** Optional read-only timeout ceiling, with copy supplied by the composition. */
+    readonly timeoutLimit?: {
+      readonly milliseconds: number
+      readonly label: () => string
+      readonly hint: () => string
+    }
+    /** Optional output hint; omission keeps the local executor's original spill guidance. */
+    readonly outputHint?: () => string
+  }
 
 /**
  * Render the shell executor's one-liner or its settings form, as the Plugins page asks.
@@ -38,21 +47,21 @@ export function ShellCard(props: ShellCardProps) {
         onEdit={(text) => { props.edit('timeoutMs', text) }}
         onReset={() => { props.resetField('timeoutMs') }}
       />
-      {props.managedMaxTimeoutMs === undefined ? null : <SettingsValueField
+      {props.timeoutLimit === undefined ? null : <SettingsValueField
         id="plugin-config-shell-max-timeout"
-        label={t('maxTimeoutMs')}
-        hint={t('maxTimeoutMsHint')}
+        label={props.timeoutLimit.label()}
+        hint={props.timeoutLimit.hint()}
         overriddenLabel={t('overridden')}
         resetLabel={t('reset')}
         invalidLabel={t('invalidNumber')}
         numeric disabled
-        text={String(props.managedMaxTimeoutMs)} overridden={false} invalid={false}
+        text={String(props.timeoutLimit.milliseconds)} overridden={false} invalid={false}
         onEdit={() => {}} onReset={() => {}}
       />}
       <SettingsValueField
         id="plugin-config-shell-output"
         label={t('maxOutputBytes')}
-        hint={t(props.managedMaxTimeoutMs === undefined ? 'maxOutputBytesHint' : 'managedOutputHint')}
+        hint={props.outputHint?.() ?? t('maxOutputBytesHint')}
         overriddenLabel={t('overridden')}
         resetLabel={t('reset')}
         invalidLabel={t('invalidNumber')}

@@ -37,7 +37,7 @@ The **Shell** card in the Official group opens the page. **Command timeout (ms)*
 
 The Host half is an empty `apply`, present only so the package holds a Loader row the client module system serves the browser half for. The browser half binds the composed shell executor entry (`bash-sandbox` off Windows, `pwsh-sandbox` on it) through `ctx.configForms.get`, keeps the staged form in `ShellCardController` over the shared `SettingsFormModel` of `ui-primitives`, and registers `ShellCard` into the Plugins page's `plugins.item` slot through `ctx.configForms.whileServed`, which registers while the Host serves either entry and withdraws when it stops. The page's copy lives in this package's `settings.shell` dictionary; the `SettingsForm` frame takes its copy as props.
 
-The scoped `shellSettingsCard` provider exposes the original card to a trusted composition that supplies actual managed read-only limits. It does not register another settings writer or alter the local Shell page defaults.
+The scoped `shellSettingsCard` provider exposes the original card to a trusted composition that supplies actual managed read-only limits. Its optional `timeoutLimit` carries the ceiling value and render-time label/hint callbacks; `outputHint` supplies the output guidance at render time. Omission preserves the two local fields and original copy. It does not register another settings writer or alter the local Shell page defaults.
 
 </details>
 

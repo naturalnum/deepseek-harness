@@ -1,11 +1,21 @@
+// @vitest-environment jsdom
 /** Cloud source and original Cordis navigation ownership; no browser/server deployment. */
 import { Context } from '@deepseek-ai/cordis'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
-import { expect, it, onTestFinished, vi } from 'vitest'
+import { act, cleanup, render, screen } from '@testing-library/react'
+import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
+import { createSlotRenderer } from '../../../client/ui-renderer/src/client/scoped-slots.tsx'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { StandardSourceBinding } from '@deepseek-ai/dsh-client-ui-slots'
+import { MANAGED_TERMINAL_NAMESPACE, managedTerminalDictionaries } from '../src/client/management/plugins/managed-terminal-locales.ts'
+
 import { ShellCard } from '../../../client/ui-settings-shell/src/client/ShellCard.tsx'
 import { installCloudPluginCatalog } from '../src/client/management/plugins/install.tsx'
+import { en, zh, ja, es, fr, de, ru, pt } from '../../../client/ui-settings-shell/src/client/locales.ts'
+
+afterEach(cleanup)
 
 it('provides one account source, hides the fallback navigation while native navigation exists, and withdraws cleanly', async () => {
   const ctx = new Context(), signal = new AbortController(), slots = new SlotRegistry(ctx), locale = new LocaleRuntime(ctx)
@@ -35,33 +45,54 @@ it('publishes actual managed terminal values in the native shell slot and withdr
   ctx.provide('locale', locale)
   const root = slots.register({ name: 'root', children: { main: { kind: 'keyed', scope: 'root' },
     'sidebar.panellist': { kind: 'list', scope: 'root' }, 'plugins.item': { kind: 'list', scope: 'root' } } },
-  ({ renderSlot }) => { void renderSlot; return null })
+  ({ renderSlot }) => renderSlot('plugins.item', { view: 'page' }))
+  for (const id of ['ja', 'es', 'fr', 'de', 'ru', 'pt']) ctx.effect(() => locale.addLanguage({ id, label: id, fallback: 'en' }))
+  slots.installLocale(locale); slots.install(createSlotRenderer()); locale.setLocale('en')
+  const absent = createSnapshotStore<StandardSourceBinding>({ key: undefined, hooks: {}, keyedHooks: {}, props: { sessionId: undefined } })
+  slots.installScope('session', { current: absent, bindingSource: () => absent })
   const limits = { timeoutMs: 1234, maxTimeoutMs: 5678, maxOutputBytes: 91011 }
   new TestRemote(ctx, { cloudPlugins: {
     list: async () => ({ ok: true, value: { bundles: [], plugins: [], controls: [], terminal: limits } }),
     current: async () => { throw new Error('No edit') }, change: async () => { throw new Error('No edit') } } })
-  const provider = ctx.plugin((scope) => { scope.provide('shellSettingsCard', ShellCard) })
+  const provider = ctx.plugin((scope) => {
+    scope.effect(() => scope.locale.register('settings.shell', { en, zh, ja, es, fr, de, ru, pt }))
+    scope.provide('shellSettingsCard', ShellCard)
+  })
   await provider.await()
   const page = { bootstrap: { capabilities: { configuration: { plugins: [] } } },
     lifetime: { transport: { signal: lifetime.signal } }, assertAccountManagementCurrent: () => { lifetime.signal.throwIfAborted() } }
   const plugin = ctx.plugin((scope) => { installCloudPluginCatalog(scope, page as never, () => {}) })
-  onTestFinished(async () => { lifetime.abort(); root(); await ctx.fiber.dispose() })
+  onTestFinished(async () => {
+    cleanup(); lifetime.abort()
+    await plugin.dispose(); await provider.dispose()
+    root(); await ctx.fiber.dispose()
+  })
   await plugin.await()
   await vi.waitFor(() => { expect(ctx.get('pluginManagerIntegration')).toBeDefined() })
   expect(slots.entries('plugins.item')).toHaveLength(0)
   await ctx.pluginManagerIntegration.read()
   const entries = slots.entries('plugins.item')
   expect(entries.map(row => row.options.id)).toEqual(['shell'])
-  const face = entries[0]!.inject!() as { managedMaxTimeoutMs: number; hooks: { shellCard: { getSnapshot(): unknown } } }
-  expect(face.managedMaxTimeoutMs).toBe(5678)
+  const face = entries[0]!.inject!() as { timeoutLimit: { milliseconds: number }; hooks: { shellCard: { getSnapshot(): unknown } } }
+  expect(face.timeoutLimit.milliseconds).toBe(5678)
+  render(slots.renderSlot('root', {}))
+  for (const [id, copy] of Object.entries(managedTerminalDictionaries)) {
+    act(() => { locale.setLocale(id) })
+    expect(screen.getByLabelText(copy.maxTimeoutMs)).toHaveProperty('value', '5678')
+    expect(screen.getByText(copy.maxTimeoutMsHint)).toBeTruthy()
+    expect(screen.getByText(copy.managedOutputHint)).toBeTruthy()
+    for (const value of ['1234', '5678', '91011']) expect(screen.getByDisplayValue(value)).toHaveProperty('disabled', true)
+  }
   expect(face.hooks.shellCard.getSnapshot()).toMatchObject({ writable: false, timeoutMs: { text: '1234' }, maxOutputBytes: { text: '91011' } })
-  await provider.dispose()
+  await act(async () => { await provider.dispose() })
   await vi.waitFor(() => { expect(slots.entries('plugins.item')).toHaveLength(0) })
   const replacement = ctx.plugin((scope) => { scope.provide('shellSettingsCard', ShellCard) })
-  await replacement.await()
+  await act(async () => { await replacement.await() })
   await vi.waitFor(() => { expect(slots.entries('plugins.item')).toHaveLength(1) })
-  lifetime.abort()
+  act(() => { lifetime.abort() })
+  expect(screen.queryByDisplayValue('5678')).toBeNull()
   expect(slots.entries('plugins.item')).toHaveLength(0)
   await expect(ctx.pluginManagerIntegration.read()).rejects.toBeDefined()
-  await plugin.dispose()
+  await act(async () => { await plugin.dispose() })
+  expect(locale.bind(MANAGED_TERMINAL_NAMESPACE)('maxTimeoutMs')).toBe('maxTimeoutMs')
 })
