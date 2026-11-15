@@ -4,8 +4,17 @@ import type { ReactNode } from 'react'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ProviderEditor } from './ProviderEditor.tsx'
 import type { ProviderEditorProps } from './ProviderEditor.tsx'
-import type { ModelsCredentialEditing, PreparedCredentialEdit } from './operations.ts'
+import type { ModelsCredentialEditing, PreparedCredentialEdit, ModelsCredentialCopy } from './operations.ts'
 import styles from './ModelsSection.module.css'
+
+/** Native generic fallback uses the original dictionary through its bound translator. */
+function nativeCredentialCopy(t: ProviderEditorProps['t']): ModelsCredentialCopy {
+  return {
+    editKey: t('edit'), removeKey: t('remove'), removeKeyTitle: t('remove'),
+    removeKeyDescription: t('credentialConfigured'), removingKey: t('applying'),
+    keyPreparing: t('applying'), keyEditUnavailable: t('loadFailed'),
+  }
+}
 
 interface Intent {
   readonly mode: 'store' | 'remove'
@@ -37,6 +46,7 @@ export interface CredentialKeyActionsProps extends Pick<ProviderEditorProps,
  */
 export function CredentialKeyActions(props: CredentialKeyActionsProps): ReactNode {
   const { t } = props
+  const copy = (key: keyof ModelsCredentialCopy): string => (props.editing.copy?.() ?? nativeCredentialCopy(t))[key]
   const [owner] = useState(() => ({ open: true, binding: props.editing, intent: undefined as Intent | undefined }))
   const [view, setView] = useState<View>({ phase: 'closed' })
   useEffect(() => {
@@ -73,23 +83,23 @@ export function CredentialKeyActions(props: CredentialKeyActionsProps): ReactNod
       current(intent) ? owner.binding.prepare(props.reference, intent.abort.signal) : null).then((prepared) => {
       if (!current(intent)) return
       if (prepared === null || prepared.ref !== props.reference) {
-        setView({ phase: 'failed', message: t('keyEditUnavailable') }); return
+        setView({ phase: 'failed', message: copy('keyEditUnavailable') }); return
       }
       const store = prepared.store, remove = prepared.remove
       const edit: PreparedCredentialEdit = Object.freeze({ ref: prepared.ref,
         store: async (value: string) => {
-          if (!current(intent)) return t('keyEditUnavailable')
+          if (!current(intent)) return copy('keyEditUnavailable')
           const failure = await store(value)
-          return current(intent) ? failure : t('keyEditUnavailable')
+          return current(intent) ? failure : copy('keyEditUnavailable')
         },
         remove: async () => {
-          if (!current(intent)) return t('keyEditUnavailable')
+          if (!current(intent)) return copy('keyEditUnavailable')
           const failure = await remove()
-          return current(intent) ? failure : t('keyEditUnavailable')
+          return current(intent) ? failure : copy('keyEditUnavailable')
         },
       })
       setView({ phase: 'ready', intent, edit, busy: false })
-    }, () => { if (current(intent)) setView({ phase: 'failed', message: t('keyEditUnavailable') }) })
+    }, () => { if (current(intent)) setView({ phase: 'failed', message: copy('keyEditUnavailable') }) })
   }
   const remove = async (): Promise<void> => {
     if (view.phase !== 'ready' || view.busy || view.failure !== undefined || !current(view.intent)) return
@@ -101,31 +111,31 @@ export function CredentialKeyActions(props: CredentialKeyActionsProps): ReactNod
       if (failure !== undefined) { setView({ ...selected, busy: false, failure }); return }
       close(); props.onSaved()
     } catch {
-      if (current(selected.intent)) setView({ ...selected, busy: false, failure: t('keyEditUnavailable') })
+      if (current(selected.intent)) setView({ ...selected, busy: false, failure: copy('keyEditUnavailable') })
     }
   }
   const selected = view.phase === 'ready' ? view : undefined
   const busy = view.phase === 'opening' || selected?.busy === true
   return <>
     <span className={styles['rowActions']}>
-      <button type="button" className={styles['secondaryButton']} disabled={busy} onClick={() => { open('store') }}>{t('editKey')}</button>
-      {props.configured ? <button type="button" className={styles['dangerButton']} disabled={busy} onClick={() => { open('remove') }}>{t('removeKey')}</button> : null}
+      <button type="button" className={styles['secondaryButton']} disabled={busy} onClick={() => { open('store') }}>{copy('editKey')}</button>
+      {props.configured ? <button type="button" className={styles['dangerButton']} disabled={busy} onClick={() => { open('remove') }}>{copy('removeKey')}</button> : null}
     </span>
-    {view.phase === 'opening' ? <><p role="status">{t('keyPreparing')}</p>
+    {view.phase === 'opening' ? <><p role="status">{copy('keyPreparing')}</p>
       <button type="button" className={styles['secondaryButton']} onClick={close}>{t('cancel')}</button></> : null}
     {view.phase === 'failed' ? <p role="alert" className={styles['error']}>{view.message}</p> : null}
     {selected?.intent.mode === 'store' ? <ProviderEditor
       provider={props.provider} displayName={props.displayName} namespace={props.namespace} schema={props.schema}
       settingsPath={props.settingsPath} operations={props.operations} t={t} readOnly={false}
-      credentialOnly credentialRequired credentialEdit={selected.edit}
+      credentialOnly credentialRequired credentialEdit={selected.edit} credentialUnavailable={props.editing.unavailable}
       onBusyChange={observeBusy}
       onClose={(changed) => { if (!current(selected.intent)) return; close(); if (changed) props.onSaved() }}
     /> : null}
-    <Modal open={selected?.intent.mode === 'remove'} title={t('removeKeyTitle')} description={t('removeKeyDescription')}
+    <Modal open={selected?.intent.mode === 'remove'} title={copy('removeKeyTitle')} description={copy('removeKeyDescription')}
       closeLabel={t('close')} onClose={() => { if (selected?.busy !== true) close() }}
       footer={<><Button variant="outline" disabled={selected?.busy} onClick={close}>{t('cancel')}</Button>
         <Button variant="outline" disabled={selected?.busy || selected?.failure !== undefined} onClick={() => { void remove() }}>
-          {selected?.busy ? t('removingKey') : t('removeKey')}
+          {selected?.busy ? copy('removingKey') : copy('removeKey')}
         </Button></>}>
       {selected?.failure === undefined ? null : <p role="alert" className={styles['error']}>{selected.failure}</p>}
     </Modal>

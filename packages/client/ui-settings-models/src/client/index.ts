@@ -50,7 +50,7 @@ const NS = 'settings.models'
 export type {
   ModelsSettingsState, ProviderDirectoryEntry, ProviderRow,
 } from './store.ts'
-export type { ModelDiscoveryOutcome, ModelsOperations, ModelsCredentialEditing, PreparedCredentialEdit, SettingsWriteOutcome } from './operations.ts'
+export type { ModelDiscoveryOutcome, ModelsOperations, ModelsCredentialEditing, ModelsCredentialCopy, ModelsProviderEditorLayout, PreparedCredentialEdit, SettingsWriteOutcome } from './operations.ts'
 
 /**
  * Refetch the page snapshot only after its first load: an unopened Models
@@ -86,6 +86,7 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en, ja, es, fr, de, ru, pt }), 'ui-settings-models: copy dictionaries')
 
   const integration = ctx.get('modelsSettingsIntegration')
+  const unavailable = integration?.unavailable ?? (() => ctx.locale.bind(NS)('loadFailed'))
   const onboarding = integration === undefined
   const credentialEditing = integration?.editing ?? Object.freeze({
     getSnapshot: () => undefined, subscribe: (_listener: () => void) => () => {},
@@ -97,10 +98,10 @@ export function apply(ctx: ClientContext): void {
   const operations = integration === undefined ? originalOperations : {
     ...originalOperations,
     writeSettings: integration.reads.writeSettings ?? (() => Promise.resolve({ kind: 'refused' as const,
-      message: ctx.locale.bind(NS)('keyEditUnavailable') })),
+      message: unavailable() })),
   }
   const controller = new ModelsSettingsStore(ctx, schema, ctx.configForms.describe(),
-    integration === undefined ? undefined : { reads: integration.reads, unavailable: () => ctx.locale.bind(NS)('keyEditUnavailable') })
+    integration === undefined ? undefined : { reads: integration.reads, unavailable: () => unavailable() })
   // Registration-time text (the nav label thunk) and the inject faces share
   // one bound translate; copy freshness rides the locale revision.
   const t = ctx.locale.bind(NS) as ModelsSectionInjected['t']

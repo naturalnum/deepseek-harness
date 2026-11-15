@@ -60,10 +60,10 @@ packages/client/ui-schedule/src/client/TaskDetail.tsx	扩展点	最近时区的�
 packages/client/ui-schedule/src/client/index.ts	扩展点	取 clientPersistence 并传给时区和任务标签绑定	同上	撤掉	已撤
 packages/client/ui-schedule/src/client/recent-time-zones.ts	扩展点	最近时区存储走页面存储端口	同上；直接用 localStorage 的代码需上游改成走端口	留作口子	没动
 packages/client/ui-schedule/src/client/task-tab-bindings.ts	扩展点	任务标签绑定存储走页面存储端口	同上	留作口子	没动
-packages/client/ui-settings-models/src/client/ModelsSection.tsx	云端定制	受保护的密钥隐藏添加/移除/首配卡片，改挂密钥编辑按钮（有开关：未注入 integration 时行为不变）	可在 pe-cloud-client 用更低 priority 遮蔽 settings.section 的 models 条目，自己画模型页；代价是复制上游界面，不建议	搬进插件	没动
-packages/client/ui-settings-models/src/client/ProviderEditor.tsx	云端定制	新增 credentialEdit、modelCatalogOnly 两种受限模式，并对 deepseek-official 布局特判（有开关）	同上	搬进插件	没动
+packages/client/ui-settings-models/src/client/ModelsSection.tsx	扩展点	仅显式密钥/目录模式及呈现回调/布局值；Cloud provider布局和8语内容移自有区，非集成unknown写入恢复Native默认	Native有等价呈现/模式入口后替换；无integration保持目标默认	留作口子	已按新原生重加
+packages/client/ui-settings-models/src/client/ProviderEditor.tsx	扩展点	仅显式密钥/目录模式及呈现回调/布局值；Cloud provider布局和8语内容移自有区，非集成unknown写入恢复Native默认	Native有等价呈现/模式入口后替换；无integration保持目标默认	留作口子	已按新原生重加
 packages/client/ui-settings-models/src/client/index.ts	扩展点	读取可选的 modelsSettingsIntegration：关闭首配引导、换数据源和写入通道	复用原生模型页就需要这个接缝；需上游接受	留作口子	没动
-packages/client/ui-settings-models/src/client/locales.ts	云端定制	密钥编辑相关文案	随 ModelsSection.tsx	搬进插件	没动
+packages/client/ui-settings-models/src/client/locales.ts	云端定制	7条密钥呈现及8语原文搬Cloud；Native词典精确固定目标，仍由原Locale读取显示回调	已搬自有区，Native默认文案不改	搬进插件	已搬
 packages/client/ui-settings-models/src/client/operations.ts	扩展点	凭据编辑的类型和“结果未知”分支	随 index.ts	留作口子	没动
 packages/client/ui-settings-models/src/client/store.ts	扩展点	支持由 integration 提供读取结果（integratedRead）	随 index.ts	留作口子	没动
 packages/client/ui-settings-shell/src/client/ShellCard.tsx	扩展点	只接可选timeoutLimit数值及渲染时标签/提示回调；省略仍原生两字段与原提示，Cloud词典保留语言切换	原生提供同等带标签的只读限额展示口后撤回；保留实际只读限额与账号撤卡	留作口子	已按新原生重加

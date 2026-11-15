@@ -105,7 +105,9 @@
     "src/client/mcp/McpConnectionsSection.tsx",
     "src/client/mcp/locales.ts",
     "src/client/document-byte-reader.ts",
-    "src/client/remote-method-compatibility.ts"
+    "src/client/remote-method-compatibility.ts",
+    "src/client/model-credential-locales.ts",
+    "src/client/locales/model-credentials.ts"
   ],
   "references": [
     {

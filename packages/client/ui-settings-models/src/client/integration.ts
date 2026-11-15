@@ -29,6 +29,8 @@ export interface ModelsSettingsReads {
 
 /** Manual Models input prepared before activation; null closes editing and omission preserves native onboarding and reads. */
 export interface ModelsSettingsIntegration {
+  /** Optional display refusal from this same page; omission uses Native generic load feedback. */
+  readonly unavailable?: () => string
   /** Manual Models setup omits both onboarding registrations, including while editing is unavailable or revoked. */
   readonly onboarding: false
   readonly editing: ObservableSnapshot<ModelsCredentialEditing | null>

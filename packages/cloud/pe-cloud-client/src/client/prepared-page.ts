@@ -1,3 +1,4 @@
+import { modelCredentialCopyFor, cloudModelEditorLayout } from './model-credential-locales.ts'
 /** Canonical bootstrap preparation and the page owner consumed by the real Cloud Loader entry. */
 import { nativeOriginal, nativeOnStatus } from '../native-internals.ts'
 import { prepareWorkspaceManagement } from './workspace-management.ts'
@@ -179,6 +180,7 @@ export class PreparedCloudPage {
       return value
     }
     this.modelsSettingsIntegration = Object.freeze({ onboarding: false, editing: this.modelsEditing,
+      unavailable: () => modelCredentialCopyFor(this.activation?.root).keyEditUnavailable,
       reads: Object.freeze({
         isCurrent: () => this.modelSettingsBinding !== undefined && this.modelsCurrent(this.modelSettingsBinding),
         metadata: () => read(callbacks => callbacks.metadata()),
@@ -387,6 +389,9 @@ export class PreparedCloudPage {
     this.modelSettingsBinding = binding
     const isCurrent = (): boolean => this.modelsCurrent(binding)
     this.modelsEditing.set(Object.freeze({ scope: this.bootstrap.connectionGeneration + ':' + String(owner.fiber.uid) + ':' + String(++this.modelSettingsGeneration), isCurrent,
+      copy: () => modelCredentialCopyFor(owner.root),
+      unavailable: () => modelCredentialCopyFor(owner.root).keyEditUnavailable,
+      layoutFor: cloudModelEditorLayout,
       prepare: async (ref: string, signal: AbortSignal) => {
         const current = (): boolean => isCurrent() && !signal.aborted
         if (!current()) return null

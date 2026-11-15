@@ -422,3 +422,18 @@ describe('retry policy fields', () => {
     expect(screen.queryByRole('group', { name: en.retryPolicy })).toBeNull()
   })
 })
+
+
+it('allows a manual Native retry after an unknown write when no embedding mode is present', async () => {
+  const { writeSettings } = setup(deepSeekNamespace({ user: { models: [{ id: 'before' }] } }))
+  writeSettings.mockResolvedValue({ kind: 'unknown', message: 'native-unconfirmed' })
+  fireEvent.click(screen.getByText(en.customized))
+  fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'after' } })
+  const apply = screen.getByRole('button', { name: en.apply })
+  fireEvent.click(apply)
+  await screen.findByText('native-unconfirmed')
+  await waitFor(() => { expect(apply).toHaveProperty('disabled', false) })
+  expect(writeSettings).toHaveBeenCalledTimes(1)
+  fireEvent.click(apply)
+  await waitFor(() => { expect(writeSettings).toHaveBeenCalledTimes(2) })
+})

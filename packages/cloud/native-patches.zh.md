@@ -109,3 +109,5 @@ Agent 预设选择在原 Agent 队列和维护操作中、追加已提交选择�
 Cloud 持有原有提供方受限时的完整字节预览政策及有界分段；Native 仅增加可选 `DocumentPreviewByteReader` 回调和 renderer 标识数据，省略时保留原单次 Remote 读取及完整文件缓存。每窗口的原账号授权、版本／路径／大小一致性和真实待处理 RPC 结束仍须满足，解析器、Session、tab 与 store 所有权不变。
 
 Native 默认保留原生成方法 `install` 的名称冲突检查；可选 `ClientRemoteMethodCompatibility` 回调仅让嵌入方显式选择确切 namespace，不替换命名空间引擎。Cloud 在挂载原生成贡献前只提供已有 `cloudSkills` 选择；Service／原型冲突、原 codec 与 Connection 分派、挂载生命周期及 Host 授权保持不变。
+
+模型密钥呈现已归 Cloud：原七条八语文案及官方提供商布局选择通过可选显示回调和显式布局值进入 Native。Native locale 精确恢复固定目标。无嵌入方的设置编辑器恢复未知写入后原手动重试，显式已准备凭据与仅目录模式保留捕获意图的阻止重复写入。本组只迁呈现；可选密钥动作状态与对话框仍待独立迁为 Cloud 贡献。

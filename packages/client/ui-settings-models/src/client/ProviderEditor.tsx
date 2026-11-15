@@ -38,7 +38,7 @@ import type { ReasoningEffortsFailure } from './ModelReasoningEfforts.tsx'
 import { deriveKeyRef, protocolChoices, reasoningLevelChoices } from './store.ts'
 import { protocolLabel } from './protocol-label.ts'
 import { protocolNeedsKey, protocolReasoningLevels } from './protocol-rules.ts'
-import type { ModelsOperations, PreparedCredentialEdit } from './operations.ts'
+import type { ModelsOperations, PreparedCredentialEdit, ModelsProviderEditorLayout } from './operations.ts'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
 import type { en } from './locales.ts'
 import { ApiKeyInput } from './ApiKeyInput.tsx'
@@ -46,7 +46,7 @@ import { RetryPolicyEditor, retryPolicyDefaults, retryPolicyFailure } from './Re
 import styles from './ModelsSection.module.css'
 
 /** Per-adapter-family curated field sets (unknown namespaces get the hint alone). */
-type EditorLayout = 'deepseek' | 'pi-ai' | 'unknown'
+type EditorLayout = ModelsProviderEditorLayout
 
 
 
@@ -97,6 +97,10 @@ export interface ProviderEditorProps {
   readOnly: boolean
   /** Restrict this card to the model catalog when its owner handles credentials and endpoint configuration separately. */
   modelCatalogOnly?: boolean
+  /** Explicit embedding layout data; absent keeps the Native namespace-selected layout. */
+  layoutOverride?: ModelsProviderEditorLayout | undefined
+  /** Optional display-only refusal for a prepared editor. */
+  credentialUnavailable?: (() => string) | undefined
   /** Render only the credential field and actions, without provider settings. */
   credentialOnly?: boolean
   /** Require a newly entered credential before this editor can submit. */
@@ -168,10 +172,9 @@ export function pathOps(
 }
 
 /** The editor layout the owning namespace selects. */
-function layoutOf(ns: string, provider: string, protectedSettings: boolean): EditorLayout {
+function layoutOf(ns: string): EditorLayout {
   if (ns === 'llm-deepseek') return 'deepseek'
   if (ns === 'llm-pi-ai') return 'pi-ai'
-  if (protectedSettings && provider === 'deepseek-official') return 'deepseek'
   return 'unknown'
 }
 
@@ -235,7 +238,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   const node = useMemo(() => schema.nodeAtPath(root, settingsPath), [root, schema, settingsPath])
   const fallback = schema.getPath(namespace.value, settingsPath)
   const disabled = props.readOnly || busy || credentialEdit === null || credentialBlocked
-  const layout = layoutOf(namespace.ns, props.provider, props.modelCatalogOnly === true)
+  const layout = props.layoutOverride ?? layoutOf(namespace.ns)
   const preparedCredentialOnly = props.credentialOnly === true && credentialEdit !== undefined && credentialEdit !== null
   const keyRef = refFor(schema, namespace, settingsPath, props.provider)
   // The same schema read the create card makes, so the choices offered here
@@ -375,7 +378,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     }
     if (ops.length > 0) {
       const written = await operations.writeSettings(ns, ops, expectedRevision)
-      if (written.kind === 'unknown') setCredentialBlocked(true)
+      if (written.kind === 'unknown' && (credentialEdit !== undefined || props.modelCatalogOnly === true)) setCredentialBlocked(true)
       if (written.kind !== 'written') return written.kind === 'conflict' ? t('conflict') : written.message
       setCommittedOriginal(schema.getPath(written.view.user, settingsPath))
       setExpectedRevision(written.view.revision)
@@ -405,7 +408,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     } catch (error) {
       if (credentialEdit === undefined && props.modelCatalogOnly !== true) throw error
       setCredentialBlocked(true)
-      setFailure(t('keyEditUnavailable'))
+      setFailure(props.credentialUnavailable?.() ?? t('loadFailed'))
     } finally {
       setBusy(false)
     }

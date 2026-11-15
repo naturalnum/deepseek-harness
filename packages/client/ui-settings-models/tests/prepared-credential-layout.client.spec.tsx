@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { CREDENTIAL_COPY, credentialPresentation } from './credential-presentation.client.ts'
 /** Real retained namespace and readonly projection through the original Models/ProviderEditor; no persistence is simulated. */
 import Schema from '@deepseek-ai/schemastery'
 import { Context } from '@deepseek-ai/cordis'
@@ -42,9 +43,9 @@ async function modelPage(edit: PreparedCredentialEdit, configured: boolean) {
     subscribe: () => () => {}, ensure: denied, acceptView: () => {} }
   const controller = new ModelsSettingsStore(ctx, settingsSchema, mirror, { reads: {
     isCurrent: () => true, metadata: async () => metadata, credentials: async () => ({ [ref]: { configured, writable: true } }),
-  }, unavailable: () => en.keyEditUnavailable })
+  }, unavailable: () => CREDENTIAL_COPY.keyEditUnavailable })
   await controller.load()
-  const editing: ModelsCredentialEditing = { scope: 'original-model-provider-page', isCurrent: () => true,
+  const editing: ModelsCredentialEditing = { ...credentialPresentation, scope: 'original-model-provider-page', isCurrent: () => true,
     prepare: vi.fn(async () => edit) }
   render(<ModelsSection controller={controller} operations={ops.value} schema={settingsSchema} t={t}
     useSnapshot={bindSnapshotSelector(controller.store)} credentialEditing={editing} renderSlot={() => null}/>)
@@ -57,7 +58,7 @@ it.each([false, true])('original Models submits the named prepared Key with mode
   expect(f.controller.store.getSnapshot()).toMatchObject({ writable: false, rows: [{ apiKeyEnv: ref }] })
   expect(f.controller.store.getSnapshot().rows[0]?.entry.settingsNs).toBe('model-provider')
   expect(f.controller.store.getSnapshot().namespaces.has('llm-deepseek')).toBe(false)
-  fireEvent.click(screen.getByRole('button', { name: en.editKey }))
+  fireEvent.click(screen.getByRole('button', { name: CREDENTIAL_COPY.editKey }))
   const field = await screen.findByLabelText(en.keyInput)
   expect(screen.getByRole('button', { name: en.apply })).toHaveProperty('disabled', true)
   expect(screen.queryByText(en.customized)).toBeNull()
@@ -73,8 +74,8 @@ it.each([false, true])('original Models submits the named prepared Key with mode
 it('original Models refuses a prepared callback for a different reference before opening the Key field', async () => {
   const store = vi.fn<PreparedCredentialEdit['store']>(async () => undefined)
   const f = await modelPage({ ref: 'OTHER_REFERENCE', store, remove: denied }, false)
-  fireEvent.click(screen.getByRole('button', { name: en.editKey }))
-  await screen.findByText(en.keyEditUnavailable)
+  fireEvent.click(screen.getByRole('button', { name: CREDENTIAL_COPY.editKey }))
+  await screen.findByText(CREDENTIAL_COPY.keyEditUnavailable)
   expect(screen.queryByLabelText(en.keyInput)).toBeNull()
   expect(store).not.toHaveBeenCalled()
   expect(f.ops.nativeStore).not.toHaveBeenCalled()

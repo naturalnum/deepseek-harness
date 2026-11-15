@@ -121,7 +121,7 @@ interface CatalogDraft {
 /** Values that vary around the shared provider-editor rendering. */
 interface ProviderEditorRenderProps extends Pick<
   ProviderEditorProps,
-  'namespace' | 'schema' | 'operations' | 't' | 'readOnly' | 'onClose' | 'modelCatalogOnly'
+  'namespace' | 'schema' | 'operations' | 't' | 'readOnly' | 'onClose' | 'modelCatalogOnly' | 'layoutOverride' | 'credentialUnavailable'
 > {
   target: EditorTarget
   row: ProviderRow
@@ -257,9 +257,9 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
   const { controller, schema, t, credentialEditing } = injected
   const operations = credentialEditing == null ? injected.operations : { ...injected.operations,
     writeSettings: async (...args: Parameters<ModelsOperations['writeSettings']>) => {
-      if (!credentialEditing.isCurrent()) return { kind: 'unknown' as const, message: t('keyEditUnavailable') }
+      if (!credentialEditing.isCurrent()) return { kind: 'unknown' as const, message: credentialEditing.unavailable?.() ?? t('loadFailed') }
       const result = await injected.operations.writeSettings(...args)
-      return credentialEditing.isCurrent() ? result : { kind: 'unknown' as const, message: t('keyEditUnavailable') }
+      return credentialEditing.isCurrent() ? result : { kind: 'unknown' as const, message: credentialEditing.unavailable?.() ?? t('loadFailed') }
     },
   }
   const protectedKeys = credentialEditing !== undefined
@@ -585,7 +585,9 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                   operations,
                   t,
                   readOnly: !state.writable,
-                  ...(protectedKeys ? { modelCatalogOnly: true } : {}),
+                  ...(protectedKeys ? { modelCatalogOnly: true,
+                    layoutOverride: credentialEditing?.layoutFor?.(row.entry.provider),
+                    credentialUnavailable: credentialEditing?.unavailable } : {}),
                   onClose: (changed) => { closeEditor(changed, target) },
                 })
                 : null}

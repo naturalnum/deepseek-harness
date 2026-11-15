@@ -1,7 +1,7 @@
 {
   "counts": {
-    "native_source_files": 190,
-    "non_seam_files": 58,
+    "native_source_files": 189,
+    "non_seam_files": 55,
     "uncentralized_internal_lines": 0
   },
   "imports": [
@@ -4019,6 +4019,25 @@
       "typeOnly": true
     },
     {
+      "path": "packages/cloud/pe-cloud-client/src/client/model-credential-locales.ts",
+      "line": 2,
+      "module": "@deepseek-ai/cordis",
+      "names": [
+        "Context"
+      ],
+      "typeOnly": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-client/src/client/model-credential-locales.ts",
+      "line": 3,
+      "module": "@deepseek-ai/dsh-client-ui-settings-models/client",
+      "names": [
+        "ModelsCredentialCopy",
+        "ModelsProviderEditorLayout"
+      ],
+      "typeOnly": true
+    },
+    {
       "path": "packages/cloud/pe-cloud-client/src/client/model-settings.ts",
       "line": 3,
       "module": "@deepseek-ai/cordis",
@@ -4110,7 +4129,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-client/src/client/prepared-page.ts",
-      "line": 4,
+      "line": 5,
       "module": "@deepseek-ai/cordis",
       "names": [
         "FiberState",
@@ -4120,7 +4139,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-client/src/client/prepared-page.ts",
-      "line": 5,
+      "line": 6,
       "module": "@deepseek-ai/dsh-client-ui-slots",
       "names": [
         "HostObservable"
@@ -4129,7 +4148,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-client/src/client/prepared-page.ts",
-      "line": 6,
+      "line": 7,
       "module": "@deepseek-ai/dsh-client-connection/client",
       "names": [
         "installConnection",
@@ -4141,7 +4160,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-client/src/client/prepared-page.ts",
-      "line": 7,
+      "line": 8,
       "module": "@deepseek-ai/dsh-client-store",
       "names": [
         "createSnapshotStore",
@@ -4151,7 +4170,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-client/src/client/prepared-page.ts",
-      "line": 8,
+      "line": 9,
       "module": "@deepseek-ai/dsh-client-ui-settings-models/client",
       "names": [
         "ModelsCredentialEditing",
@@ -4164,7 +4183,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-client/src/client/prepared-page.ts",
-      "line": 9,
+      "line": 10,
       "module": "@deepseek-ai/dsh-client-ui-settings-web-search/client",
       "names": [
         "WebSearchSettingsIntegration"
@@ -4173,7 +4192,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-client/src/client/prepared-page.ts",
-      "line": 10,
+      "line": 11,
       "module": "@deepseek-ai/dsh-client-file-upload/client",
       "names": [
         "(augmentation)"
@@ -4182,7 +4201,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-client/src/client/prepared-page.ts",
-      "line": 11,
+      "line": 12,
       "module": "@deepseek-ai/dsh-client-file-upload/types",
       "names": [
         "ClientFileUploadHooks"
@@ -4191,7 +4210,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-client/src/client/prepared-page.ts",
-      "line": 18,
+      "line": 19,
       "module": "@deepseek-ai/dsh-session-log-export/client",
       "names": [
         "SessionLogDownloadIntegration"
@@ -9735,20 +9754,20 @@
     },
     {
       "路径": "packages/client/ui-settings-models/src/client/ModelsSection.tsx",
-      "类别": "云端定制",
-      "原因": "受保护的密钥隐藏添加/移除/首配卡片，改挂密钥编辑按钮（有开关：未注入 integration 时行为不变）",
-      "撤销条件": "可在 pe-cloud-client 用更低 priority 遮蔽 settings.section 的 models 条目，自己画模型页；代价是复制上游界面，不建议",
-      "处置": "搬进插件",
-      "这一程的状态": "没动",
+      "类别": "扩展点",
+      "原因": "仅显式密钥/目录模式及呈现回调/布局值；Cloud provider布局和8语内容移自有区，非集成unknown写入恢复Native默认",
+      "撤销条件": "Native有等价呈现/模式入口后替换；无integration保持目标默认",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
       "changed": true
     },
     {
       "路径": "packages/client/ui-settings-models/src/client/ProviderEditor.tsx",
-      "类别": "云端定制",
-      "原因": "新增 credentialEdit、modelCatalogOnly 两种受限模式，并对 deepseek-official 布局特判（有开关）",
-      "撤销条件": "同上",
-      "处置": "搬进插件",
-      "这一程的状态": "没动",
+      "类别": "扩展点",
+      "原因": "仅显式密钥/目录模式及呈现回调/布局值；Cloud provider布局和8语内容移自有区，非集成unknown写入恢复Native默认",
+      "撤销条件": "Native有等价呈现/模式入口后替换；无integration保持目标默认",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
       "changed": true
     },
     {
@@ -9763,11 +9782,11 @@
     {
       "路径": "packages/client/ui-settings-models/src/client/locales.ts",
       "类别": "云端定制",
-      "原因": "密钥编辑相关文案",
-      "撤销条件": "随 ModelsSection.tsx",
+      "原因": "7条密钥呈现及8语原文搬Cloud；Native词典精确固定目标，仍由原Locale读取显示回调",
+      "撤销条件": "已搬自有区，Native默认文案不改",
       "处置": "搬进插件",
-      "这一程的状态": "没动",
-      "changed": true
+      "这一程的状态": "已搬",
+      "changed": false
     },
     {
       "路径": "packages/client/ui-settings-models/src/client/operations.ts",

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { CREDENTIAL_COPY, credentialPresentation } from './credential-presentation.client.ts'
 /** Original Models registration and Settings coordinator; wire reads are readonly fixtures and no persistence is simulated. */
 import Schema from '@deepseek-ai/schemastery'
 import { Context } from '@deepseek-ai/cordis'
@@ -40,6 +41,13 @@ function metadata():ModelsSettingsMetadata {
       value:{ apiKeyEnv:ref },autoGenerate:true,applies:'live',secrets:[],revision:1 }] } }
 }
 async function fixture(){
+  // jsdom lacks the browser scroll API used by the original Settings focus handler.
+  const scrollDescriptor = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView')
+  Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, value() {} })
+  onTestFinished(() => {
+    if (scrollDescriptor === undefined) Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
+    else Object.defineProperty(Element.prototype, 'scrollIntoView', scrollDescriptor)
+  })
   const ctx=new Context(),mock=RemoteMock.create().load(remoteDefaultResponses)
   onTestFinished(async()=>{await ctx.fiber.dispose();mock.assertNoUnmatched()})
   await ctx.plugin(SlotRegistry).await()
@@ -94,7 +102,7 @@ async function fixture(){
   document.body.append(appRoot);onTestFinished(()=>{ appRoot.remove() })
   const view=render(<SettingsRoot {...props}/>,{ container:appRoot })
   return { ctx,scopes,editing,prepare,controller,shell,view,appRoot,
-    open:async()=>{await act(async()=>{editing.set({ scope:'original-cloud-page',isCurrent:()=>editing.getSnapshot()!==null,prepare })})},
+    open:async()=>{await act(async()=>{editing.set({ ...credentialPresentation, scope:'original-cloud-page',isCurrent:()=>editing.getSnapshot()!==null,prepare })})},
     hmr:async()=>{await act(async()=>{
       await plugin.dispose();plugin=ctx.plugin({ inject:[...inject],apply })
       await plugin.await();controller=currentController()
@@ -111,7 +119,7 @@ it.each([undefined,{ credentialOnboarding:true }])('P1 Cloud omits unavailable W
   expect(f.ctx.slots.entries('settings.section').map(row=>row.options.id)).toEqual(['models'])
   expect(screen.queryByRole('dialog')).toBeNull();expect(f.appRoot.inert).toBe(false)
   await f.open();fireEvent.click(screen.getByRole('button',{ name:'Settings' }))
-  expect(await screen.findByRole('button',{ name:en.editKey })).toBeDefined()
+  expect(await screen.findByRole('button',{ name:CREDENTIAL_COPY.editKey })).toBeDefined()
   expect(f.controller.store.getSnapshot().writable).toBe(false)
   fireEvent.click(screen.getByRole('button',{ name:'Close' }))
   expect(screen.queryByRole('dialog')).toBeNull();expect(f.appRoot.inert).toBe(false)
@@ -123,12 +131,12 @@ it('P2 missing Cloud key stays in manual Models: cancel and unavailable prepare 
   await f.open();expect(f.ctx.slots.entries('settings.onboarding')).toEqual([])
   f.prepare.mockResolvedValueOnce({ ref,store,remove:denied })
   fireEvent.click(screen.getByRole('button',{ name:'Settings' }))
-  fireEvent.click(await screen.findByRole('button',{ name:en.editKey }))
+  fireEvent.click(await screen.findByRole('button',{ name:CREDENTIAL_COPY.editKey }))
   fireEvent.change(await screen.findByLabelText(en.keyInput),{ target:{ value:'synthetic-uncommitted-draft' } })
   fireEvent.click(screen.getByRole('button',{ name:en.cancel }))
   expect(screen.queryByLabelText(en.keyInput)).toBeNull();expect(store).not.toHaveBeenCalled()
-  fireEvent.click(screen.getByRole('button',{ name:en.editKey }))
-  await screen.findByText(en.keyEditUnavailable)
+  fireEvent.click(screen.getByRole('button',{ name:CREDENTIAL_COPY.editKey }))
+  await screen.findByText(CREDENTIAL_COPY.keyEditUnavailable)
   expect(screen.queryByLabelText(en.keyInput)).toBeNull()
   fireEvent.click(screen.getByRole('button',{ name:'Close' }))
   expect(screen.queryByRole('dialog')).toBeNull();expect(f.appRoot.inert).toBe(false)
@@ -139,5 +147,5 @@ it('P2 missing Cloud key stays in manual Models: cancel and unavailable prepare 
   expect(screen.queryByRole('dialog')).toBeNull();expect(f.appRoot.inert).toBe(false)
   expect(f.scopes.mock.calls.some(([ns])=>ns==='ui-settings-general')).toBe(false)
   await f.open();fireEvent.click(screen.getByRole('button',{ name:'Settings' }))
-  await waitFor(()=>{ expect(screen.getByRole('button',{ name:en.editKey })).toBeDefined() })
+  await waitFor(()=>{ expect(screen.getByRole('button',{ name:CREDENTIAL_COPY.editKey })).toBeDefined() })
 })

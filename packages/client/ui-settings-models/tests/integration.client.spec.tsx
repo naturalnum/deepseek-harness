@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { CREDENTIAL_COPY, credentialPresentation } from './credential-presentation.client.ts'
 /** Native Models store/registration and renderer-made public hooks; no backend or private React state. */
 import Schema from '@deepseek-ai/schemastery'
 import { Context } from '@deepseek-ai/cordis'
@@ -35,23 +36,25 @@ function integration() {
   const editing=createSnapshotStore<ModelsCredentialEditing|null>(null)
   const reads={ isCurrent:()=>editing.getSnapshot()!==null,metadata:vi.fn(async()=>metadata()),
     credentials:vi.fn(async()=>({ [ref]:{ configured:true,writable:true,source:'file' as const } })) }
-  return { onboarding:false,editing,reads } satisfies ModelsSettingsIntegration
+  return { onboarding:false,editing,reads,unavailable:()=>CREDENTIAL_COPY.keyEditUnavailable } satisfies ModelsSettingsIntegration
 }
 function TestHost({ renderSlot }:PropsRenderSlots<'settings.section'|'settings.onboarding'>) { void renderSlot; return null }
 const denied=async ():Promise<never>=>{throw new Error('Native unrestricted read/write was reached')}
 
 it('loads the original store only through the readonly page input and preserves readonly settings',async()=>{
   const ctx=new Context();onTestFinished(()=>ctx.fiber.dispose())
-  const source=integration();source.editing.set({ scope:'original-page',isCurrent:()=>true,prepare:async()=>null })
+  const source=integration();source.editing.set({ ...credentialPresentation, scope:'original-page',isCurrent:()=>true,prepare:async()=>null })
   const mirror={ getSnapshot:()=>({ status:'idle' as const,view:undefined,error:null }),subscribe:()=>()=>{},ensure:denied,acceptView:()=>{} }
-  const controller=new ModelsSettingsStore(ctx,settingsSchema,mirror,{ reads:source.reads,unavailable:()=>en.keyEditUnavailable })
+  const controller=new ModelsSettingsStore(ctx,settingsSchema,mirror,{
+    reads:source.reads,unavailable:()=>CREDENTIAL_COPY.keyEditUnavailable,
+  })
   await controller.load()
   expect(controller.store.getSnapshot()).toMatchObject({ status:'ready',writable:false,credentialError:null })
   expect(controller.store.getSnapshot().rows[0]).toMatchObject({ apiKeyEnv:ref,credential:{ configured:true,writable:true } })
   expect(source.reads.credentials).toHaveBeenCalledExactlyOnceWith([ref])
   source.reads.metadata.mockRejectedValueOnce(new Error('PRIVATE_METADATA_ERROR'))
   await controller.load()
-  expect(controller.store.getSnapshot()).toMatchObject({ status:'error',error:en.keyEditUnavailable })
+  expect(controller.store.getSnapshot()).toMatchObject({ status:'error',error:CREDENTIAL_COPY.keyEditUnavailable })
   expect(JSON.stringify(controller.store.getSnapshot())).not.toContain('PRIVATE_METADATA_ERROR')
 })
 
@@ -79,8 +82,8 @@ it('publishes original slot hooks, clears a draft on null and withdraws its sour
   const props={ controller,operations:{ storeCredential:denied,removeCredential:denied,writeSettings:denied,discoverModels:denied },schema:settingsSchema,t:locale.bind('settings.models'),
     useSnapshot:bindSnapshotSelector(controller.store),useCredentialEditing:bindSnapshotSelector(source.editing),renderSlot:()=>null }
   const view=render(<IntegratedModels {...props}/> )
-  await act(async()=>{source.editing.set({ scope:'native-page',isCurrent:()=>true,prepare:async()=>({ ref,store,remove:async()=>undefined }) })})
-  fireEvent.click(await screen.findByRole('button',{ name:en.editKey }))
+  await act(async()=>{source.editing.set({ ...credentialPresentation, scope:'native-page',isCurrent:()=>true,prepare:async()=>({ ref,store,remove:async()=>undefined }) })})
+  fireEvent.click(await screen.findByRole('button',{ name:CREDENTIAL_COPY.editKey }))
   fireEvent.change(await screen.findByLabelText(en.keyInput),{ target:{ value:'synthetic-draft-only' } })
   await act(async()=>{locale.setLocale('zh')})
   view.rerender(<IntegratedModels {...props}/> )
