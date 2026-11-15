@@ -1482,8 +1482,10 @@ test('new asset predecessor failure occurs before reservation and old free never
   await withNativeOperationLock(directory, fixture.prior.record.operation, async () => fixture.prior.record)
   const effects = Object.fromEntries(names.map(name => [name, async () => { throw new Error('must not execute') }]))
   effects.observeTuple = async () => fixture.next.originalTupleSha256
+  const failure = new Error('fresh predecessor unknown')
   await assert.rejects(runNativeDelivery({ directory, pins: fixture.next, authority: root.store(), assetSuccessor: fixture.binding,
-    confirmPredecessor: async () => { throw new Error('fresh predecessor unknown') }, effects }), /fresh predecessor unknown/)
+    confirmPredecessor: async () => { throw failure }, effects }),
+    error => unconfirmed(error) && error.phase === 'operation-unconfirmed' && error.cause === failure)
   assert.throws(() => root.store().read())
   assert.equal(fs.existsSync(join(directory, 'operation.lock')), true)
   assert.equal(fs.existsSync(join(directory, 'native-release-' + fixture.next.operation + '.json')), false)
@@ -1751,8 +1753,11 @@ try {
   else value[0].insert[index].config.retained=[{nested:{__jsExpr:null}}];
   cases.push({name:selected+'-'+kind,profile:value,account:base({}),factory:1});
  }
- let deep={};for(let index=0;index<130;index++)deep={next:deep};
- cases.push({name:'reader-bounded-depth',account:base(deep),factory:0,phase:'profile-directory-literal-bounds'});
+ // Real YAML aliases keep parser nesting shallow while the selected object exceeds the unchanged literal guard depth.
+ const depthAnchors=['- id: depth-anchors\n  name: unrelated-account\n  config:\n    anchors:\n      - &depth0 {}\n'];
+ for(let index=1;index<=66;index++)depthAnchors.push('      - &depth'+index+' { next: { next: *depth'+(index-1)+' } }\n');
+ const deepAccount=depthAnchors.join('')+'- id: reader\n  name: pe-cloud-workspace-files\n  config: *depth66\n';
+ cases.push({name:'reader-bounded-depth',account:deepAccount,factory:0,phase:'profile-directory-literal-bounds'});
  cases.push({name:'reader-cycle',account:'- id: reader\n  name: pe-cloud-workspace-files\n  config: &cycle { retained: *cycle }\n',factory:0,phase:'profile-directory-literal-cycle'});
  const results=[];
  for(const row of cases){factoryCalls=0;const current=fixture(row.profile??patch(),row.account);
