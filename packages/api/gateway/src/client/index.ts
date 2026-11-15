@@ -47,6 +47,16 @@ export type { RemoteStreamItem, RemoteStreamOptions } from './remote-stream.ts'
 export { RemoteSnapshotStream } from './snapshot-stream.ts'
 export type { RemoteSnapshotStreamOptions } from './snapshot-stream.ts'
 
+/** Optional embedding compatibility for the original private install name. */
+export interface ClientRemoteMethodCompatibility {
+  /**
+   * Allow this namespace to expose its generated install method.
+   * @param namespace - Exact namespace selected by the original contribution.
+   * @returns True only for the embedding's explicit opt-in; omission retains the Native reserved-name default.
+   */
+  allowInstallMethod(namespace: string): boolean
+}
+
 const installRemoteMethod = Symbol('api-gateway.installRemoteMethod')
 
 interface MountToken {
@@ -130,6 +140,8 @@ declare module '@deepseek-ai/cordis' {
   interface Context {
     /** Generated Remote namespaces selected by the Client assembly. */
     remote: ClientRemote
+    /** Optional embedding naming policy; absence preserves the original reserved install name. */
+    remoteMethodCompatibility: ClientRemoteMethodCompatibility
   }
 }
 
@@ -319,7 +331,8 @@ class ClientRemoteService extends Service implements ClientRemote {
         }
       }
       for (const method of new Set([...(direct.get(namespace) ?? []), ...(scoped.get(namespace) ?? [])])) {
-        if (service === undefined) RemoteNamespaceService.assertMethodAvailable(namespace, method)
+        if (service === undefined) RemoteNamespaceService.assertMethodAvailable(namespace, method,
+          method === 'install' && this.ctx.get('remoteMethodCompatibility')?.allowInstallMethod(namespace) === true)
         else service.assertMethodAvailable(method)
       }
     }
@@ -641,8 +654,9 @@ class RemoteNamespaceService extends Service {
   private readonly methods = new Map<string, RemoteMethodRecord>()
   private readonly namespace: string
 
-  static assertMethodAvailable(namespace: string, method: string): void {
-    if (REMOTE_NAMESPACE_FIELDS.has(method) || method in RemoteNamespaceService.prototype) {
+  static assertMethodAvailable(namespace: string, method: string, allowInstall = false): void {
+    if ((method === 'install' && !allowInstall)
+      || REMOTE_NAMESPACE_FIELDS.has(method) || method in RemoteNamespaceService.prototype) {
       throw new Error(`client api: method ${JSON.stringify(`${namespace}/${method}`)} conflicts with its namespace service`)
     }
   }
@@ -657,7 +671,8 @@ class RemoteNamespaceService extends Service {
   }
 
   assertMethodAvailable(method: string): void {
-    RemoteNamespaceService.assertMethodAvailable(this.namespace, method)
+    RemoteNamespaceService.assertMethodAvailable(this.namespace, method,
+      method === 'install' && this.ctx.get('remoteMethodCompatibility')?.allowInstallMethod(this.namespace) === true)
     if (method in this && !this.methods.has(method)) {
       throw new Error(`client api: method ${JSON.stringify(`${this.namespace}/${method}`)} conflicts with its namespace service`)
     }

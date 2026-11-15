@@ -67,7 +67,7 @@ Host 组合可通过 `registerRemoteEvents()` 注册唯一的应用事件 source
 
 `ctx.remote.$mount()` 会校验并注册生成的 Host-for-Client 贡献项，然后为发起调用的 Cordis fiber 安装具体的直接方法和作用域方法。每个 namespace 都是可追踪的 `remote.<namespace>` 子 Service，并在最后一个方法撤回后卸载。重复端点、命名空间冲突，以及缺少生成的严格 codec 的 Client 供值字段，都会在方法可调用前报错。
 
-Namespace 安装以模块内唯一 Symbol 命名内部辅助方法，因此生成的业务方法（如 `install`）仍可调用。`ctx`、`empty` 等真实 Service 成员仍拒绝重名；严格输入、重复检查及贡献项撤回行为保持不变。
+Native 保留原 `install` 保留名称。挂载贡献项前，已激活的嵌入方可通过公开 `ClientRemoteMethodCompatibility.allowInstallMethod(namespace)` 回调提供 `ctx.remoteMethodCompatibility`，显式允许确切 namespace 使用该名称。内部辅助方法对这些显式选择使用模块内唯一 Symbol。`ctx`、`empty` 等真实 Service 成员、其他原型重名、严格输入、重复检查及贡献项撤回仍保留原检查；名称回调不授予 Host 调用权限。
 
 每次一元调用都会检查位置参数数量，构造与描述符完全匹配的具名 `args`，再把带类型的值原样交给 `ctx.connection.rpc.call('/api', endpoint, ...)`，而不执行 Client 侧 schema；Host 会在业务调用前校验收到的 wire 字段。生成的流方法返回 `dsh-typert-protocol` 的 `RemoteStreamHandle<Out, In>`，并在被调用时就打开一条逻辑流，进程内 Connection 载体可用时通过它打开，否则通过共享的 Gateway WebSocket 打开。句柄只迭代下行一次。`send(item)` 把一个上行项入队，在 `open` 帧之后发出；`end()` 半关闭上行；`dispose()` 在未收到终止帧时发送 `cancel`，并让迭代安静结束。提前跳出迭代等价于 dispose 句柄；下行终止后 `send` 抛错，`end` 被忽略。生成的支持取消的方法接受最后一个可选 `AbortSignal`；Client 会在调用载体前将它与贡献项的挂载生命周期合并。Client 将一元结果转换交给 codec 的可选 `decode()`。生成的解码器校验嵌套元数据与原生字节类型，不逐字节遍历、复制或冻结字节载荷。JSON 一元结果与流项不经 Client 侧类型解析直接传递。撤回贡献项会同时移除其描述符和方法、中止正在进行的调用与流，并使外部仍持有的方法句柄在调用时返回拒绝。
 

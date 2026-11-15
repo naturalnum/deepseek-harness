@@ -104,7 +104,8 @@
     "src/client/mcp/index.ts",
     "src/client/mcp/McpConnectionsSection.tsx",
     "src/client/mcp/locales.ts",
-    "src/client/document-byte-reader.ts"
+    "src/client/document-byte-reader.ts",
+    "src/client/remote-method-compatibility.ts"
   ],
   "references": [
     {

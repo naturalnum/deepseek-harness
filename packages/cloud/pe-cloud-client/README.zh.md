@@ -43,6 +43,9 @@ Cloud 通过 `skill-catalog-refresh.ts` 持有原有 `skills/change` 目录刷�
 
 Cloud 通过 `document-byte-reader.ts` 和 Native 可选 `documentPreviewByteReader` 回调持有提供方受限时的完整字节预览政策。原表格 renderer 在已解析的 Native 字节预算内，以最多 32 KiB 窗口读取 CSV／TSV；其他完整文件保留普通读取，仅在原声明大小错误后回退。每个窗口仍使用原账号 Remote 和 Session 地址，复核路径／版本／大小一致性，并在交付字节前确认末尾空范围。原依赖作用域在释放或 Remote 替换时撤回调并取消后续窗口；已派发的真实 RPC 仍须等待，取消不等于实际结束。注册不发 I/O，原 Native store、缓存、解析和刷新行为保持。
 
+
+Cloud 在挂载原生成 API 贡献前提供显式 Remote 名称兼容，仅允许已有 `cloudSkills` namespace 使用生成的 `install` 方法；已发布端点和原请求／应答保持不变。原 entry 作用域持有兼容值与贡献，撤回仍沿 Native 挂载清理和旧句柄拒绝。其他 Root 与 namespace 保持 Native 保留名称默认，Host 授权独立执行。
+
 ### 适用场景
 
 先从原始原生模块表导入本包公开 `/client` 命名空间，再在 Cordis 激活前调用 `PreparedCloudPage.prepare(input, signal)`。其 `ready` promise 在 bootstrap 请求结算后交付已解码页面 owner，并不证明服务端账户图就绪。用同一张表构造 `AppWebEntry(container, { ...page.nativeOptions, modules })`，随后等待 `page.start(entry)`；不能第二次调用 bootstrap facade 的 `create()`。保留 preparation，并在替换页面前等待 `preparation.dispose()`。只有 Cloud `/client` entry 安装 Connection；Host 通过 `registerClientPackages(..., { activate: false })` 声明原始 Connection 模块，使其普通插件不被激活。

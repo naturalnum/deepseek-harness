@@ -1,7 +1,7 @@
 {
   "counts": {
     "native_source_files": 190,
-    "non_seam_files": 59,
+    "non_seam_files": 58,
     "uncentralized_internal_lines": 0
   },
   "imports": [
@@ -4280,6 +4280,24 @@
       "module": "@deepseek-ai/dsh-api-gateway/client",
       "names": [
         "(augmentation)"
+      ],
+      "typeOnly": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-client/src/client/remote-method-compatibility.ts",
+      "line": 2,
+      "module": "@deepseek-ai/cordis",
+      "names": [
+        "Context"
+      ],
+      "typeOnly": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-client/src/client/remote-method-compatibility.ts",
+      "line": 3,
+      "module": "@deepseek-ai/dsh-api-gateway/client",
+      "names": [
+        "ClientRemoteMethodCompatibility"
       ],
       "typeOnly": true
     },
@@ -10833,11 +10851,11 @@
     },
     {
       "路径": "packages/api/gateway/src/client/index.ts",
-      "类别": "通用修复",
-      "原因": "私有方法 install 改成 Symbol，解除“远程方法不能叫 install”的限制（云端的 cloudSkills.install 撞名）",
-      "撤销条件": "把云端那个远程方法改名即可回退；或作为通用修复提上游",
-      "处置": "撤掉",
-      "这一程的状态": "没动",
+      "类别": "扩展点",
+      "原因": "仅生成install名显式兼容口；原Native默认继续拒绝，Cloud单独允许其已有cloudSkills命名空间，原RPC/codec/取消/卸载不变",
+      "撤销条件": "Native提供等价公开兼容入口时替换；无贡献保持目标保留名称行为",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
       "changed": true
     },
     {

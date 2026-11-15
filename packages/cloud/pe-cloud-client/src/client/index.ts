@@ -12,6 +12,7 @@ import { installCloudModelSettings } from './model-settings.ts'
 import { installCloudSkillSettings } from './skill-settings.ts'
 import { installCloudSkillCatalogRefresh } from './skill-catalog-refresh.ts'
 import { installCloudDocumentByteReader } from './document-byte-reader.ts'
+import { installCloudRemoteMethodCompatibility } from './remote-method-compatibility.ts'
 import { installCloudManagement } from './management/register.tsx'
 import { installCloudServicePreviews } from './service-previews.ts'
 import { installCloudSidebarAccount } from './sidebar-account.ts'
@@ -37,6 +38,7 @@ export function apply(ctx: Context, config: Config): void {
   if (owner === undefined) throw new Error('pe-cloud-client/client requires its pre-Cordis prepared page owner')
   if (Object.keys(config).length !== 0) throw new Error('pe-cloud-client/client requires empty Loader configuration; limits belong to preparation')
   owner.activate(ctx)
+  installCloudRemoteMethodCompatibility(ctx)
   installCloudBrand(ctx)
   installCloudSubagentSettings(ctx, owner)
   installCloudRemoteServers(ctx, owner)

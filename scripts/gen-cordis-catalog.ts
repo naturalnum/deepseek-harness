@@ -228,6 +228,7 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   uiWorkspace: 'client-side Workspace navigation adapter — packages/client/ui-workspace/README.md owns the API',
   uiSkillCatalog: 'client-side explicit Native skill cache invalidation control, outside the Host projection — packages/client/ui-skill/README.md owns the API',
   documentPreviewByteReader: 'client-side optional complete-byte preview callback, outside the Host projection — packages/client/ui-sidebar-documentpreview/README.md owns the API',
+  remoteMethodCompatibility: 'client-side optional generated install-name policy, outside the Host projection — packages/api/gateway/README.md owns the API',
   settingsSchema: 'client-side schema introspection service — packages/client/ui-settings/README.md owns the API',
   configForms: 'client-side shared entry forms — packages/client/ui-settings/README.md owns the API',
   chatFileMentions: 'client-side slot-contract accessor (ChatFileMentions) — packages/client/ui-chat/README.md owns the API',

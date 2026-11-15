@@ -765,21 +765,14 @@ describe('Client Remote transport readiness', () => {
 })
 
 describe('Client Typert API', () => {
-  it('mounts a business method named install without exposing its native helper', async () => {
+  it('retains the Native reserved install name when no embedding explicitly opts in', async () => {
     const call = vi.fn<ConnectionHandle['rpc']['call']>(), ctx = await bench(call)
     onTestFinished(async () => { await ctx.fiber.dispose() })
-    const unmount = await ctx.remote.$mount({ package: '@fixture/install',
+    await expect(ctx.remote.$mount({ package: '@fixture/install',
       descriptors: [{ ...directDescriptor(), id: '@fixture/install#probe/install', method: 'install' }],
-    })
-    const namespace = ctx.remote.probe, retained: unknown = Reflect.get(namespace, 'install')
-    expect(retained).toBeTypeOf('function')
-    if (typeof retained !== 'function') throw new Error('Generated install method is missing')
-    await unmount()
+    })).rejects.toThrow('client api: method "probe/install" conflicts with its namespace service')
     expect(ctx.get('remote.probe')).toBeUndefined()
     expect(ctx.typert.remotes.list()).toEqual([])
-    await expect(Reflect.apply(retained, namespace, ['agent-1', { objective: 'ship' }])).resolves.toMatchObject({
-      ok: false, error: { code: 'gateway/internal', message: 'client api: Remote method probe/install is no longer mounted' },
-    })
     expect(call).not.toHaveBeenCalled()
   })
 
