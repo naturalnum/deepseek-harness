@@ -10,6 +10,7 @@ import { AGENT_SOURCE_SHA256 } from '../src/agent-data/index.ts'
 async function fixture(options: { statuses?: number[]
   wireError?: boolean
   command502?: boolean
+  commandReply?: 'error' | 'malformed-error' | 'stderr-eof'
   replyBytes?: number
   lifecycleByteLimit?: number
   cancelAfterReply?: boolean
@@ -60,7 +61,14 @@ async function fixture(options: { statuses?: number[]
       if(url.pathname.endsWith('/files/upload'))return Response.json({})
       expect(url.pathname.endsWith('/command')).toBe(true);commands++
       if(options.command502)return new Response('private command fault',{ status:502 })
-      const rows=[{ type:'init',text:'original' },{ type:'stdout',text:commands===1?'s4-bootstrap-claimed\n':'s4-bootstrap-started\n' },{ type:'execution_complete' }]
+      const commandInit={ type:'init',text:'original' }
+      const text=commands===1?'s4-bootstrap-claimed\n':'s4-bootstrap-started\n'
+      const rows=options.commandReply==='error'
+        ? [commandInit,{ type:'stderr',text:'original fixed prep refused' },
+          { type:'error',error:{ ename:'CommandExecError',evalue:'1',exit_code:1 } }]
+        : options.commandReply==='malformed-error' ? [commandInit,{ type:'error',error:{} }]
+          : options.commandReply==='stderr-eof' ? [commandInit,{ type:'stderr',text:'original partial output' }]
+            : [commandInit,{ type:'stdout',text },{ type:'execution_complete' }]
       return new Response(rows.map(v=>JSON.stringify(v)+'\n').join(''),{ headers:{ 'content-type':'text/event-stream' } })
     } }})
   const readiness: AgentReadinessBudget = { remainingPolls:2,intervalMs:1,deadlineAtMs:Date.now()+10000,chargeReplyBytes(bytes){
@@ -140,4 +148,19 @@ it('Root fence waits for health EOF and actual dispatcher close and never admits
   expect(joined).toBe(false);expect(f.commands).toBe(0);expect(f.health).toBe(1)
   f.closeRelease.resolve(undefined);await rejected;await fenced.whenJoined
   expect(joined).toBe(true);expect(f.requests.filter(v=>v.startsWith('POST'))).toHaveLength(0)
+})
+
+it('joins a settled foreground error without requiring success completion or replaying prep',async()=>{
+  const f=await fixture({ commandReply:'error' })
+  const pending=f.bootstrap.bootstrap(f.selection,f.signal,f.readiness)
+  await expect(pending).rejects.toMatchObject({ code:'command-failed' })
+  expect(f.bootstrap.bootstrap(f.selection,f.signal,f.readiness)).toBe(pending)
+  expect(f.commands).toBe(1)
+  await expect(f.bootstrap.fence(f.selection).whenJoined).resolves.toBeUndefined()
+})
+it.each(['malformed-error','stderr-eof'] as const)('retains unknown command responsibility for %s',async(commandReply)=>{
+  const f=await fixture({ commandReply })
+  await expect(f.bootstrap.bootstrap(f.selection,f.signal,f.readiness)).rejects.toMatchObject({ code:'command-unknown' })
+  expect(f.commands).toBe(1)
+  await expect(f.bootstrap.fence(f.selection).whenJoined).rejects.toMatchObject({ code:'command-unknown' })
 })
