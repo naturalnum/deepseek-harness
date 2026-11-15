@@ -65,7 +65,7 @@ function main() {
     return 1
   }
   if (extended) {
-    const result = execFileSync('python3', [inventory, base, '--repo', root], { encoding: 'utf8' })
+    const result = execFileSync('python3', [inventory, base, '--repo', root, '--check-centralized'], { encoding: 'utf8' })
     process.stdout.write(result)
   }
   console.log(`upstream check: ${changed.size} changed source files; ${ledger.size} ledger rows; matched.`)

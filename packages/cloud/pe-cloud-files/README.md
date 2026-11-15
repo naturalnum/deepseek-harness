@@ -245,3 +245,5 @@ Production activation of the complete S3 file capability still requires the foll
 None.
 
 </details>
+
+Native proxy identity and private integration reads for this plugin are collected in `src/native-internals.ts`; existing effect, authorization and resource owners remain unchanged.

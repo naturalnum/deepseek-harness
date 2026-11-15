@@ -222,3 +222,5 @@ fetch 正文已被捕获 signal 的同一个取消原因置为 errored 时，按
 云端客户端通过 access 包的 `/types` 消费现有绑定类型。根源码别名、编译聚合、锁文件登记、公共 bootstrap 字段及构建产物由包外统一协调。
 
 </details>
+
+本插件的原生代理身份及内部集成读取集中在 `src/native-internals.ts`；现有效果、授权及资源所有者保持原样。

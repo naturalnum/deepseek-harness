@@ -256,3 +256,5 @@ Root 显式配置 `accountAdministration: { maxAccounts, maxPageSize, initialAdm
 </details>
 
 已准入 Node mux 将通用 `gateway/internal` 诊断替换为固定公开文本与空详情。其他代码的 Remote 失败保留原生代码和消息。该投影不改变原流清理结果，也不释放仍持有的账号责任。
+
+本插件的原生代理身份及内部集成读取集中在 `src/native-internals.ts`；现有效果、授权及资源所有者保持原样。

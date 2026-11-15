@@ -1,5 +1,5 @@
 /** Actual Loader/package inventory for the closed deployment catalog; approval alone never means installed. */
-import { FiberState, symbols, type Context } from '@deepseek-ai/cordis'
+import { FiberState, symbols, type Context, type Fiber } from '@deepseek-ai/cordis'
 import { PluginPackages } from '@deepseek-ai/dsh-app-boot'
 import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
 import { CloudApiError, CloudPluginService, projectApprovedSettings,
@@ -116,3 +116,15 @@ export async function inspectBootstrapConfiguration(
     }), assertCurrent,
   }
 }
+
+/** Read the original Native proxy target; callers retain narrowing and fallback policy.
+ * @param value Borrowed Native object or function.
+ * @returns Its original target, or undefined without a Native proxy target.
+ */
+export function nativeOriginal(value: object): unknown { return Reflect.get(value, symbols.original) }
+
+/** Read the original log fiber without retaining a new owner.
+ * @param reference Native logger's weak reference.
+ * @returns The live original fiber, or undefined after release.
+ */
+export function nativeLoggedFiber(reference: WeakRef<Fiber> | undefined): Fiber | undefined { return reference?.deref() }

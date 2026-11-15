@@ -1,6 +1,7 @@
 /** Closed execution owns registrations and refusal only; it has no backend or process dependency. */
+import { nativeOriginal } from './native-internals.ts'
 import { randomUUID } from 'node:crypto'
-import { FiberState, symbols, type Context } from '@deepseek-ai/cordis'
+import { FiberState, type Context } from '@deepseek-ai/cordis'
 import type { AccountBinding, AccountId, ParticipantReceipt } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { nativeProvision } from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import { assertInstalledExecutionBinding, IssuedExecutionPort, installIssuedExecutionPort,
@@ -165,7 +166,7 @@ export class ClosedExecutionOwner {
     if (providers === undefined || providers.ctx.fiber.state !== FiberState.ACTIVE) this.stale()
     const original = (value: unknown): unknown => {
       if (value === null || (typeof value !== 'object' && typeof value !== 'function')) return value
-      const target: unknown = Reflect.get(value, symbols.original)
+      const target: unknown = nativeOriginal(value)
       return target !== null && (typeof target === 'object' || typeof target === 'function') ? target : value
     }
     for (const [key, expected] of [['shell', providers.shell], ['subprocess', providers.subprocess]] as const) {

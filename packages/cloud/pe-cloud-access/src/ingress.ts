@@ -1,8 +1,9 @@
 /** Package-private shared-Web ingress; actual recipe and native transport prerequisites remain authoritative. */
+import { nativeOriginal } from './native-internals.ts'
 import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Duplex } from 'node:stream'
-import { FiberState, symbols, type Context } from '@deepseek-ai/cordis'
+import { FiberState, type Context } from '@deepseek-ai/cordis'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { WebRoute, WebServer } from '@deepseek-ai/dsh-host-webserver'
 import type { PeerScope } from '@deepseek-ai/dsh-typert-protocol'
@@ -292,7 +293,7 @@ export class CloudIngress {
     const web = this.ctx.get('webServer')
     const expectedRegistrations = 5 + (this.limits.servicePreview === undefined ? 0 : 1) + (this.auth.accountAdministrationEnabled ? 1 : 0)
     const original = (value: object): object => {
-      const target: unknown = Reflect.get(value, symbols.original)
+      const target: unknown = nativeOriginal(value)
       return target !== null && (typeof target === 'object' || typeof target === 'function') ? target : value
     }
     return Object.freeze({
@@ -415,8 +416,8 @@ export class CloudIngress {
             use.assertCurrent()
             const exposure = this.ctx.get('peExposure')
             if (exposure === undefined || this.dependencies.exposure === undefined
-              || (Reflect.get(exposure, symbols.original) ?? exposure)
-                !== (Reflect.get(this.dependencies.exposure, symbols.original) ?? this.dependencies.exposure)) {
+              || (nativeOriginal(exposure) ?? exposure)
+                !== (nativeOriginal(this.dependencies.exposure) ?? this.dependencies.exposure)) {
               throw new AuthAccessError('cloud/account-unavailable', operation.id)
             }
           }
@@ -474,7 +475,7 @@ export class CloudIngress {
               assertExpectedAccount(expected, principal.accountId, operation.id)
               assertExpectedGeneration(expected, this.generations.current(use.binding, operation.id), operation.id)
               const actual = this.accountApi(use.context, use.binding)
-              if ((Reflect.get(actual, symbols.original) ?? actual) !== (Reflect.get(api, symbols.original) ?? api)) {
+              if ((nativeOriginal(actual) ?? actual) !== (nativeOriginal(api) ?? api)) {
                 throw new AuthAccessError('cloud/account-unavailable', operation.id)
               }
               const row = api.requireFetch(request.method ?? '', url.pathname)
@@ -573,7 +574,7 @@ export class CloudIngress {
             assertExpectedAccount(expected, principal.accountId, operation.id)
             assertExpectedGeneration(expected, this.generations.current(use.binding, operation.id), operation.id)
             const currentApi = this.accountApi(use.context, use.binding)
-            if ((Reflect.get(currentApi, symbols.original) ?? currentApi) !== (Reflect.get(api, symbols.original) ?? api)
+            if ((nativeOriginal(currentApi) ?? currentApi) !== (nativeOriginal(api) ?? api)
               || exposure.policy.manifest !== manifest) {
               throw new AuthAccessError('cloud/account-unavailable', operation.id)
             }

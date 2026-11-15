@@ -2,9 +2,10 @@
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { PluginPackages } from '@deepseek-ai/dsh-app-boot'
+import { installEntryConfigInspection } from '@deepseek-ai/dsh-app-boot/src/entry-config-impact.ts'
 import * as Api from '@deepseek-ai/dsh-pe-cloud-api'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { inspectBootstrapConfiguration } from '../src/bootstrap-inventory.ts'
+import { inspectBootstrapConfiguration } from '../src/native-internals.ts'
 
 const contexts: Context[] = []
 afterEach(async () => {
@@ -17,6 +18,7 @@ async function fixture() {
   contexts.push(ctx)
   ctx.baseUrl = new URL('../package.json', import.meta.url).href
   await ctx.plugin(Loader, { baseUrl: ctx.baseUrl })
+  installEntryConfigInspection(ctx.loader)
   const packagesFiber = ctx.plugin(PluginPackages)
   await packagesFiber
   const packages = ctx.get('pluginPackages')!, loader = ctx.get('loader')!

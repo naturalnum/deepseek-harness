@@ -1,6 +1,7 @@
 /** Account-private HTTP MCP definitions and native credential records, saved by the original account barrier. */
+import { nativeOriginal } from './native-internals.ts'
 import { randomUUID } from 'node:crypto'
-import { symbols, type Context } from '@deepseek-ai/cordis'
+import { type Context } from '@deepseek-ai/cordis'
 import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 import { credentialKey } from '@deepseek-ai/dsh-credentials'
 import { defineDomain } from '@deepseek-ai/dsh-storage-domain'
@@ -53,7 +54,7 @@ const recordSchema = z.strictObject({ id: z.uuid(), serverName: z.string().regex
   url: z.string(), enabled: z.boolean(), toolCallTimeoutMs: z.number().int().positive() })
 const headersSchema = z.strictObject({ version: z.literal(1), headers: z.record(z.string(), z.string()) })
 function original(value: object): object {
-  const raw: unknown = Reflect.get(value, symbols.original)
+  const raw: unknown = nativeOriginal(value)
   return raw !== null && typeof raw === 'object' ? raw : value
 }
 function unavailable(): never { throw new Error('cloud/mcp-connection-unavailable') }

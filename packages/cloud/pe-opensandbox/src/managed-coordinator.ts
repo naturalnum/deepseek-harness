@@ -1,7 +1,8 @@
 /** Root composition of durable allocations, original account ports and independently settled command reservations. */
+import { nativeOriginal } from './native-internals.ts'
 import { randomUUID } from 'node:crypto'
 import { posix } from 'node:path'
-import { FiberState, symbols, type Context } from '@deepseek-ai/cordis'
+import { FiberState, type Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { AccountBinding, AccountId, AccountRuntimeService, OperationId,
   ParticipantReceipt } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
@@ -599,7 +600,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
       || (port.enforcesSessionFilePolicy === true) !== (this.config.shell.enforceSessionFilePolicy === true)) this.stale()
     const original = (value: unknown): unknown => {
       if (value === null || typeof value !== 'object' && typeof value !== 'function') return value
-      const target: unknown = Reflect.get(value, symbols.original)
+      const target: unknown = nativeOriginal(value)
       return target !== null && (typeof target === 'object' || typeof target === 'function') ? target : value
     }
     for (const [key, expected] of [['shell', providers.shell], ['subprocess', providers.subprocess],

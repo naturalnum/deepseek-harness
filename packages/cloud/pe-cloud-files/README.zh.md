@@ -245,3 +245,5 @@ files 静止查询观察原有精确 epoch lane、待处理工作及 root probe 
 无。
 
 </details>
+
+本插件的原生代理身份及内部集成读取集中在 `src/native-internals.ts`；现有效果、授权及资源所有者保持原样。

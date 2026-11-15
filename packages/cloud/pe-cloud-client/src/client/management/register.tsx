@@ -1,4 +1,5 @@
 /** Sole Cloud management navigation, locale and transient feedback assembly. */
+import { nativeOnPlugin, nativeOnStatus } from '../../native-internals.ts'
 import { observeCloudDisposal } from '../observe-disposal.ts'
 import type { Context, FiberState } from '@deepseek-ai/cordis'
 import type { ReactNode } from 'react'
@@ -45,7 +46,7 @@ export function installCloudManagement(ctx: Context, page: PreparedCloudPage): v
     return withdraw
   }
   const withdraw = (): void => { for (const remove of [...removers].reverse()) remove() }
-  ctx.on('internal/plugin', (fiber) => { if (fiber === ctx.fiber && fiber.uid === null) withdraw() })
+  nativeOnPlugin(ctx, (fiber) => { if (fiber === ctx.fiber && fiber.uid === null) withdraw() })
   const dependency = ctx.inject(['slots', 'locale'], (owner) => {
     const assertCurrent = (): void => {
       ctx.fiber.assertActive()
@@ -53,8 +54,8 @@ export function installCloudManagement(ctx: Context, page: PreparedCloudPage): v
       if (owner.get('peCloudPage') !== page) throw new ClientFailure('closed')
     }
     assertCurrent()
-    owner.on('internal/plugin', (fiber) => { if (fiber === owner.fiber && fiber.uid === null) withdraw() })
-    owner.on('internal/status', (fiber) => { if (fiber === owner.fiber && fiber.state !== FIBER_ACTIVE) withdraw() })
+    nativeOnPlugin(owner, (fiber) => { if (fiber === owner.fiber && fiber.uid === null) withdraw() })
+    nativeOnStatus(owner, (fiber) => { if (fiber === owner.fiber && fiber.state !== FIBER_ACTIVE) withdraw() })
     owner.effect(() => track(owner.locale.register(CLOUD_MANAGEMENT_NAMESPACE, cloudManagementDictionaries)), 'pe-cloud-client: management copy')
     if (skills) owner.effect(() => track(owner.locale.register(SKILLS_MANAGEMENT_NAMESPACE, skillsManagementDictionaries)), 'pe-cloud-client: skills copy')
     const notice = createSnapshotStore<ManagementNotice | null>(null)

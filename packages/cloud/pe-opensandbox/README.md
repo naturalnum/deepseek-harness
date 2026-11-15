@@ -217,3 +217,5 @@ Closed mode is a restricted deployment configuration, not verified remote execut
 The portable [opt-in scope probe](tests/opensandbox-scope-probe.mjs) requires explicit `--workspace-root`, `--sdk-root`, `--out` and `--execute-authorized-once` arguments. It uses fixed cached images and at most one bounded Sandbox with two inner scopes. Its evidence separates scoped stopping, namespace security facts and binary-file Range transport; it does not enable execution or validate complete subprocess semantics.
 
 </details>
+
+Native proxy identity and private integration reads for this plugin are collected in `src/native-internals.ts`; existing effect, authorization and resource owners remain unchanged.

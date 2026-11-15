@@ -1,5 +1,5 @@
 /** C11 projection from original graph owners and explicitly audited execution/file policies. */
-import { symbols, type Context } from '@deepseek-ai/cordis'
+import { type Context } from '@deepseek-ai/cordis'
 import { CloudAccountApi, CloudApiError, ExposureService, approvedSettingsMatch, MODEL_KEY_RPC_ENDPOINTS, PLUGIN_RPC_ENDPOINTS, SESSION_CONTROLLER_ENDPOINTS } from '@deepseek-ai/dsh-pe-cloud-api'
 import { CloudAccountFiles } from '@deepseek-ai/dsh-pe-cloud-files'
 import { accountExecutionMode, accountServiceAvailability, assertAccountExecutionProviders } from '@deepseek-ai/dsh-pe-opensandbox'
@@ -10,12 +10,12 @@ import { SESSION_LOG_EXPORT_PATH } from '@deepseek-ai/dsh-session-log-export'
 import type { EndpointExposure } from '@deepseek-ai/dsh-pe-cloud-api'
 import { SERVICE_PREVIEW_ROUTE } from './preview-route.ts'
 import { decodeCloudBootstrap } from './bootstrap.ts'
-import { inspectBootstrapConfiguration } from './bootstrap-inventory.ts'
+import { inspectBootstrapConfiguration, nativeOriginal } from './native-internals.ts'
 import type { CloudBootstrap } from './types.ts'
 
 function unavailable(): never { throw new CloudApiError('cloud/account-unavailable', 'The actual bootstrap prerequisites could not be confirmed.') }
 function original(value: object): object {
-  const target: unknown = Reflect.get(value, symbols.original)
+  const target: unknown = nativeOriginal(value)
   return target !== null && (typeof target === 'object' || typeof target === 'function') ? target : value
 }
 

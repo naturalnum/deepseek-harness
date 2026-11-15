@@ -1,4 +1,5 @@
 /** Host declaration and optional public Web inputs; no business service or HTTP route. */
+import { nativeModuleBaseUrl } from './native-internals.ts'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
@@ -65,7 +66,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   if (!Object.hasOwn(ctx.fiber.inject, 'clientModules')) {
     throw new Error('Cloud Web Loader entry must explicitly inject clientModules')
   }
-  const baseUrl = ctx.fiber.entry?.parent.tree.ctx.baseUrl
+  const baseUrl = nativeModuleBaseUrl(ctx)
   if (baseUrl === undefined) throw new Error('Cloud Web module supply requires the original Loader resolution base')
   const supplier = ctx.inject(['clientModules'], (owner) => {
     owner.effect(() => owner.clientModules.registerClientPackages(

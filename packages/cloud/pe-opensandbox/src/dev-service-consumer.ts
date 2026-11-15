@@ -1,5 +1,6 @@
 /** One fixed native tool over original Root work; no Job registry, HTTP control plane or process ownership. */
-import { symbols, type Context } from '@deepseek-ai/cordis'
+import { nativeOriginal } from './native-internals.ts'
+import { type Context } from '@deepseek-ai/cordis'
 import { posix } from 'node:path'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { SubprocessHandle, SubprocessRuntime, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
@@ -206,7 +207,7 @@ export function registerDevServiceConsumer<Project>(ctx: Context, calls: NativeE
   })
   const dispose = tools.register(definition)
   const original = (value: unknown): unknown => value !== null && (typeof value === 'object' || typeof value === 'function')
-    ? Reflect.get(value, symbols.original) ?? value : value
+    ? nativeOriginal(value) ?? value : value
   let open = true
   return Object.assign(() => { open = false; dispose() }, { assertCurrent(caller: Context): void {
     ctx.fiber.assertActive(); caller.fiber.assertActive()

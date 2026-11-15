@@ -6,6 +6,7 @@
     "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo"
   },
   "files": [
+    "src/native-internals.ts",
     "src/types.ts",
     "src/config.ts",
     "src/schema.ts",

@@ -1,4 +1,5 @@
 /** Plugin page and reader contribution inside the one original Cloud management assembly. */
+import { nativeOnPlugin, nativeOnStatus } from '../../../native-internals.ts'
 import { observeCloudDisposal } from '../../observe-disposal.ts'
 import type { Context, FiberState } from '@deepseek-ai/cordis'
 import type { ReactNode } from 'react'
@@ -72,8 +73,8 @@ export function installCloudPluginCatalog(parent: Context, page: PreparedCloudPa
       if (withdrawActive === retire) withdrawActive = undefined
     }
     withdrawActive = retire
-    owner.on('internal/plugin', (fiber) => { if (fiber === owner.fiber && fiber.uid === null) retire() })
-    owner.on('internal/status', (fiber) => { if (fiber === owner.fiber && fiber.state !== FIBER_ACTIVE) retire() })
+    nativeOnPlugin(owner, (fiber) => { if (fiber === owner.fiber && fiber.uid === null) retire() })
+    nativeOnStatus(owner, (fiber) => { if (fiber === owner.fiber && fiber.state !== FIBER_ACTIVE) retire() })
     owner.effect(() => retire, 'pe-cloud-client: withdraw plugin catalog')
     removers.add(registerCloudPluginManagement(owner, 'power-evolve-plugins', () => reader.injected))
     const stopNativeConfig = owner.slots.inject('plugins.detail.section', () => owner.slots.register({

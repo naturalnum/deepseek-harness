@@ -1,5 +1,6 @@
 /** Exact account-generation ports issued by one closed execution owner. */
-import { symbols, type Context } from '@deepseek-ai/cordis'
+import { nativeOriginal } from './native-internals.ts'
+import { type Context } from '@deepseek-ai/cordis'
 import { CloudShellExecutor } from './native-providers.ts'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
@@ -217,7 +218,7 @@ export function accountTerminalLimits(ctx: Context): Readonly<{
   IssuedExecutionPort.prototype.assertProvidersOwned.call(port, ctx)
   if (port.mode !== 'session-collect') return undefined
   const provider = ctx.get('shell')
-  const original: unknown = provider === undefined ? undefined : Reflect.get(provider, symbols.original) ?? provider
+  const original: unknown = provider === undefined ? undefined : nativeOriginal(provider) ?? provider
   if (!(original instanceof CloudShellExecutor)) {
     throw new ExecutionStateError('cloud/stale-generation', 'The original managed Shell provider is unavailable.')
   }

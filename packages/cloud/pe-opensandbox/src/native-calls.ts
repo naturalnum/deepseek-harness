@@ -1,6 +1,7 @@
 /** Per-account async propagation from the original native tool dispatch; no module-global current Session. */
+import { nativeOriginal } from './native-internals.ts'
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { symbols, type Context } from '@deepseek-ai/cordis'
+import { type Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import TerminalSessionService from '@deepseek-ai/dsh-terminal'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -267,7 +268,7 @@ export class NativeExecutionCalls<Project> {
       const registry = this.ctx.get('agentPresets'), selected = caller.get('terminals')
       const expected = registry?.serviceFor(call.scope.agent, 'terminals')
       if (call.exec.name !== 'bash' || !(expected instanceof TerminalSessionService) || selected === undefined
-        || (Reflect.get(selected, symbols.original) ?? selected) !== (Reflect.get(expected, symbols.original) ?? expected)) this.stale()
+        || (nativeOriginal(selected) ?? selected) !== (nativeOriginal(expected) ?? expected)) this.stale()
     }
     call.terminal = true
     return () => { this.release(call.token) }

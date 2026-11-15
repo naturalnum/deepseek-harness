@@ -1,3 +1,4 @@
+import { nativeOriginal, nativePluginFibers } from './native-internals.ts'
 import { openMcpConnectionStore, type AccountMcpConnectionStore, type McpStoreLimits } from './mcp-connection-store.ts'
 import { openRemoteServerStore, type RemoteStoreLimits, type AccountRemoteServerStore } from './remote-server-store.ts'
 import type { AccountResearchStorage } from './research-storage.ts'
@@ -8,7 +9,7 @@ import type { SkillVersion } from './skill-versions.ts'
 import type { SkillVersionPort } from './skill-versions.ts'
 import type { SkillBundleInput, SkillBundleVersion, SkillBundleSource, SkillCatalog, SkillCatalogChange,
   SkillCatalogCommit, SkillBundleWorkingCopy, SkillBundlePort, SkillBundleOperationCopies } from './skill-bundles.ts'
-import { Context, FiberState, Service, symbols, type Fiber } from '@deepseek-ai/cordis'
+import { Context, FiberState, Service, type Fiber } from '@deepseek-ai/cordis'
 import type { AccountBinding, AccountUse } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import type { IsolatedLeafGrant, PoolReadPort } from './worker-pool.ts'
@@ -451,8 +452,8 @@ export class CloudAccountFiles extends Service {
       this.assertWorkspace(workspace)
       assertAuthorized()
       const currentStore = this.ctx.get('attachments')
-      if (currentStore === undefined || (Reflect.get(currentStore, symbols.original) ?? currentStore)
-        !== (Reflect.get(original, symbols.original) ?? original)) {
+      if (currentStore === undefined || (nativeOriginal(currentStore) ?? currentStore)
+        !== (nativeOriginal(original) ?? original)) {
         throw new FilesFailure('cloud/stale-generation', 'The native attachment store changed during staging.')
       }
     }
@@ -849,7 +850,7 @@ export class CloudAccountFiles extends Service {
       || !(registry instanceof this.providers.Registry) || !(root instanceof this.providers.Registry)) {
       throw new FilesFailure('files/prerequisite-missing', 'The original native files Registry is inactive or replaced.')
     }
-    const fibers = work.entry.ctx.registry.get(this.providers.Registry)?.fibers
+    const fibers = nativePluginFibers(work.entry.ctx, this.providers.Registry)
     if (fibers?.length !== 1 || fibers[Symbol.iterator]().next().value?.uid !== work.registry.uid) {
       throw new FilesFailure('files/prerequisite-missing', 'The account files Registry fiber is not unique.')
     }
@@ -862,7 +863,7 @@ export class CloudAccountFiles extends Service {
       || !(fs instanceof scope.FileSystem) || !(root instanceof scope.FileSystem)) {
       throw new FilesFailure('files/prerequisite-missing', 'The original native account filesystem is inactive or replaced.')
     }
-    const fibers = work.entry.ctx.registry.get(scope.FileSystem)?.fibers
+    const fibers = nativePluginFibers(work.entry.ctx, scope.FileSystem)
     if (fibers?.length !== 1 || fibers[Symbol.iterator]().next().value?.uid !== work.filesystem.uid) {
       throw new FilesFailure('files/prerequisite-missing', 'The native account filesystem or Workspace is no longer current.')
     }

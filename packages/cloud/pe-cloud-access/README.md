@@ -256,3 +256,5 @@ Focused tests use real PostgreSQL, native Connection/Gateway and memory socket p
 </details>
 
 Admitted Node muxes replace generic `gateway/internal` diagnostics with fixed public text and empty details. Remote failures with other codes retain their native codes and messages. The projection does not change the original stream cleanup outcome or release retained account responsibility.
+
+Native proxy identity and private integration reads for this plugin are collected in `src/native-internals.ts`; existing effect, authorization and resource owners remain unchanged.

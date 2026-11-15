@@ -222,3 +222,5 @@ These limits remain outside local bootstrap and native-entry wiring.
 The cloud client consumes the existing access binding types through the package's `/types` export. Root source aliases, compiler aggregates, lockfile registration, public bootstrap fields, and build artifacts are coordinated outside this package.
 
 </details>
+
+Native proxy identity and private integration reads for this plugin are collected in `src/native-internals.ts`; existing effect, authorization and resource owners remain unchanged.

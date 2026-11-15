@@ -218,3 +218,5 @@ Root 沙箱接受与 Files 相同的受保护 v1/v2 或 v3 部署计划。v3 使
 可移植的[显式启用作用域探针](tests/opensandbox-scope-probe.mjs) 要求明确传入 `--workspace-root`、`--sdk-root`、`--out` 和 `--execute-authorized-once` 参数。它使用固定的缓存镜像，最多创建一个有界 Sandbox 及两个内部作用域。其证据分别描述作用域停止、namespace 安全事实和二进制文件 Range 传输；它不启用执行，也不验证完整的 subprocess 语义。
 
 </details>
+
+本插件的原生代理身份及内部集成读取集中在 `src/native-internals.ts`；现有效果、授权及资源所有者保持原样。

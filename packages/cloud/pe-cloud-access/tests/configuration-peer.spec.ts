@@ -12,7 +12,7 @@ import { dirname, join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { Deque } from '../../../util/deque/src/index.ts'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import { boot, initProfile, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
+import { boot, initProfile, readProfilePatches, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
 import Gateway, { TypertGatewayService } from '@deepseek-ai/dsh-api-gateway'
 import RemoteAccess from '@deepseek-ai/dsh-api-remote-access'
 import LocalCredentials from '@deepseek-ai/dsh-credentials-local'
@@ -195,11 +195,12 @@ async function fixture(peerCloseTimeoutMs = 1000, testRead = false) {
     constructor(owner: Context) { super(owner); bindNativeConfigSaveHook(owner, saves, this) }
   }
   const configPath = join(dir, 'cordis.yml')
-  writeFileSync(configPath, JSON.stringify([{ id: 'dependencies', name: 'cordis:dependencies' },
+  writeFileSync(configPath, '[]\n')
+  writeFileSync(profile.patchPath, JSON.stringify([{ insert: [{ id: 'dependencies', name: 'cordis:dependencies' },
     { id: 'connection', name: 'cordis:connection' }, { id: 'operation', name: 'cordis:operation' },
     ...testRead ? [{ id: 'file-read', name: 'cordis:file-read' }] : [],
-    { id: 'editor', name: 'cordis:editor' }, { id: 'transport-probe', name: 'cordis:transport-probe', config: { value: 1 } }]))
-  ctx = await boot('dsh', configPath, [], (owner) => {
+    { id: 'editor', name: 'cordis:editor' }, { id: 'transport-probe', name: 'cordis:transport-probe', config: { value: 1 } }] }]))
+  ctx = await boot('dsh', configPath, readProfilePatches('dsh', profile), (owner) => {
     owner.provide('profileContext', profile); owner.provide('peAccount', binding)
     Object.assign(owner.loader.builtins, { dependencies: { async apply(scope: Context) {
       await scope.plugin(Typert); await scope.plugin(RemoteAccess); await scope.plugin(LocalCredentials, { path: join(home, 'credentials.json'), watch: false }); await scope.plugin(Gateway)

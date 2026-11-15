@@ -13,7 +13,7 @@ vi.mock('@deepseek-ai/dsh-pe-opensandbox', async original => ({
   ...await original<typeof import('@deepseek-ai/dsh-pe-opensandbox')>(),
   assertAccountExecutionProviders: vi.fn(() => {}), accountExecutionMode: vi.fn(() => 'closed'), accountServiceAvailability: vi.fn(() => ({ developmentServices: false, servicePreview: false })),
 }))
-vi.mock('../src/bootstrap-inventory.ts', () => ({ inspectBootstrapConfiguration: async () => ({
+vi.mock('../src/native-internals.ts', async load => ({ ...await load<typeof import('../src/native-internals.ts')>(), inspectBootstrapConfiguration: async () => ({
   configuration: { catalogVersion: 'producer-contract', plugins: [], skills: { manage: false },
     credentials: { write: false }, fields: [] }, assertCurrent: () => {},
 }) }))

@@ -1,4 +1,5 @@
 /** Internal C-02 login Peer ownership. Root remains closed until native account assembly exists. */
+import { nativeLoggedFiber } from './native-internals.ts'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -676,7 +677,7 @@ export class LoginPeerRegistry {
       // The account-owned exporter survives Peer disposal and reads only severity/fiber ancestry.
       entry.removeObserver = use.context.logger.exporter({ levels: { default: 0 }, export: (message) => {
         if (message.type !== 'error' || entry.phase !== 'closing') return
-        let fiber = message.fiber?.deref()
+        let fiber = nativeLoggedFiber(message.fiber)
         while (fiber !== undefined) {
           if (fiber === peer.ctx.fiber) { entry.cleanupFault = true; return }
           const parent = fiber.parent.fiber
