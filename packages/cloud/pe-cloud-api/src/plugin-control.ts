@@ -1,5 +1,5 @@
 /** Catalog-approved plugin selection/configuration through original native writers and the original account save owner. */
-import { nativeOriginal } from './native-inventory.ts'
+import { nativeOriginal, nativeEntryModule, nativeEntryId, nativeEntryName, nativeEntryConfig, nativeEntryDisabled, nativeEntryOptions, nativeImport, nativeEntryBaseUrl, nativeTreeOwnerId, nativeFiberProvisions, nativeLoaderFiber, nativeCallback } from './native-inventory.ts'
 import { ordinaryConfigPolicy } from './ordinary-config-policy.ts'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { createHash } from 'node:crypto'
@@ -11,7 +11,6 @@ import type { PluginInfo, ChangeResult } from '@deepseek-ai/dsh-plugin-manager/t
 import { createConfigProjector, prepareProfileSelectionUpdate, readProfilePatches, isNativeConfigSchema, LOADER_EXPRESSION_SCHEMA, PluginPackages, type ProfileConfigUpdatePlan } from '@deepseek-ai/dsh-app-boot'
 import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
 import type { AccountBinding, ConfigurationRebuildReceipt, OperationId } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
-import { nativeFiberProvisions } from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import type { ModelKeyPeerConsumer } from './cloud-model-key.ts'
 import type { ConfigSaveBarrier, PluginEditCommit, PluginEditVersion } from './save-hooks.ts'
 import { ConfigSaveOutcomeUnknown } from './config-saves.ts'
@@ -294,7 +293,7 @@ export class AccountPluginControl {
     this.installed(); this.owner.fiber.assertActive()
     const manager = this.owner.get('pluginManager'), editor = this.owner.get('configEditor')
     if (this.owner.get('hmr') !== undefined || this.manager === undefined || manager === undefined || original(manager) !== original(this.manager)
-      || this.managerFiber?.state !== FiberState.ACTIVE || this.managerFiber.runtime?.callback !== this.provider
+      || this.managerFiber?.state !== FiberState.ACTIVE || nativeCallback(this.managerFiber) !== this.provider
       || editor === undefined || this.owner.get('peAccount') !== this.saves.binding) unavailable()
   }
 
@@ -345,9 +344,9 @@ export class AccountPluginControl {
     const entry = this.entry(approved)
     if (plan.impact === 'unknown' || plan.impact === 'remount' && approved.control.maxImpact === 'live'
       || plan.entries.some(row => row.impact !== 'none' && row.entry !== entry
-        || row.stopped?.some(fiber => fiber !== entry.fiber
+        || row.stopped?.some(fiber => fiber !== nativeLoaderFiber(entry)
           || this.input.requiredEntryIds.includes(row.entry.id)
-          || this.input.requiredEntryIds.includes(row.entry.options.id)))) unavailable()
+          || this.input.requiredEntryIds.includes(nativeEntryId(row.entry))))) unavailable()
   }
 
   private catalogEntry(approved: ApprovedConfigurationPlugin): Entry {
@@ -368,7 +367,7 @@ export class AccountPluginControl {
     if ('members' in approved) unavailable()
     const selected = this.catalogEntry(approved)
     if (selected.options.group || selected.subtree !== undefined || selected.options.inject !== undefined
-      || selected.parent.tree.ctx.fiber.entry?.id !== 'include'
+      || nativeTreeOwnerId(selected) !== 'include'
       || (selected.options.disabled !== undefined && typeof selected.options.disabled !== 'boolean')
       || selected.disabled !== (selected.options.disabled === true)) unavailable()
     return selected
@@ -413,17 +412,17 @@ export class AccountPluginControl {
     readonly revision: string
   }> {
     check(); this.assertCurrent()
-    const entry = this.catalogEntry(approved), packages = this.input.resolvePackages(), baseUrl = entry.parent.tree.ctx.baseUrl
+    const entry = this.catalogEntry(approved), packages = this.input.resolvePackages(), baseUrl = nativeEntryBaseUrl(entry)
     if (!(packages instanceof PluginPackages) || baseUrl === undefined || this.manager === undefined) unavailable()
-    const resolution = packages.resolution, metadata = packages.packageOf(entry.options.name, baseUrl)
+    const resolution = packages.resolution, metadata = packages.packageOf(nativeEntryName(entry), baseUrl)
     if (metadata?.name !== approved.packageName || metadata.version !== approved.packageVersion) unavailable()
     const rows = await this.manager.listPlugins()
     check(); this.assertCurrent()
     if (this.catalogEntry(approved) !== entry || original(this.input.resolvePackages() ?? {}) !== original(packages)
-      || packages.resolution !== resolution || packages.packageOf(entry.options.name, baseUrl) !== metadata) unavailable()
+      || packages.resolution !== resolution || packages.packageOf(nativeEntryName(entry), baseUrl) !== metadata) unavailable()
     const matches = rows.filter(row => row.entryId === entry.id), plugin = matches[0]
     if (matches.length !== 1 || plugin === undefined || plugin.moduleName !== approved.moduleName
-      || plugin.enabled !== !entry.disabled) unavailable()
+      || plugin.enabled !== !nativeEntryDisabled(entry)) unavailable()
     const value: Omit<PluginCurrentState, 'version'> = { id: approved.id, plugin,
       selectionTarget: { kind: 'entry', id: approved.entryId }, operations: [], configuration: { fields: [] } }
     firstScreenJsonBytes(value, this.limits.maxReplyBytes)
@@ -437,25 +436,27 @@ export class AccountPluginControl {
   }> {
     check(); this.assertCurrent()
     if ('members' in approved) return this.observeBundle(approved, check)
-    const entry = this.entry(approved), packages = this.input.resolvePackages(), baseUrl = entry.parent.tree.ctx.baseUrl
+    const entry = this.entry(approved), fiber = nativeLoaderFiber(entry)
+    const packages = this.input.resolvePackages(), baseUrl = nativeEntryBaseUrl(entry)
     if (!(packages instanceof PluginPackages) || baseUrl === undefined || this.manager === undefined) unavailable()
-    const resolution = packages.resolution, metadata = packages.packageOf(entry.options.name, baseUrl)
+    const resolution = packages.resolution, metadata = packages.packageOf(nativeEntryName(entry), baseUrl)
     if (metadata?.name !== approved.packageName || metadata.version !== approved.packageVersion) unavailable()
     const checkEntry = (): void => {
       check(); this.assertCurrent()
       if (this.entry(approved) !== entry || original(this.input.resolvePackages() ?? {}) !== original(packages)
-        || packages.resolution !== resolution || packages.packageOf(entry.options.name, baseUrl) !== metadata) unavailable()
+        || packages.resolution !== resolution || packages.packageOf(nativeEntryName(entry), baseUrl) !== metadata) unavailable()
     }
-    const namespace: unknown = await entry.parent.tree.import(entry.options.name)
+    const namespace: unknown = await nativeImport(entry, nativeEntryName(entry))
     checkEntry()
-    if (entry.moduleNamespace !== undefined && namespace !== entry.moduleNamespace) unavailable()
-    if (entry.disabled ? entry.fiber !== undefined && entry.fiber.state !== FiberState.DISPOSED
-      : entry.fiber?.state !== FiberState.ACTIVE || entry.fiber.ctx.root !== this.owner.root) unavailable()
+    if (nativeEntryModule(entry) !== undefined && namespace !== nativeEntryModule(entry)) unavailable()
+    if (nativeEntryDisabled(entry) ? fiber !== undefined && fiber.state !== FiberState.DISPOSED
+      : fiber?.state !== FiberState.ACTIVE || fiber.ctx.root !== this.owner.root) unavailable()
     const rows = await this.manager.listPlugins()
     checkEntry()
     const found: PluginInfo[] = rows.filter(row => row.entryId === entry.id), plugin = found[0]
     if (found.length !== 1 || plugin === undefined || plugin.moduleName !== approved.moduleName
-      || plugin.readOnlyReason !== undefined || plugin.meta?.error !== undefined || plugin.enabled !== !entry.disabled) unavailable()
+      || plugin.readOnlyReason !== undefined || plugin.meta?.error !== undefined
+      || plugin.enabled !== !nativeEntryDisabled(entry)) unavailable()
     const fields: PluginCurrentState['configuration']['fields'][number][] = []
     let nativeSchema: ConfigSchemaNode | undefined
     if (approved.control.fields.length > 0) {
@@ -467,7 +468,7 @@ export class AccountPluginControl {
       const project = await createConfigProjector()
       checkEntry()
       for (const path of approved.control.fields) {
-        let leaf = schema, value: unknown = entry.options.config
+        let leaf = schema, value: unknown = nativeEntryConfig(entry)
         for (const segment of path) {
           if (leaf.type !== 'object' || leaf.dict?.[segment] === undefined) unavailable()
           leaf = leaf.dict[segment]
@@ -565,13 +566,14 @@ export class AccountPluginControl {
       const namespace: unknown = await tree.import(member.moduleName)
       check(); this.assertCurrent()
       const expected = restart.after.find(row => restart.entryPrefix + row.id === member.entryId)
-      const actual = entries.filter(entry => entry.id === member.entryId), entry = actual[0]
+      const actual = entries.filter(entry => entry.id === member.entryId), entry = actual[0], fiber = nativeLoaderFiber(entry)
       if (expected === undefined ? actual.length !== 0 : actual.length !== 1 || entry === undefined
-        || !isDeepStrictEqual(entry.options, expected) || entry.options.name !== member.moduleName
-        || (entry.disabled ? entry.options.disabled !== true || entry.fiber !== undefined && entry.fiber.state !== FiberState.DISPOSED
-          : entry.fiber?.state !== FiberState.ACTIVE || entry.moduleNamespace !== namespace
-            || entry.fiber.ctx.root !== this.owner.root)) unavailable()
-      if (entry?.fiber?.state === FiberState.ACTIVE) for (const impl of nativeFiberProvisions(entry.fiber)) {
+        || !isDeepStrictEqual(nativeEntryOptions(entry), expected) || nativeEntryName(entry) !== member.moduleName
+        || (nativeEntryDisabled(entry) ? nativeEntryOptions(entry).disabled !== true
+          || fiber !== undefined && fiber.state !== FiberState.DISPOSED
+          : fiber?.state !== FiberState.ACTIVE || nativeEntryModule(entry) !== namespace
+            || fiber.ctx.root !== this.owner.root)) unavailable()
+      if (fiber?.state === FiberState.ACTIVE) for (const impl of nativeFiberProvisions(fiber)) {
         if (++provisionVisits > this.input.maxNativeInventoryEntries) unavailable()
         if (impl.ctx.fiber.state !== FiberState.ACTIVE || impl.ctx.root !== this.owner.root) unavailable()
       }
@@ -615,7 +617,7 @@ export class AccountPluginControl {
           native = await manager.setBundleEnabled(selection.name, operation.selected)
         } else await editor.edit(entry, (current) => {
           if (before.schema === undefined || !ordinaryConfigPolicy(before.schema, operation.path).writable) unavailable()
-          return applyConfigPathOp(entry.options.config == null ? entry.options.config : current,
+          return applyConfigPathOp(nativeEntryConfig(entry) == null ? nativeEntryConfig(entry) : current,
             { op: 'set', path: operation.path, value: structuredClone(operation.value) }, before.schema)
         }, {
           maxRemountRegistryEntries: this.input.maxNativeInventoryEntries,
@@ -636,7 +638,7 @@ export class AccountPluginControl {
     }
     check(); this.assertCurrent()
     await this.owner.loader.await()
-    if (operation.kind === 'enabled' && entry.disabled === operation.enabled) throw new ConfigSaveOutcomeUnknown()
+    if (operation.kind === 'enabled' && nativeEntryDisabled(entry) === operation.enabled) throw new ConfigSaveOutcomeUnknown()
     const observed = await this.observe(approved, check)
     if (operation.kind === 'configure' && !observed.value.configuration.fields.some(field =>
       isDeepStrictEqual(field.path, operation.path) && isDeepStrictEqual(field.value, operation.value))) {

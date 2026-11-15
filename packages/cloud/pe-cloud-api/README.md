@@ -257,3 +257,5 @@ The account entry fails explicitly while mandatory integration is absent.
 The package publishes the generated Remote Client declaration map and its own `src` files beside the existing Remote artifacts. Installed clients can navigate Remote declarations to their Host implementations; the original Typert generator validates the artifact list before writing any output.
 
 </details>
+
+Loader entry metadata, installed fiber callbacks and schemas, original module imports, and log-fiber dereferences are also read through this adapter. Plugin control, credential policy and authorization retain their existing owners.

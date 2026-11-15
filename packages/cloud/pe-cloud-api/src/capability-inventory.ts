@@ -1,10 +1,9 @@
 /** Account capability contributions checked against the original Gateway and live Cordis owner. */
 import { FiberState, type Context } from '@deepseek-ai/cordis'
 import Gateway from '@deepseek-ai/dsh-api-gateway'
-import { nativeProvision } from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import { remoteMethods, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { CloudApiError } from './errors.ts'
-import { inventoryMethodMatches, nativeOriginal } from './native-inventory.ts'
+import { inventoryMethodMatches, nativeOriginal, nativeProvision } from './native-inventory.ts'
 import type { EndpointExposure, ExposureInventory } from './types.ts'
 
 interface Contribution {

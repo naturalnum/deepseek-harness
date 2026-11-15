@@ -1,4 +1,4 @@
-import { nativeOriginal, nativeAccountFibers } from './native-inventory.ts'
+import { nativeOriginal, nativeAccountFibers, nativeEntryModule, nativeEntryId, nativeFiberProvisions, nativeLoaderFiber } from './native-inventory.ts'
 import { projectApprovedSettings, projectApprovedSettingsNamespace } from './approved-settings.ts'
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-goal'
@@ -25,7 +25,6 @@ import type { SettingsDescribeValue, SettingsNamespaceView, SettingsPathOpView }
 import * as Locale from '@deepseek-ai/dsh-client-locale'
 import { RemoteError, remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
-import { nativeFiberProvisions } from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { CloudAccountApi } from './account-service.ts'
 import { CloudApiError } from './errors.ts'
@@ -210,9 +209,10 @@ export function prepareNativeFirstScreen(ctx: Context, input: FirstScreenNativeI
     let visited = 0, found: Fiber | undefined
     for (const entry of ctx.loader.entries()) {
       if (++visited > input.maxInventoryEntries) unavailable()
-      if (entry.moduleNamespace !== Locale) continue
-      if (found !== undefined || entry.options.id !== 'locale' || entry.fiber?.state !== FiberState.ACTIVE) unavailable()
-      found = entry.fiber
+      if (nativeEntryModule(entry) !== Locale) continue
+      const fiber = nativeLoaderFiber(entry)
+      if (found !== undefined || nativeEntryId(entry) !== 'locale' || fiber?.state !== FiberState.ACTIVE) unavailable()
+      found = fiber
     }
     if (found === undefined || (localeFiber !== undefined && localeFiber !== found)) unavailable()
     localeFiber = found

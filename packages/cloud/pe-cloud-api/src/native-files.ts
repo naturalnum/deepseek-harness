@@ -1,10 +1,9 @@
 /** Original WorkspaceFiles registration and bounded provider/Remote inventory checks. */
-import { nativeOriginal, nativeAccountFibers } from './native-inventory.ts'
+import { nativeOriginal, nativeAccountFibers, nativeFiberProvisions, nativeProvision } from './native-inventory.ts'
 import { FiberState, type Context, type Fiber } from '@deepseek-ai/cordis'
 import WorkspaceFiles from '@deepseek-ai/dsh-api-workspace-files'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
-import { nativeFiberProvisions, nativeProvision } from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import { CloudApiError } from './errors.ts'
 import type { ExposureInventory } from './types.ts'
 

@@ -256,3 +256,5 @@ Root 可通过 `native.workspaceTransfers` 显式设置 `maxFileBytes`、`maxFil
 </details>
 
 原生代理目标读取及 Gateway 方法身份比对集中在 `src/native-inventory.ts`。其中有界 Fiber 遍历先筛选当前账号根，再计入运行时和 Fiber 次数；配置上限及重复项、提供者检查保持原样。未经审核的原生方法仍不在选定的开放策略中。
+
+Loader 条目元数据、已安装 Fiber 的回调与 Schema、原模块导入及日志 Fiber 解引用也经此适配文件读取。插件管理、凭据策略和授权仍由现有实现负责。

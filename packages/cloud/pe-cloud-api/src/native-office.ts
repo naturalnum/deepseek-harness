@@ -1,5 +1,5 @@
 /** Native Office provider identity and bounded Remote declaration audit. */
-import { nativeOriginal, nativeAccountFibers } from './native-inventory.ts'
+import { nativeOriginal, nativeAccountFibers, nativeLoggedFiber, nativeFiberProvisions } from './native-inventory.ts'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { FiberState, type Context, type Fiber } from '@deepseek-ai/cordis'
@@ -92,7 +92,7 @@ export function createNativeOffice(ctx: Context, binding: AccountBinding, curren
     root.logger.error('Office cleanup is unconfirmed; conversion admission is closed and account resources remain retained.')
   })
   const removeObserver = root.logger.exporter({ levels: { default: 0 }, export: (message) => {
-    if (message.type === 'error' && message.fiber?.deref() === fiber) work.cleanupFailed(message)
+    if (message.type === 'error' && nativeLoggedFiber(message.fiber) === fiber) work.cleanupFailed(message)
   } })
   // Keep the real native reader until conversion and its finally cleanup settle.
   class AccountOffice extends OfficeKit {
@@ -138,7 +138,7 @@ export function createNativeOffice(ctx: Context, binding: AccountBinding, curren
     const found = new Map<string, { value: object; fiber: Fiber }>()
     for (const fiber of nativeAccountFibers(ctx, () => { if (--remaining < 0) unavailable() })) {
       if (fiber.ctx.root !== ctx.root || fiber.state !== FiberState.ACTIVE) continue
-      for (const entry of fiber.provisions) {
+      for (const entry of nativeFiberProvisions(fiber)) {
         if (--remaining < 0) unavailable()
         const key = entry.name, installed: unknown = entry.value
         if (entry.ctx.fiber !== fiber || (key !== 'fs' && key !== 'workspaceFiles' && key !== 'officeKit')) continue

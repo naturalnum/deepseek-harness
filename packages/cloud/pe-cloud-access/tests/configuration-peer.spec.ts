@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { inspect } from 'node:util'
 import { FilesWorkQueue } from '../../pe-cloud-files/src/work-queue.ts'
 /** Original native Loader/Gateway/login registry/carrier handoff;
  * M1 database results and runtime Use issuance are explicit external fixtures. */
@@ -251,12 +252,15 @@ async function fixture(peerCloseTimeoutMs = 1000, testRead = false) {
     void body.catch((_cause: unknown) => {})
     return { body, finish: () => { actual.resolve(undefined) }, value: () => value }
   }
+  const nativeWriteFailures: unknown[] = []
   const writeNativeValue = async (value: number, current: () => void): Promise<void> => {
     current()
     const entry = native.configEditor.entries().find(row => row.options.id === 'transport-probe')
     if (entry === undefined) throw new Error('Original native configuration target missing')
     expect((await saves.pauseAccountChanges(Date.now() + 1000)).status).toBe('confirmed')
-    await saves.withPausedPluginChange(() => native.configEditor.edit(entry, () => ({ value }), { assertCurrent: current }))
+    try {
+      await saves.withPausedPluginChange(() => native.configEditor.edit(entry, () => ({ value }), { assertCurrent: current }))
+    } catch (cause) { nativeWriteFailures.push(cause); throw cause }
     await native.loader.await(); current(); saves.resumeAccountChanges()
     expect(readFileSync(profile.patchPath, 'utf8')).toContain('value: ' + String(value))
   }
@@ -362,7 +366,7 @@ async function fixture(peerCloseTimeoutMs = 1000, testRead = false) {
     return { frames, client, closed: closed.promise, didClose: () => didClose }
   }
   return { ctx: native, auth: originalAuth, registry: peers, binding, acquire, run, http, websocket, query, cleanupFailures,
-    writeNativeValue, patch: () => readFileSync(profile.patchPath, 'utf8'), saves,
+    writeNativeValue, nativeWriteFailures, patch: () => readFileSync(profile.patchPath, 'utf8'), saves,
     issueUse: () => issueUse(binding), observe: () => ({ borrowed, released, inUse, calls }),
     setRead: (next: typeof read) => { read = next }, setDispatch: (next: typeof dispatchCheck) => { dispatchCheck = next },
     revokeReadRoot: () => { rootValid = false },
@@ -1430,7 +1434,7 @@ it('joins a real native WebSocket observation before the same HTTP configuration
   const request = await f.http(peer, () => { ingressUse.assertCurrent(); ingressUse.release() })
   try {
     await request.body
-    expect(request.result(), JSON.stringify(request.result())).toMatchObject({ result: { ok: true, value: { originalConsumer: 'settled-after-native-ws-close' } } })
+    expect(request.result(), inspect(f.nativeWriteFailures, { depth: 5 })).toMatchObject({ result: { ok: true, value: { originalConsumer: 'settled-after-native-ws-close' } } })
     expect(applied).toBe(true); expect(ws.didClose()).toBe(true)
     f.registry.assertCurrent(peer, requestId)
     expect(f.observe()).toMatchObject({ borrowed: 3, released: 2, inUse: 1, calls: 1 })
@@ -1475,7 +1479,7 @@ it('retains an actual native write and its pending HTTP task after the response 
   })
   const request = await f.http(peer, () => { ingressUse.assertCurrent(); ingressUse.release() })
   try {
-    await Promise.race([committed.promise, request.body.then(() => { throw new Error('HTTP settled before native write: ' + JSON.stringify(request.result())) })])
+    await Promise.race([committed.promise, request.body.then(() => { throw new Error('HTTP settled before native write: ' + inspect(f.nativeWriteFailures, { depth: 5 })) })])
     expect(f.patch()).toContain('value: 2')
     expect(f.registry.reservedCarriers).toBeGreaterThan(0)
     request.disconnect()

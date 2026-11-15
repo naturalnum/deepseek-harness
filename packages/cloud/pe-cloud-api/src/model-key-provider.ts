@@ -1,5 +1,5 @@
 /** Actual native provider/settings projection selected by finite Root binding data. */
-import { nativeOriginal } from './native-inventory.ts'
+import { nativeOriginal, nativeEntryModule, nativeEntryId, nativeEntryName, nativeEntryConfig, nativeEntryDisabled, nativeCallback, nativeConfigSchema, nativeLoaderFiber, nativeImport } from './native-inventory.ts'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
 import type z from '@deepseek-ai/schemastery'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
@@ -54,23 +54,25 @@ export class ModelKeyProvider {
     const llm = this.ctx.get('llm'), settings = this.ctx.get('settings'), checks: (() => void)[] = []
     if (!(llm instanceof LlmRuntime) || settings === undefined) unavailable()
     for (const binding of this.policy.bindings) {
-      const matches = entries.filter(entry => entry.options.id === binding.providerEntryId), entry = matches[0]
-      if (matches.length !== 1 || entry === undefined || entry.disabled || entry.fiber?.state !== FiberState.ACTIVE
-        || entry.options.name !== binding.moduleName || entry.moduleNamespace === undefined) unavailable()
-      const fiber = entry.fiber, namespace = entry.moduleNamespace, callback = fiber.runtime?.callback
-      let plan = entry.prepareConfigUpdate(entry.options.config)
+      const matches = entries.filter(entry => nativeEntryId(entry) === binding.providerEntryId), entry = matches[0]
+      const fiber = nativeLoaderFiber(entry)
+      if (matches.length !== 1 || entry === undefined || nativeEntryDisabled(entry) || fiber?.state !== FiberState.ACTIVE
+        || nativeEntryName(entry) !== binding.moduleName || nativeEntryModule(entry) === undefined) unavailable()
+      const namespace = nativeEntryModule(entry), callback = nativeCallback(fiber)
+      let plan = entry.prepareConfigUpdate(nativeEntryConfig(entry))
       if (plan.impact !== 'none' || callback === undefined) unavailable()
       const check = (): void => {
         this.ctx.fiber.assertActive()
-        if (entry.disabled || entry.fiber !== fiber || fiber.state !== FiberState.ACTIVE || fiber.ctx.root !== this.ctx.root
-          || entry.moduleNamespace !== namespace || entry.options.name !== binding.moduleName
-          || entry.options.id !== binding.providerEntryId || fiber.runtime?.callback !== callback
+        if (nativeEntryDisabled(entry) || nativeLoaderFiber(entry) !== fiber || fiber.state !== FiberState.ACTIVE
+          || fiber.ctx.root !== this.ctx.root
+          || nativeEntryModule(entry) !== namespace || nativeEntryName(entry) !== binding.moduleName
+          || nativeEntryId(entry) !== binding.providerEntryId || nativeCallback(fiber) !== callback
           || original(this.ctx.get('llm') ?? {}) !== original(llm)
           || original(this.ctx.get('settings') ?? {}) !== original(settings)) unavailable()
         entry.assertConfigUpdatePlan(plan)
       }
       check()
-      const imported: unknown = await entry.parent.tree.import(entry.options.name)
+      const imported: unknown = await nativeImport(entry, nativeEntryName(entry))
       check()
       for (const previous of checks) previous()
       if (imported !== namespace) unavailable()
@@ -83,7 +85,7 @@ export class ModelKeyProvider {
           if (current === undefined) unavailable()
         } }
         checkDefault()
-        const originalConfig: unknown = entry.options.config
+        const originalConfig: unknown = nativeEntryConfig(entry)
         const before = structuredClone(originalConfig)
         if (!record(before) || ops.length === 0) unavailable()
         const names = new Set(ops.map(op => op.path[0]))
@@ -101,7 +103,7 @@ export class ModelKeyProvider {
           }
           expected = candidate
         }, finish: () => {
-          const after: unknown = entry.options.config
+          const after: unknown = nativeEntryConfig(entry)
           if (!record(after)) unavailable()
           const retained = (value: Record<string, unknown>): Record<string, unknown> =>
             Object.fromEntries(Object.entries(value).filter(([key]) => !names.has(key)))
@@ -136,13 +138,13 @@ export class ModelKeyProvider {
     ] as const
     const pinned: { entry: typeof rows[number]; fiber: NonNullable<typeof rows[number]['fiber']>; module: object; callback: unknown }[] = []
     for (const [id, name] of expected) {
-      const matches = rows.filter(entry => entry.options.id === id), entry = matches[0], fiber = entry?.fiber
-      if (matches.length !== 1 || entry === undefined || entry.options.name !== name || entry.disabled
-        || fiber?.state !== FiberState.ACTIVE || entry.moduleNamespace === undefined) unavailable()
-      const module = entry.moduleNamespace, imported: unknown = await entry.parent.tree.import(name)
+      const matches = rows.filter(entry => nativeEntryId(entry) === id), entry = matches[0], fiber = nativeLoaderFiber(entry)
+      if (matches.length !== 1 || entry === undefined || nativeEntryName(entry) !== name || nativeEntryDisabled(entry)
+        || fiber?.state !== FiberState.ACTIVE || nativeEntryModule(entry) === undefined) unavailable()
+      const module = nativeEntryModule(entry), imported: unknown = await nativeImport(entry, name)
       if (module !== imported || !record(module)) unavailable()
       const callback: unknown = id === 'web' ? module.default : module.apply
-      if (typeof callback !== 'function' || fiber.runtime?.callback !== callback) unavailable()
+      if (typeof callback !== 'function' || nativeCallback(fiber) !== callback) unavailable()
       pinned.push({ entry, fiber, module, callback })
     }
     const webModule = pinned[0]?.module
@@ -157,8 +159,9 @@ export class ModelKeyProvider {
       const currentWeb = read('web'), currentSettings = this.ctx.get('settings')
       if (currentWeb === null || typeof currentWeb !== 'object' || original(currentWeb) !== original(web)
         || currentSettings === undefined || original(currentSettings) !== original(settings)) unavailable()
-      for (const row of pinned) if (row.entry.disabled || row.entry.fiber !== row.fiber || row.fiber.state !== FiberState.ACTIVE
-        || row.entry.moduleNamespace !== row.module || row.fiber.runtime?.callback !== row.callback) unavailable()
+      for (const row of pinned) if (nativeEntryDisabled(row.entry) || nativeLoaderFiber(row.entry) !== row.fiber
+        || row.fiber.state !== FiberState.ACTIVE
+        || nativeEntryModule(row.entry) !== row.module || nativeCallback(row.fiber) !== row.callback) unavailable()
       const views = settings.describe({ redactSecrets: true })
       if (views.length > this.maximum) unavailable()
       const section = (id: string) => {
@@ -214,7 +217,7 @@ export class ModelKeyProvider {
       const selectedRows = rows.filter(row => row.ns === route.settingsNs), row = selectedRows[0]
       const selectedEntries = entries.filter(value => value.options.id === binding.providerEntryId), entry = selectedEntries[0]
       if (selectedEntries.length !== 1) unavailable()
-      const schema = entry?.fiber?.runtime?.Config
+      const schema = nativeConfigSchema(nativeLoaderFiber(entry))
       if (selectedRows.length !== 1 || row === undefined || schema === undefined || !('toJSON' in schema)) unavailable()
       let node: z | undefined = schema as z
       for (const key of [...route.settingsPath, 'apiKeyEnv']) {

@@ -2,7 +2,7 @@
   "counts": {
     "native_source_files": 199,
     "non_seam_files": 93,
-    "uncentralized_internal_lines": 90
+    "uncentralized_internal_lines": 42
   },
   "imports": [
     {
@@ -631,7 +631,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/account-service.ts",
-      "line": 19,
+      "line": 18,
       "module": "@deepseek-ai/dsh-typert-protocol",
       "names": [
         "PeerScope"
@@ -640,7 +640,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/account-service.ts",
-      "line": 21,
+      "line": 20,
       "module": "@deepseek-ai/dsh-session",
       "names": [
         "Session"
@@ -649,7 +649,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/account-service.ts",
-      "line": 22,
+      "line": 21,
       "module": "@deepseek-ai/dsh-workspace",
       "names": [
         "Workspace"
@@ -658,7 +658,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/account-service.ts",
-      "line": 32,
+      "line": 31,
       "module": "@deepseek-ai/dsh-client-file-upload",
       "names": [
         "FILE_UPLOAD_PATH",
@@ -668,7 +668,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/account-service.ts",
-      "line": 51,
+      "line": 50,
       "module": "@deepseek-ai/dsh-plugin-manager",
       "names": [
         "default as PluginManager"
@@ -770,7 +770,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/capability-inventory.ts",
-      "line": 5,
+      "line": 4,
       "module": "@deepseek-ai/dsh-typert-protocol",
       "names": [
         "remoteMethods",
@@ -1858,7 +1858,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 29,
+      "line": 28,
       "module": "@deepseek-ai/dsh-session/types",
       "names": [
         "SessionId"
@@ -1867,7 +1867,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 37,
+      "line": 36,
       "module": "@deepseek-ai/dsh-app-boot",
       "names": [
         "ProfileConfigUpdatePlan"
@@ -1925,6 +1925,15 @@
         "Fiber"
       ],
       "typeOnly": false
+    },
+    {
+      "path": "packages/cloud/pe-cloud-api/src/native-inventory.ts",
+      "line": 3,
+      "module": "@deepseek-ai/cordis-plugin-loader",
+      "names": [
+        "Entry"
+      ],
+      "typeOnly": true
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-model-selection.ts",
@@ -2497,7 +2506,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 21,
+      "line": 20,
       "module": "@deepseek-ai/dsh-util-values",
       "names": [
         "snapshotJsonValue",
@@ -6971,7 +6980,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/account-service.ts",
-      "line": 110,
+      "line": 109,
       "name": "CloudAccountApi",
       "base": "Service",
       "module": "@deepseek-ai/cordis",
@@ -7414,7 +7423,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-uploads.ts",
-      "line": 63,
+      "line": 62,
       "name": "AccountFileUploads",
       "base": "FileUploads",
       "module": "@deepseek-ai/dsh-client-file-upload",
@@ -7511,7 +7520,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 90,
+      "line": 89,
       "name": "AccountPluginManager",
       "base": "PluginManager",
       "module": "@deepseek-ai/dsh-plugin-manager",
@@ -8447,231 +8456,8 @@
       "centralized": false
     },
     {
-      "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 57,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "const matches = entries.filter(entry => entry.options.id === binding.providerEntryId), entry = matches[0]",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 58,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "if (matches.length !== 1 || entry === undefined || entry.disabled || entry.fiber?.state !== FiberState.ACTIVE",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 59,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "|| entry.options.name !== binding.moduleName || entry.moduleNamespace === undefined) unavailable()",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 60,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "fiber-runtime",
-        "loader-entry"
-      ],
-      "code": "const fiber = entry.fiber, namespace = entry.moduleNamespace, callback = fiber.runtime?.callback",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 61,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "let plan = entry.prepareConfigUpdate(entry.options.config)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 65,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "if (entry.disabled || entry.fiber !== fiber || fiber.state !== FiberState.ACTIVE || fiber.ctx.root !== this.ctx.root",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 66,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "|| entry.moduleNamespace !== namespace || entry.options.name !== binding.moduleName",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 67,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "fiber-runtime",
-        "loader-entry"
-      ],
-      "code": "|| entry.options.id !== binding.providerEntryId || fiber.runtime?.callback !== callback",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 73,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "const imported: unknown = await entry.parent.tree.import(entry.options.name)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 86,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "const originalConfig: unknown = entry.options.config",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 104,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "const after: unknown = entry.options.config",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 139,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "const matches = rows.filter(entry => entry.options.id === id), entry = matches[0], fiber = entry?.fiber",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 140,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "if (matches.length !== 1 || entry === undefined || entry.options.name !== name || entry.disabled",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 141,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "|| fiber?.state !== FiberState.ACTIVE || entry.moduleNamespace === undefined) unavailable()",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 142,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "const module = entry.moduleNamespace, imported: unknown = await entry.parent.tree.import(name)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 145,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "fiber-runtime"
-      ],
-      "code": "if (typeof callback !== 'function' || fiber.runtime?.callback !== callback) unavailable()",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 160,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "for (const row of pinned) if (row.entry.disabled || row.entry.fiber !== row.fiber || row.fiber.state !== FiberState.ACTIVE",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 161,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "fiber-runtime",
-        "loader-entry"
-      ],
-      "code": "|| row.entry.moduleNamespace !== row.module || row.fiber.runtime?.callback !== row.callback) unavailable()",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/model-key-provider.ts",
-      "line": 217,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "fiber-runtime"
-      ],
-      "code": "const schema = entry?.fiber?.runtime?.Config",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 213,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "if (entry.moduleNamespace !== Locale) continue",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 214,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "if (found !== undefined || entry.options.id !== 'locale' || entry.fiber?.state !== FiberState.ACTIVE) unavailable()",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 215,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "found = entry.fiber",
-      "centralized": false
-    },
-    {
       "path": "packages/cloud/pe-cloud-api/src/native-inventory.ts",
-      "line": 29,
+      "line": 30,
       "plugin": "pe-cloud-api",
       "categories": [
         "proxy-original"
@@ -8681,7 +8467,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-inventory.ts",
-      "line": 37,
+      "line": 38,
       "plugin": "pe-cloud-api",
       "categories": [
         "registry-fibers"
@@ -8691,7 +8477,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-inventory.ts",
-      "line": 39,
+      "line": 40,
       "plugin": "pe-cloud-api",
       "categories": [
         "registry-fibers"
@@ -8700,264 +8486,114 @@
       "centralized": true
     },
     {
-      "path": "packages/cloud/pe-cloud-api/src/native-office.ts",
-      "line": 95,
+      "path": "packages/cloud/pe-cloud-api/src/native-inventory.ts",
+      "line": 53,
       "plugin": "pe-cloud-api",
       "categories": [
-        "fiber-deref"
+        "loader-entry"
       ],
-      "code": "if (message.type === 'error' && message.fiber?.deref() === fiber) work.cleanupFailed(message)",
-      "centralized": false
+      "code": "export function nativeEntryModule(entry: Entry | undefined): Entry['moduleNamespace'] { return entry?.moduleNamespace }",
+      "centralized": true
     },
     {
-      "path": "packages/cloud/pe-cloud-api/src/native-office.ts",
-      "line": 141,
+      "path": "packages/cloud/pe-cloud-api/src/native-inventory.ts",
+      "line": 59,
       "plugin": "pe-cloud-api",
       "categories": [
-        "fiber-records"
+        "loader-entry"
       ],
-      "code": "for (const entry of fiber.provisions) {",
-      "centralized": false
+      "code": "export function nativeEntryId(entry: Entry): Entry['options']['id'] { return entry.options.id }",
+      "centralized": true
     },
     {
-      "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 297,
+      "path": "packages/cloud/pe-cloud-api/src/native-inventory.ts",
+      "line": 65,
+      "plugin": "pe-cloud-api",
+      "categories": [
+        "loader-entry"
+      ],
+      "code": "export function nativeEntryName(entry: Entry): Entry['options']['name'] { return entry.options.name }",
+      "centralized": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-api/src/native-inventory.ts",
+      "line": 71,
+      "plugin": "pe-cloud-api",
+      "categories": [
+        "loader-entry"
+      ],
+      "code": "export function nativeEntryConfig(entry: Entry): Entry['options']['config'] { return entry.options.config }",
+      "centralized": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-api/src/native-inventory.ts",
+      "line": 77,
+      "plugin": "pe-cloud-api",
+      "categories": [
+        "loader-entry"
+      ],
+      "code": "export function nativeEntryDisabled(entry: Entry): Entry['disabled'] { return entry.disabled }",
+      "centralized": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-api/src/native-inventory.ts",
+      "line": 83,
+      "plugin": "pe-cloud-api",
+      "categories": [
+        "loader-entry"
+      ],
+      "code": "export function nativeEntryOptions(entry: Entry): Readonly<Entry['options']> { return entry.options }",
+      "centralized": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-api/src/native-inventory.ts",
+      "line": 96,
       "plugin": "pe-cloud-api",
       "categories": [
         "fiber-runtime"
       ],
-      "code": "|| this.managerFiber?.state !== FiberState.ACTIVE || this.managerFiber.runtime?.callback !== this.provider",
-      "centralized": false
+      "code": "return fiber?.runtime?.callback",
+      "centralized": true
     },
     {
-      "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 348,
+      "path": "packages/cloud/pe-cloud-api/src/native-inventory.ts",
+      "line": 104,
+      "plugin": "pe-cloud-api",
+      "categories": [
+        "fiber-runtime"
+      ],
+      "code": "return fiber?.runtime?.Config",
+      "centralized": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-api/src/native-inventory.ts",
+      "line": 113,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
       ],
-      "code": "|| row.stopped?.some(fiber => fiber !== entry.fiber",
-      "centralized": false
+      "code": "return entry.parent.tree.import(name)",
+      "centralized": true
     },
     {
-      "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 350,
+      "path": "packages/cloud/pe-cloud-api/src/native-inventory.ts",
+      "line": 120,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
       ],
-      "code": "|| this.input.requiredEntryIds.includes(row.entry.options.id)))) unavailable()",
-      "centralized": false
+      "code": "export function nativeEntryBaseUrl(entry: Entry): Entry['parent']['tree']['ctx']['baseUrl'] { return entry.parent.tree.ctx.baseUrl }",
+      "centralized": true
     },
     {
-      "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 371,
+      "path": "packages/cloud/pe-cloud-api/src/native-inventory.ts",
+      "line": 126,
       "plugin": "pe-cloud-api",
       "categories": [
         "loader-entry"
       ],
-      "code": "|| selected.parent.tree.ctx.fiber.entry?.id !== 'include'",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 416,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "const entry = this.catalogEntry(approved), packages = this.input.resolvePackages(), baseUrl = entry.parent.tree.ctx.baseUrl",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 418,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "const resolution = packages.resolution, metadata = packages.packageOf(entry.options.name, baseUrl)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 423,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "|| packages.resolution !== resolution || packages.packageOf(entry.options.name, baseUrl) !== metadata) unavailable()",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 426,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "|| plugin.enabled !== !entry.disabled) unavailable()",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 440,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "const entry = this.entry(approved), packages = this.input.resolvePackages(), baseUrl = entry.parent.tree.ctx.baseUrl",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 442,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "const resolution = packages.resolution, metadata = packages.packageOf(entry.options.name, baseUrl)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 447,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "|| packages.resolution !== resolution || packages.packageOf(entry.options.name, baseUrl) !== metadata) unavailable()",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 449,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "const namespace: unknown = await entry.parent.tree.import(entry.options.name)",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 451,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "if (entry.moduleNamespace !== undefined && namespace !== entry.moduleNamespace) unavailable()",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 452,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "if (entry.disabled ? entry.fiber !== undefined && entry.fiber.state !== FiberState.DISPOSED",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 453,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": ": entry.fiber?.state !== FiberState.ACTIVE || entry.fiber.ctx.root !== this.owner.root) unavailable()",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 458,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "|| plugin.readOnlyReason !== undefined || plugin.meta?.error !== undefined || plugin.enabled !== !entry.disabled) unavailable()",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 470,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "let leaf = schema, value: unknown = entry.options.config",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 570,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "|| !isDeepStrictEqual(entry.options, expected) || entry.options.name !== member.moduleName",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 571,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "|| (entry.disabled ? entry.options.disabled !== true || entry.fiber !== undefined && entry.fiber.state !== FiberState.DISPOSED",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 572,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": ": entry.fiber?.state !== FiberState.ACTIVE || entry.moduleNamespace !== namespace",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 573,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "|| entry.fiber.ctx.root !== this.owner.root)) unavailable()",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 574,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "if (entry?.fiber?.state === FiberState.ACTIVE) for (const impl of nativeFiberProvisions(entry.fiber)) {",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 618,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "return applyConfigPathOp(entry.options.config == null ? entry.options.config : current,",
-      "centralized": false
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/plugin-control.ts",
-      "line": 639,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "loader-entry"
-      ],
-      "code": "if (operation.kind === 'enabled' && entry.disabled === operation.enabled) throw new ConfigSaveOutcomeUnknown()",
-      "centralized": false
+      "code": "export function nativeTreeOwnerId(entry: Entry): string | undefined { return entry.parent.tree.ctx.fiber.entry?.id }",
+      "centralized": true
     },
     {
       "path": "packages/cloud/pe-cloud-client/src/client/management/plugins/account-projection.ts",

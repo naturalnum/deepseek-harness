@@ -1,5 +1,5 @@
 /** Sole native upload owner with account admission and its original streamed persistence hook. */
-import { nativeOriginal, nativeAccountFibers } from './native-inventory.ts'
+import { nativeOriginal, nativeAccountFibers, nativeFiberProvisions } from './native-inventory.ts'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
 import { FileUploads, FILE_UPLOAD_PATH, FileUploadIntakeUnconfirmedError } from '@deepseek-ai/dsh-client-file-upload'
 import type {} from '@deepseek-ai/dsh-client-connection'
@@ -7,7 +7,6 @@ import type {} from '@deepseek-ai/dsh-commands'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { FileAttachmentRef, SaveFileStreamAttachment } from '@deepseek-ai/dsh-attachment'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
-import { nativeFiberProvisions } from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import type { ExposureInventory } from './types.ts'
 import { CloudApiError } from './errors.ts'
 
