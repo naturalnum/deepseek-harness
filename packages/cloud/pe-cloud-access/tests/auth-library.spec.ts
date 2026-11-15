@@ -152,6 +152,46 @@ describe('pinned Better Auth/PostgreSQL adapter denial paths', () => {
     expect(() => { adapter.assertLoginCurrent(forged, requestId) }).toThrow(expect.objectContaining({ code: 'cloud/unauthenticated' }))
   })
 
+  it('keeps a due original-login check distinct internally without changing public failure fields', async () => {
+    const { adapter } = await create()
+    const native = Reflect.get(adapter, 'auth') as Auth
+    const now = new Date()
+    const session = vi.spyOn(native.api, 'getSession').mockResolvedValue({
+      user: { id: 'component-user', name: 'Component', email: 'component@example.test', emailVerified: false, createdAt: now, updatedAt: now },
+      session: { id: 'component-login', userId: 'component-user', token: 'component-token', expiresAt: new Date(Date.now() + 60000),
+        createdAt: now, updatedAt: now, ipAddress: null, userAgent: null },
+    })
+    const clock = vi.spyOn(performance, 'now')
+    let principal: AuthenticatedPrincipal | undefined
+    try {
+      clock.mockReturnValue(1000)
+      principal = await adapter.authenticate(request({ cookie: 'component=original' }), requestId)
+      expect(() => adapter.assertLoginCurrent(principal!, requestId)).not.toThrow()
+      clock.mockReturnValue(1050)
+      let observed: unknown
+      try { adapter.assertLoginCurrent(principal, requestId) } catch (error) { observed = error }
+      expect(observed).toBeInstanceOf(AuthAccessError)
+      if (!(observed instanceof AuthAccessError)) throw new Error('Expected original authentication failure')
+      expect(observed.cause).toBeInstanceOf(Error)
+      expect(observed.cause?.constructor.name).toBe('LoginRecheckRequiredError')
+      expect(Object.keys(observed.toJSON()).sort()).toEqual(['code', 'message', 'requestId', 'retry'])
+      expect(observed.toJSON()).toMatchObject({ code: 'cloud/account-unavailable', retry: 'after-status-check' })
+      await adapter.recheckLogin(principal, requestId)
+      expect(() => adapter.assertLoginCurrent(principal!, requestId)).not.toThrow()
+      expect(session.mock.calls.at(-1)?.[0]?.headers).toEqual(expect.any(Headers))
+      await adapter.close()
+      observed = undefined
+      try { adapter.assertLoginCurrent(principal, requestId) } catch (error) { observed = error }
+      expect(observed).toBeInstanceOf(AuthAccessError)
+      if (!(observed instanceof AuthAccessError)) throw new Error('Expected closing authentication refusal')
+      expect(observed.cause).toBeUndefined()
+    } finally {
+      if (principal !== undefined) adapter.releasePrincipal(principal)
+      clock.mockRestore()
+      session.mockRestore()
+    }
+  })
+
   it('reports a real PostgreSQL connection failure without pretending that revocation succeeded', async () => {
     const { adapter, invalidate } = await create()
     await expect(adapter.revokeLogin('missing-session' as Branded<'pe-auth-session-id'>, requestId)).rejects.toMatchObject({

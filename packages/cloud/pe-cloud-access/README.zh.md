@@ -78,7 +78,7 @@ kind: "package-reference"
 
 原生最终分派 callback 在实际路由/envelope 选择后复核原请求、登录、Use、代际及图内 `CloudAccountApi`。每个逻辑流检查原 Peer 和每图策略。原生帧上限及 acquire/实际 settle callback 限制全局/账户/Peer 流容量；未知清理保留槽位并调度关闭，不等待自己的 transport。bootstrap 还要求原目录、原生策略及实际安装包证据；C06 settings 保持关闭。
 
-Root ingress watcher 在上次成功复查后等待 `sessionRecheckMs - ingress.sessionRecheckLeadMs`，再发起原 Cookie 的下一次复查。pending 检查不延长登录最大验证年龄；慢查询仍由原同步守卫拒绝。提前量不改变 `authCheckTimeoutMs`。HTTP 和 upgrade 准入先预留有限 carrier 容量，再加入正在进行或已到期的 Peer 原 Cookie 查库复核。派发仍须通过复核时效及原请求/账户检查；WS 逻辑流打开保留同步守卫。
+Root ingress watcher 在上次成功复查后等待 `sessionRecheckMs - ingress.sessionRecheckLeadMs`，再发起原 Cookie 的下一次复查。pending 检查不延长登录最大验证年龄；慢查询仍由原同步守卫拒绝。提前量不改变 `authCheckTimeoutMs`。HTTP 和 upgrade 准入先预留有限 carrier 容量，再加入正在进行或已到期的 Peer 原 Cookie 查库复核。派发仍须通过复核时效及原请求/账户检查；WS 逻辑流打开保留同步守卫。 到期的原登录检查保留固定的内部原因供诊断使用；公开认证字段不含内部原因。
 
 精确的 `GET`、`HEAD /api/skills/release-archive` 及已选 POST `/api/workspace-files/upload` 使用原认证 `/api` 入口、原头部或经审查的附件 query 账户/代际绑定及 Peer 载体。技能响应只接收 ingress 已验证的确切绑定字段名，选择器解析仍拒绝其他 query 字段。API 核验实际安装的只读包拥有者和显式 Root 全局 files 预算。原读取轮次及 AccountUse 保留到源清理和响应完成/关闭；已确认拒绝或取消只释放此载体，不使 Peer 失败；未知清理保留原始原因、Use 和容量。只有两个精确方法均通过实际清单审计后，bootstrap 才描述二进制限额。
 

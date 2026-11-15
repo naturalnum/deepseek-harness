@@ -19,6 +19,8 @@ type NodeAuth = typeof import('better-auth/node')
 type AuthFactory = typeof import('better-auth')['betterAuth']
 type ApiErrorFactory = typeof import('better-auth')['APIError']
 type LoginInvalidator = (authSessionId: Branded<'pe-auth-session-id'>) => Promise<void>
+/** Internal freshness refusal; public authentication fields remain unchanged. */
+class LoginRecheckRequiredError extends Error {}
 type LibraryLogin = NonNullable<Awaited<ReturnType<Auth['api']['getSession']>>>
 interface LoginState {
   readonly id: Branded<'pe-auth-session-id'>
@@ -292,8 +294,9 @@ export class BetterAuthAccess {
   assertLoginCurrent(principal: AuthenticatedPrincipal, requestId: Branded<'pe-request-id'>): void {
     const record = this.record(principal, requestId)
     if (record.state.expiresAtMs <= Date.now()) throw new AuthAccessError('cloud/unauthenticated', requestId)
-    if (!this.accepting || performance.now() - record.verifiedAtMs >= this.config.sessionRecheckMs) {
-      throw new AuthAccessError('cloud/account-unavailable', requestId)
+    if (!this.accepting) throw new AuthAccessError('cloud/account-unavailable', requestId)
+    if (performance.now() - record.verifiedAtMs >= this.config.sessionRecheckMs) {
+      throw new AuthAccessError('cloud/account-unavailable', requestId, { cause: new LoginRecheckRequiredError() })
     }
   }
 
