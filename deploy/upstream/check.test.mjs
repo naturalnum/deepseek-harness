@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -35,7 +35,7 @@ function fixture() {
   const ledger = paths => write('deploy/upstream/ledger.tsv', '路径\t类别\t原因\t撤销条件\n'
     + paths.map(path => `${path}\t扩展点\t原有登记\t上游提供等价能力`).join('\n') + '\n')
   const run = (...args) => spawnSync(process.execPath, [check, ...args], { cwd: root, encoding: 'utf8' })
-  return { base, ledger, run }
+  return { root, base, ledger, run, write }
 }
 
 test('matches modified, deleted and renamed source while excluding own, new, test, document and config paths', () => {
@@ -68,4 +68,22 @@ test('requires the upstream base from the command line', () => {
   const actual = f.run()
   assert.equal(actual.status, 2)
   assert.match(actual.stderr, /Usage: deploy\/upstream\/check <upstream-base>/u)
+})
+
+test('requires current generated interface tables for six-column ledgers', () => {
+  const f = fixture()
+  f.ledger(['src/main.ts', 'src/remove.ts', 'src/renamed.ts'])
+  const ledgerPath = join(f.root, 'deploy/upstream/ledger.tsv')
+  const lines = readFileSync(ledgerPath, 'utf8').trimEnd().split('\n')
+  writeFileSync(ledgerPath, lines[0] + '\t处置\t这一程的状态\n'
+    + lines.slice(1).map(line => line + '\t留作口子\t没动').join('\n') + '\n')
+  assert.equal(f.run(f.base).status, 1)
+  const inventory = fileURLToPath(new URL('./seams_inventory.py', import.meta.url))
+  const generated = spawnSync('python3', [inventory, f.base, '--repo', f.root, '--write'], { encoding: 'utf8' })
+  assert.equal(generated.status, 0, generated.stderr)
+  assert.equal(f.run(f.base).status, 0)
+  f.write('packages/cloud/example/src/index.ts', "import { Service } from '@deepseek-ai/cordis'\n")
+  const stale = f.run(f.base)
+  assert.equal(stale.status, 1)
+  assert.match(stale.stderr, /Interface inventory drift/u)
 })

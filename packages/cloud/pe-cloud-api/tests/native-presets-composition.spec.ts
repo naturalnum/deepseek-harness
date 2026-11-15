@@ -1,5 +1,6 @@
 /** Native Loader/preset registry and Gateway account composition; no deployed mode or model acceptance. */
 import { expect, it, vi } from 'vitest'
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { PeerId, PeerScope } from '@deepseek-ai/dsh-typert-protocol'
@@ -28,7 +29,10 @@ async function fixture(account = 'api-presets', defaults = false) {
   const rpc = defaults ? [...endpoints, { endpoint: 'settings/mutate', handlerId: 'native:settingsController',
     guard: 'authenticated-account' as const }] : endpoints
   const source = policyFixture(rpc, bounds, account, undefined, catalog, undefined, undefined, undefined, [], true,
-    undefined, { defaultId: 'standard', declarations })
+    undefined, { defaultId: 'standard', declarations,
+      extraEntries: [{ id: 'preset-fixture-executor', name: 'cordis:preset-fixture-executor' }],
+      prepare(ctx) { ctx.loader.builtins['preset-fixture-executor'] = NativeToolExecutor },
+    })
   const graph = await source.start()
   const peer: PeerScope = { id: brandString<PeerId>('preset-peer-' + account), ctx: graph.ctx, principal: { kind: 'owner' },
     interactions: 'answer', signal: graph.lifetime.signal, dispose: async () => {} }
@@ -170,6 +174,8 @@ it('admits the complete original question graph within the explicit finite fixtu
 
 it.each(['queue', 'steer'] as const)('holds a real Gateway session/prompt %s in Native Inbox until mode selection commits', async (mode) => {
   const f = await fixture('preset-prompt-' + mode), agent = await f.create()
+  const failures: string[] = []
+  f.ctx.on('agent/error', ({ error }) => { failures.push(error instanceof Error ? error.message : String(error)) })
   const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
   const original = f.ctx.agentPresets.recompose.bind(f.ctx.agentPresets)
   vi.spyOn(f.ctx.agentPresets, 'recompose').mockImplementation(async (scope, id) => {
@@ -193,7 +199,7 @@ it.each(['queue', 'steer'] as const)('holds a real Gateway session/prompt %s in 
     const selected = events.findIndex(event => event.type === 'agent-preset/selected')
     expect(selected).toBeGreaterThanOrEqual(0)
     expect(events.findIndex(event => event.type === 'turn/start')).toBeGreaterThan(selected)
-    expect(f.adapter.calls).toBe(1)
+    expect(f.adapter.calls, failures.join('; ')).toBe(1)
   } finally {
     release.resolve(undefined)
     await Promise.allSettled([selecting])

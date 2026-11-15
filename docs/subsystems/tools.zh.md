@@ -848,6 +848,27 @@ Types: [Scoped](scope.zh.md)
 
 Source: [`packages/core/tools/src/events.ts`](../../packages/core/tools/src/events.ts)
 
+<a id="toolsprepare--waterfall"></a>
+
+#### `tools/prepare` — waterfall
+
+Prepare scoped providers before capturing this step's tool registrations. Failure or cancellation publishes no partial selection.
+
+```ts cordis-catalog
+/**
+ * Prepare scoped providers before capturing this step's tool registrations.
+ * Failure or cancellation publishes no partial selection.
+ * @param context - original Agent, captured model selection and cancellation.
+ * @param next - continue preparing other providers.
+ * @mode waterfall
+ */
+'tools/prepare'(this: Scoped<ToolsService>, context: ToolActivationContext, next: () => Promise<void>): Promise<void>
+```
+
+Types: [Scoped](scope.zh.md)
+
+Source: [`packages/core/tools/src/index.ts`](../../packages/core/tools/src/index.ts)
+
 <a id="toolsptc-dispatch-log--waterfall"></a>
 
 #### `tools/ptc-dispatch-log` — waterfall

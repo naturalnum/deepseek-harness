@@ -2,7 +2,7 @@ import { z } from 'zod'
 /** Keyless stateless Streamable HTTP MCP fixture for integration tests. */
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import { createMcpHandler, McpServer, type CallToolResult } from '@modelcontextprotocol/server'
+import { createMcpHandler, McpServer, type CallToolResult, type ListToolsResult } from '@modelcontextprotocol/server'
 import { toNodeHandler, type NodeIncomingMessageLike } from '@modelcontextprotocol/node'
 
 /** Running HTTP fixture and the request headers it observed. */
@@ -10,22 +10,21 @@ export interface HttpMcpFixture {
   url: string
   calls: string[]
   authorization: Array<string | undefined>
+  listRequests: string[]
   /** Refuse actual HTTP requests with 503 while the listener remains owned by this fixture. */
   setAvailable: (available: boolean) => void
   /** Select the next real SDK tool reply without changing Client-side execution. */
   setToolText: (text: string) => void
   /** Delay the real SDK tool handler, allowing Client-side timeout and late settlement. */
   setToolDelay: (milliseconds: number) => void
-  /** Set the real SDK initialize response instructions. */
+  /** Select instructions on the next real SDK initialization. */
   setInstructions: (instructions: string) => void
-  /** Set the real SDK tool-list description. */
+  /** Select the next real SDK tools/list description. */
   setToolDescription: (description: string) => void
-  /** Prefix actual SSE responses with a comment of this length. */
+  /** Emit related SDK logging notifications before the tool result, in at most 256-byte payloads. */
   setSsePadding: (bytes: number) => void
-  /** Select how many distinct tool pages the SDK lists. */
+  /** Serve one registered tool per SDK page and record the original request cursors. */
   setListPageCount: (pages: number) => void
-  /** Cursors received by the SDK tool-list handler. */
-  listRequests: string[]
   /** Hold one actual HTTP request until release or physical response closure. */
   holdNextRequest: () => { entered: Promise<void>; release: () => void }
   close: () => Promise<void>
@@ -38,48 +37,46 @@ export async function startHttpMcpFixture(options: {
 } = {}): Promise<HttpMcpFixture> {
   const calls: string[] = []
   const authorization: Array<string | undefined> = []
-  let available = true, toolText = 'pong', toolDelay = 0
-  let instructions = '', toolDescription = 'Replies pong.', ssePadding = 0, listPageCount = 1
   const listRequests: string[] = []
+  let available = true, toolText = 'pong', toolDelay = 0, toolDescription = 'Replies pong.', ssePadding = 0
+  let instructions: string | undefined, listPageCount: number | undefined
   const heldRequests = new Set<() => void>()
   let nextRequest: { entered: () => void; resumed: Promise<void>; release: () => void } | undefined
-  const createServerForRequest: Parameters<typeof createMcpHandler>[0] = ({ requestInfo }) => {
+  const handler = createMcpHandler(({ requestInfo }) => {
     const mcp = new McpServer(
       { name: 'http-fixture', version: '1.0.0' },
-      { capabilities: { tools: {} }, instructions },
+      { capabilities: { tools: {}, ...ssePadding > 0 ? { logging: {} } : {} },
+        ...instructions === undefined ? {} : { instructions } },
     )
-    mcp.registerTool('ping', { description: toolDescription, inputSchema: z.object({}) }, async (): Promise<CallToolResult> => {
-      calls.push('ping')
-      if (toolDelay > 0) await new Promise<void>((resolve) => { setTimeout(resolve, toolDelay) })
-      if (options.rejectToolCalls) {
-        return { isError: true, content: [{ type: 'text', text: `MCP fixture rejected ${requestInfo?.headers.get('authorization')}` }] }
-      }
-      return { content: [{ type: 'text', text: toolText }] }
-    })
-    mcp.server.setRequestHandler('tools/list', async (request) => {
-      const cursor = request.params?.cursor ?? '0', page = Number(cursor)
-      if (!Number.isSafeInteger(page) || page < 0 || page >= listPageCount) throw new Error('Invalid fixture tool cursor')
-      listRequests.push(cursor)
-      return {
-        tools: [{ name: listPageCount === 1 ? 'ping' : `ping-${String(page)}`, description: toolDescription,
-          inputSchema: { type: 'object', properties: {} } }],
-        ...page + 1 < listPageCount ? { nextCursor: String(page + 1) } : {},
-      }
-    })
+    const tools = Array.from({ length: listPageCount ?? 1 }, (_, page) => ({
+      name: page === 0 ? 'ping' : `ping_${page}`, description: toolDescription,
+      inputSchema: { type: 'object' as const, properties: {} },
+    }))
+    for (const tool of tools) {
+      mcp.registerTool(tool.name, { description: tool.description, inputSchema: z.object({}) },
+        async (_args, ctx): Promise<CallToolResult> => {
+          calls.push(tool.name)
+          if (toolDelay > 0) await new Promise<void>((resolve) => { setTimeout(resolve, toolDelay) })
+          for (let remaining = ssePadding; remaining > 0; remaining -= 256) {
+            await ctx.mcpReq.notify({ method: 'notifications/message',
+              params: { level: 'info', data: 'x'.repeat(Math.min(remaining, 256)) } })
+          }
+          if (options.rejectToolCalls) {
+            return { isError: true, content: [{ type: 'text', text: `MCP fixture rejected ${requestInfo?.headers.get('authorization')}` }] }
+          }
+          return { content: [{ type: 'text', text: toolText }] }
+        })
+    }
+    if (listPageCount !== undefined) {
+      mcp.server.setRequestHandler('tools/list', (request): ListToolsResult => {
+        const cursor = request.params?.cursor ?? '0', page = Number(cursor)
+        listRequests.push(cursor)
+        return { tools: tools.slice(page, page + 1), ...page + 1 < tools.length ? { nextCursor: String(page + 1) } : {} }
+      })
+    }
     return mcp
-  }
-  const handler = createMcpHandler(createServerForRequest)
-  const sseHandler = createMcpHandler(createServerForRequest, { responseMode: 'sse' })
-  const handle = toNodeHandler({ async fetch(request, options) {
-    const response = await (ssePadding > 0 ? sseHandler : handler).fetch(request, options)
-    if (ssePadding === 0 || response.body === null || !response.headers.get('content-type')?.includes('text/event-stream')) return response
-    const headers = new Headers(response.headers)
-    headers.delete('content-length')
-    const body = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({ start(controller) {
-      controller.enqueue(new TextEncoder().encode(': ' + 'x'.repeat(ssePadding) + '\n\n'))
-    } }))
-    return new Response(body, { status: response.status, statusText: response.statusText, headers })
-  } })
+  })
+  const handle = toNodeHandler(handler)
   const handleRequest = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     authorization.push(request.headers.authorization)
     if (!available) { response.writeHead(503).end('MCP fixture is temporarily unavailable.'); return }
@@ -115,6 +112,7 @@ export async function startHttpMcpFixture(options: {
     url: `http://127.0.0.1:${address.port}/mcp`,
     authorization,
     calls,
+    listRequests,
     setAvailable: (value) => { available = value },
     setToolText: (value) => { toolText = value },
     setToolDelay: (value) => { toolDelay = value },
@@ -122,7 +120,6 @@ export async function startHttpMcpFixture(options: {
     setToolDescription: (value) => { toolDescription = value },
     setSsePadding: (value) => { ssePadding = value },
     setListPageCount: (value) => { listPageCount = value },
-    listRequests,
     holdNextRequest: () => {
       if (nextRequest !== undefined) throw new Error('The next HTTP MCP request is already held.')
       const entered = Promise.withResolvers<undefined>(), resumed = Promise.withResolvers<undefined>()
@@ -134,7 +131,7 @@ export async function startHttpMcpFixture(options: {
     close: async () => {
       available = false
       for (const release of heldRequests) release()
-      await Promise.all([handler.close(), sseHandler.close()])
+      await handler.close()
       await new Promise<void>((resolve, reject) => {
         server.close((error) => { if (error === undefined) resolve(); else reject(error) })
       })

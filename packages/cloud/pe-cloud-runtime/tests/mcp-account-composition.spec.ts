@@ -89,6 +89,8 @@ it('restores persisted HTTP tools before a cold account Agent assembles its firs
     const requests = external.authorization.length
     expect((await cold.ctx.systemPrompt.assemble()).tools.filter(tool => tool.name.startsWith('mcp__'))).toEqual([])
     expect(external.authorization).toHaveLength(requests)
+    const failures: string[] = []
+    cold.ctx.on('agent/error', ({ error }) => { failures.push(error instanceof Error ? error.message : String(error)) })
     let calls = 0
     vi.spyOn(cold.adapter, 'stream').mockImplementation(async function* (options: GenerateOptions): AsyncIterable<StreamChunk> {
       expect(options.tools?.some(tool => tool.name === 'mcp__compute__ping')).toBe(true)
@@ -104,7 +106,7 @@ it('restores persisted HTTP tools before a cold account Agent assembles its firs
     await cold.invoke('prompt', { sessionId: created.sessionId, requestId: 'cold-mcp-first-turn', mode: 'followup',
       content: [{ type: 'text', text: 'Use the configured MCP ping tool.' }] })
     await completed.promise; await cold.ctx.sessionPersistence.flush()
-    expect(calls).toBe(2)
+    expect(calls, failures.join('; ')).toBe(2)
     expect(external.calls).toEqual(['ping'])
     const history = JSON.stringify(cold.ctx.sessions.get(created.sessionId)?.snapshotEvents())
     expect(history).toContain('cold-first-model-mcp'); expect(history).toContain('pong')

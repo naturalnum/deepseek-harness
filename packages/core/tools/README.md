@@ -209,3 +209,5 @@ These limits define when the registry needs special care. They are current packa
 None.
 
 </details>
+
+`tools/prepare` is a scoped waterfall before `resolve()` captures registrations for a step. Providers may await restoration under the original Agent, model selection and signal. Failure or cancellation produces no partial tool selection; without listeners, selection retains its native behavior.

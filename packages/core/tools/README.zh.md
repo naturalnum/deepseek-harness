@@ -209,3 +209,5 @@ Agent 步骤的并发上限使用 [agent-loop 配置](../agent-loop/README.zh.md
 无。
 
 </details>
+
+`tools/prepare` 在 `resolve()` 捕获步骤工具注册前执行作用域 waterfall。提供方可在原 Agent、模型选择与取消信号下等待恢复。失败或取消不会产生部分工具选择；没有监听者时保留原生选择行为。

@@ -21,9 +21,9 @@ import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import { remoteMethods, type PeerId, type PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 import type { AccountBinding, AccountId, AccountUse, OwnerEpoch } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
-import { BetterAuthAccess } from '@deepseek-ai/dsh-pe-cloud-access/src/auth.ts'
 import { LoginPeerRegistry } from '@deepseek-ai/dsh-pe-cloud-access/src/peers.ts'
-import type { AccessConfig, AuthenticatedPrincipal } from '@deepseek-ai/dsh-pe-cloud-access/types'
+import type { AccessConfig } from '@deepseek-ai/dsh-pe-cloud-access/types'
+import { authenticatedLoginFixture } from '../../pe-cloud-access/tests/authenticated-login-fixture.ts'
 import { CloudApiError } from '../src/errors.ts'
 import { createNativeController, type NativeSessionGuards } from '../src/native.ts'
 import { ExposurePolicy } from '../src/exposure.ts'
@@ -362,16 +362,7 @@ it.each([
       return source
     })
   }
-  const principal: AuthenticatedPrincipal = {
-    accountId: f.binding.accountId,
-    authSessionId: brandString<AuthenticatedPrincipal['authSessionId']>('history-login'),
-  }
   const requestId = brandString<Branded<'pe-request-id'>>('history-graph-carrier')
-  // Authentication and runtime authority stay outside this keyless component test.
-  const auth = Object.create(BetterAuthAccess.prototype) as BetterAuthAccess
-  vi.spyOn(auth, 'assertLoginCurrent').mockImplementation(() => {})
-  vi.spyOn(auth, 'recheckLogin').mockResolvedValue(undefined)
-  vi.spyOn(auth, 'authenticate').mockResolvedValue(principal)
   const release = vi.fn()
   const use: AccountUse = {
     binding: f.binding, context: f.ctx, assertCurrent: () => { f.lifetime.signal.throwIfAborted() }, release,
@@ -386,6 +377,8 @@ it.each([
   }
   const failures: unknown[] = []
   const transportCreation = vi.spyOn(Gateway.prototype, 'createNodeStreamTransport')
+  const { auth, principal } = await authenticatedLoginFixture(settings, f.binding.accountId, requestId,
+    async (login) => { await registry.invalidateLogin(login) })
   const registry = new LoginPeerRegistry({ ...settings, sessionRecheckLeadMs: 0 }, auth, {
     borrow: async (binding) => { expect(binding).toBe(f.binding); return use },
     beforeHttp: () => {}, beforeStream: () => {}, cleanupFailed: (failure) => { failures.push(failure) },
@@ -457,7 +450,9 @@ it.each([
       })
     })
     server.emit('connection', incoming)
-    client.write('GET /api/remote.mux HTTP/1.1\r\nHost: 127.0.0.1:4100\r\nOrigin: http://127.0.0.1:4100\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n')
+    client.write('GET /api/remote.mux HTTP/1.1\r\nHost: 127.0.0.1:4100\r\nOrigin: http://127.0.0.1:4100\r\n'
+      + 'Cookie: login=history-login\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n'
+      + 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n')
     await handshake.promise
     const body = Buffer.from(JSON.stringify({
       type: 'open', streamId: 'history', endpoint: 'session/follow', payload: { args: { request: { address, activate: true, assistantStream: true } } },

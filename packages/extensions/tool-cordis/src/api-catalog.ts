@@ -6919,6 +6919,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'exec', description: 'the pending call (name, parsed arguments, caller agent).' }],
   },
   {
+    name: 'tools/prepare',
+    mode: 'waterfall',
+    signature: '\'tools/prepare\'(this: Scoped<ToolsService>, context: ToolActivationContext, next: () => Promise<void>): Promise<void>',
+    summary: 'Prepare scoped providers before capturing this step\'s tool registrations.',
+    description: 'Prepare scoped providers before capturing this step\'s tool registrations. Failure or cancellation publishes no partial selection.',
+    parameters: [{ name: 'context', description: 'original Agent, captured model selection and cancellation.' }, { name: 'next', description: 'continue preparing other providers.' }],
+  },
+  {
     name: 'tools/ptc-dispatch-log',
     mode: 'waterfall',
     signature: '\'tools/ptc-dispatch-log\'(this: Scoped<ToolsService>, dispatch: PtcDispatchLog, next: () => Promise<ContentBlock[]>): Promise<ContentBlock[]>',

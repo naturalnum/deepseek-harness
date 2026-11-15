@@ -1,8 +1,8 @@
 /** Tool definitions and scoped dispatch to plugin-owned executors. @module */
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { AnonymousEntries, NamedEntries, ScopedLayers, scopeOf, scopeChainOf } from '@deepseek-ai/dsh-scope'
-import type { ScopeKey, ScopeLayer } from '@deepseek-ai/dsh-scope'
+import { AnonymousEntries, NamedEntries, ScopedLayers, scopeOf, scopeChainOf, scopeTarget } from '@deepseek-ai/dsh-scope'
+import type { ScopeKey, ScopeLayer, Scoped } from '@deepseek-ai/dsh-scope'
 import { ToolExecutorUnavailableError } from './executor.ts'
 import type { ToolExecutor, ToolBatchInput, ToolBatchResult } from './executor.ts'
 import './events.ts'
@@ -32,6 +32,16 @@ declare module '@deepseek-ai/dsh-llm' {
 declare module '@deepseek-ai/cordis' {
   interface Context {
     tools: ToolsService
+  }
+  interface Events {
+    /**
+     * Prepare scoped providers before capturing this step's tool registrations.
+     * Failure or cancellation publishes no partial selection.
+     * @param context - original Agent, captured model selection and cancellation.
+     * @param next - continue preparing other providers.
+     * @mode waterfall
+     */
+    'tools/prepare'(this: Scoped<ToolsService>, context: ToolActivationContext, next: () => Promise<void>): Promise<void>
   }
 }
 
@@ -263,6 +273,8 @@ export class ToolsService extends Service {
    */
   async resolve(context: ToolActivationContext): Promise<ResolvedToolSet> {
     const { agent, signal } = context
+    signal.throwIfAborted()
+    await this.ctx.waterfall(scopeTarget(this, agent), 'tools/prepare', context, () => Promise.resolve())
     signal.throwIfAborted()
     const view = this.view(agent)
     const admitted = new Map<string, ToolDefinition>()
