@@ -395,6 +395,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   SkillPublishRequest: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
   SkillPublishResult: '../../packages/cloud/pe-cloud-api/README.md#controlled-sample-publication',
   SkillVersion: '../../packages/cloud/pe-cloud-files/README.md#use-this-package',
+  SkillVersionSource: '../../packages/cloud/pe-cloud-files/README.md#use-this-package',
   SkillVersionPort: '../../packages/cloud/pe-cloud-files/README.md#understand-the-implementation',
   SkillWorkingCopyGrant: '../../packages/cloud/pe-cloud-files/README.md#use-this-package',
   'ctx.peAccountInstructions:Config': '../../packages/cloud/pe-account-instructions/README.md#minimal-configuration',

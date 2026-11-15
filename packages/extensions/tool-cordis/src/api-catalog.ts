@@ -2218,6 +2218,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'Whether this operation belongs to the still-current original read carrier.',
       },
       {
+        signature: 'captureStreamCurrent(peer: PeerScope, binding: AccountBinding, endpoint: string, signal: AbortSignal): () => void',
+        description: 'Retain the original authenticated stream through its native work.',
+        parameters: [{ name: 'peer', description: 'Exact original invocation Peer.' }, { name: 'binding', description: 'Original installed account binding.' }, { name: 'endpoint', description: 'Exact admitted stream endpoint.' }, { name: 'signal', description: 'Original stream and native-work cancellation.' }],
+        returns: 'Current checks owned by the same original ingress and Peer/Use.',
+      },
+      {
         signature: 'withConfigurationPeer<T>(peer: PeerScope, consume: ConfigurationPeerOperation<T>, mode: \'if-idle\' | \'stop-and-apply\' = \'if-idle\'): Promise<T>',
         description: 'Delegate a guarded configuration handoff to the same original login/Peer owner.',
         parameters: [{ name: 'peer', description: 'Exact native invocation Peer.' }, { name: 'consume', description: 'Factory-owned exclusive update, without another login or state authority.' }, { name: 'mode', description: 'Explicit local idle operation or terminal acceptance followed by original full closure.' }],
@@ -2656,6 +2662,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Materialize the complete tree under the original issued project, preserving existing writable copies.',
         parameters: [{ name: 'project', description: 'Original issued active project grant.' }, { name: 'version', description: 'The exact operation-scoped source.version lease when called inside source consumption.' }, { name: 'signal', description: 'Observation cancellation; actual copy work retains its original owner.' }],
         returns: 'An issued complete working copy after confirmed publication and protected association CAS.',
+      },
+      {
+        signature: 'async materializeWorkspaceSkill(project: AccountFilesProject, parent: SkillProjectGrant, source: SkillVersionSource | SkillBundleSource, authorized: () => void, signal: AbortSignal): Promise<string>',
+        description: 'Publish ordinary project resources while retaining the original source and active parent admission.',
+        parameters: [{ name: 'project', description: 'Exact projectFor result for the live caller\'s Workspace.' }, { name: 'parent', description: 'Original actively borrowed parent; this does not consume another persistent association.' }, { name: 'source', description: 'Live immutable source snapshot, retained by its original Provider callback.' }, { name: 'authorized', description: 'Original Agent/project recheck, including after actual I/O.' }, { name: 'signal', description: 'Actual copy settlement; observer cancellation must join this operation.' }],
+        returns: 'Relative complete writable resource directory; existing user modifications are preserved.',
       },
       {
         signature: 'async prepareSkillProject(project: AccountFilesProject, signal: AbortSignal): Promise<ResidentResult<SkillProjectGrant>>',
@@ -6029,7 +6041,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AccountFilesPreparation',
-    declaration: 'export interface AccountFilesPreparation {\n    readonly enforceSessionFilePolicy?: boolean;\n    readonly skillVersions?: () => SkillVersionPort;\n    readonly researchStorage?: () => AccountResearchStorage;\n    readonly skillProjection?: () => SkillProjectPort;\n    readonly binding: AccountBinding;\n    readonly port: Pick<PoolReadPort, \'createWorkspaceRegistry\'>;\n    readonly defaultGrant: IsolatedLeafGrant;\n    readonly createFileSystem?: (workspace: Workspace, assertInstalled: (owner: Context) => void, mapProcessPath?: (caller: Context, hostPath: string) => string | undefined, enforceSessionFilePolicy?: boolean) => Promise<S2ProjectPort[\'FileSystem\']>;\n    readonly attachments?: Pick<PoolReadPort, \'assertStagingAvailable\' | \'stageFiles\' | \'stageWorkspaceUploads\' | \'runNativeMutation\' | \'workspaceContent\'>;\n    readonly attachmentProjection?: Pick<AccountAttachmentBackend, \'mapFileHostPath\'> & {\n        mapProcessPath(caller: Context, hostPath: string): string | undefined;\n    };\n    readonly projectFor?: (workspace: Workspace, assertRegistered: () => void, signal?: AbortSignal) => Promise<AccountFilesProject>;\n    readonly prepareExecutionMounts?: (workspace: Workspace, sessionId: EnvironmentSessionId, environmentVersion: string, assertRegistered: () => void, signal?: AbortSignal) => Promise<ResidentResult<ExecutionMountGrant>>;\n    readonly createProject?: (registry: ControlledWorkspaceRegistry, use: AccountUse, title: string | undefined, signal: AbortSignal) => Promise<Wor /* …truncated — full shape in source */',
+    declaration: 'export interface AccountFilesPreparation {\n    readonly enforceSessionFilePolicy?: boolean;\n    readonly skillVersions?: () => SkillVersionPort;\n    readonly researchStorage?: () => AccountResearchStorage;\n    readonly skillProjection?: () => SkillProjectPort;\n    readonly binding: AccountBinding;\n    readonly port: Pick<PoolReadPort, \'createWorkspaceRegistry\'>;\n    readonly defaultGrant: IsolatedLeafGrant;\n    readonly createFileSystem?: (workspace: Workspace, assertInstalled: (owner: Context) => void, mapProcessPath?: (caller: Context, hostPath: string) => string | undefined, enforceSessionFilePolicy?: boolean) => Promise<S2ProjectPort[\'FileSystem\']>;\n    readonly attachments?: Pick<PoolReadPort, \'assertStagingAvailable\' | \'stageFiles\' | \'stageWorkspaceUploads\' | \'workspaceUploadChunkBytes\' | \'runNativeMutation\' | \'workspaceContent\'>;\n    readonly attachmentProjection?: Pick<AccountAttachmentBackend, \'mapFileHostPath\'> & {\n        mapProcessPath(caller: Context, hostPath: string): string | undefined;\n    };\n    readonly projectFor?: (workspace: Workspace, assertRegistered: () => void, signal?: AbortSignal) => Promise<AccountFilesProject>;\n    readonly prepareExecutionMounts?: (workspace: Workspace, sessionId: EnvironmentSessionId, environmentVersion: string, assertRegistered: () => void, signal?: AbortSignal) => Promise<ResidentResult<ExecutionMountGrant>>;\n    readonly createProject?: (registry: ControlledWorkspaceRegistry, use: AccountUse, title: string | undefined, signa /* …truncated — full shape in source */',
   },
   {
     name: 'AccountFilesProject',
@@ -6473,7 +6485,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CloudAccountFiles',
-    declaration: 'export class CloudAccountFiles extends Service {\n    readonly binding: AccountBinding;\n    constructor(ctx: Context, input: AccountFilesPreparation);\n    skillVersions(): SkillVersionPort;\n    researchStorage(owner: Context): AccountResearchStorage;\n    remoteServers(owner: Context, limits: RemoteStoreLimits, current: () => void, submit: <T>(work: () => Promise<T>) => Promise<T>): Promise<AccountRemoteServerStore>;\n    mcpConnections(owner: Context, limits: McpStoreLimits, current: () => void, submit: <T>(work: () => Promise<T>) => Promise<T>): Promise<AccountMcpConnectionStore>;\n    prepareBundle(input: SkillBundleInput, signal: AbortSignal): Promise<ResidentResult<SkillBundleVersion>>;\n    observeCatalog(signal: AbortSignal): Promise<ResidentResult<SkillCatalog>>;\n    commitCatalog(expected: SkillCatalog, change: SkillCatalogChange, signal: AbortSignal): Promise<ResidentResult<SkillCatalogCommit>>;\n    withBundleSource<T>(version: SkillBundleVersion, consume: (source: SkillBundleSource, control: AbortSignal) => Promise<T>, signal: AbortSignal): Promise<ResidentResult<T>>;\n    exportBundle(version: SkillBundleVersion, signal: AbortSignal): Promise<ResidentResult<Uint8Array<ArrayBuffer>>>;\n    materializeBundleVersion(project: SkillProjectGrant, version: SkillBundleVersion, signal: AbortSignal): Promise<ResidentResult<SkillBundleWorkingCopy>>;\n    async prepareSkillProject(project: AccountFilesProject, signal: AbortSignal): Promise<ResidentResult<SkillProjectGrant>>;\n    mate /* …truncated — full shape in source */',
+    declaration: 'export class CloudAccountFiles extends Service {\n    readonly binding: AccountBinding;\n    constructor(ctx: Context, input: AccountFilesPreparation);\n    skillVersions(): SkillVersionPort;\n    researchStorage(owner: Context): AccountResearchStorage;\n    remoteServers(owner: Context, limits: RemoteStoreLimits, current: () => void, submit: <T>(work: () => Promise<T>) => Promise<T>): Promise<AccountRemoteServerStore>;\n    mcpConnections(owner: Context, limits: McpStoreLimits, current: () => void, submit: <T>(work: () => Promise<T>) => Promise<T>): Promise<AccountMcpConnectionStore>;\n    prepareBundle(input: SkillBundleInput, signal: AbortSignal): Promise<ResidentResult<SkillBundleVersion>>;\n    observeCatalog(signal: AbortSignal): Promise<ResidentResult<SkillCatalog>>;\n    commitCatalog(expected: SkillCatalog, change: SkillCatalogChange, signal: AbortSignal): Promise<ResidentResult<SkillCatalogCommit>>;\n    withBundleSource<T>(version: SkillBundleVersion, consume: (source: SkillBundleSource, control: AbortSignal) => Promise<T>, signal: AbortSignal): Promise<ResidentResult<T>>;\n    exportBundle(version: SkillBundleVersion, signal: AbortSignal): Promise<ResidentResult<Uint8Array<ArrayBuffer>>>;\n    materializeBundleVersion(project: SkillProjectGrant, version: SkillBundleVersion, signal: AbortSignal): Promise<ResidentResult<SkillBundleWorkingCopy>>;\n    async materializeWorkspaceSkill(project: AccountFilesProject, parent: SkillProjectGrant, source: SkillVersionSource | SkillBundleS /* …truncated — full shape in source */',
   },
   {
     name: 'CloudApiError',
@@ -7893,7 +7905,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ManagedSkillResourcePreparation',
-    declaration: 'export interface ManagedSkillResourcePreparation {\n    assertCaller(options: SkillViewOptions): void;\n    materialize(version: SkillBundleVersion, options: SkillViewOptions): Promise<FileSystemSkillResources>;\n}',
+    declaration: 'export interface ManagedSkillResourcePreparation {\n    assertCaller(options: SkillViewOptions): void;\n    materialize(version: SkillBundleVersion, options: SkillViewOptions, source: SkillBundleSource): Promise<FileSystemSkillResources>;\n}',
   },
   {
     name: 'ManagedSkillSelection',
@@ -8292,10 +8304,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface NativeSettingsWritePolicy extends ModelKeyPeerConsumer {\n    readonly fields: readonly ApprovedConfigurationField[];\n}',
   },
   {
-    name: 'NativeTextFileSystemConstructor',
-    declaration: 'export interface NativeTextFileSystemConstructor {\n    new (ctx: Context): FileSystem;\n    readonly inject: readonly string[];\n}',
-  },
-  {
     name: 'NativeUploadPreparation',
     declaration: 'export interface NativeUploadPreparation {\n    readonly maxPendingReceipts: number;\n    storeFileStream(agent: Agent, input: SaveFileStreamAttachment, save: (input: SaveFileStreamAttachment) => Promise<FileAttachmentRef>, workspaceDirectory?: string): Promise<FileAttachmentRef>;\n}',
   },
@@ -8585,7 +8593,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PoolReadPort',
-    declaration: 'export interface PoolReadPort {\n    workspaceContent(workspace: Workspace, current: () => void, signal?: AbortSignal): Promise<TextProjectBackend>;\n    skillVersions(): SkillVersionPort;\n    skillProjection(): SkillProjectPort;\n    readonly reader: FixedRootReader;\n    readonly directory: DirectoryReadPort;\n    assertContentAvailable(): void;\n    assertStagingAvailable(): void;\n    prepareExecutionMounts(workspace: Workspace, sessionId: EnvironmentSessionId, environmentVersion: string, authority: EnvironmentBankAuthority, assertRegistered: () => void, signal?: AbortSignal): Promise<ResidentResult<ExecutionMountGrant>>;\n    stageFiles(workspace: Workspace, sources: StageSources, assertRegistered: () => void, signal?: AbortSignal): Promise<ResidentResult<readonly StageFileResult[]>>;\n    stageWorkspaceUploads(workspace: Workspace, sources: readonly WorkspaceUploadSource[], assertRegistered: () => void, signal?: AbortSignal): Promise<ResidentResult<readonly WorkspaceUploadResult[]>>;\n    runNativeMutation<T>(reservationBytes: number, assertCurrent: () => void, execute: (control: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<ResidentResult<T>>;\n    createTextFileSystem(workspace: Workspace, assertInstalled: (ctx: Context) => void, resolveProject: ResolveAccountFileProject, mapProcessPath?: (caller: Context, hostPath: string) => string | undefined, enforceSessionFilePolicy?: boolean): Promise<NativeTextFileSystemConstructor>;\n    projectFor(workspace: Workspace, asser /* …truncated — full shape in source */',
+    declaration: 'export interface PoolReadPort {\n    workspaceContent(workspace: Workspace, current: () => void, signal?: AbortSignal): Promise<TextProjectBackend>;\n    skillVersions(): SkillVersionPort;\n    skillProjection(): SkillProjectPort;\n    readonly reader: FixedRootReader;\n    readonly directory: DirectoryReadPort;\n    assertContentAvailable(): void;\n    assertStagingAvailable(): void;\n    prepareExecutionMounts(workspace: Workspace, sessionId: EnvironmentSessionId, environmentVersion: string, authority: EnvironmentBankAuthority, assertRegistered: () => void, signal?: AbortSignal): Promise<ResidentResult<ExecutionMountGrant>>;\n    stageFiles(workspace: Workspace, sources: StageSources, assertRegistered: () => void, signal?: AbortSignal): Promise<ResidentResult<readonly StageFileResult[]>>;\n    stageWorkspaceUploads(workspace: Workspace, sources: readonly WorkspaceUploadSource[], assertRegistered: () => void, signal?: AbortSignal): Promise<ResidentResult<readonly WorkspaceUploadResult[]>>;\n    readonly workspaceUploadChunkBytes?: number;\n    runNativeMutation<T>(reservationBytes: number, assertCurrent: () => void, execute: (control: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<ResidentResult<T>>;\n    createTextFileSystem(workspace: Workspace, assertInstalled: (ctx: Context) => void, resolveProject: ResolveAccountFileProject, mapProcessPath?: (caller: Context, hostPath: string) => string | undefined, enforceSessionFilePolicy?: boolean): Promise<NativeTextFileSystemConstru /* …truncated — full shape in source */',
   },
   {
     name: 'PostToolDecision',
@@ -10073,7 +10081,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SkillResourceMaterializer',
-    declaration: 'export type SkillResourceMaterializer = (version: SkillVersion, options: SkillViewOptions) => Promise<FileSystemSkillResources>;',
+    declaration: 'export type SkillResourceMaterializer = (version: SkillVersion, options: SkillViewOptions, source: SkillVersionSource) => Promise<FileSystemSkillResources>;',
   },
   {
     name: 'SkillResourceMode',
