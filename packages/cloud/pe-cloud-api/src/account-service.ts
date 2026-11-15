@@ -5,7 +5,7 @@ import { CloudRemoteServerService, type CloudRemoteServerPreparation } from './c
 import { registerWorkspaceTransfers, type SelectWorkspaceTransfer } from './workspace-transfers.ts'
 import type { WorkspaceTransferLimits } from './types.ts'
 import { createWorkspaceUploadConsumer, type WorkspaceUploadBorrow, type WorkspaceUploadSettlement } from './workspace-upload.ts'
-import { inventoryMethodMatches, nativeOriginal, nativeAccountFibers, nativeFiberProvisions, nativeProvision } from './native-inventory.ts'
+import { inventoryMethodMatches, nativeOriginal, nativeAccountImplementations, nativeProvision } from './native-inventory.ts'
 import { AccountCapabilityInventories } from './capability-inventory.ts'
 import { approvedSettingsMatch } from './approved-settings.ts'
 import { Context, FiberState, Service, type Fiber } from '@deepseek-ai/cordis'
@@ -78,7 +78,7 @@ export interface AccountApiPreparation {
    * @returns Actual exact Fetch routes within maxNativeInventoryEntries after original registration checks.
    */
   readonly inspectRootFetch?: () => readonly ExactFetchExposure[]
-  /** Positive finite bound shared by visited native runtimes/fibers, selected exposures and actual Root routes; no default. */
+  /** Positive finite bound shared by visited Native implementation records, selected exposures and actual Root routes; no default. */
   readonly maxNativeInventoryEntries?: number
   /** Factory-owned unpublished mounting window; required only by prepared native auditing. */
   readonly assertUnpublished?: () => void
@@ -211,7 +211,8 @@ export class CloudAccountApi extends Service {
   /**
    * Check original native installations and the shared policy without creating or writing business resources.
    * Mount/business admission and native ownership are checked around the awaited policy metadata read.
-   * Selected exposure rows and visited runtimes/fibers share the explicit preparation budget; missing or exceeded budgets reject.
+   * Selected exposure rows and visited Native implementation records share the explicit preparation budget.
+   * Missing or exceeded budgets reject.
    * @param owner Actual consumer scope in this account graph.
    * @param signal Optional observer cancellation, combined with the original graph lifetime.
    * @returns Original synchronous native/admission recheck for final transfer; no readiness token, catalog or account authority is issued.
@@ -1262,18 +1263,16 @@ export class CloudAccountApi extends Service {
         || expected.fiber.state !== FiberState.ACTIVE || expected.fiber.ctx.root !== owner.root
         || original(local) !== expected.value || original(root) !== expected.value) this.nativeUnavailable()
     }
-    for (const fiber of nativeAccountFibers(owner, () => consume(1))) {
-      if (fiber.ctx.root !== owner.root || fiber.state !== FiberState.ACTIVE) continue
-      for (const installed of nativeFiberProvisions(fiber)) {
-        consume(1)
-        if (installed.ctx.fiber !== fiber) continue
-        const key = installed.name
-        if (key !== 'sessionController' && key !== 'agentLoop' && key !== 'llm') continue
-        const expected = this.native[key]
-        const value: unknown = installed.value
-        if (++counts[key] > 1 || expected === undefined || fiber !== expected.fiber || value === null || typeof value !== 'object'
-          || original(value) !== expected.value) this.nativeUnavailable()
-      }
+    for (const installed of nativeAccountImplementations(owner)) {
+      consume(1)
+      const fiber = installed.ctx.fiber
+      if (fiber.state !== FiberState.ACTIVE) continue
+      const key = installed.name
+      if (key !== 'sessionController' && key !== 'agentLoop' && key !== 'llm') continue
+      const expected = this.native[key]
+      const value: unknown = installed.value
+      if (++counts[key] > 1 || expected === undefined || fiber !== expected.fiber || value === null || typeof value !== 'object'
+        || original(value) !== expected.value) this.nativeUnavailable()
     }
     if (Object.values(counts).some(count => count !== 1)) this.nativeUnavailable()
     if (this.firstScreen.native !== undefined) {

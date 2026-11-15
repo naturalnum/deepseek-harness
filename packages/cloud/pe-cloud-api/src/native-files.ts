@@ -1,5 +1,5 @@
 /** Original WorkspaceFiles registration and bounded provider/Remote inventory checks. */
-import { nativeOriginal, nativeAccountFibers, nativeFiberProvisions, nativeProvision } from './native-inventory.ts'
+import { nativeOriginal, nativeAccountImplementations, nativeProvision } from './native-inventory.ts'
 import { FiberState, type Context, type Fiber } from '@deepseek-ai/cordis'
 import WorkspaceFiles from '@deepseek-ai/dsh-api-workspace-files'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
@@ -53,16 +53,15 @@ export function createNativeWorkspaceFiles(
     let remaining = maximum
     const consume = (): void => { if (--remaining < 0) unavailable() }
     const found = new Map<NativeFileKey, Registration>()
-    for (const fiber of nativeAccountFibers(ctx, consume)) {
-      if (fiber.ctx.root !== ctx.root || fiber.state !== FiberState.ACTIVE) continue
-      for (const installed of nativeFiberProvisions(fiber)) {
-        consume()
-        const key = keys.find(key => key === installed.name)
-        if (key === undefined || installed.ctx.fiber !== fiber) continue
-        const value: unknown = installed.value
-        if (value === null || typeof value !== 'object' || found.has(key)) unavailable()
-        found.set(key, { value: original(value), fiber })
-      }
+    for (const installed of nativeAccountImplementations(ctx)) {
+      consume()
+      const fiber = installed.ctx.fiber
+      if (fiber.state !== FiberState.ACTIVE) continue
+      const key = keys.find(key => key === installed.name)
+      if (key === undefined || installed.ctx.fiber !== fiber) continue
+      const value: unknown = installed.value
+      if (value === null || typeof value !== 'object' || found.has(key)) unavailable()
+      found.set(key, { value: original(value), fiber })
     }
     for (const key of keys) {
       const installed = found.get(key), local = ctx.get(key), root = ctx.root.get(key)

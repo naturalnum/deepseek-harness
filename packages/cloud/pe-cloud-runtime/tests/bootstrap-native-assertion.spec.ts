@@ -61,26 +61,32 @@ it.each(inventoryCases)('refuses a $label inventory budget before shared policy 
   expect(metadata).not.toHaveBeenCalled()
 })
 
-it('charges actual same-graph runtimes and fibers before the shared policy without removing uniqueness checks', async () => {
+it('bounds actual same-account Native implementation records before the shared policy', async () => {
   const graph = await policyFixture().start()
   await graph.api.assertBootstrapCurrent(graph.ctx)
   const policy = vi.spyOn(graph.guards, 'assertBootstrapCurrent')
   const additions: Fiber[] = []
-  let entries = 0
   try {
-    while (entries <= graph.maxEntries && additions.length < graph.maxEntries) {
+    for (let index = 0; index <= graph.maxEntries; index++) {
+      const name = 'inventoryBudgetProbe' + String(index)
+      const added = graph.ctx.plugin({ apply(owner) { owner.provide(name, {}) } })
+      await added
+      additions.push(added)
+    }
+    await expect(graph.api.assertBootstrapCurrent(graph.ctx)).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+    expect(policy).not.toHaveBeenCalled()
+  } finally { for (const added of additions.toReversed()) await added.dispose() }
+})
+
+it('keeps the original providers usable with unrelated runtime scaffolding that registers no service', async () => {
+  const graph = await policyFixture().start(), additions: Fiber[] = []
+  try {
+    for (let index = 0; index <= graph.maxEntries; index++) {
       const added = graph.ctx.plugin({ apply() {} })
       await added
       additions.push(added)
-      entries = 0
-      for (const runtime of graph.ctx.registry.values()) {
-        entries++
-        for (const _fiber of runtime.fibers) entries++
-      }
     }
-    expect(entries).toBeGreaterThan(graph.maxEntries)
-    await expect(graph.api.assertBootstrapCurrent(graph.ctx)).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
-    expect(policy).not.toHaveBeenCalled()
+    await expect(graph.api.assertBootstrapCurrent(graph.ctx)).resolves.toEqual(expect.any(Function))
   } finally { for (const added of additions.toReversed()) await added.dispose() }
 })
 

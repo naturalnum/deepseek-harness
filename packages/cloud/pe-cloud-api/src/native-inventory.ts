@@ -29,20 +29,20 @@ export function inventoryMethodMatches(row: EndpointExposure, mode: 'rpc' | 'str
  */
 export function nativeOriginal(value: object): unknown { return Reflect.get(value, symbols.original) }
 
-/** Iterate fibers belonging to this account before charging its existing audit budget.
- * @param ctx Original account Context.
- * @param consume Charge one same-account runtime or fiber; refusal aborts iteration.
- * @returns Original fibers, including inactive owners so callers retain their existing state checks.
+type NativeImplementation = Context['reflect']['store'][symbol]
+
+/** Read the implementation records used by Native service resolution.
+ * @param ctx Original account Context; foreign roots are excluded before caller accounting.
+ * @returns Each current Native implementation record once, without creating or replacing a provider.
  */
-export function* nativeAccountFibers(ctx: Context, consume: () => void): Iterable<Fiber> {
-  for (const runtime of ctx.registry.values()) {
-    let charged = false
-    for (const fiber of runtime.fibers) {
-      if (fiber.ctx.root !== ctx.root) continue
-      if (!charged) { consume(); charged = true }
-      consume()
-      yield fiber
-    }
+export function* nativeAccountImplementations(ctx: Context): Iterable<NativeImplementation> {
+  const store = ctx.reflect.store, seen = new Set<NativeImplementation>()
+  for (const key of Reflect.ownKeys(store)) {
+    if (typeof key !== 'symbol') continue
+    const record = store[key]
+    if (record === undefined || record.ctx.root !== ctx.root || seen.has(record)) continue
+    seen.add(record)
+    yield record
   }
 }
 

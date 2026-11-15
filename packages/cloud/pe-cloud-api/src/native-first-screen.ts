@@ -1,4 +1,4 @@
-import { nativeOriginal, nativeAccountFibers, nativeEntryModule, nativeEntryId, nativeFiberProvisions, nativeLoaderFiber } from './native-inventory.ts'
+import { nativeOriginal, nativeAccountImplementations, nativeEntryModule, nativeEntryId, nativeLoaderFiber } from './native-inventory.ts'
 import { projectApprovedSettings, projectApprovedSettingsNamespace } from './approved-settings.ts'
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-goal'
@@ -127,15 +127,14 @@ export function firstScreenNativeOwner(
   const local = ctx.get(key), root = ctx.root.get(key)
   if (local === undefined || root === undefined || original(local) !== target || original(root) !== target) unavailable()
   let visited = 0, found: Fiber | undefined
-  for (const fiber of nativeAccountFibers(ctx, () => { if (++visited > maximum) unavailable() })) {
-    if (fiber.ctx.root !== ctx.root || fiber.state !== FiberState.ACTIVE) continue
-    for (const installed of nativeFiberProvisions(fiber)) {
-      if (++visited > maximum) unavailable()
-      if (installed.name !== key || installed.ctx.fiber !== fiber) continue
-      const registered: unknown = installed.value
-      if (registered === null || typeof registered !== 'object' || original(registered) !== target || found !== undefined) unavailable()
-      found = fiber
-    }
+  for (const installed of nativeAccountImplementations(ctx)) {
+    if (++visited > maximum) unavailable()
+    const fiber = installed.ctx.fiber
+    if (fiber.state !== FiberState.ACTIVE) continue
+    if (installed.name !== key || installed.ctx.fiber !== fiber) continue
+    const registered: unknown = installed.value
+    if (registered === null || typeof registered !== 'object' || original(registered) !== target || found !== undefined) unavailable()
+    found = fiber
   }
   if (found === undefined) unavailable()
   return { value: target, fiber: found }

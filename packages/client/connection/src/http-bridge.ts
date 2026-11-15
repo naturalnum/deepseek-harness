@@ -94,7 +94,7 @@ async function finishResponse(res: BridgeServerResponse): Promise<void> {
  * @param apiHandler - fetch-shaped API carrier the request is dispatched to.
  * @param peer - Peer the carrier admitted the request as.
  * @param maxRequestBodyBytes - maximum bytes buffered for a buffered route.
- * @param beforeResponse - optional synchronous admission immediately before response headers.
+ * @param beforeResponse - optional synchronous admission before response headers; refusal drains the body without writing.
  */
 export async function bridge(
   req: IncomingMessage,
@@ -163,7 +163,9 @@ export async function bridge(
       try { beforeResponse() } catch (error) {
         abort.abort(error)
         try {
-          await response.body?.cancel(error)
+          // Node multipart producers can enqueue after cancellation; join the
+          // original stream without publishing any refused headers or bytes.
+          if (response.body !== null) for await (const _chunk of response.body) { /* Drain the original producer. */ }
         } catch (cleanup) {
           throw new ResponseCleanupError(error, cleanup)
         }

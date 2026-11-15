@@ -230,7 +230,7 @@ The package adds zero request tokens.
 
 The guard preserves request content and any reusable prefix; provider cache availability remains provider-owned.
 
-Native proxy-target reads and the Gateway method identity comparison are centralized in `src/native-inventory.ts`. Its bounded fiber iterator filters to the current account root before charging runtime and fiber visits; the configured bound and duplicate/provider checks remain unchanged. Unreviewed Native methods remain outside the selected exposure policy.
+Native proxy-target reads and the Gateway method identity comparison are centralized in `src/native-inventory.ts`. Its implementation-registry iterator filters to the current account root before accounting; the configured bound and duplicate/provider checks remain unchanged. Unreviewed Native methods remain outside the selected exposure policy.
 
 ## Known Limitations and Deferred Work
 
@@ -259,3 +259,5 @@ The package publishes the generated Remote Client declaration map and its own `s
 </details>
 
 Loader entry metadata, installed fiber callbacks and schemas, original module imports, and log-fiber dereferences are also read through this adapter. Plugin control, credential policy and authorization retain their existing owners.
+
+Service-owner audits read the Native implementation registry used by actual service resolution. The existing inventory bound charges each account-local implementation record and selected exposure row, with original identity, active owner and uniqueness checks. Runtime scaffolding that registers no service does not consume this service-inventory budget.

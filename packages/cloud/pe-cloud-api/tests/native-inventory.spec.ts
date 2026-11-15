@@ -2,9 +2,9 @@
 import { Context, type Fiber } from '@deepseek-ai/cordis'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import { expect, it, onTestFinished } from 'vitest'
-import { nativeAccountFibers, nativeOriginal } from '../src/native-inventory.ts'
+import { nativeAccountImplementations, nativeOriginal } from '../src/native-inventory.ts'
 
-it('reads the actual Cordis proxy target and filters foreign roots before charging account inventory', async () => {
+it('reads the actual Cordis proxy target and reads account-local implementation records', async () => {
   const account = new Context(), foreign = new Context()
   onTestFinished(async () => { await account.fiber.dispose(); await foreign.fiber.dispose() })
   const owner = account.plugin(LlmRuntime)
@@ -23,11 +23,11 @@ it('reads the actual Cordis proxy target and filters foreign roots before chargi
   expect(target).not.toBe(scoped)
   if (!(target instanceof LlmRuntime)) throw new Error('Native proxy target is not the registered LlmRuntime')
   expect(nativeOriginal(target)).toBeUndefined()
-  let charged = 0
-  const fibers = [...nativeAccountFibers(account, () => {
-    if (++charged > 2) throw new Error('Foreign runtime/fiber consumed the account inventory budget')
-  })]
-  expect(fibers).toEqual([owner.ctx.fiber])
-  expect(charged).toBe(2)
-  expect(foreignOwners.every(fiber => !fibers.includes(fiber))).toBe(true)
+  const records = [...nativeAccountImplementations(account)]
+  const llm = records.filter(record => record.name === 'llm')
+  expect(llm, 'Native implementation registry must contain exactly this account LlmRuntime').toHaveLength(1)
+  expect(llm[0]?.value).toBe(target)
+  expect(llm[0]?.ctx.fiber).toBe(owner.ctx.fiber)
+  expect(records.every(record => record.ctx.root === account.root)).toBe(true)
+  expect(foreignOwners.every(fiber => !records.some(record => record.ctx.fiber === fiber))).toBe(true)
 })

@@ -97,7 +97,7 @@ export function apply(ctx: Context, config: Config): void {
   if (resolved.write || resolved.edit || resolved.applyPatch) {
     const sandbox = new FsSandboxController(ctx)
     if (resolved.write) applyWriteTool(ctx, sandbox)
-    if (resolved.edit) applyEditTool(ctx, sandbox)
+    if (resolved.edit && ctx.fs.supportsTextEdit) applyEditTool(ctx, sandbox)
     if (resolved.applyPatch) applyApplyPatchTool(ctx, sandbox)
   }
 }

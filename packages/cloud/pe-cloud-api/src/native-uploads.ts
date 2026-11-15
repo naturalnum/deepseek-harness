@@ -1,5 +1,5 @@
 /** Sole native upload owner with account admission and its original streamed persistence hook. */
-import { nativeOriginal, nativeAccountFibers, nativeFiberProvisions } from './native-inventory.ts'
+import { nativeOriginal, nativeAccountImplementations } from './native-inventory.ts'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
 import { FileUploads, FILE_UPLOAD_PATH, FileUploadIntakeUnconfirmedError } from '@deepseek-ai/dsh-client-file-upload'
 import type {} from '@deepseek-ai/dsh-client-connection'
@@ -116,15 +116,14 @@ export function createNativeUploads(
     if (ctx.fiber.state !== FiberState.ACTIVE
       || original(ctx.fileUploads) !== value || original(ctx.root.fileUploads) !== value) unavailable()
     let visited = 0, owners = 0
-    for (const fiber of nativeAccountFibers(ctx, () => { if (++visited > maximum) unavailable() })) {
-      if (fiber.ctx.root !== ctx.root || fiber.state !== FiberState.ACTIVE) continue
-      for (const provision of nativeFiberProvisions(fiber)) {
-        if (++visited > maximum) unavailable()
-        if (provision.name !== 'fileUploads' || provision.ctx.fiber !== fiber) continue
-        const registered: unknown = provision.value
-        if (++owners !== 1 || fiber !== ctx.fiber || registered === null || typeof registered !== 'object'
-          || original(registered) !== value) unavailable()
-      }
+    for (const provision of nativeAccountImplementations(ctx)) {
+      if (++visited > maximum) unavailable()
+      const fiber = provision.ctx.fiber
+      if (fiber.state !== FiberState.ACTIVE) continue
+      if (provision.name !== 'fileUploads' || provision.ctx.fiber !== fiber) continue
+      const registered: unknown = provision.value
+      if (++owners !== 1 || fiber !== ctx.fiber || registered === null || typeof registered !== 'object'
+        || original(registered) !== value) unavailable()
     }
     if (owners !== 1 || ctx.connection.createSharedFetchHandler('/api').requestBodyMode({
       method: 'POST', url: new URL(FILE_UPLOAD_PATH, 'http://native.invalid'),

@@ -68,31 +68,65 @@ describe('HTTP bridge abort', () => {
     expect(child.status, child.stderr).toBe(0)
   })
 
-  it('holds a refused response until body cancellation settles and retains cleanup failure', async () => {
+  it.each(['success', 'failure'])('joins refused body drainage with %s without publishing headers or bytes', async (result) => {
     const request = Readable.from([]) as IncomingMessage
     Object.assign(request, { url: '/api/workspaceFiles/readBytes', method: 'POST', headers: {} })
-    let headers = 0, writes = 0, ended = false, settled = false
+    let headers = 0, writes = 0, ended = false, settled = false, cancelled = 0
     const response = Object.assign(new EventEmitter(), {
       destroyed: false, writableEnded: false,
       writeHead() { headers++; return this },
       write() { writes++; return true },
       end() { ended = true; this.writableEnded = true; return this },
     })
-    const cancelled = Promise.withResolvers<undefined>(), cleanup = Promise.withResolvers<undefined>()
-    const refusal = new Error('admission closed'), fault = new Error('body cancellation failed')
-    const body = new ReadableStream({ cancel() { cancelled.resolve(undefined); return cleanup.promise } })
+    const admission = Promise.withResolvers<undefined>()
+    const refusal = new Error('admission closed'), fault = new Error('body drainage failed')
+    let producer!: ReadableStreamDefaultController<Uint8Array>
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) { producer = controller },
+      cancel() { cancelled++ },
+    })
     const actual = bridge(request, response, {
       requestBodyMode: () => 'buffered', fetch: async () => new Response(body),
-    }, PEER, 1024, () => { throw refusal })
+    }, PEER, 1024, () => { admission.resolve(undefined); throw refusal })
     const outcome = actual.then(() => undefined, (error: unknown) => error).finally(() => { settled = true })
-    await cancelled.promise
-    expect(settled).toBe(false)
-    expect({ headers, writes, ended }).toEqual({ headers: 0, writes: 0, ended: false })
-    cleanup.reject(fault)
+    try {
+      await admission.promise
+      expect(cancelled).toBe(0)
+      expect(settled).toBe(false)
+      expect({ headers, writes, ended }).toEqual({ headers: 0, writes: 0, ended: false })
+    } finally {
+      if (cancelled === 0) {
+        if (result === 'failure') producer.error(fault)
+        else { producer.enqueue(new Uint8Array([1, 2, 3])); producer.close() }
+      }
+      await outcome
+    }
     const error = await outcome
-    expect(error).toBeInstanceOf(ResponseCleanupError)
-    if (!(error instanceof ResponseCleanupError)) throw new Error('Expected response cleanup error', { cause: error })
-    expect(error.errors).toEqual([refusal, fault])
+    if (result === 'success') expect(error).toBe(refusal)
+    else {
+      expect(error).toBeInstanceOf(ResponseCleanupError)
+      if (!(error instanceof ResponseCleanupError)) throw new Error('Expected response cleanup error', { cause: error })
+      expect(error.errors).toEqual([refusal, fault])
+    }
+    expect({ headers, writes, ended }).toEqual({ headers: 0, writes: 0, ended: false })
+  })
+
+  it('joins a refused native multipart producer without cancelling its Blob read', async () => {
+    const request = Readable.from([]) as IncomingMessage
+    Object.assign(request, { url: '/api/workspaceFiles/readBytes', method: 'POST', headers: {} })
+    const body = new FormData()
+    body.set('metadata', '{}')
+    body.set('bytes-0', new Blob([new Uint8Array(64 * 1024)]))
+    let published = false
+    const response = Object.assign(new EventEmitter(), {
+      destroyed: false, writableEnded: false,
+      writeHead() { published = true }, write() { published = true; return true }, end() { published = true },
+    })
+    const refusal = new Error('the response owner was withdrawn')
+    await expect(bridge(request, response, {
+      requestBodyMode: () => 'buffered', fetch: async () => new Response(body),
+    }, PEER, 1024, () => { throw refusal })).rejects.toBe(refusal)
+    expect(published).toBe(false)
   })
 
   it('destroys a declared-oversize request instead of draining it', async () => {

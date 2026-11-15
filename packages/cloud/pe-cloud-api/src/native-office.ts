@@ -1,5 +1,5 @@
 /** Native Office provider identity and bounded Remote declaration audit. */
-import { nativeOriginal, nativeAccountFibers, nativeLoggedFiber, nativeFiberProvisions } from './native-inventory.ts'
+import { nativeOriginal, nativeAccountImplementations, nativeLoggedFiber } from './native-inventory.ts'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { FiberState, type Context, type Fiber } from '@deepseek-ai/cordis'
@@ -136,17 +136,16 @@ export function createNativeOffice(ctx: Context, binding: AccountBinding, curren
   const scan = (): void => {
     let remaining = maximum
     const found = new Map<string, { value: object; fiber: Fiber }>()
-    for (const fiber of nativeAccountFibers(ctx, () => { if (--remaining < 0) unavailable() })) {
-      if (fiber.ctx.root !== ctx.root || fiber.state !== FiberState.ACTIVE) continue
-      for (const entry of nativeFiberProvisions(fiber)) {
-        if (--remaining < 0) unavailable()
-        const key = entry.name, installed: unknown = entry.value
-        if (entry.ctx.fiber !== fiber || (key !== 'fs' && key !== 'workspaceFiles' && key !== 'officeKit')) continue
-        if (installed === null || typeof installed !== 'object' || found.has(key)) unavailable()
-        const unwrapped = original(installed)
-        if (unwrapped === undefined) unavailable()
-        found.set(key, { value: unwrapped, fiber })
-      }
+    for (const entry of nativeAccountImplementations(ctx)) {
+      if (--remaining < 0) unavailable()
+      const fiber = entry.ctx.fiber
+      if (fiber.state !== FiberState.ACTIVE) continue
+      const key = entry.name, installed: unknown = entry.value
+      if (entry.ctx.fiber !== fiber || (key !== 'fs' && key !== 'workspaceFiles' && key !== 'officeKit')) continue
+      if (installed === null || typeof installed !== 'object' || found.has(key)) unavailable()
+      const unwrapped = original(installed)
+      if (unwrapped === undefined) unavailable()
+      found.set(key, { value: unwrapped, fiber })
     }
     for (const [key, expected] of [['fs', fs], ['workspaceFiles', files], ['officeKit', value]] as const) {
       const actual = found.get(key), retained = registrations.get(key)

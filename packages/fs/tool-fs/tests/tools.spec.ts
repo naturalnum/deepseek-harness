@@ -163,6 +163,7 @@ describe('registration', () => {
     provideWorkingDirectoryFixture(ctx)
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
+    await ctx.plugin(NativeToolExecutor)
     await ctx.plugin(NoEditFs)
     await ctx.plugin(FsPolicy)
     await ctx.plugin(ToolFs, {})

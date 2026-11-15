@@ -1,7 +1,7 @@
 {
   "counts": {
     "native_source_files": 196,
-    "non_seam_files": 88,
+    "non_seam_files": 87,
     "uncentralized_internal_lines": 0
   },
   "imports": [
@@ -7263,7 +7263,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 278,
+      "line": 277,
       "name": "AccountWorkspaceController",
       "base": "WorkspaceController",
       "module": "@deepseek-ai/dsh-api-workspace-controller",
@@ -7291,7 +7291,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-first-screen.ts",
-      "line": 528,
+      "line": 527,
       "name": "AccountSettingsController",
       "base": "SettingsController",
       "module": "@deepseek-ai/dsh-api-settings-controller",
@@ -8429,22 +8429,12 @@
     },
     {
       "path": "packages/cloud/pe-cloud-api/src/native-inventory.ts",
-      "line": 38,
+      "line": 39,
       "plugin": "pe-cloud-api",
       "categories": [
-        "registry-fibers"
+        "isolate-reflect-store"
       ],
-      "code": "for (const runtime of ctx.registry.values()) {",
-      "centralized": true
-    },
-    {
-      "path": "packages/cloud/pe-cloud-api/src/native-inventory.ts",
-      "line": 40,
-      "plugin": "pe-cloud-api",
-      "categories": [
-        "registry-fibers"
-      ],
-      "code": "for (const fiber of runtime.fibers) {",
+      "code": "const store = ctx.reflect.store, seen = new Set<NativeImplementation>()",
       "centralized": true
     },
     {
@@ -10781,20 +10771,20 @@
     {
       "路径": "packages/typert/generator/src/analyzer.ts",
       "类别": "通用修复",
-      "原因": "类型诊断只报本包文件，不再连带报依赖包里的错误",
-      "撤销条件": "提上游或回退",
+      "原因": "撤回仅缩窄诊断计算范围的性能补丁；目标原生已在最终输出筛选本包文件",
+      "撤销条件": "无具体跨账号、丢数据或密钥泄露场景，按开发手册撤回",
       "处置": "撤掉",
-      "这一程的状态": "没动",
-      "changed": true
+      "这一程的状态": "已撤",
+      "changed": false
     },
     {
       "路径": "packages/fs/tool-fs/src/index.ts",
       "类别": "扩展点",
       "原因": "提供方声明不支持文本编辑时不注册 edit 工具；默认提供方返回 true",
       "撤销条件": "保留",
-      "处置": "撤掉",
-      "这一程的状态": "已撤",
-      "changed": false
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": true
     },
     {
       "路径": "packages/boot/app-boot/src/profile-resolution/service.ts",

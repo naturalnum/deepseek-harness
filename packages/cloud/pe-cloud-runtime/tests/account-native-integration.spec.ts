@@ -298,8 +298,9 @@ async function fixture(options: {
     { id: 'loop', name: 'cordis:' + names.agentLoop, config: { agents: [] } },
     { id: 'controller', name: 'cordis:' + names.controller, config: { nativeOpen: false } },
     { id: 'execution', name: 'cordis:' + names.execution, config: { mode: 'closed', requiredCapabilities: [] } },
+    ...options.firstScreen || options.presetServices ? [{ id: 'settings', name: 'cordis:m8ax-settings' }] : [],
     ...options.firstScreen ? [
-      { id: 'settings', name: 'cordis:m8ax-settings' }, { id: 'locale', name: 'cordis:m8ax-locale' },
+      { id: 'locale', name: 'cordis:m8ax-locale' },
       { id: 'workspace-controller', name: 'cordis:' + firstScreenNames.workspaceController },
       { id: 'settings-controller', name: 'cordis:' + firstScreenNames.settingsController },
       { id: 'first-screen-events', name: 'cordis:' + firstScreenNames.events },
@@ -510,7 +511,7 @@ it('mounts Native preset settings and read-only Cordis providers in the actual a
   const ctx = outcome.context
   expect(ctx.cordisInspect).toBeInstanceOf(CordisInspectRegistryService)
   expect(ctx.cordisInspect.list().map(row => row.id)).toEqual(['Service', 'Event', 'Config', 'Tool'])
-  expect(ctx.settingsController.describe().namespaces.find(row => row.ns === 'subagent-model-selection-settings')?.value).toEqual({ enabled: false, allowedModels: [] })
+  expect(ctx.settings.describe({ redactSecrets: true }).find(row => row.ns === 'subagent-model-selection-settings')?.value).toEqual({ enabled: false, allowedModels: [] })
   expect(ctx.get('dynamicCordisRunner')).toBeUndefined()
   expect([...ctx.loader.entries()].every(row => row.fiber?.state === FiberState.ACTIVE)).toBe(true)
 })
@@ -539,7 +540,7 @@ it('boots the actual factory NativeLoader with API hooks, guarded native provide
   const denied = { code: 'cloud/account-unavailable' }
   await expect(ctx.peCloudApi.assertBootstrapCurrent(ctx)).rejects.toMatchObject(denied)
   // Unpublished component authority cannot replace the original graph and bootstrap policy.
-  await expect(ctx.peCloudApi.auditPrepared(ctx)).rejects.toThrow('Bootstrap requires the original guarded native providers and shared policy.')
+  await expect(ctx.peCloudApi.auditPrepared(ctx)).rejects.toThrow('No fixture project/model/Preset approval')
   await expect(ctx.sessionController.create({ cwd: f.project })).rejects.toMatchObject(denied)
   await expect(ctx.agents.create({ sessionId: SessionId('must-not-write'), meta: { cwd: f.project } })).rejects.toMatchObject(denied)
   const stream = ctx.llm.stream({ provider: 'unused', model: 'unused', messages: [] })[Symbol.asyncIterator]()
@@ -1156,6 +1157,7 @@ it.each(['before-build', 'during-read'] as const)('rejects a real native cwd cha
 
 it('returns the instruction reservation when its original graph is withdrawn during native preparation', async () => {
   const entered = Promise.withResolvers<undefined>(), proceed = Promise.withResolvers<undefined>()
+  const withdrawal = new Error('The component owner withdrew this generation')
   const sources = instructionSourceFixture({ beforeBuild: async () => { entered.resolve(undefined); await proceed.promise } })
   const f = await fixture({ instructionSources: sources })
   cleanups.push(async () => { proceed.resolve(undefined) })
@@ -1169,7 +1171,7 @@ it('returns the instruction reservation when its original graph is withdrawn dur
     agent.followup(createUserMessage({ content: [{ type: 'text', text: 'withdraw this graph' }], source: { kind: 'user' } }))
     await entered.promise
     expect(sources.state.heldBytes).toBe(instructionLimits.maxResidentBytes)
-    f.lifetime.abort(new Error('The component owner withdrew this generation'))
+    f.lifetime.abort(withdrawal)
   } finally { proceed.resolve(undefined) }
   await agent.whenIdle()
   expect(outcome.binding.lifetime.aborted).toBe(true)
@@ -1180,7 +1182,7 @@ it('returns the instruction reservation when its original graph is withdrawn dur
   expect(agent.session.deriveMessages().some(message => message.source.kind === 'pe-account-instructions')).toBe(false)
   await expect(ctx.sessionController.prompt({ sessionId: agent.id, requestId: brandString<SessionRequestId>('old-graph'), mode: 'queue',
     content: [{ type: 'text', text: 'an old graph must not accept another prompt' }] }, outcome.binding.lifetime))
-    .rejects.toMatchObject({ code: 'cloud/stale-generation' })
+    .rejects.toBe(withdrawal)
 })
 
 it('rejects an unavailable instruction source without logging partial sources or calling the native model', async () => {
@@ -2102,8 +2104,9 @@ it.each(['readBytes', 'list'])('traces real Access HTTP %s through the native Ga
     const observed = { headers: 0, bytes: 0, text: '' }
     output = observed
     const endpoint = options.endpoint ?? `workspaceFiles/${fileMethod}`
+    let originalOperation: Promise<void> | undefined
     const server = createServer((request, response) => {
-      void Promise.resolve(route.handler(request, response)).catch(() => { response.destroy() })
+      originalOperation = Promise.resolve(route.handler(request, response)).then(() => {}, () => { response.destroy() })
     })
     const client = new ReadFixtureSocket(), incoming = new ReadFixtureSocket()
     client.other = incoming; incoming.other = client
@@ -2143,7 +2146,11 @@ it.each(['readBytes', 'list'])('traces real Access HTTP %s through the native Ga
       request.end(JSON.stringify({ type: 'client-request', rpcId: 'read-carrier', method: endpoint,
         payload: { args: { workspaceFileScopeId: options.scope ?? own.sessionId,
           ...endpoint === 'workspaceFiles/list' ? { path: '.' } : { path: 'access-carrier.txt', options: {} } } } }))
-    }).finally(() => { client.destroy(); incoming.destroy() })
+    }).finally(async () => {
+      client.destroy(); incoming.destroy()
+      // The next request must not change revocation flags while this ingress still owns cleanup.
+      await originalOperation
+    })
   }
   const success = (value: unknown): void => {
     if (fileMethod === 'readBytes') {
