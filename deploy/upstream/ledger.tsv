@@ -207,7 +207,7 @@ packages/mcp/mcp-client/src/tools.ts	通用修复	注册冲突选择“抛出”
 packages/core/agent-loop/src/agent.ts	扩展点	Agent 加只读属性 isQuiescent（空闲且收件箱无待处理）	保留	留作口子	没动
 packages/attachment/attachment/src/error.ts	扩展点	新错误码 ATTACHMENT_STORAGE_CAPACITY 和可选字段 settlement	保留	留作口子	没动
 packages/settings/settings/src/schema.ts	通用修复	随 redact.ts：处理字典键的 schema	随 redact.ts 提上游	撤掉	没动
-packages/api/session-controller/src/skill-catalog.ts	云端定制	列技能时在发起 Agent 的上下文里取工作目录（云端按调用方区分工作目录）；原生下等价	云端已有 AccountSkillCatalog 子类，可试着在子类里包这一层	搬进插件	没动
+packages/api/session-controller/src/skill-catalog.ts	云端定制	当前Agent发起作用域由已有Cloud AccountSkillCatalog子类建立；原生目录源码恢复目标版本	账号目录读取由Cloud子类复用Native实现并保留前后准入检查	搬进插件	已搬
 packages/session-query/session-query/src/index.ts	登记	导出两个新错误类；当前原生观察器不消费旧清理认证助手/异常类，生产代码无调用；撤回通用取消认证要求及其专用分支测试	随取消结算加固一起提上游或回退	撤掉	已撤
 packages/api/remotes/src/remote-events.ts	功能增强	把 skills/change 加进转发给界面的事件清单：技能目录变化后界面自动刷新	保留；或提上游	撤掉	没动
 packages/ptc-runtime/ptc-runtime-node/src/index.ts	扩展点	把已解析的沙箱策略随 spawn 规格传给子进程提供方；本地提供方不读它	保留	撤掉	已撤

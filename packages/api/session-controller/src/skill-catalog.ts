@@ -47,8 +47,7 @@ export class SessionSkillCatalog extends TypertRemoteService {
         ?? this.ctx.workingDirectory.defaultDirectory
       agentPreset = observation.projections.values.agentPreset ?? undefined
       const live = this.ctx.agents.get(sessionId)
-      if (live !== undefined) cwd = await this.ctx.agents.withInitiator(live,
-        () => this.ctx.workingDirectory.ensure(live, signal))
+      if (live !== undefined) cwd = await this.ctx.workingDirectory.ensure(live, signal)
     } catch (error: unknown) {
       if (error instanceof SessionQueryError
         && error.code === 'SESSION_QUERY_SESSION_NOT_FOUND') {

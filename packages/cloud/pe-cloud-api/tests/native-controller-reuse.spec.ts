@@ -352,6 +352,30 @@ it('inventories only the original guarded queue controller', async () => {
     .toThrow('The original native guarded method changed')
 })
 
+it('retains Native catalog defaults and supplies the admitted live Agent scope from Cloud', async () => {
+  const f = await fixture('skill-live-scope', true, true)
+  const { sessionId } = await f.create()
+  const agent = f.ctx.agents.get(sessionId), catalog = f.ctx.get('sessionSkillCatalog')
+  if (agent === undefined || catalog === undefined) throw new Error('The original Native skill graph is absent')
+  const target = nativeOriginal(catalog) ?? catalog
+  if (!(target instanceof SessionSkillCatalog)) throw new Error('The original Native skill catalog changed')
+  const seen: Array<ActiveAgent | undefined> = []
+  const ensure = f.ctx.workingDirectory.ensure.bind(f.ctx.workingDirectory)
+  vi.spyOn(f.ctx.workingDirectory, 'ensure').mockImplementation((actual, signal) => {
+    expect(actual).toBe(agent)
+    seen.push(f.ctx.agents.currentInitiator())
+    return ensure(actual, signal)
+  })
+  await expect(SessionSkillCatalog.prototype.list.call(target, { sessionId }, new AbortController().signal))
+    .resolves.toEqual({ skills: [] })
+  expect(seen).toEqual([undefined])
+  seen.length = 0
+  await expect(f.ctx.typertGateway.invoke({ namespace: 'skills', method: 'list',
+    args: { request: { sessionId } }, peer: f.peer })).resolves.toEqual({ skills: [] })
+  expect(seen.map(owner => owner?.id)).toEqual([agent.id])
+  expect(f.ctx.agents.currentInitiator()).toBeUndefined()
+})
+
 it('reads the original cold native skill catalog after shared project admission without activating an Agent', async () => {
   const f = await fixture('skill-cold', true, true)
   const session = f.ctx.sessions.create(SessionId('cold-skill-catalog'), { meta: { cwd: f.project } })

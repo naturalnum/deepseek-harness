@@ -230,7 +230,7 @@ The package adds zero request tokens.
 
 The guard preserves request content and any reusable prefix; provider cache availability remains provider-owned.
 
-Native proxy-target reads and the Gateway method identity comparison are centralized in `src/native-inventory.ts`. Its implementation-registry iterator filters to the current account root before accounting; the configured bound and duplicate/provider checks remain unchanged. Unreviewed Native methods remain outside the selected exposure policy. The Session skill catalog accepts additional Native Remote methods within its existing bound. It requires one unchanged `list` marker and implementation and rejects another method exported as `list`; only the reviewed `skills/list` endpoint is exposed.
+Native proxy-target reads and the Gateway method identity comparison are centralized in `src/native-inventory.ts`. Its implementation-registry iterator filters to the current account root before accounting; the configured bound and duplicate/provider checks remain unchanged. Unreviewed Native methods remain outside the selected exposure policy. The Session skill catalog accepts additional Native Remote methods within its existing bound. It requires one unchanged `list` marker and implementation and rejects another method exported as `list`; only the reviewed `skills/list` endpoint is exposed. Live Session catalog reads enter the admitted Agent’s initiator scope in the Cloud subclass before calling Native; cold reads retain Native observation without Agent activation.
 
 ## Known Limitations and Deferred Work
 

@@ -255,7 +255,7 @@ Root 可通过 `native.workspaceTransfers` 显式设置 `maxFileBytes`、`maxFil
 
 </details>
 
-原生代理目标读取及 Gateway 方法身份比对集中在 `src/native-inventory.ts`。其中实现登记表遍历先筛选当前账号根再计数；配置上限及重复项、提供者检查保持原样。未经审核的原生方法仍不在选定的开放策略中。 Session 技能目录在原有上限内接受新增 Native Remote 方法；它要求唯一且未变的 `list` 标记和实现，并拒绝其他方法以 `list` 导出；只公开已审核的 `skills/list` 端点。
+原生代理目标读取及 Gateway 方法身份比对集中在 `src/native-inventory.ts`。其中实现登记表遍历先筛选当前账号根再计数；配置上限及重复项、提供者检查保持原样。未经审核的原生方法仍不在选定的开放策略中。 Session 技能目录在原有上限内接受新增 Native Remote 方法；它要求唯一且未变的 `list` 标记和实现，并拒绝其他方法以 `list` 导出；只公开已审核的 `skills/list` 端点。 活跃会话目录读取由Cloud子类进入获准Agent的发起作用域后调用Native；冷历史读取保留原生观察，不激活Agent。
 
 Loader 条目元数据、已安装 Fiber 的回调与 Schema、原模块导入及日志 Fiber 解引用也经此适配文件读取。插件管理、凭据策略和授权仍由现有实现负责。
 

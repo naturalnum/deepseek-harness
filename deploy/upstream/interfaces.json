@@ -1,7 +1,7 @@
 {
   "counts": {
-    "native_source_files": 194,
-    "non_seam_files": 85,
+    "native_source_files": 193,
+    "non_seam_files": 84,
     "uncentralized_internal_lines": 0
   },
   "imports": [
@@ -10833,11 +10833,11 @@
     {
       "路径": "packages/api/session-controller/src/skill-catalog.ts",
       "类别": "云端定制",
-      "原因": "列技能时在发起 Agent 的上下文里取工作目录（云端按调用方区分工作目录）；原生下等价",
-      "撤销条件": "云端已有 AccountSkillCatalog 子类，可试着在子类里包这一层",
+      "原因": "当前Agent发起作用域由已有Cloud AccountSkillCatalog子类建立；原生目录源码恢复目标版本",
+      "撤销条件": "账号目录读取由Cloud子类复用Native实现并保留前后准入检查",
       "处置": "搬进插件",
-      "这一程的状态": "没动",
-      "changed": true
+      "这一程的状态": "已搬",
+      "changed": false
     },
     {
       "路径": "packages/session-query/session-query/src/index.ts",
