@@ -40,7 +40,7 @@ kind: "package-reference"
 Host 配置 `credentialOnboarding` 默认为 `true`。Electron preload 标记会抑制自动凭证引导和 Web 欢迎须知；模型设置页与显式 API Key 编辑仍然可用。[账号插件](../ui-settings-account/README.zh.md#desktop-onboarding)负责 Desktop 引导。其他原生壳可以通过 `credentialOnboarding: false` 仅禁用凭证步骤。Host 通过 `webserver/index-inject` 发布这个公开的布尔值，Client 在注册弹窗前校验它。它是页面初始化数据，不是持久化的完成标记。
 
 
-可选嵌入方呈现仅含显示数据：`ModelsCredentialEditing.copy`、`unavailable`、`layoutFor` 及 `ModelsSettingsIntegration.unavailable`。`ProviderEditor` 接受显式布局值和本地化拒绝回调；未提供时保留原 namespace 布局与通用 Native 文案。Native 不持有 Cloud provider id 的布局分支或额外密钥控件词典。普通 Native 编辑器在设置写入结果未知后允许用户显式手动重试；已准备凭据与仅模型目录模式仍消费本次意图，阻止从同一草稿重复写入。原准备版本、当前 scope 核验与取消责任保持权威。可选密钥动作流程仍在本包，待独立贡献迁移。
+可选嵌入方呈现仅含显示数据：`ModelsCredentialEditing.unavailable`、`layoutFor` 及 `ModelsSettingsIntegration.unavailable`。`ProviderEditor` 接受显式布局值和本地化拒绝回调；未提供时保留原 namespace 布局与通用 Native 文案。Native 不持有 Cloud provider id 的布局分支或额外密钥控件词典。普通 Native 编辑器在设置写入结果未知后允许用户显式手动重试；已准备凭据与仅模型目录模式仍消费本次意图，阻止从同一草稿重复写入。原准备版本、当前 scope 核验与取消责任保持权威。可选 `settings.models.provider.credentials` root 单一插槽只接收原行 JSON 及展平的 scope／当前性／准备／刷新回调；无贡献时为空。原 `ProviderEditor` 同时注册为 `settings.models.provider-editor` root Factory：Native 注册持有 operations、schema 和 locale，Factory 调用方只传 JSON 与回调。准备、意图状态、密钥动作文案及确认对话框归嵌入方贡献，不复制编辑引擎。
 
 ### API 密钥
 

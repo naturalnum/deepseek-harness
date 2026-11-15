@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
-import { CREDENTIAL_COPY, credentialPresentation } from './credential-presentation.client.ts'
+import type { SettingsSectionOwnerProps } from '@deepseek-ai/dsh-client-ui-settings/client'
+import { createModelKeyTestRenderer } from './model-keys-ui-fixture.client.tsx'
+import { CREDENTIAL_COPY, credentialPresentation } from './model-keys-presentation.client.ts'
 /** Original Models registration and Settings coordinator; wire reads are readonly fixtures and no persistence is simulated. */
 import Schema from '@deepseek-ai/schemastery'
 import { Context } from '@deepseek-ai/cordis'
@@ -17,23 +19,29 @@ import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/c
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { act,cleanup,fireEvent,render,screen,waitFor } from '@testing-library/react'
 import { afterEach,expect,it,onTestFinished,vi } from 'vitest'
-import { apply,inject } from '../src/client/index.ts'
+import { apply,inject } from '../../../client/ui-settings-models/src/client/index.ts'
 import type { ModelsCredentialEditing,ModelsSettingsIntegration,ModelsSettingsMetadata } from '@deepseek-ai/dsh-client-ui-settings-models/client'
-import { ModelsSettingsStore } from '../src/client/store.ts'
-import { IntegratedModels } from '../src/client/IntegratedModels.tsx'
-import { settingsSchema } from './settings-schema.client.ts'
-import { en } from '../src/client/locales.ts'
-import { ONBOARDING_CONFIG_GLOBAL } from '../src/onboarding-config.ts'
-import { SettingsRoot } from '../../ui-settings-general/src/client/SettingsRoot.tsx'
-import { createSettingsShellStore } from '../../ui-settings-general/src/client/shell-store.ts'
-import type { SettingsRootComponentProps,SettingsSectionRow,SettingsOnboardingStep } from '../../ui-settings-general/src/client/shell-contract.ts'
-import { en as shellEn } from '../../ui-settings-general/src/client/locales.ts'
+import { ModelsSettingsStore } from '../../../client/ui-settings-models/src/client/store.ts'
+import { en } from '../../../client/ui-settings-models/src/client/locales.ts'
+import { ONBOARDING_CONFIG_GLOBAL } from '../../../client/ui-settings-models/src/onboarding-config.ts'
+import { SettingsRoot } from '../../../client/ui-settings-general/src/client/SettingsRoot.tsx'
+import { createSettingsShellStore } from '../../../client/ui-settings-general/src/client/shell-store.ts'
+import type { SettingsRootComponentProps,SettingsSectionRow,SettingsOnboardingStep } from '../../../client/ui-settings-general/src/client/shell-contract.ts'
+import { en as shellEn } from '../../../client/ui-settings-general/src/client/locales.ts'
 
 afterEach(()=>{cleanup();vi.unstubAllGlobals()})
 const denied=async ():Promise<never>=>{throw new Error('Unrestricted native model/credential/settings operation reached')}
 const unused=():never=>{throw new Error('Unused standard slot hook reached')}
 const ref='DEEPSEEK_API_KEY'
-function TestHost({ renderSlot }:PropsRenderSlots<'settings.section'|'settings.onboarding'>){void renderSlot;return null}
+function TestHost({ renderSlot, shell }: PropsRenderSlots<'settings.section'|'settings.onboarding'>
+  & { shell: SettingsRootComponentProps | undefined }) {
+  if (shell === undefined) return null
+  // This generic callback erases the name/owner correlation; the original section owner is forwarded unchanged.
+  const render: SettingsRootComponentProps['renderSlot'] = (name, owner, options) =>
+    name === 'settings.section'
+      ? renderSlot('settings.section', owner as unknown as SettingsSectionOwnerProps) : shell.renderSlot(name, owner, options)
+  return <SettingsRoot {...shell} renderSlot={render}/>
+}
 function metadata():ModelsSettingsMetadata {
   const schema=Schema.object({ apiKeyEnv:Schema.string().role('credential-ref') })
   return { providers:[{ id:'deepseek-official',name:'DeepSeek' }],configurableProviders:[{ provider:'deepseek-official',displayName:'DeepSeek',settingsNs:'model-provider',settingsPath:[] }],
@@ -69,7 +77,8 @@ async function fixture(){
   const integration:ModelsSettingsIntegration={ onboarding:false,editing,reads:{ isCurrent:()=>editing.getSnapshot()!==null,
     metadata:async()=>metadata(),credentials:async()=>({ [ref]:{ configured:false,writable:true } }) } }
   ctx.provide('modelsSettingsIntegration',integration)
-  const declare=()=>ctx.slots.register({ name:'root',children:{ 'settings.section':{ kind:'list',scope:'root' },'settings.onboarding':{ kind:'list',scope:'root' } } },TestHost)
+  const rootShell: { current: SettingsRootComponentProps | undefined } = { current: undefined }
+  const declare=()=>ctx.slots.register({ name:'root',inject:()=>({ shell: rootShell.current }),children:{ 'settings.section':{ kind:'list',scope:'root' },'settings.onboarding':{ kind:'list',scope:'root' } } },TestHost)
   let removeHost=declare(),plugin=ctx.plugin({ inject:[...inject],apply });await plugin.await()
   const sections=createSnapshotStore<SettingsSectionRow[]>([]),steps=createSnapshotStore<SettingsOnboardingStep[]>([])
   const refresh=()=>{sections.set(ctx.slots.entries('settings.section').map(row=>({ id:row.options.id??'',order:row.options.order??0,label:resolveSlotLabel(row.options.label)??'' })))
@@ -79,13 +88,11 @@ async function fixture(){
   const currentController=()=>{const row=ctx.slots.entries('settings.section')[0],face=row?.inject?.(),controller=face?.controller
     if(!(controller instanceof ModelsSettingsStore))throw new Error('Original native Models registration missing');return controller}
   let controller=currentController()
+  await createModelKeyTestRenderer(ctx)
   const shell=createSettingsShellStore().create(),sessions:SessionListState={ ids:[],byId:{},phase:'ready',projectionsBySession:{} }
   const renderSlot:SettingsRootComponentProps['renderSlot']=(name,_owner,options)=>{
     if(name==='settings.onboarding')throw new Error('A blocking onboarding step reached the original coordinator')
-    if(name==='settings.section')return <IntegratedModels controller={controller}
-      operations={{ storeCredential:denied,removeCredential:denied,writeSettings:denied,discoverModels:denied }}
-      schema={settingsSchema} t={locale.bind('settings.models')} useSnapshot={bindSnapshotSelector(controller.store)} useCredentialEditing={bindSnapshotSelector(editing)}
-      renderSlot={()=>null}/>
+    if(name==='settings.section')throw new Error('Native section must render through the declared root component')
     if(name==='settings.header')return 'Settings panel'
     if(name==='settings.close')return 'Close'
     if(name==='settings.trigger')return 'Settings'
@@ -100,7 +107,8 @@ async function fixture(){
     useSections:bindSnapshotSelector(sections),useOnboardingSteps:bindSnapshotSelector(steps),renderSlot,t:makeTranslate(shellEn) }
   const appRoot=document.createElement('div');appRoot.id='root';appRoot.inert=false
   document.body.append(appRoot);onTestFinished(()=>{ appRoot.remove() })
-  const view=render(<SettingsRoot {...props}/>,{ container:appRoot })
+  rootShell.current = props
+  const view=render(ctx.slots.renderSlot('root', {}),{ container:appRoot })
   return { ctx,scopes,editing,prepare,controller,shell,view,appRoot,
     open:async()=>{await act(async()=>{editing.set({ ...credentialPresentation, scope:'original-cloud-page',isCurrent:()=>editing.getSnapshot()!==null,prepare })})},
     hmr:async()=>{await act(async()=>{

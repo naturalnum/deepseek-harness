@@ -15,7 +15,7 @@ import { expect, it, onTestFinished, vi } from 'vitest'
 import * as cloud from '../src/client/index.ts'
 import { PreparedCloudPage } from '../src/client/prepared-page.ts'
 import { modelSettingsDictionaries } from '../src/client/model-settings-locales.ts'
-import { modelCredentialCopy } from '../src/client/model-credential-locales.ts'
+import { modelCredentialCopy, modelCredentialCopyFor } from '../src/client/model-credential-locales.ts'
 
 type Remote = TypertClientRemote['cloudModelKey']
 type Metadata = Extract<Awaited<ReturnType<Remote['metadata']>>, { ok:true }>['value']
@@ -101,7 +101,7 @@ it('uses the single real generated namespace for metadata, captured edits and ke
   }
   for (const [language, copy] of Object.entries(modelCredentialCopy)) {
     root.locale.setLocale(language)
-    expect(editing.copy?.()).toEqual(copy)
+    expect(modelCredentialCopyFor(root)).toEqual(copy)
     expect(editing.unavailable?.()).toBe(copy.keyEditUnavailable)
     expect(page.modelsSettingsIntegration.unavailable?.()).toBe(copy.keyEditUnavailable)
   }

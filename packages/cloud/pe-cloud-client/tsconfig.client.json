@@ -107,7 +107,8 @@
     "src/client/document-byte-reader.ts",
     "src/client/remote-method-compatibility.ts",
     "src/client/model-credential-locales.ts",
-    "src/client/locales/model-credentials.ts"
+    "src/client/locales/model-credentials.ts",
+    "src/client/model-key-actions.tsx"
   ],
   "references": [
     {

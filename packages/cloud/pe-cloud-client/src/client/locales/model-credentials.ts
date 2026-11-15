@@ -73,3 +73,29 @@ export const modelCredentialCopy = {
     'keyEditUnavailable': 'Esta página de edição não está disponível. Feche-a e volte a abri-la para verificar o estado atual.',
   },
 } as const
+
+
+/** Complete key-action dictionaries, including the original Native common action copy. */
+export const modelKeyActionDictionaries = {
+  en: { ...modelCredentialCopy.en, cancel: 'Cancel', close: 'Close' },
+  zh: { ...modelCredentialCopy.zh, cancel: '取消', close: '关闭' },
+  ja: { ...modelCredentialCopy.ja, cancel: 'キャンセル', close: '閉じる' },
+  es: { ...modelCredentialCopy.es, cancel: 'Cancelar', close: 'Cerrar' },
+  fr: { ...modelCredentialCopy.fr, cancel: 'Annuler', close: 'Fermer' },
+  de: { ...modelCredentialCopy.de, cancel: 'Abbrechen', close: 'Schließen' },
+  ru: { ...modelCredentialCopy.ru, cancel: 'Отмена', close: 'Закрыть' },
+  pt: { ...modelCredentialCopy.pt, cancel: 'Cancelar', close: 'Fechar' },
+} as const
+
+
+/** Cloud key-control locale namespace; Native editor copy stays in its original namespace. */
+export const MODEL_CREDENTIAL_NAMESPACE = 'cloud-model-credentials'
+/** Display keys owned by this Cloud contribution. */
+export type ModelCredentialKey = keyof typeof modelKeyActionDictionaries.en
+
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface LocaleNamespaceMap {
+    /** Cloud-owned key actions and confirmations. */
+    'cloud-model-credentials': ModelCredentialKey
+  }
+}

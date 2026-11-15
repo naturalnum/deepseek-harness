@@ -1,9 +1,12 @@
 /** Original Cloud key-control copy and explicit provider presentation; no credential or settings I/O. */
 import type { Context } from '@deepseek-ai/cordis'
-import type { ModelsCredentialCopy, ModelsProviderEditorLayout } from '@deepseek-ai/dsh-client-ui-settings-models/client'
+import type { ModelsProviderEditorLayout } from '@deepseek-ai/dsh-client-ui-settings-models/client'
 
 import { modelCredentialCopy } from './locales/model-credentials.ts'
 export { modelCredentialCopy }
+
+/** Display data belongs to this Cloud dictionary and never enters the Native editing contract. */
+type ModelCredentialCopy = { readonly [K in keyof typeof modelCredentialCopy.en]: string }
 
 
 /**
@@ -11,9 +14,9 @@ export { modelCredentialCopy }
  * @param root - Original page root; the callback reads only its public locale.
  * @returns Display data for this render, without I/O or mutation authority.
  */
-export function modelCredentialCopyFor(root: Context | undefined): ModelsCredentialCopy {
+export function modelCredentialCopyFor(root: Context | undefined): ModelCredentialCopy {
   const locale = root?.get('locale')
-  const text = (key: keyof ModelsCredentialCopy): string => locale?.resolveText({
+  const text = (key: keyof ModelCredentialCopy): string => locale?.resolveText({
     en: modelCredentialCopy.en[key],
     zh: modelCredentialCopy.zh[key],
     ja: modelCredentialCopy.ja[key],

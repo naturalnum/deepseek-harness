@@ -1,3 +1,4 @@
+import { installCloudModelKeyActions } from './model-key-actions.tsx'
 import { installCloudBrand } from './branding.tsx'
 import { installCloudMcpConnections } from './mcp/index.ts'
 import { installCloudAccountManagement } from './account-management.tsx'
@@ -47,6 +48,7 @@ export function apply(ctx: Context, config: Config): void {
   installCloudFileDownloads(ctx, owner)
   installCloudServicePreviews(ctx, owner)
   installCloudModelSettings(ctx, owner)
+  if (owner.modelSettingsRequestTimeoutMs !== undefined) installCloudModelKeyActions(ctx, owner.lifetime.transport.signal)
   installCloudSkillSettings(ctx, owner)
   installCloudSkillCatalogRefresh(ctx)
   installCloudDocumentByteReader(ctx)

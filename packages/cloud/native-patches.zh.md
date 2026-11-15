@@ -110,4 +110,4 @@ Cloud 持有原有提供方受限时的完整字节预览政策及有界分段�
 
 Native 默认保留原生成方法 `install` 的名称冲突检查；可选 `ClientRemoteMethodCompatibility` 回调仅让嵌入方显式选择确切 namespace，不替换命名空间引擎。Cloud 在挂载原生成贡献前只提供已有 `cloudSkills` 选择；Service／原型冲突、原 codec 与 Connection 分派、挂载生命周期及 Host 授权保持不变。
 
-模型密钥呈现已归 Cloud：原七条八语文案及官方提供商布局选择通过可选显示回调和显式布局值进入 Native。Native locale 精确恢复固定目标。无嵌入方的设置编辑器恢复未知写入后原手动重试，显式已准备凭据与仅目录模式保留捕获意图的阻止重复写入。本组只迁呈现；可选密钥动作状态与对话框仍待独立迁为 Cloud 贡献。
+模型密钥呈现已归 Cloud：原七条八语动作文案留在 Cloud 自有贡献，仅本地化拒绝回调和显式提供商布局值进入 Native。Native locale 精确恢复固定目标。无嵌入方的设置编辑器恢复未知写入后原手动重试，显式已准备凭据与仅目录模式保留捕获意图的阻止重复写入。可选密钥动作准备、可取消意图与对话框亦已迁 Cloud。Native 只经可选 root 插槽派发原行 JSON 和展平回调，并以 Native 持有的 operations／schema／locale 将原编辑器注册为 Factory。Cloud 使用此框架 Factory，不复制编辑器、Remote 引擎或凭据存储；缺少贡献时保持 Native 默认。原 UI 目的迁至 Cloud 拥有的测试，通过真实已声明 Native 父组件、SlotRegistry 和 Factory，保留捕获引用、只读、未知、取消、撤回及 HMR 核验。

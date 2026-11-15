@@ -389,7 +389,6 @@ export class PreparedCloudPage {
     this.modelSettingsBinding = binding
     const isCurrent = (): boolean => this.modelsCurrent(binding)
     this.modelsEditing.set(Object.freeze({ scope: this.bootstrap.connectionGeneration + ':' + String(owner.fiber.uid) + ':' + String(++this.modelSettingsGeneration), isCurrent,
-      copy: () => modelCredentialCopyFor(owner.root),
       unavailable: () => modelCredentialCopyFor(owner.root).keyEditUnavailable,
       layoutFor: cloudModelEditorLayout,
       prepare: async (ref: string, signal: AbortSignal) => {

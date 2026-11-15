@@ -19,9 +19,27 @@
 
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import type { ProviderDirectoryEntry } from './store.ts'
+import type { ProviderEditorProps } from './ProviderEditor.tsx'
+import type { ModelsCredentialEditing } from './operations.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface SlotFactoryMap {
+    /** Original provider editor; the Native registration owns operations, schema and locale. */
+    'settings.models.provider-editor': {
+      scope: 'root'
+      props: ModelsProviderEditorInput
+      inject: Pick<ProviderEditorProps, 'operations' | 'schema'>
+      locale: 'settings.models'
+    }
+  }
   interface SlotMap {
+    /** Optional key-only row contribution; omission keeps the original Native row. */
+    'settings.models.provider.credentials': {
+      kind: 'single'
+      scope: 'root'
+      owner: ModelsCredentialActionsOwnerProps
+    }
+
     /**
      * One provider card's adapter extension area, dispatched with
      * `entryKey = settingsNs` on every card that renders a directory row: a
@@ -55,4 +73,25 @@ export interface ProviderCardExtrasOwnerProps {
 export interface ModelsFooterOwnerProps {
   /** Marker field: footer owner props are intentionally empty. */
   children?: never
+}
+
+
+/** JSON and callbacks accepted by the original Native provider-editor Factory. */
+export type ModelsProviderEditorInput = Omit<ProviderEditorProps, 'operations' | 'schema' | 't'>
+
+/** Original row data and captured page callbacks; no service or component crosses this boundary. */
+export interface ModelsCredentialActionsOwnerProps extends Pick<ProviderEditorProps,
+  'provider' | 'displayName' | 'namespace' | 'settingsPath'> {
+  /** Exact reference reported by the original metadata join. */
+  readonly reference: string
+  /** Redacted configured fact; only controls whether removal is offered. */
+  readonly configured: boolean
+  /** Changing the original page scope retires the mounted intent. */
+  readonly scope: string
+  /** Currentness belongs to the original page. */
+  readonly isCurrent: ModelsCredentialEditing['isCurrent']
+  /** Prepare one exact-reference intent using the original page callback. */
+  readonly prepare: ModelsCredentialEditing['prepare']
+  /** Refresh the original metadata only after confirmed current-scope persistence. */
+  readonly onSaved: () => void
 }

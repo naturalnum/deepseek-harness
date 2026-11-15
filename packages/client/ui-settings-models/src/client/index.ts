@@ -17,6 +17,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // (settings/credentials invalidations ride the allowlist) into this program.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { ModelsSection } from './ModelsSection.tsx'
+import { ProviderEditor } from './ProviderEditor.tsx'
 import { DeepSeekOnboardingDialog } from './DeepSeekOnboardingDialog.tsx'
 import { IntegratedModels, type IntegratedModelsInjected } from './IntegratedModels.tsx'
 import type {} from './integration.ts'
@@ -34,7 +35,7 @@ import { WELCOME_NOTICE_SETTINGS_NAMESPACE } from '../onboarding-copy.ts'
 import { Config, ONBOARDING_CONFIG_GLOBAL } from '../onboarding-config.ts'
 
 export type { ModelsSectionInjected, ModelsSectionProps } from './ModelsSection.tsx'
-export type { ModelsFooterOwnerProps, ProviderCardExtrasOwnerProps } from './slot-contract.ts'
+export type { ModelsFooterOwnerProps, ProviderCardExtrasOwnerProps, ModelsProviderEditorInput, ModelsCredentialActionsOwnerProps } from './slot-contract.ts'
 export type { ModelsKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -50,7 +51,7 @@ const NS = 'settings.models'
 export type {
   ModelsSettingsState, ProviderDirectoryEntry, ProviderRow,
 } from './store.ts'
-export type { ModelDiscoveryOutcome, ModelsOperations, ModelsCredentialEditing, ModelsCredentialCopy, ModelsProviderEditorLayout, PreparedCredentialEdit, SettingsWriteOutcome } from './operations.ts'
+export type { ModelDiscoveryOutcome, ModelsOperations, ModelsCredentialEditing, ModelsProviderEditorLayout, PreparedCredentialEdit, SettingsWriteOutcome } from './operations.ts'
 
 /**
  * Refetch the page snapshot only after its first load: an unopened Models
@@ -105,6 +106,11 @@ export function apply(ctx: ClientContext): void {
   // Registration-time text (the nav label thunk) and the inject faces share
   // one bound translate; copy freshness rides the locale revision.
   const t = ctx.locale.bind(NS) as ModelsSectionInjected['t']
+  ctx.effect(() => ctx.slots.registerFactory({
+    name: 'settings.models.provider-editor', scope: 'root', locale: NS,
+    inject: () => ({ operations, schema }),
+  }, ProviderEditor), 'ui-settings-models: original provider editor factory')
+
   const injected = (): IntegratedModelsInjected => ({
     controller,
     hooks: { snapshot: controller.store, credentialEditing },
@@ -161,6 +167,7 @@ export function apply(ctx: ClientContext): void {
     children: {
       'settings.models.provider-card': { kind: 'keyed', scope: 'root' },
       'settings.models.footer': { kind: 'list', scope: 'root' },
+      'settings.models.provider.credentials': { kind: 'single', scope: 'root' },
     },
   }, integration === undefined ? ModelsSection : IntegratedModels))
   if (welcomeInjected !== undefined && !('dshDesktop' in globalThis)) ctx.slots.inject('settings.onboarding', () => ctx.slots.register({

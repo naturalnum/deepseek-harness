@@ -47,7 +47,7 @@ Cloud 通过 `document-byte-reader.ts` 和 Native 可选 `documentPreviewByteRea
 Cloud 在挂载原生成 API 贡献前提供显式 Remote 名称兼容，仅允许已有 `cloudSkills` namespace 使用生成的 `install` 方法；已发布端点和原请求／应答保持不变。原 entry 作用域持有兼容值与贡献，撤回仍沿 Native 挂载清理和旧句柄拒绝。其他 Root 与 namespace 保持 Native 保留名称默认，Host 授权独立执行。
 
 
-Cloud 在 `model-credential-locales.ts` 持有原七条密钥控件文案的八种语言及原官方提供商布局选择。PreparedPage 经原 editing 快照提供纯显示回调，调用时读取原 Root 当前 locale；切换语言不请求元数据或凭据。未提供这些回调与显式模式时保留 Native 默认。本次呈现调整保持原捕获版本、一次提交、账户／页面撤销、未知写入拒绝与仅删除密钥的责任；其余密钥动作对话框流程另组待迁移。
+Cloud 在 `model-credential-locales.ts` 持有原七条密钥控件文案的八种语言及原官方提供商布局选择。PreparedPage 经原 editing 快照提供纯显示回调，调用时读取原 Root 当前 locale；切换语言不请求元数据或凭据。未提供这些回调与显式模式时保留 Native 默认。本次呈现调整保持原捕获版本、一次提交、账户／页面撤销、未知写入拒绝与仅删除密钥的责任；密钥动作流程现归 `model-key-actions.tsx`。可选 Native 行贡献持有准备、可取消意图与确认状态，以及原八语动作文案和样式。它以 JSON 和捕获回调通过已注册 Factory 渲染唯一原 Native 提供商编辑器，保留仅凭据校验。scope／引用变化重挂意图；editing 准入置 null、依赖撤回或页面取消均移除控件。关闭准备会取消观察并忽略迟到结果；未知或拒绝的删除不能从该确认框再次提交。删除从不修改提供商或模型。
 
 ### 适用场景
 

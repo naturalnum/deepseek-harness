@@ -18,7 +18,7 @@ export interface IntegratedModelsInjected extends ModelsSectionInjected {
  * @returns The original Models section; null revocation unmounts its keyed editor.
  */
 export function IntegratedModels(props: InjectFace<IntegratedModelsInjected>
-  & PropsRenderSlots<'settings.models.provider-card' | 'settings.models.footer'>): ReactNode {
+  & PropsRenderSlots<'settings.models.provider-card' | 'settings.models.footer' | 'settings.models.provider.credentials'>): ReactNode {
   const { useCredentialEditing, ...native } = props
   const editing = useCredentialEditing(value => value)
   return <ModelsSection {...native} {...editing === undefined ? {} : { credentialEditing: editing }} />

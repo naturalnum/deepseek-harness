@@ -1,6 +1,6 @@
 {
   "counts": {
-    "native_source_files": 189,
+    "native_source_files": 190,
     "non_seam_files": 55,
     "uncentralized_internal_lines": 0
   },
@@ -3347,7 +3347,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-client/src/client/index.ts",
-      "line": 7,
+      "line": 8,
       "module": "@deepseek-ai/cordis",
       "names": [
         "Context"
@@ -4032,8 +4032,55 @@
       "line": 3,
       "module": "@deepseek-ai/dsh-client-ui-settings-models/client",
       "names": [
-        "ModelsCredentialCopy",
         "ModelsProviderEditorLayout"
+      ],
+      "typeOnly": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-client/src/client/model-key-actions.tsx",
+      "line": 4,
+      "module": "@deepseek-ai/dsh-client-ui-primitives",
+      "names": [
+        "Button",
+        "Modal"
+      ],
+      "typeOnly": false
+    },
+    {
+      "path": "packages/cloud/pe-cloud-client/src/client/model-key-actions.tsx",
+      "line": 5,
+      "module": "@deepseek-ai/cordis",
+      "names": [
+        "Context"
+      ],
+      "typeOnly": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-client/src/client/model-key-actions.tsx",
+      "line": 6,
+      "module": "@deepseek-ai/dsh-client-ui-settings-models/client",
+      "names": [
+        "ModelsCredentialActionsOwnerProps",
+        "PreparedCredentialEdit"
+      ],
+      "typeOnly": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-client/src/client/model-key-actions.tsx",
+      "line": 7,
+      "module": "@deepseek-ai/dsh-client-ui-slots",
+      "names": [
+        "PropsRenderFactories",
+        "PropsLocale"
+      ],
+      "typeOnly": true
+    },
+    {
+      "path": "packages/cloud/pe-cloud-client/src/client/model-key-actions.tsx",
+      "line": 8,
+      "module": "@deepseek-ai/dsh-client-ui-renderer/client",
+      "names": [
+        "(augmentation)"
       ],
       "typeOnly": true
     },
@@ -9258,6 +9305,330 @@
       "changed": true
     },
     {
+      "路径": "packages/api/gateway/src/client/index.ts",
+      "类别": "扩展点",
+      "原因": "仅生成install名显式兼容口；原Native默认继续拒绝，Cloud单独允许其已有cloudSkills命名空间，原RPC/codec/取消/卸载不变",
+      "撤销条件": "Native提供等价公开兼容入口时替换；无贡献保持目标保留名称行为",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": true
+    },
+    {
+      "路径": "packages/api/gateway/src/index.ts",
+      "类别": "云端定制",
+      "原因": "加了 createNodeStreamTransport、远程事件队列上限参数、inspectInvocation 三个扩展点，同时把流清理从“不等待、只打日志”改成“等待并保留失败”（改默认）；Node mux 可选失败投影只提供默认不变口子，私密错误文本策略在 Access",
+      "撤销条件": "三个扩展点保留；清理语义改动拆成独立补丁，提上游或回退",
+      "处置": "搬进插件",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/api/gateway/src/stream-server.ts",
+      "类别": "云端定制",
+      "原因": "加扩展点 NodeStreamTransportOptions（帧上限、逻辑流占用回调），同时关闭和清理失败由打日志改为保留并在 close 抛出、关闭中拒绝新升级（改默认）",
+      "撤销条件": "与 gateway/src/index.ts 一起处理",
+      "处置": "搬进插件",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/api/gateway/src/types.ts",
+      "类别": "扩展点",
+      "原因": "类型 RemoteEventQueueLimits 和 registerRemoteEvents 的第三参",
+      "撤销条件": "保留",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/api/remotes/src/client/index.ts",
+      "类别": "登记",
+      "原因": "附加skills/change转发及客户端选择声明移Cloud；既有account first-screen event source已按原能力复查发送，Native文件恢复固定目标",
+      "撤销条件": "已撤回Native通用事件政策；Cloud继续由原账号事件所有者发送",
+      "处置": "搬进插件",
+      "这一程的状态": "已搬",
+      "changed": false
+    },
+    {
+      "路径": "packages/api/remotes/src/index.ts",
+      "类别": "扩展点",
+      "原因": "把内联的瀑布事件监听器提成导出函数 createRemoteWaterfallListener；另加一行技能类型引入",
+      "撤销条件": "保留",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/api/remotes/src/remote-events.ts",
+      "类别": "功能增强",
+      "原因": "附加skills/change转发及客户端选择声明移Cloud；既有account first-screen event source已按原能力复查发送，Native文件恢复固定目标",
+      "撤销条件": "已撤回Native通用事件政策；Cloud继续由原账号事件所有者发送",
+      "处置": "搬进插件",
+      "这一程的状态": "已搬",
+      "changed": false
+    },
+    {
+      "路径": "packages/api/session-controller/src/agent.ts",
+      "类别": "扩展点",
+      "原因": "建目录改为调用控制器传入的回调（原 mkdir 挪到 index.ts 的受保护方法）",
+      "撤销条件": "保留",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/api/session-controller/src/client/sessions/service.ts",
+      "类别": "通用修复",
+      "原因": "会话作用域被直接销毁时，先撤回它的代际再跑清理回调",
+      "撤销条件": "提上游",
+      "处置": "撤掉",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/api/session-controller/src/commands.ts",
+      "类别": "扩展点",
+      "原因": "构造函数可选回调 prepareFiles、assertModelSelection；prompt 多一个 signal 参数",
+      "撤销条件": "保留",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/api/session-controller/src/control.ts",
+      "类别": "扩展点",
+      "原因": "控制流可选缓冲上限 SessionControlBufferLimits；不传时保持原缓冲",
+      "撤销条件": "保留",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/api/session-controller/src/history.ts",
+      "类别": "云端定制",
+      "原因": "follow 被取消时立即停止监听并清空缓冲，然后等提供方读操作结算才报告取消（改默认）",
+      "撤销条件": "随取消结算加固一起提上游或回退",
+      "处置": "撤掉",
+      "这一程的状态": "已撤",
+      "changed": false
+    },
+    {
+      "路径": "packages/api/session-controller/src/index.ts",
+      "类别": "扩展点",
+      "原因": "加四个受保护方法 ensureProjectDirectory、preparePromptFiles、assertModelSelection、controlBufferLimits 和 internals.skillCatalog；默认实现不做事",
+      "撤销条件": "保留",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/api/session-controller/src/skill-catalog.ts",
+      "类别": "云端定制",
+      "原因": "当前Agent发起作用域由已有Cloud AccountSkillCatalog子类建立；原生目录源码恢复目标版本",
+      "撤销条件": "账号目录读取由Cloud子类复用Native实现并保留前后准入检查",
+      "处置": "搬进插件",
+      "这一程的状态": "已搬",
+      "changed": false
+    },
+    {
+      "路径": "packages/api/settings-controller/src/index.ts",
+      "类别": "扩展点",
+      "原因": "加 internals.withWrite：写设置时由宿主包住原写入；不提供时原样写",
+      "撤销条件": "保留",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/api/terminal-controller/src/client/bindings.ts",
+      "类别": "扩展点",
+      "原因": "同 close-requests.ts：存储改走可选页面端口",
+      "撤销条件": "同 close-requests.ts",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/api/terminal-controller/src/client/close-requests.ts",
+      "类别": "扩展点",
+      "原因": "浏览器存储改走可选的页面存储端口；不提供时仍用 localStorage（端口实现在 packages/client/store，归界面任务）",
+      "撤销条件": "取决于界面侧页面存储端口的去留",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/api/terminal-controller/src/client/index.ts",
+      "类别": "扩展点",
+      "原因": "终端客户端服务从 ctx 取可选的 clientPersistence 并传给各子对象",
+      "撤销条件": "同 close-requests.ts",
+      "处置": "撤掉",
+      "这一程的状态": "已撤",
+      "changed": false
+    },
+    {
+      "路径": "packages/api/terminal-controller/src/client/model.ts",
+      "类别": "扩展点",
+      "原因": "同 close-requests.ts：存储改走可选页面端口",
+      "撤销条件": "同 close-requests.ts",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/api/terminal-controller/src/client/shell-preference.ts",
+      "类别": "扩展点",
+      "原因": "同 close-requests.ts：存储改走可选页面端口",
+      "撤销条件": "同 close-requests.ts",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/api/workspace-files/src/changes.ts",
+      "类别": "通用修复",
+      "原因": "按三问撤回caller-FS补丁；实际Cloud两个FS均拒绝watch，原生目标继续原服务FS和原关闭流程",
+      "撤销条件": "未有必须携带的账号安全场景；原生多FS作用域监听恢复原服务绑定行为，独立用户影响已列",
+      "处置": "撤掉",
+      "这一程的状态": "已撤",
+      "changed": false
+    },
+    {
+      "路径": "packages/api/workspace-files/src/index.ts",
+      "类别": "功能增强",
+      "原因": "保留用户已交目录partial列表和原流credit/close分页消费者；旧changes caller-FS转发已按三问撤回",
+      "撤销条件": "原生提供等价有界列表与分页消费接口后撤回；不恢复已撤caller-FS修复",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": true
+    },
+    {
+      "路径": "packages/api/workspace-files/src/types.ts",
+      "类别": "扩展点",
+      "原因": "原生目录分页Remote DTO和流；只有所选提供方及账号清单开放时使用",
+      "撤销条件": "原生提供同等公开接口后改用原生",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": true
+    },
+    {
+      "路径": "packages/attachment/attachment-local/src/file-store.ts",
+      "类别": "云端定制",
+      "原因": "发布失败统一包成“发布未确认”（改默认错误）；另含读流提前返回时等文件关闭（通用修复）",
+      "撤销条件": "等文件关闭那 5 行提上游；其余随 store.ts 处理",
+      "处置": "搬进插件",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/attachment/attachment-local/src/index.ts",
+      "类别": "登记",
+      "原因": "导出三个新错误类",
+      "撤销条件": "随 store.ts 处理",
+      "处置": "撤掉",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/attachment/attachment-local/src/store.ts",
+      "类别": "云端定制",
+      "原因": "暂存写入区分“容量不足、清理未确认、发布未确认”三类错误，关闭句柄和删临时文件的失败不再吞掉（改了默认错误类型）",
+      "撤销条件": "提上游；或让云端附件存储（已继承 LocalAttachmentStore）自己实现暂存",
+      "处置": "搬进插件",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/attachment/attachment/src/error.ts",
+      "类别": "扩展点",
+      "原因": "新错误码 ATTACHMENT_STORAGE_CAPACITY 和可选字段 settlement",
+      "撤销条件": "保留",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/boot/app-boot/src/compatibility-preflight.ts",
+      "类别": "扩展点",
+      "原因": "prepareProfilePatches 加可选参数 base；空根时走原路径",
+      "撤销条件": "保留",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/boot/app-boot/src/index.ts",
+      "类别": "云端定制",
+      "原因": "挂载和重载都先读根配置文件，以支持“非空根配置 + 补丁”；重载后先等子项更新再恢复（修竞态）；导出 config-impact 的函数",
+      "撤销条件": "导出和 awaitUpdate 保留；非空根支持是云端根配置所需，除非云端改回空根配置",
+      "处置": "搬进插件",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/boot/app-boot/src/profile-context.ts",
+      "类别": "扩展点",
+      "原因": "ProfileContext.entryAliases（启动期条目改名）和 normalizeProfileEntryAliases；不设别名时不变",
+      "撤销条件": "保留",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/boot/app-boot/src/profile-resolution/service.ts",
+      "类别": "扩展点",
+      "原因": "packageOf 加可选参数 fresh：直接读磁盘上的包清单，不动缓存",
+      "撤销条件": "保留",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/boot/app-boot/src/profile.ts",
+      "类别": "扩展点",
+      "原因": "loadProfileDirectory 加 readOnly 和 bundles 选项；默认仍会清理失效 bundle",
+      "撤销条件": "保留",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/boot/cmdline/src/index.ts",
+      "类别": "扩展点",
+      "原因": "可选能力 appShutdown：关闭参与者在进程退出前被等待；启动器不提供时不存在",
+      "撤销条件": "保留",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/boot/config-editor/src/index.ts",
+      "类别": "扩展点",
+      "原因": "加保存钩子 registerSaveHook/submitSave、影响守护 registerImpactGuard、edit 第三参 control、editFailureOutcome；没有守护时走原写入路径（另有只读加载、别名归一等小调整）",
+      "撤销条件": "钩子在私有写入流程里，保留；守护分支的计划逻辑已在 app-boot/config-impact.ts",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/boot/plugin-manager/src/index.ts",
+      "类别": "扩展点",
+      "原因": "加 registerSaveHook、registerSelectionGuard、changeFailureOutcome、previewBundleSelection；没有守护时原启停写入不变",
+      "撤销条件": "钩子在私有启停写入流程里，保留",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/boot/plugin-manager/src/patch.ts",
+      "类别": "扩展点",
+      "原因": "writePluginEnabled 加可选回调 prepared，包住实际写文件",
+      "撤销条件": "保留",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
       "路径": "packages/client/connection/src/http-bridge.ts",
       "类别": "通用修复",
       "原因": "请求体改为有上限的流式读取，响应结束和清理失败有明确结果；兼有可选 beforeResponse 钩子（扩展点，供 pe-cloud-access）",
@@ -9294,6 +9665,15 @@
       "changed": true
     },
     {
+      "路径": "packages/client/file-upload/src/client/contract.ts",
+      "类别": "扩展点",
+      "原因": "可选 supportsImageUploads 仅描述页面图片草稿能力，省略保留原生图片行为",
+      "撤销条件": "原生提供等价页面能力声明后撤回",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": true
+    },
+    {
       "路径": "packages/client/file-upload/src/client/index.ts",
       "类别": "扩展点",
       "原因": "声明 fileUploadHooks 服务和 file-upload/complete 事件",
@@ -9327,6 +9707,15 @@
       "撤销条件": "向上游提交；可覆盖方法需要上游接受",
       "处置": "撤掉",
       "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/client/file-upload/src/types.ts",
+      "类别": "扩展点",
+      "原因": "可选 promptImageUploads 由云端将图片 MIME 留在普通文件路径，省略保留原生上传行为",
+      "撤销条件": "原生提供等价上传策略口子后撤回",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
       "changed": true
     },
     {
@@ -9462,6 +9851,15 @@
       "撤销条件": "同上",
       "处置": "撤掉",
       "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/client/ui-chat/src/client/chat/ChatFlow.tsx",
+      "类别": "扩展点",
+      "原因": "仅把原framework chain座传给RunningStatus，不改行、时钟及状态数据",
+      "撤销条件": "原生有默认不变的同等运行装饰位置时改用其入口",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
       "changed": true
     },
     {
@@ -9755,8 +10153,8 @@
     {
       "路径": "packages/client/ui-settings-models/src/client/ModelsSection.tsx",
       "类别": "扩展点",
-      "原因": "仅显式密钥/目录模式及呈现回调/布局值；Cloud provider布局和8语内容移自有区，非集成unknown写入恢复Native默认",
-      "撤销条件": "Native有等价呈现/模式入口后替换；无integration保持目标默认",
+      "原因": "可选行Slot仅JSON/回调及原编辑器Factory注册；准备/intent/对话框流程已移Cloud，Native默认无贡献为空",
+      "撤销条件": "Native等价Slot/Factory后替换；无Cloud贡献保持原默认",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
       "changed": true
@@ -9773,10 +10171,10 @@
     {
       "路径": "packages/client/ui-settings-models/src/client/index.ts",
       "类别": "扩展点",
-      "原因": "读取可选的 modelsSettingsIntegration：关闭首配引导、换数据源和写入通道",
-      "撤销条件": "复用原生模型页就需要这个接缝；需上游接受",
+      "原因": "可选行Slot仅JSON/回调及原编辑器Factory注册；准备/intent/对话框流程已移Cloud，Native默认无贡献为空",
+      "撤销条件": "Native等价Slot/Factory后替换；无Cloud贡献保持原默认",
       "处置": "留作口子",
-      "这一程的状态": "没动",
+      "这一程的状态": "已按新原生重加",
       "changed": true
     },
     {
@@ -9795,6 +10193,15 @@
       "撤销条件": "随 index.ts",
       "处置": "留作口子",
       "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/client/ui-settings-models/src/client/slot-contract.ts",
+      "类别": "扩展点",
+      "原因": "可选密钥行Slot仅原行JSON/展平准备回调及原编辑器Factory入参；动作/对话框/八语内容归Cloud，无贡献原生默认空",
+      "撤销条件": "原生等价可选行Slot/原编辑器Factory后替换，保持无Cloud默认",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
       "changed": true
     },
     {
@@ -9969,6 +10376,24 @@
       "changed": true
     },
     {
+      "路径": "packages/client/ui-sidebar-files/src/client/FileNavigator.tsx",
+      "类别": "扩展点",
+      "原因": "接目录分页到新版Native面板共享导航器；只有提供方声明分页能力时显示/调用，普通提供方行为保持；完整files页复用既有tree accessory并调用可选行操作Factory，缺定义为空",
+      "撤销条件": "原生提供同等公开接口后改用原生",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": true
+    },
+    {
+      "路径": "packages/client/ui-sidebar-files/src/client/FileTree.tsx",
+      "类别": "扩展点",
+      "原因": "接目录分页到新版Native面板共享导航器；只有提供方声明分页能力时显示/调用，普通提供方行为保持",
+      "撤销条件": "原生提供同等公开接口后改用原生",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": true
+    },
+    {
       "路径": "packages/client/ui-sidebar-files/src/client/FilesBody.module.css",
       "类别": "云端定制",
       "原因": "上传进度、新建文件夹等样式",
@@ -9982,6 +10407,15 @@
       "类别": "扩展点",
       "原因": "原目录actions槽仅加可选原面板refresh回调；上传/下载/新建目录及状态全部由Cloud提供，默认Native不变",
       "撤销条件": "原生actions槽提供同等面板刷新后撤回",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": true
+    },
+    {
+      "路径": "packages/client/ui-sidebar-files/src/client/directory-node.ts",
+      "类别": "扩展点",
+      "原因": "接目录分页到新版Native面板共享导航器；只有提供方声明分页能力时显示/调用，普通提供方行为保持",
+      "撤销条件": "原生提供同等公开接口后改用原生",
       "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
       "changed": true
@@ -10010,6 +10444,24 @@
       "原因": "旧12条管理文案及8语言内容已搬Cloud；仅保用户已交分页7键，未改变其余原生文案",
       "撤销条件": "原生提供同等分页交互后撤回7键；管理文案已不在原生",
       "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
+      "changed": true
+    },
+    {
+      "路径": "packages/client/ui-sidebar-files/src/client/store.ts",
+      "类别": "扩展点",
+      "原因": "接目录分页到新版Native面板共享导航器；只有提供方声明分页能力时显示/调用，普通提供方行为保持",
+      "撤销条件": "原生提供同等公开接口后改用原生",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": true
+    },
+    {
+      "路径": "packages/client/ui-sidebar-files/src/client/workspace-tree.ts",
+      "类别": "扩展点",
+      "原因": "接目录分页到新版Native面板共享导航器；只有提供方声明分页能力时显示/调用，普通提供方行为保持",
+      "撤销条件": "原生提供同等公开接口后改用原生",
+      "处置": "留作口子",
       "这一程的状态": "已按新原生重加",
       "changed": true
     },
@@ -10176,6 +10628,15 @@
       "changed": true
     },
     {
+      "路径": "packages/client/ui-workspace/src/client/contract/slots.ts",
+      "类别": "扩展点",
+      "原因": "工作区菜单手势携带可选删除限制原因；值与策略由自有页面提供",
+      "撤销条件": "原生插槽提供等价禁用原因后撤回",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": true
+    },
+    {
       "路径": "packages/client/ui-workspace/src/client/index.ts",
       "类别": "扩展点",
       "原因": "仅可选删除限制文本口/菜单口及原客户端存储端口；旧非迁移fork失败额外通知已按三问撤回",
@@ -10221,6 +10682,15 @@
       "changed": true
     },
     {
+      "路径": "packages/client/ui-workspace/src/client/rows/WorkspaceDialogs.tsx",
+      "类别": "扩展点",
+      "原因": "仅透传可选部署限制和文本回调，原菜单/确认框与删除回调保留；无提供方时维持Native默认",
+      "撤销条件": "原生已有相同默认不变删除限制显示口时改用其入口",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": true
+    },
+    {
       "路径": "packages/client/web/src/boot.ts",
       "类别": "扩展点",
       "原因": "BootSeams 新增 modules、persistence、requirePersistence、prepareContext、beforeDispose；run 幂等、dispose 合并清理",
@@ -10230,675 +10700,9 @@
       "changed": true
     },
     {
-      "路径": "packages/extensions/tool-cordis/src/api-catalog.ts",
-      "类别": "生成",
-      "原因": "由 pnpm run gen-cordis-api（scripts/gen-cordis-api.ts）生成；新增 15 个云端服务条目约 1147 行、原生服务新增方法约 285 行、类型声明约 1183 行",
-      "撤销条件": "不手工合并，合并上游后重新生成；想让它不随云端包变化，需在生成脚本里排除 packages/cloud（脚本归别的任务）",
-      "处置": "撤掉",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/session/session-persistence-jsonl/src/index.ts",
-      "类别": "扩展点",
-      "原因": "原JSONL实例只读报告在途API、准备、列表及句柄工作；不恢复stat/read私有认证标志，不改I/O失败选择",
-      "撤销条件": "原生提供等价只读观察后撤",
-      "处置": "留作口子",
-      "这一程的状态": "已按新原生重加",
-      "changed": true
-    },
-    {
-      "路径": "vendor/loader/src/config/entry.ts",
-      "类别": "扩展点",
-      "原因": "给条目加“配置更新计划”接口和守护入口；没有守护时原更新路径只多一个版本计数",
-      "撤销条件": "要读 Entry 私有状态，只能留在本文件；可把计划计算外移，只留守护入口、版本计数和少量访问器",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/boot/config-editor/src/index.ts",
-      "类别": "扩展点",
-      "原因": "加保存钩子 registerSaveHook/submitSave、影响守护 registerImpactGuard、edit 第三参 control、editFailureOutcome；没有守护时走原写入路径（另有只读加载、别名归一等小调整）",
-      "撤销条件": "钩子在私有写入流程里，保留；守护分支的计划逻辑已在 app-boot/config-impact.ts",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/api/gateway/src/index.ts",
-      "类别": "云端定制",
-      "原因": "加了 createNodeStreamTransport、远程事件队列上限参数、inspectInvocation 三个扩展点，同时把流清理从“不等待、只打日志”改成“等待并保留失败”（改默认）；Node mux 可选失败投影只提供默认不变口子，私密错误文本策略在 Access",
-      "撤销条件": "三个扩展点保留；清理语义改动拆成独立补丁，提上游或回退",
-      "处置": "搬进插件",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/extensions/cordis-client-runner/src/client/slot-catalog.ts",
-      "类别": "生成",
-      "原因": "由 pnpm run gen-client-catalog 生成；每个槽位多一个标准属性 workspaceDeleteDisabledReason，新增 2 个槽位，并列出云端占用者",
-      "撤销条件": "不手工合并，合并后重新生成",
-      "处置": "撤掉",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/boot/plugin-manager/src/index.ts",
-      "类别": "扩展点",
-      "原因": "加 registerSaveHook、registerSelectionGuard、changeFailureOutcome、previewBundleSelection；没有守护时原启停写入不变",
-      "撤销条件": "钩子在私有启停写入流程里，保留",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/skill/skill-filesystem/src/index.ts",
-      "类别": "扩展点",
-      "原因": "加可选的程序化文件来源 FileSystemSkillSource、includeDefaultUserRoots 和一组 bundled* 选项（调用上限、执行环境镜像路径、整包清单）；默认值保持原行为；含一句面向执行环境的提示文本",
-      "撤销条件": "仅保留当前程序化文件来源；旧部署选项测试按原生当前配置撤回，调用限制和环境说明待迁入我方插件",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/api/gateway/src/stream-server.ts",
-      "类别": "云端定制",
-      "原因": "加扩展点 NodeStreamTransportOptions（帧上限、逻辑流占用回调），同时关闭和清理失败由打日志改为保留并在 close 抛出、关闭中拒绝新升级（改默认）",
-      "撤销条件": "与 gateway/src/index.ts 一起处理",
-      "处置": "搬进插件",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/attachment/attachment-local/src/store.ts",
-      "类别": "云端定制",
-      "原因": "暂存写入区分“容量不足、清理未确认、发布未确认”三类错误，关闭句柄和删临时文件的失败不再吞掉（改了默认错误类型）",
-      "撤销条件": "提上游；或让云端附件存储（已继承 LocalAttachmentStore）自己实现暂存",
-      "处置": "搬进插件",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/core/agent-loop/src/index.ts",
-      "类别": "云端定制",
-      "原因": "加扩展点 stop()、isQuiescent()、observeDisposal，同时未发布句柄的关闭失败由吞掉改为保留到工厂停止、停用后 create 直接拒绝（改默认）",
-      "撤销条件": "三个扩展点保留；关闭失败保留部分提上游",
-      "处置": "搬进插件",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/host/webserver/src/index.ts",
-      "类别": "扩展点",
-      "原因": "加可选配置 tls.clientCa（客户端证书）和 transportLimits（头部、水位、连接数上限）；不配置时不变",
-      "撤销条件": "云端自建监听可以不改，但会失去原生路由复用；建议保留为配置项",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/settings/settings/src/index.ts",
-      "类别": "扩展点",
-      "原因": "update/replace/mutate 透传 control，写入经 configEditor.submitSave，导出 applyConfigPathOp；多数行是缩进变化",
-      "撤销条件": "保留（透传参数和一个导出）",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/workspace/workspace/src/index.ts",
-      "类别": "扩展点",
-      "原因": "加受保护方法 createDirectoryMetadata，可注入目录元数据提供方；默认仍用 Node 文件系统",
-      "撤销条件": "保留；实现在我方新增的 metadata.ts",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/session/session-persistence-jsonl/src/generation.ts",
-      "类别": "通用修复",
-      "原因": "取消与I/O或关闭同时失败的通用聚合撤回；读取及迁移恢复目标原生，不改变写入格式",
-      "撤销条件": "无具体跨账号、丢数据或密钥泄露场景，按开发手册默认撤回",
-      "处置": "撤掉",
-      "这一程的状态": "已撤",
-      "changed": false
-    },
-    {
-      "路径": "packages/subagent/subagent/src/index.ts",
-      "类别": "扩展点",
-      "原因": "加 registerAdmission：子 Agent 启动和冷恢复前的准入检查；没有登记时原提供方查找不变",
-      "撤销条件": "保留",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/skill/skill/src/index.ts",
-      "类别": "扩展点",
-      "原因": "加 inspect()（列出全部候选及胜出关系）、SkillPackage 和 candidate.package；skills/change 事件声明移到新文件 types.ts",
-      "撤销条件": "保留",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/api/session-controller/src/control.ts",
-      "类别": "扩展点",
-      "原因": "控制流可选缓冲上限 SessionControlBufferLimits；不传时保持原缓冲",
-      "撤销条件": "保留",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/session-query/session-query/src/cold-read.ts",
-      "类别": "云端定制",
-      "原因": "新增两种冷读函数（保留句柄关闭失败、取消后结算）；原函数不变，但 observation.ts 默认改用新函数；当前原生观察器不消费旧清理认证助手/异常类，生产代码无调用；撤回通用取消认证要求及其专用分支测试",
-      "撤销条件": "随取消结算加固一起提上游或回退",
-      "处置": "撤掉",
-      "这一程的状态": "已撤",
-      "changed": false
-    },
-    {
-      "路径": "vendor/loader/src/index.ts",
-      "类别": "扩展点",
-      "原因": "加 LoaderUpdateGuard、LoaderUpdateScope、withUpdateGuard，以及“受守护的销毁不自动写 disabled”一处判断",
-      "撤销条件": "保留；这是守护机制的唯一入口",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/mcp/mcp-client/src/connection.ts",
-      "类别": "通用修复",
-      "原因": "严格启动失败在确认关闭后交给调用方，监督器不再重试和重复告警（改默认）；另含扩展点 closureConfirmed 和有界 HTTP 读取器的归属",
-      "撤销条件": "修复部分提上游；扩展点保留",
-      "处置": "撤掉",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/session-query/session-query/src/observation.ts",
-      "类别": "云端定制",
-      "原因": "取消后的结算认证（看提供方是否声明能结算），错误信息不再带会话号和后端原文（改默认文案）",
-      "撤销条件": "随取消结算加固一起提上游或回退",
-      "处置": "撤掉",
-      "这一程的状态": "已撤",
-      "changed": false
-    },
-    {
-      "路径": "packages/api/session-controller/src/index.ts",
-      "类别": "扩展点",
-      "原因": "加四个受保护方法 ensureProjectDirectory、preparePromptFiles、assertModelSelection、controlBufferLimits 和 internals.skillCatalog；默认实现不做事",
-      "撤销条件": "保留",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/skill/skill-office/src/index.ts",
-      "类别": "云端定制",
-      "原因": "把执行环境说明（guest 路径、Linux soffice/pdftoppm、技术报告目录刷新）写进原生技能提供方；由配置开启，但文本和选项是我方产品专用",
-      "撤销条件": "原生源码和旧部署选项测试已撤回；云端 Office 技能与 Linux 执行说明待接我方提供方并实测",
-      "处置": "撤掉",
-      "这一程的状态": "已撤",
-      "changed": false
-    },
-    {
-      "路径": "packages/session/session-persistence-jsonl/src/storage.ts",
-      "类别": "扩展点",
-      "原因": "仅观察原句柄、缓冲及在途Promise；撤回取消错误重写和close额外等待，保持原生读写及关闭结果",
-      "撤销条件": "原生提供等价只读工作快照后撤",
-      "处置": "留作口子",
-      "这一程的状态": "已按新原生重加",
-      "changed": true
-    },
-    {
-      "路径": "packages/subagent/subagent/src/manager.ts",
-      "类别": "扩展点",
-      "原因": "把准入检查穿进创建和恢复子 Agent 的各检查点",
-      "撤销条件": "保留",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/api/settings-controller/src/index.ts",
-      "类别": "扩展点",
-      "原因": "加 internals.withWrite：写设置时由宿主包住原写入；不提供时原样写",
-      "撤销条件": "保留",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/credentials/credentials/src/index.ts",
-      "类别": "扩展点",
-      "原因": "凭据提供方加 registerSaveHook 和受保护的 submitSave",
-      "撤销条件": "保留",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/api/remotes/src/index.ts",
-      "类别": "扩展点",
-      "原因": "把内联的瀑布事件监听器提成导出函数 createRemoteWaterfallListener；另加一行技能类型引入",
-      "撤销条件": "保留",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/subagent/subagent/src/types.ts",
-      "类别": "扩展点",
-      "原因": "准入检查的类型 SubagentAdmission、SubagentAdmissionRequest",
-      "撤销条件": "保留",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/session-query/session-log-export/src/index.ts",
-      "类别": "扩展点",
-      "原因": "加 registerSessionLogExport(ctx, config, admit)：导出前可做部署方准入；apply 行为不变",
-      "撤销条件": "保留",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "vendor/loader/src/config/group.ts",
-      "类别": "扩展点",
-      "原因": "三处守护入口（create/remove/update）和 awaitUpdate（等子项更新结算，app-boot 重载用它修一个竞态）",
-      "撤销条件": "保留；awaitUpdate 可单独提上游",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/attachment/attachment-local/src/file-store.ts",
-      "类别": "云端定制",
-      "原因": "发布失败统一包成“发布未确认”（改默认错误）；另含读流提前返回时等文件关闭（通用修复）",
-      "撤销条件": "等文件关闭那 5 行提上游；其余随 store.ts 处理",
-      "处置": "搬进插件",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/core/agent/src/index.ts",
-      "类别": "扩展点",
-      "原因": "类型：AgentDisposalObserver、observeDisposal 选项、AgentSetupCommit.assertCurrent",
-      "撤销条件": "保留",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/boot/app-boot/src/index.ts",
-      "类别": "云端定制",
-      "原因": "挂载和重载都先读根配置文件，以支持“非空根配置 + 补丁”；重载后先等子项更新再恢复（修竞态）；导出 config-impact 的函数",
-      "撤销条件": "导出和 awaitUpdate 保留；非空根支持是云端根配置所需，除非云端改回空根配置",
-      "处置": "搬进插件",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/credentials/credentials-local/src/index.ts",
-      "类别": "扩展点",
-      "原因": "本地凭据写入和迁移前调用 submitSave",
-      "撤销条件": "保留",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "vendor/loader/src/config/diff.ts",
-      "类别": "扩展点",
-      "原因": "两个只读辅助函数：判定 schema 是否属于“无回调的确定子集”、给 schema 元数据拍快照",
-      "撤销条件": "只被 entry.ts 的计划逻辑用；若计划计算外移可一并搬走",
-      "处置": "撤掉",
-      "这一程的状态": "已撤",
-      "changed": false
-    },
-    {
-      "路径": "packages/schedule/schedule/src/index.ts",
-      "类别": "扩展点",
-      "原因": "加 installDispatchAdmission、resumeDispatch、isDispatchIdle",
-      "撤销条件": "保留",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/workspace/workspace/src/types.ts",
-      "类别": "扩展点",
-      "原因": "类型 WorkspaceDirectoryMetadata",
-      "撤销条件": "保留",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/api/session-controller/src/history.ts",
-      "类别": "云端定制",
-      "原因": "follow 被取消时立即停止监听并清空缓冲，然后等提供方读操作结算才报告取消（改默认）",
-      "撤销条件": "随取消结算加固一起提上游或回退",
-      "处置": "撤掉",
-      "这一程的状态": "已撤",
-      "changed": false
-    },
-    {
-      "路径": "packages/workspace/workspace/src/entity.ts",
-      "类别": "扩展点",
-      "原因": "工作区实体改用注入的目录元数据访问；默认提供方下行为不变",
-      "撤销条件": "保留",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/settings/settings/src/redact.ts",
-      "类别": "通用修复",
-      "原因": "脱敏补上“元组”和“字典的键本身是密钥”两种情况；另导出 ConfigSchemaNode 类型",
-      "撤销条件": "修复提上游；类型导出保留",
-      "处置": "撤掉",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/api/terminal-controller/src/client/close-requests.ts",
-      "类别": "扩展点",
-      "原因": "浏览器存储改走可选的页面存储端口；不提供时仍用 localStorage（端口实现在 packages/client/store，归界面任务）",
-      "撤销条件": "取决于界面侧页面存储端口的去留",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/boot/app-boot/src/compatibility-preflight.ts",
-      "类别": "扩展点",
-      "原因": "prepareProfilePatches 加可选参数 base；空根时走原路径",
-      "撤销条件": "保留",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/feedback/message-feedback/src/index.ts",
-      "类别": "扩展点",
-      "原因": "加受保护方法 assertSessionAccess，在队列内和读写前复核；默认不做事",
-      "撤销条件": "保留",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/mcp/mcp-client/src/index.ts",
-      "类别": "扩展点",
-      "原因": "配置项 listMaxPages、maxIncomingResponseBytes；apply 第三参 observeLifecycle",
-      "撤销条件": "保留",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/boot/app-boot/src/profile-context.ts",
-      "类别": "扩展点",
-      "原因": "ProfileContext.entryAliases（启动期条目改名）和 normalizeProfileEntryAliases；不设别名时不变",
-      "撤销条件": "保留",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/session/session-persistence/src/index.ts",
-      "类别": "扩展点",
-      "原因": "仅保守的isQuiescent只读观察默认false；撤回stat/read私有取消认证字段",
-      "撤销条件": "保留",
-      "处置": "留作口子",
-      "这一程的状态": "已按新原生重加",
-      "changed": true
-    },
-    {
-      "路径": "packages/feedback/command-feedback/src/index.ts",
-      "类别": "扩展点",
-      "原因": "可选服务 sessionFeedbackIdentity；已有 sessionFeedback 服务时复用而不重复注册",
-      "撤销条件": "保留；或云端自己注册 /feedback 命令",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/boot/cmdline/src/index.ts",
-      "类别": "扩展点",
-      "原因": "可选能力 appShutdown：关闭参与者在进程退出前被等待；启动器不提供时不存在",
-      "撤销条件": "保留",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/typert/generator/src/cordis-catalog.ts",
-      "类别": "扩展点",
-      "原因": "文档目录生成器支持 ctx.<服务>:<类型> 限定名，避免不同服务的同名类型互相顶替",
-      "撤销条件": "目前只有一个云端条目用到；改掉云端那个类型名即可回退",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/session-query/session-log-export/src/client/controller.ts",
-      "类别": "扩展点",
-      "原因": "仅保可选导航URL绑定回调，默认identity维持原生；临时DOM挂接/手动链接状态等通用UI增强撤回",
-      "撤销条件": "原生提供同等默认不变应用导航绑定入口时替换",
-      "处置": "留作口子",
-      "这一程的状态": "已按新原生重加",
-      "changed": true
-    },
-    {
-      "路径": "packages/test-support/client-runtime/src/assembly/bundle-roster.ts",
-      "类别": "通用修复",
-      "原因": "链接安装的 bundle 自引用解析；上游最新版已用另一种写法修了",
-      "撤销条件": "合并时取上游版本，丢弃我方改动",
-      "处置": "撤掉",
-      "这一程的状态": "已撤",
-      "changed": false
-    },
-    {
-      "路径": "packages/api/terminal-controller/src/client/index.ts",
-      "类别": "扩展点",
-      "原因": "终端客户端服务从 ctx 取可选的 clientPersistence 并传给各子对象",
-      "撤销条件": "同 close-requests.ts",
-      "处置": "撤掉",
-      "这一程的状态": "已撤",
-      "changed": false
-    },
-    {
-      "路径": "packages/preset/agent-preset-registry/src/index.ts",
-      "类别": "通用修复",
-      "原因": "预设重组和选择记录放进 agent.runMaintenance，排队消息等重组结束再执行（改默认）；另含扩展点 assertSelectionCurrent",
-      "撤销条件": "修复提上游；扩展点保留",
-      "处置": "撤掉",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/api/workspace-files/src/changes.ts",
-      "类别": "通用修复",
-      "原因": "按三问撤回caller-FS补丁；实际Cloud两个FS均拒绝watch，原生目标继续原服务FS和原关闭流程",
-      "撤销条件": "未有必须携带的账号安全场景；原生多FS作用域监听恢复原服务绑定行为，独立用户影响已列",
-      "处置": "撤掉",
-      "这一程的状态": "已撤",
-      "changed": false
-    },
-    {
-      "路径": "packages/api/terminal-controller/src/client/bindings.ts",
-      "类别": "扩展点",
-      "原因": "同 close-requests.ts：存储改走可选页面端口",
-      "撤销条件": "同 close-requests.ts",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/api/session-controller/src/agent.ts",
-      "类别": "扩展点",
-      "原因": "建目录改为调用控制器传入的回调（原 mkdir 挪到 index.ts 的受保护方法）",
-      "撤销条件": "保留",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/session/session-persistence-jsonl/src/catalog-migration.ts",
-      "类别": "通用修复",
-      "原因": "取消与I/O或关闭同时失败的通用聚合撤回；读取及迁移恢复目标原生，不改变写入格式",
-      "撤销条件": "无具体跨账号、丢数据或密钥泄露场景，按开发手册默认撤回",
-      "处置": "撤掉",
-      "这一程的状态": "已撤",
-      "changed": false
-    },
-    {
-      "路径": "packages/subprocess/subprocess/src/types.ts",
-      "类别": "扩展点",
-      "原因": "spawn 规格可选 sandboxPolicy；句柄可选 releaseCollected",
-      "撤销条件": "保留",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/session-query/session-log-export/src/client/index.ts",
-      "类别": "扩展点",
-      "原因": "可选服务 sessionLogDownloadIntegration：由应用提供带登录态的 fetch 和下载地址绑定",
-      "撤销条件": "保留",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/schedule/schedule/src/runtime.ts",
-      "类别": "扩展点",
-      "原因": "投递前后调用可选的准入回调；加 isIdle",
-      "撤销条件": "保留",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/fs/fs/src/index.ts",
-      "类别": "扩展点",
-      "原因": "文件系统默认扩展：supportsTextEdit=true、scopeRoot缺省；完整listing包装不改原结果，openDirectory缺省拒绝，不仿造全量分页",
-      "撤销条件": "原生提供等价公开接口后改用原生",
-      "处置": "留作口子",
-      "这一程的状态": "已按新原生重加",
-      "changed": true
-    },
-    {
-      "路径": "packages/core/system-prompt/src/index.ts",
-      "类别": "扩展点",
-      "原因": "新增瀑布事件 system-prompt/prepare，组装提示词前先等监听者；无监听者时直接继续",
-      "撤销条件": "保留",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
       "路径": "packages/context/agent-instructions/src/files.ts",
       "类别": "扩展点",
       "原因": "找项目根时在 fs.scopeRoot() 给出的边界处停下；默认提供方无边界时不变",
-      "撤销条件": "保留",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/session-query/session-query/src/config.ts",
-      "类别": "扩展点",
-      "原因": "两个新错误类 SessionQuerySettledStatAbortError、SessionQuerySettledReadAbortError；当前原生观察器不消费旧清理认证助手/异常类，生产代码无调用；撤回通用取消认证要求及其专用分支测试",
-      "撤销条件": "随取消结算加固一起提上游或回退",
-      "处置": "撤掉",
-      "这一程的状态": "已撤",
-      "changed": false
-    },
-    {
-      "路径": "packages/mcp/mcp-client/src/transport.ts",
-      "类别": "扩展点",
-      "原因": "配置了 maxIncomingResponseBytes 时给 SDK 传入有界 fetch；不配置时不变",
-      "撤销条件": "保留",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/api/terminal-controller/src/client/shell-preference.ts",
-      "类别": "扩展点",
-      "原因": "同 close-requests.ts：存储改走可选页面端口",
-      "撤销条件": "同 close-requests.ts",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/fs/tool-fs-search/src/glob.ts",
-      "类别": "云端定制",
-      "原因": "把 12 条 VCS 排除参数合成 2 条花括号模式，为了不超过云端命令 16 个参数的上限；搜索结果应等价",
-      "撤销条件": "在云端执行器放宽参数上限，然后回退这处改动",
-      "处置": "撤掉",
-      "这一程的状态": "已撤",
-      "changed": false
-    },
-    {
-      "路径": "packages/interaction/permission-presets/src/index.ts",
-      "类别": "扩展点",
-      "原因": "加受保护方法 assertCanSwitch，在写入权限事件前复核；默认不做事",
-      "撤销条件": "保留",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/api/terminal-controller/src/client/model.ts",
-      "类别": "扩展点",
-      "原因": "同 close-requests.ts：存储改走可选页面端口",
-      "撤销条件": "同 close-requests.ts",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/api/gateway/src/client/index.ts",
-      "类别": "扩展点",
-      "原因": "仅生成install名显式兼容口；原Native默认继续拒绝，Cloud单独允许其已有cloudSkills命名空间，原RPC/codec/取消/卸载不变",
-      "撤销条件": "Native提供等价公开兼容入口时替换；无贡献保持目标保留名称行为",
-      "处置": "留作口子",
-      "这一程的状态": "已按新原生重加",
-      "changed": true
-    },
-    {
-      "路径": "packages/boot/app-boot/src/profile.ts",
-      "类别": "扩展点",
-      "原因": "loadProfileDirectory 加 readOnly 和 bundles 选项；默认仍会清理失效 bundle",
-      "撤销条件": "保留",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/skill/tool-workspace-dependencies/src/index.ts",
-      "类别": "扩展点",
-      "原因": "可选配置 executionManifest：从执行环境镜像带出的 runtime.json 读路径，不在宿主安装；目前只有 apps/cli 的云端示例配置使用",
-      "撤销条件": "可改为云端包自带一个同名工具插件",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "packages/api/gateway/src/types.ts",
-      "类别": "扩展点",
-      "原因": "类型 RemoteEventQueueLimits 和 registerRemoteEvents 的第三参",
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
@@ -10914,48 +10718,84 @@
       "changed": true
     },
     {
-      "路径": "packages/session/session-persistence-jsonl/src/zstd-public-decoder.ts",
-      "类别": "通用修复",
-      "原因": "取消与I/O或关闭同时失败的通用聚合撤回；读取及迁移恢复目标原生，不改变写入格式",
-      "撤销条件": "无具体跨账号、丢数据或密钥泄露场景，按开发手册默认撤回",
-      "处置": "撤掉",
-      "这一程的状态": "已撤",
-      "changed": false
-    },
-    {
-      "路径": "packages/session/session-persistence-jsonl/src/zstd-private-decoder.ts",
-      "类别": "通用修复",
-      "原因": "取消与I/O或关闭同时失败的通用聚合撤回；读取及迁移恢复目标原生，不改变写入格式",
-      "撤销条件": "无具体跨账号、丢数据或密钥泄露场景，按开发手册默认撤回",
-      "处置": "撤掉",
-      "这一程的状态": "已撤",
-      "changed": false
-    },
-    {
-      "路径": "packages/api/session-controller/src/commands.ts",
+      "路径": "packages/core/agent-loop/src/agent.ts",
       "类别": "扩展点",
-      "原因": "构造函数可选回调 prepareFiles、assertModelSelection；prompt 多一个 signal 参数",
+      "原因": "Agent 加只读属性 isQuiescent（空闲且收件箱无待处理）",
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
       "changed": true
     },
     {
-      "路径": "vendor/cordis/src/fiber.ts",
+      "路径": "packages/core/agent-loop/src/index.ts",
+      "类别": "云端定制",
+      "原因": "加扩展点 stop()、isQuiescent()、observeDisposal，同时未发布句柄的关闭失败由吞掉改为保留到工厂停止、停用后 create 直接拒绝（改默认）",
+      "撤销条件": "三个扩展点保留；关闭失败保留部分提上游",
+      "处置": "搬进插件",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/core/agent/src/index.ts",
+      "类别": "扩展点",
+      "原因": "类型：AgentDisposalObserver、observeDisposal 选项、AgentSetupCommit.assertCurrent",
+      "撤销条件": "保留",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/core/system-prompt/src/index.ts",
+      "类别": "扩展点",
+      "原因": "新增瀑布事件 system-prompt/prepare，组装提示词前先等监听者；无监听者时直接继续",
+      "撤销条件": "保留",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/core/tools/src/index.ts",
+      "类别": "扩展点",
+      "原因": "工具快照前可选的 tools/prepare waterfall，供账号 MCP 恢复；无监听者保持原生选择行为",
+      "撤销条件": "原生提供等价的工具快照前准备入口后撤回",
+      "处置": "留作口子",
+      "这一程的状态": "已验证",
+      "changed": true
+    },
+    {
+      "路径": "packages/credentials/credentials-local/src/index.ts",
+      "类别": "扩展点",
+      "原因": "本地凭据写入和迁移前调用 submitSave",
+      "撤销条件": "保留",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/credentials/credentials/src/index.ts",
+      "类别": "扩展点",
+      "原因": "凭据提供方加 registerSaveHook 和受保护的 submitSave",
+      "撤销条件": "保留",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/experimental/deepseek-chat-import/src/client/mount.ts",
       "类别": "通用修复",
-      "原因": "状态通知循环跳过已被前一个通知撤掉的服务记录（否则访问 undefined）；另含扩展点 configMutationRevision 和 resolveConfig 参数类型放宽",
-      "撤销条件": "修复提上游（上游最新版仍无此判断）；计数器保留",
+      "原因": "只有 EOF 空行差异；直接还原原生会触发正常 whitespace 门禁，当前仍保持单换行",
+      "撤销条件": "不改产品行为；待格式门禁与原生末尾空行规则一致后撤",
       "处置": "撤掉",
       "这一程的状态": "没动",
       "changed": true
     },
     {
-      "路径": "packages/boot/plugin-manager/src/patch.ts",
-      "类别": "扩展点",
-      "原因": "writePluginEnabled 加可选回调 prepared，包住实际写文件",
-      "撤销条件": "保留",
-      "处置": "留作口子",
-      "这一程的状态": "没动",
+      "路径": "packages/experimental/liveshare/src/endpoint-classification.ts",
+      "类别": "登记",
+      "原因": "新增目录分页Remote与原目录列举一致仅所有者可用，不向共享读者开放",
+      "撤销条件": "原生包含同等分页接口权限登记时撤回",
+      "处置": "必须携带",
+      "这一程的状态": "已按新原生重加",
       "changed": true
     },
     {
@@ -10968,55 +10808,64 @@
       "changed": true
     },
     {
-      "路径": "packages/session-query/session-log-export/src/client/locales.ts",
-      "类别": "通用修复",
-      "原因": "额外手动链接及已请求下载文字随通用增强撤回，整个词典恢复目标Native",
-      "撤销条件": "无具体多账号串读、持久化丢失或密钥泄漏场景；按开发手册默认撤回并记用户可见变化",
-      "处置": "撤掉",
-      "这一程的状态": "已撤",
-      "changed": false
-    },
-    {
-      "路径": "packages/api/session-controller/src/client/sessions/service.ts",
-      "类别": "通用修复",
-      "原因": "会话作用域被直接销毁时，先撤回它的代际再跑清理回调",
-      "撤销条件": "提上游",
+      "路径": "packages/extensions/cordis-client-runner/src/client/slot-catalog.ts",
+      "类别": "生成",
+      "原因": "由 pnpm run gen-client-catalog 生成；每个槽位多一个标准属性 workspaceDeleteDisabledReason，新增 2 个槽位，并列出云端占用者",
+      "撤销条件": "不手工合并，合并后重新生成",
       "处置": "撤掉",
       "这一程的状态": "没动",
       "changed": true
     },
     {
-      "路径": "packages/skill/tool-skill/src/index.ts",
-      "类别": "通用修复",
-      "原因": "预设里可见的技能工具负责目录，被隐藏的上层注册不再覆盖它的决定",
-      "撤销条件": "提上游",
+      "路径": "packages/extensions/tool-cordis/src/api-catalog.ts",
+      "类别": "生成",
+      "原因": "由 pnpm run gen-cordis-api（scripts/gen-cordis-api.ts）生成；新增 15 个云端服务条目约 1147 行、原生服务新增方法约 285 行、类型声明约 1183 行",
+      "撤销条件": "不手工合并，合并上游后重新生成；想让它不随云端包变化，需在生成脚本里排除 packages/cloud（脚本归别的任务）",
       "处置": "撤掉",
       "这一程的状态": "没动",
       "changed": true
     },
     {
-      "路径": "packages/session-query/session-log-export/src/client/Dialog.tsx",
-      "类别": "通用修复",
-      "原因": "手动ZIP链接通用增强按三问撤回，恢复目标Native弹窗；原HEAD/GET下载保留",
-      "撤销条件": "无具体多账号串读、持久化丢失或密钥泄漏场景；按开发手册默认撤回并记用户可见变化",
-      "处置": "撤掉",
-      "这一程的状态": "已撤",
-      "changed": false
-    },
-    {
-      "路径": "packages/interaction/commands/src/index.ts",
+      "路径": "packages/feedback/command-feedback/src/index.ts",
       "类别": "扩展点",
-      "原因": "加受保护方法 assertCommandInvocation，在调用命令处理器前复核；默认不做事",
+      "原因": "可选服务 sessionFeedbackIdentity；已有 sessionFeedback 服务时复用而不重复注册",
+      "撤销条件": "保留；或云端自己注册 /feedback 命令",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/feedback/message-feedback/src/index.ts",
+      "类别": "扩展点",
+      "原因": "加受保护方法 assertSessionAccess，在队列内和读写前复核；默认不做事",
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
       "changed": true
     },
     {
-      "路径": "packages/typert/generator/src/analyzer.ts",
-      "类别": "通用修复",
-      "原因": "撤回仅缩窄诊断计算范围的性能补丁；目标原生已在最终输出筛选本包文件",
-      "撤销条件": "无具体跨账号、丢数据或密钥泄露场景，按开发手册撤回",
+      "路径": "packages/fs/fs/src/index.ts",
+      "类别": "扩展点",
+      "原因": "文件系统默认扩展：supportsTextEdit=true、scopeRoot缺省；完整listing包装不改原结果，openDirectory缺省拒绝，不仿造全量分页",
+      "撤销条件": "原生提供等价公开接口后改用原生",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": true
+    },
+    {
+      "路径": "packages/fs/fs/src/types.ts",
+      "类别": "扩展点",
+      "原因": "目录分页的提供方接口及有界结果；默认提供方不声明分页，原listDir保留",
+      "撤销条件": "原生提供同等公开接口后改用原生",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": true
+    },
+    {
+      "路径": "packages/fs/tool-fs-search/src/glob.ts",
+      "类别": "云端定制",
+      "原因": "把 12 条 VCS 排除参数合成 2 条花括号模式，为了不超过云端命令 16 个参数的上限；搜索结果应等价",
+      "撤销条件": "在云端执行器放宽参数上限，然后回退这处改动",
       "处置": "撤掉",
       "这一程的状态": "已撤",
       "changed": false
@@ -11031,9 +10880,72 @@
       "changed": true
     },
     {
-      "路径": "packages/boot/app-boot/src/profile-resolution/service.ts",
+      "路径": "packages/fs/tool-fs/src/read-image.ts",
       "类别": "扩展点",
-      "原因": "packageOf 加可选参数 fresh：直接读磁盘上的包清单，不动缓存",
+      "原因": "处理账号配额提供方的 ATTACHMENT_STORAGE_CAPACITY 结果，省略账号配额时无新行为",
+      "撤销条件": "原生提供通用附件容量失败后撤回此分支",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": true
+    },
+    {
+      "路径": "packages/host/frontend-static/src/index.ts",
+      "类别": "扩展点",
+      "原因": "将原静态资源函数提到同包 resource 出口供 Access 复用；原生 MIME、ETag、遍历和 HEAD 行为不改",
+      "撤销条件": "原生公开等价静态资源函数后撤回提取",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": true
+    },
+    {
+      "路径": "packages/host/webserver/src/index.ts",
+      "类别": "扩展点",
+      "原因": "加可选配置 tls.clientCa（客户端证书）和 transportLimits（头部、水位、连接数上限）；不配置时不变",
+      "撤销条件": "云端自建监听可以不改，但会失去原生路由复用；建议保留为配置项",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/interaction/commands/src/index.ts",
+      "类别": "扩展点",
+      "原因": "加受保护方法 assertCommandInvocation，在调用命令处理器前复核；默认不做事",
+      "撤销条件": "保留",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/interaction/permission-presets/src/index.ts",
+      "类别": "扩展点",
+      "原因": "加受保护方法 assertCanSwitch，在写入权限事件前复核；默认不做事",
+      "撤销条件": "保留",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/mcp/mcp-client/src/connection.ts",
+      "类别": "通用修复",
+      "原因": "严格启动失败在确认关闭后交给调用方，监督器不再重试和重复告警（改默认）；另含扩展点 closureConfirmed 和有界 HTTP 读取器的归属",
+      "撤销条件": "修复部分提上游；扩展点保留",
+      "处置": "撤掉",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/mcp/mcp-client/src/generation.ts",
+      "类别": "扩展点",
+      "原因": "显式字节预算才包装原 SDK HTTP fetch 并持有读者关闭；省略保持原生传输",
+      "撤销条件": "原生提供等价 fetch 和关闭注入口后把预算实现搬自有插件",
+      "处置": "必须携带",
+      "这一程的状态": "已验证",
+      "changed": true
+    },
+    {
+      "路径": "packages/mcp/mcp-client/src/index.ts",
+      "类别": "扩展点",
+      "原因": "配置项 listMaxPages、maxIncomingResponseBytes；apply 第三参 observeLifecycle",
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
@@ -11049,20 +10961,218 @@
       "changed": false
     },
     {
-      "路径": "packages/core/agent-loop/src/agent.ts",
+      "路径": "packages/mcp/mcp-client/src/transport.ts",
       "类别": "扩展点",
-      "原因": "Agent 加只读属性 isQuiescent（空闲且收件箱无待处理）",
+      "原因": "配置了 maxIncomingResponseBytes 时给 SDK 传入有界 fetch；不配置时不变",
       "撤销条件": "保留",
       "处置": "留作口子",
       "这一程的状态": "没动",
       "changed": true
     },
     {
-      "路径": "packages/attachment/attachment/src/error.ts",
+      "路径": "packages/preset/agent-preset-registry/src/index.ts",
+      "类别": "通用修复",
+      "原因": "预设重组和选择记录放进 agent.runMaintenance，排队消息等重组结束再执行（改默认）；另含扩展点 assertSelectionCurrent",
+      "撤销条件": "修复提上游；扩展点保留",
+      "处置": "撤掉",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/ptc-runtime/ptc-runtime-node/src/index.ts",
       "类别": "扩展点",
-      "原因": "新错误码 ATTACHMENT_STORAGE_CAPACITY 和可选字段 settlement",
+      "原因": "把已解析的沙箱策略随 spawn 规格传给子进程提供方；本地提供方不读它",
+      "撤销条件": "保留",
+      "处置": "撤掉",
+      "这一程的状态": "已撤",
+      "changed": false
+    },
+    {
+      "路径": "packages/schedule/schedule/src/index.ts",
+      "类别": "扩展点",
+      "原因": "加 installDispatchAdmission、resumeDispatch、isDispatchIdle",
       "撤销条件": "保留",
       "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/schedule/schedule/src/runtime.ts",
+      "类别": "扩展点",
+      "原因": "投递前后调用可选的准入回调；加 isIdle",
+      "撤销条件": "保留",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/schedule/schedule/src/types.ts",
+      "类别": "扩展点",
+      "原因": "可选 targetSessionId 在计数和分页前限定既有 Session 目标；省略保留原生全目标列表",
+      "撤销条件": "原生提供等价 Session 过滤后撤回",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": true
+    },
+    {
+      "路径": "packages/session-query/session-log-export/src/client/Dialog.tsx",
+      "类别": "通用修复",
+      "原因": "手动ZIP链接通用增强按三问撤回，恢复目标Native弹窗；原HEAD/GET下载保留",
+      "撤销条件": "无具体多账号串读、持久化丢失或密钥泄漏场景；按开发手册默认撤回并记用户可见变化",
+      "处置": "撤掉",
+      "这一程的状态": "已撤",
+      "changed": false
+    },
+    {
+      "路径": "packages/session-query/session-log-export/src/client/controller.ts",
+      "类别": "扩展点",
+      "原因": "仅保可选导航URL绑定回调，默认identity维持原生；临时DOM挂接/手动链接状态等通用UI增强撤回",
+      "撤销条件": "原生提供同等默认不变应用导航绑定入口时替换",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": true
+    },
+    {
+      "路径": "packages/session-query/session-log-export/src/client/index.ts",
+      "类别": "扩展点",
+      "原因": "可选服务 sessionLogDownloadIntegration：由应用提供带登录态的 fetch 和下载地址绑定",
+      "撤销条件": "保留",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/session-query/session-log-export/src/client/locales.ts",
+      "类别": "通用修复",
+      "原因": "额外手动链接及已请求下载文字随通用增强撤回，整个词典恢复目标Native",
+      "撤销条件": "无具体多账号串读、持久化丢失或密钥泄漏场景；按开发手册默认撤回并记用户可见变化",
+      "处置": "撤掉",
+      "这一程的状态": "已撤",
+      "changed": false
+    },
+    {
+      "路径": "packages/session-query/session-log-export/src/index.ts",
+      "类别": "扩展点",
+      "原因": "加 registerSessionLogExport(ctx, config, admit)：导出前可做部署方准入；apply 行为不变",
+      "撤销条件": "保留",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/session-query/session-query/src/cold-read.ts",
+      "类别": "云端定制",
+      "原因": "新增两种冷读函数（保留句柄关闭失败、取消后结算）；原函数不变，但 observation.ts 默认改用新函数；当前原生观察器不消费旧清理认证助手/异常类，生产代码无调用；撤回通用取消认证要求及其专用分支测试",
+      "撤销条件": "随取消结算加固一起提上游或回退",
+      "处置": "撤掉",
+      "这一程的状态": "已撤",
+      "changed": false
+    },
+    {
+      "路径": "packages/session-query/session-query/src/config.ts",
+      "类别": "扩展点",
+      "原因": "两个新错误类 SessionQuerySettledStatAbortError、SessionQuerySettledReadAbortError；当前原生观察器不消费旧清理认证助手/异常类，生产代码无调用；撤回通用取消认证要求及其专用分支测试",
+      "撤销条件": "随取消结算加固一起提上游或回退",
+      "处置": "撤掉",
+      "这一程的状态": "已撤",
+      "changed": false
+    },
+    {
+      "路径": "packages/session-query/session-query/src/index.ts",
+      "类别": "登记",
+      "原因": "导出两个新错误类；当前原生观察器不消费旧清理认证助手/异常类，生产代码无调用；撤回通用取消认证要求及其专用分支测试",
+      "撤销条件": "随取消结算加固一起提上游或回退",
+      "处置": "撤掉",
+      "这一程的状态": "已撤",
+      "changed": false
+    },
+    {
+      "路径": "packages/session-query/session-query/src/observation.ts",
+      "类别": "云端定制",
+      "原因": "取消后的结算认证（看提供方是否声明能结算），错误信息不再带会话号和后端原文（改默认文案）",
+      "撤销条件": "随取消结算加固一起提上游或回退",
+      "处置": "撤掉",
+      "这一程的状态": "已撤",
+      "changed": false
+    },
+    {
+      "路径": "packages/session/session-persistence-jsonl/src/catalog-migration.ts",
+      "类别": "通用修复",
+      "原因": "取消与I/O或关闭同时失败的通用聚合撤回；读取及迁移恢复目标原生，不改变写入格式",
+      "撤销条件": "无具体跨账号、丢数据或密钥泄露场景，按开发手册默认撤回",
+      "处置": "撤掉",
+      "这一程的状态": "已撤",
+      "changed": false
+    },
+    {
+      "路径": "packages/session/session-persistence-jsonl/src/generation.ts",
+      "类别": "通用修复",
+      "原因": "取消与I/O或关闭同时失败的通用聚合撤回；读取及迁移恢复目标原生，不改变写入格式",
+      "撤销条件": "无具体跨账号、丢数据或密钥泄露场景，按开发手册默认撤回",
+      "处置": "撤掉",
+      "这一程的状态": "已撤",
+      "changed": false
+    },
+    {
+      "路径": "packages/session/session-persistence-jsonl/src/index.ts",
+      "类别": "扩展点",
+      "原因": "原JSONL实例只读报告在途API、准备、列表及句柄工作；不恢复stat/read私有认证标志，不改I/O失败选择",
+      "撤销条件": "原生提供等价只读观察后撤",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": true
+    },
+    {
+      "路径": "packages/session/session-persistence-jsonl/src/storage.ts",
+      "类别": "扩展点",
+      "原因": "仅观察原句柄、缓冲及在途Promise；撤回取消错误重写和close额外等待，保持原生读写及关闭结果",
+      "撤销条件": "原生提供等价只读工作快照后撤",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": true
+    },
+    {
+      "路径": "packages/session/session-persistence-jsonl/src/zstd-private-decoder.ts",
+      "类别": "通用修复",
+      "原因": "取消与I/O或关闭同时失败的通用聚合撤回；读取及迁移恢复目标原生，不改变写入格式",
+      "撤销条件": "无具体跨账号、丢数据或密钥泄露场景，按开发手册默认撤回",
+      "处置": "撤掉",
+      "这一程的状态": "已撤",
+      "changed": false
+    },
+    {
+      "路径": "packages/session/session-persistence-jsonl/src/zstd-public-decoder.ts",
+      "类别": "通用修复",
+      "原因": "取消与I/O或关闭同时失败的通用聚合撤回；读取及迁移恢复目标原生，不改变写入格式",
+      "撤销条件": "无具体跨账号、丢数据或密钥泄露场景，按开发手册默认撤回",
+      "处置": "撤掉",
+      "这一程的状态": "已撤",
+      "changed": false
+    },
+    {
+      "路径": "packages/session/session-persistence/src/index.ts",
+      "类别": "扩展点",
+      "原因": "仅保守的isQuiescent只读观察默认false；撤回stat/read私有取消认证字段",
+      "撤销条件": "保留",
+      "处置": "留作口子",
+      "这一程的状态": "已按新原生重加",
+      "changed": true
+    },
+    {
+      "路径": "packages/settings/settings/src/index.ts",
+      "类别": "扩展点",
+      "原因": "update/replace/mutate 透传 control，写入经 configEditor.submitSave，导出 applyConfigPathOp；多数行是缩进变化",
+      "撤销条件": "保留（透传参数和一个导出）",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/settings/settings/src/redact.ts",
+      "类别": "通用修复",
+      "原因": "脱敏补上“元组”和“字典的键本身是密钥”两种情况；另导出 ConfigSchemaNode 类型",
+      "撤销条件": "修复提上游；类型导出保留",
+      "处置": "撤掉",
       "这一程的状态": "没动",
       "changed": true
     },
@@ -11076,57 +11186,84 @@
       "changed": true
     },
     {
-      "路径": "packages/api/session-controller/src/skill-catalog.ts",
-      "类别": "云端定制",
-      "原因": "当前Agent发起作用域由已有Cloud AccountSkillCatalog子类建立；原生目录源码恢复目标版本",
-      "撤销条件": "账号目录读取由Cloud子类复用Native实现并保留前后准入检查",
-      "处置": "搬进插件",
-      "这一程的状态": "已搬",
-      "changed": false
-    },
-    {
-      "路径": "packages/session-query/session-query/src/index.ts",
-      "类别": "登记",
-      "原因": "导出两个新错误类；当前原生观察器不消费旧清理认证助手/异常类，生产代码无调用；撤回通用取消认证要求及其专用分支测试",
-      "撤销条件": "随取消结算加固一起提上游或回退",
-      "处置": "撤掉",
-      "这一程的状态": "已撤",
-      "changed": false
-    },
-    {
-      "路径": "packages/api/remotes/src/remote-events.ts",
-      "类别": "功能增强",
-      "原因": "附加skills/change转发及客户端选择声明移Cloud；既有account first-screen event source已按原能力复查发送，Native文件恢复固定目标",
-      "撤销条件": "已撤回Native通用事件政策；Cloud继续由原账号事件所有者发送",
-      "处置": "搬进插件",
-      "这一程的状态": "已搬",
-      "changed": false
-    },
-    {
-      "路径": "packages/ptc-runtime/ptc-runtime-node/src/index.ts",
+      "路径": "packages/skill/skill-filesystem/src/index.ts",
       "类别": "扩展点",
-      "原因": "把已解析的沙箱策略随 spawn 规格传给子进程提供方；本地提供方不读它",
-      "撤销条件": "保留",
+      "原因": "加可选的程序化文件来源 FileSystemSkillSource、includeDefaultUserRoots 和一组 bundled* 选项（调用上限、执行环境镜像路径、整包清单）；默认值保持原行为；含一句面向执行环境的提示文本",
+      "撤销条件": "仅保留当前程序化文件来源；旧部署选项测试按原生当前配置撤回，调用限制和环境说明待迁入我方插件",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/skill/skill-office/src/index.ts",
+      "类别": "云端定制",
+      "原因": "把执行环境说明（guest 路径、Linux soffice/pdftoppm、技术报告目录刷新）写进原生技能提供方；由配置开启，但文本和选项是我方产品专用",
+      "撤销条件": "原生源码和旧部署选项测试已撤回；云端 Office 技能与 Linux 执行说明待接我方提供方并实测",
       "处置": "撤掉",
       "这一程的状态": "已撤",
       "changed": false
     },
     {
-      "路径": "packages/attachment/attachment-local/src/index.ts",
-      "类别": "登记",
-      "原因": "导出三个新错误类",
-      "撤销条件": "随 store.ts 处理",
+      "路径": "packages/skill/skill/src/index.ts",
+      "类别": "扩展点",
+      "原因": "加 inspect()（列出全部候选及胜出关系）、SkillPackage 和 candidate.package；skills/change 事件声明移到新文件 types.ts",
+      "撤销条件": "保留",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/skill/tool-skill/src/index.ts",
+      "类别": "通用修复",
+      "原因": "预设里可见的技能工具负责目录，被隐藏的上层注册不再覆盖它的决定",
+      "撤销条件": "提上游",
       "处置": "撤掉",
       "这一程的状态": "没动",
       "changed": true
     },
     {
-      "路径": "packages/api/workspace-files/src/index.ts",
-      "类别": "功能增强",
-      "原因": "保留用户已交目录partial列表和原流credit/close分页消费者；旧changes caller-FS转发已按三问撤回",
-      "撤销条件": "原生提供等价有界列表与分页消费接口后撤回；不恢复已撤caller-FS修复",
-      "处置": "必须携带",
-      "这一程的状态": "已按新原生重加",
+      "路径": "packages/skill/tool-workspace-dependencies/src/index.ts",
+      "类别": "扩展点",
+      "原因": "可选配置 executionManifest：从执行环境镜像带出的 runtime.json 读路径，不在宿主安装；目前只有 apps/cli 的云端示例配置使用",
+      "撤销条件": "可改为云端包自带一个同名工具插件",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/subagent/subagent/src/index.ts",
+      "类别": "扩展点",
+      "原因": "加 registerAdmission：子 Agent 启动和冷恢复前的准入检查；没有登记时原提供方查找不变",
+      "撤销条件": "保留",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/subagent/subagent/src/manager.ts",
+      "类别": "扩展点",
+      "原因": "把准入检查穿进创建和恢复子 Agent 的各检查点",
+      "撤销条件": "保留",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/subagent/subagent/src/types.ts",
+      "类别": "扩展点",
+      "原因": "准入检查的类型 SubagentAdmission、SubagentAdmissionRequest",
+      "撤销条件": "保留",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "packages/subprocess/subprocess/src/types.ts",
+      "类别": "扩展点",
+      "原因": "spawn 规格可选 sandboxPolicy；句柄可选 releaseCollected",
+      "撤销条件": "保留",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
       "changed": true
     },
     {
@@ -11139,56 +11276,56 @@
       "changed": true
     },
     {
-      "路径": "packages/api/remotes/src/client/index.ts",
-      "类别": "登记",
-      "原因": "附加skills/change转发及客户端选择声明移Cloud；既有account first-screen event source已按原能力复查发送，Native文件恢复固定目标",
-      "撤销条件": "已撤回Native通用事件政策；Cloud继续由原账号事件所有者发送",
-      "处置": "搬进插件",
-      "这一程的状态": "已搬",
-      "changed": false
-    },
-    {
-      "路径": "scripts/product-package-policy.ts",
-      "类别": "纯登记",
-      "原因": "`:19-26` 把 8 个包登记为 `category: 'optional'`；产品包分类检查要求每个包有分类",
-      "撤销条件": "上游支持不需本地改脚本的自有包分类登记入口，8包分类仍完整受正式检查且原脚本可无差异恢复；须相关正式检查通过且该脚本相对上游无差异。",
+      "路径": "packages/test-support/client-runtime/src/assembly/bundle-roster.ts",
+      "类别": "通用修复",
+      "原因": "链接安装的 bundle 自引用解析；上游最新版已用另一种写法修了",
+      "撤销条件": "合并时取上游版本，丢弃我方改动",
       "处置": "撤掉",
       "这一程的状态": "已撤",
       "changed": false
     },
     {
-      "路径": "scripts/package-dependency-policy.ts",
-      "类别": "纯登记",
-      "原因": "`:25` 起 `CONFIGURATION_ONLY_DEV_DEPENDENCIES['@deepseek-ai/dsh-pe-cloud-client']`；允许 `apps/web` 把它作为仅配置用途的开发依赖",
-      "撤销条件": "仅配置依赖登记由上游标准扩展或正式自有检查等价承担，apps/web原依赖约束不减且脚本无本地差异；须相关正式检查通过且该脚本相对上游无差异。",
+      "路径": "packages/typert/generator/src/analyzer.ts",
+      "类别": "通用修复",
+      "原因": "撤回仅缩窄诊断计算范围的性能补丁；目标原生已在最终输出筛选本包文件",
+      "撤销条件": "无具体跨账号、丢数据或密钥泄露场景，按开发手册撤回",
       "处置": "撤掉",
+      "这一程的状态": "已撤",
+      "changed": false
+    },
+    {
+      "路径": "packages/typert/generator/src/cordis-catalog.ts",
+      "类别": "扩展点",
+      "原因": "文档目录生成器支持 ctx.<服务>:<类型> 限定名，避免不同服务的同名类型互相顶替",
+      "撤销条件": "目前只有一个云端条目用到；改掉云端那个类型名即可回退",
+      "处置": "留作口子",
       "这一程的状态": "没动",
       "changed": true
     },
     {
-      "路径": "scripts/gen-doc-graphs.ts",
-      "类别": "纯登记",
-      "原因": "`SERVICE_ROLES` 加 15 条云端服务（`:110-186`）；能力图生成器要求每个服务有角色说明",
-      "撤销条件": "15云端服务角色可经上游标准扩展或自有生成段完整进入最终能力图，原脚本不再需本地条目；须相关正式检查通过且该脚本相对上游无差异。",
-      "处置": "撤掉",
+      "路径": "packages/workspace/workspace/src/entity.ts",
+      "类别": "扩展点",
+      "原因": "工作区实体改用注入的目录元数据访问；默认提供方下行为不变",
+      "撤销条件": "保留",
+      "处置": "留作口子",
       "这一程的状态": "没动",
       "changed": true
     },
     {
-      "路径": "scripts/gen-tool-catalog.ts",
-      "类别": "纯登记",
-      "原因": "加 3 个 import，`TOOL_PACKAGES` 加 remote-server 条目（`:196`）；工具目录要列出 `remote_exec`、`remote_server_info`",
-      "撤销条件": "remote_exec/remote_server_info由标准扩展或自有目录合成完整列出且原脚本无需本地imports/登记；须相关正式检查通过且该脚本相对上游无差异。",
-      "处置": "撤掉",
+      "路径": "packages/workspace/workspace/src/index.ts",
+      "类别": "扩展点",
+      "原因": "加受保护方法 createDirectoryMetadata，可注入目录元数据提供方；默认仍用 Node 文件系统",
+      "撤销条件": "保留；实现在我方新增的 metadata.ts",
+      "处置": "留作口子",
       "这一程的状态": "没动",
       "changed": true
     },
     {
-      "路径": "scripts/gen-cordis-catalog.ts",
-      "类别": "登记，但数量大；一部分是原生包新增类型的映射，不是云端包的",
-      "原因": "`SERVICE_PAGE` 加 15 个云端服务键指向 `cloud.md`（`:53-67`）；`SERVICE_WALK_EXEMPTIONS` 保留 13 条（原预设适配服务撤回后删除陈旧 agentPresetIntegration 登记）；`EVENT_WALK_EXEMPTIONS` 加 1 条；`LINK_MAP` 加大量类型到页面的映射（含 `:338-340`）；目录生成器要求每个服务和类型有归属页",
-      "撤销条件": "原生新增类型映射被上游吸纳、云端服务/类型/事件登记经标准扩展或正式自有生成保持全量归属，整个原脚本无需本地映射/豁免；须相关正式检查通过且该脚本相对上游无差异。",
-      "处置": "撤掉",
+      "路径": "packages/workspace/workspace/src/types.ts",
+      "类别": "扩展点",
+      "原因": "类型 WorkspaceDirectoryMetadata",
+      "撤销条件": "保留",
+      "处置": "留作口子",
       "这一程的状态": "没动",
       "changed": true
     },
@@ -11200,51 +11337,6 @@
       "处置": "撤掉",
       "这一程的状态": "没动",
       "changed": true
-    },
-    {
-      "路径": "scripts/translation-pairing.ts",
-      "类别": "登记（1 行）",
-      "原因": "`:166` 把 `integrations/epri-research/CLOUD.*` 纳入配对范围；让科研包的云端说明也受中英文配对约束",
-      "撤销条件": "科研CLOUD中英配对由正式自有检查/上游标准范围等价覆盖，原脚本无登记差异；须相关正式检查通过且该脚本相对上游无差异。",
-      "处置": "撤掉",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "scripts/verify-translation-pairing.ts",
-      "类别": "登记式钩子",
-      "原因": "`:16`、`:97-101` 调用 `isUnchangedImportedResearchContent`；豁免未改动的导入文件",
-      "撤销条件": "相关第三方导入内容已移出本仓或被上游标准导入机制正确处理、不再需本地未改动豁免，配对覆盖不减；须相关正式检查通过且该脚本相对上游无差异。",
-      "处置": "撤掉",
-      "这一程的状态": "没动",
-      "changed": true
-    },
-    {
-      "路径": "scripts/verify-concrete-terms.ts",
-      "类别": "豁免登记加通用修复",
-      "原因": "`originalReportHashes`（`:14-21`）、导入科研内容豁免（`:52`）、改用 `trackedRepositoryFiles`；导入文件里含禁用词；文件数太多撑爆缓冲区",
-      "撤销条件": "第三方/报告技能豁免已不需要且文件列表缓冲通用修复已被上游等价吸纳，完整扫描无截断/漏检，整个脚本可还原；须相关正式检查通过且该脚本相对上游无差异。",
-      "处置": "撤掉",
-      "这一程的状态": "已撤",
-      "changed": false
-    },
-    {
-      "路径": "scripts/verify-repository-references.ts",
-      "类别": "豁免登记",
-      "原因": "`officeSourcePin`（`:43-60`）、`researchSourcePins`、`uv.lock` 的 size 豁免；来源记录文件里必须写提交哈希",
-      "撤销条件": "来源固定记录/科研记录/uv.lock可由上游标准规则正确校验或已迁出本仓，不再需本地哈希/大小豁免，完整引用检查通过；须相关正式检查通过且该脚本相对上游无差异。",
-      "处置": "撤掉",
-      "这一程的状态": "已撤",
-      "changed": false
-    },
-    {
-      "路径": "scripts/verify-public-repository-links.ts",
-      "类别": "通用修复",
-      "原因": "改用 `trackedRepositoryFiles`；缓冲区修复",
-      "撤销条件": "上游等价解决当前文件规模的列举缓冲溢出/截断，完整公开链接检查覆盖不减，脚本无本地差异；须相关正式检查通过且该脚本相对上游无差异。",
-      "处置": "撤掉",
-      "这一程的状态": "已撤",
-      "changed": false
     },
     {
       "路径": "scripts/compile-referenced-projects.ts",
@@ -11274,6 +11366,96 @@
       "changed": true
     },
     {
+      "路径": "scripts/gen-cordis-catalog.ts",
+      "类别": "登记，但数量大；一部分是原生包新增类型的映射，不是云端包的",
+      "原因": "`SERVICE_PAGE` 加 15 个云端服务键指向 `cloud.md`（`:53-67`）；`SERVICE_WALK_EXEMPTIONS` 保留 13 条（原预设适配服务撤回后删除陈旧 agentPresetIntegration 登记）；`EVENT_WALK_EXEMPTIONS` 加 1 条；`LINK_MAP` 加大量类型到页面的映射（含 `:338-340`）；目录生成器要求每个服务和类型有归属页",
+      "撤销条件": "原生新增类型映射被上游吸纳、云端服务/类型/事件登记经标准扩展或正式自有生成保持全量归属，整个原脚本无需本地映射/豁免；须相关正式检查通过且该脚本相对上游无差异。",
+      "处置": "撤掉",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "scripts/gen-doc-graphs.ts",
+      "类别": "纯登记",
+      "原因": "`SERVICE_ROLES` 加 15 条云端服务（`:110-186`）；能力图生成器要求每个服务有角色说明",
+      "撤销条件": "15云端服务角色可经上游标准扩展或自有生成段完整进入最终能力图，原脚本不再需本地条目；须相关正式检查通过且该脚本相对上游无差异。",
+      "处置": "撤掉",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "scripts/gen-tool-catalog.ts",
+      "类别": "纯登记",
+      "原因": "加 3 个 import，`TOOL_PACKAGES` 加 remote-server 条目（`:196`）；工具目录要列出 `remote_exec`、`remote_server_info`",
+      "撤销条件": "remote_exec/remote_server_info由标准扩展或自有目录合成完整列出且原脚本无需本地imports/登记；须相关正式检查通过且该脚本相对上游无差异。",
+      "处置": "撤掉",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "scripts/package-dependency-policy.ts",
+      "类别": "纯登记",
+      "原因": "`:25` 起 `CONFIGURATION_ONLY_DEV_DEPENDENCIES['@deepseek-ai/dsh-pe-cloud-client']`；允许 `apps/web` 把它作为仅配置用途的开发依赖",
+      "撤销条件": "仅配置依赖登记由上游标准扩展或正式自有检查等价承担，apps/web原依赖约束不减且脚本无本地差异；须相关正式检查通过且该脚本相对上游无差异。",
+      "处置": "撤掉",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "scripts/product-package-policy.ts",
+      "类别": "纯登记",
+      "原因": "`:19-26` 把 8 个包登记为 `category: 'optional'`；产品包分类检查要求每个包有分类",
+      "撤销条件": "上游支持不需本地改脚本的自有包分类登记入口，8包分类仍完整受正式检查且原脚本可无差异恢复；须相关正式检查通过且该脚本相对上游无差异。",
+      "处置": "撤掉",
+      "这一程的状态": "已撤",
+      "changed": false
+    },
+    {
+      "路径": "scripts/translation-pairing.ts",
+      "类别": "登记（1 行）",
+      "原因": "`:166` 把 `integrations/epri-research/CLOUD.*` 纳入配对范围；让科研包的云端说明也受中英文配对约束",
+      "撤销条件": "科研CLOUD中英配对由正式自有检查/上游标准范围等价覆盖，原脚本无登记差异；须相关正式检查通过且该脚本相对上游无差异。",
+      "处置": "撤掉",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
+      "路径": "scripts/verify-concrete-terms.ts",
+      "类别": "豁免登记加通用修复",
+      "原因": "`originalReportHashes`（`:14-21`）、导入科研内容豁免（`:52`）、改用 `trackedRepositoryFiles`；导入文件里含禁用词；文件数太多撑爆缓冲区",
+      "撤销条件": "第三方/报告技能豁免已不需要且文件列表缓冲通用修复已被上游等价吸纳，完整扫描无截断/漏检，整个脚本可还原；须相关正式检查通过且该脚本相对上游无差异。",
+      "处置": "撤掉",
+      "这一程的状态": "已撤",
+      "changed": false
+    },
+    {
+      "路径": "scripts/verify-public-repository-links.ts",
+      "类别": "通用修复",
+      "原因": "改用 `trackedRepositoryFiles`；缓冲区修复",
+      "撤销条件": "上游等价解决当前文件规模的列举缓冲溢出/截断，完整公开链接检查覆盖不减，脚本无本地差异；须相关正式检查通过且该脚本相对上游无差异。",
+      "处置": "撤掉",
+      "这一程的状态": "已撤",
+      "changed": false
+    },
+    {
+      "路径": "scripts/verify-repository-references.ts",
+      "类别": "豁免登记",
+      "原因": "`officeSourcePin`（`:43-60`）、`researchSourcePins`、`uv.lock` 的 size 豁免；来源记录文件里必须写提交哈希",
+      "撤销条件": "来源固定记录/科研记录/uv.lock可由上游标准规则正确校验或已迁出本仓，不再需本地哈希/大小豁免，完整引用检查通过；须相关正式检查通过且该脚本相对上游无差异。",
+      "处置": "撤掉",
+      "这一程的状态": "已撤",
+      "changed": false
+    },
+    {
+      "路径": "scripts/verify-translation-pairing.ts",
+      "类别": "登记式钩子",
+      "原因": "`:16`、`:97-101` 调用 `isUnchangedImportedResearchContent`；豁免未改动的导入文件",
+      "撤销条件": "相关第三方导入内容已移出本仓或被上游标准导入机制正确处理、不再需本地未改动豁免，配对覆盖不减；须相关正式检查通过且该脚本相对上游无差异。",
+      "处置": "撤掉",
+      "这一程的状态": "没动",
+      "changed": true
+    },
+    {
       "路径": "scripts/web-product-bundle-isolation.ts",
       "类别": "否，可提交给上游",
       "原因": "打包器兼容；通用修复",
@@ -11283,93 +11465,39 @@
       "changed": true
     },
     {
-      "路径": "packages/core/tools/src/index.ts",
-      "类别": "扩展点",
-      "原因": "工具快照前可选的 tools/prepare waterfall，供账号 MCP 恢复；无监听者保持原生选择行为",
-      "撤销条件": "原生提供等价的工具快照前准备入口后撤回",
-      "处置": "留作口子",
-      "这一程的状态": "已验证",
-      "changed": true
-    },
-    {
-      "路径": "packages/client/file-upload/src/client/contract.ts",
-      "类别": "扩展点",
-      "原因": "可选 supportsImageUploads 仅描述页面图片草稿能力，省略保留原生图片行为",
-      "撤销条件": "原生提供等价页面能力声明后撤回",
-      "处置": "留作口子",
-      "这一程的状态": "已按新原生重加",
-      "changed": true
-    },
-    {
-      "路径": "packages/client/file-upload/src/types.ts",
-      "类别": "扩展点",
-      "原因": "可选 promptImageUploads 由云端将图片 MIME 留在普通文件路径，省略保留原生上传行为",
-      "撤销条件": "原生提供等价上传策略口子后撤回",
-      "处置": "留作口子",
-      "这一程的状态": "已按新原生重加",
-      "changed": true
-    },
-    {
-      "路径": "packages/client/ui-workspace/src/client/contract/slots.ts",
-      "类别": "扩展点",
-      "原因": "工作区菜单手势携带可选删除限制原因；值与策略由自有页面提供",
-      "撤销条件": "原生插槽提供等价禁用原因后撤回",
-      "处置": "留作口子",
-      "这一程的状态": "已按新原生重加",
-      "changed": true
-    },
-    {
-      "路径": "packages/client/ui-workspace/src/client/rows/WorkspaceDialogs.tsx",
-      "类别": "扩展点",
-      "原因": "仅透传可选部署限制和文本回调，原菜单/确认框与删除回调保留；无提供方时维持Native默认",
-      "撤销条件": "原生已有相同默认不变删除限制显示口时改用其入口",
-      "处置": "留作口子",
-      "这一程的状态": "已按新原生重加",
-      "changed": true
-    },
-    {
-      "路径": "packages/experimental/deepseek-chat-import/src/client/mount.ts",
+      "路径": "vendor/cordis/src/fiber.ts",
       "类别": "通用修复",
-      "原因": "只有 EOF 空行差异；直接还原原生会触发正常 whitespace 门禁，当前仍保持单换行",
-      "撤销条件": "不改产品行为；待格式门禁与原生末尾空行规则一致后撤",
+      "原因": "状态通知循环跳过已被前一个通知撤掉的服务记录（否则访问 undefined）；另含扩展点 configMutationRevision 和 resolveConfig 参数类型放宽",
+      "撤销条件": "修复提上游（上游最新版仍无此判断）；计数器保留",
       "处置": "撤掉",
       "这一程的状态": "没动",
       "changed": true
     },
     {
-      "路径": "packages/fs/tool-fs/src/read-image.ts",
+      "路径": "vendor/loader/src/config/diff.ts",
       "类别": "扩展点",
-      "原因": "处理账号配额提供方的 ATTACHMENT_STORAGE_CAPACITY 结果，省略账号配额时无新行为",
-      "撤销条件": "原生提供通用附件容量失败后撤回此分支",
+      "原因": "两个只读辅助函数：判定 schema 是否属于“无回调的确定子集”、给 schema 元数据拍快照",
+      "撤销条件": "只被 entry.ts 的计划逻辑用；若计划计算外移可一并搬走",
+      "处置": "撤掉",
+      "这一程的状态": "已撤",
+      "changed": false
+    },
+    {
+      "路径": "vendor/loader/src/config/entry.ts",
+      "类别": "扩展点",
+      "原因": "给条目加“配置更新计划”接口和守护入口；没有守护时原更新路径只多一个版本计数",
+      "撤销条件": "要读 Entry 私有状态，只能留在本文件；可把计划计算外移，只留守护入口、版本计数和少量访问器",
       "处置": "留作口子",
-      "这一程的状态": "已按新原生重加",
+      "这一程的状态": "没动",
       "changed": true
     },
     {
-      "路径": "packages/host/frontend-static/src/index.ts",
+      "路径": "vendor/loader/src/config/group.ts",
       "类别": "扩展点",
-      "原因": "将原静态资源函数提到同包 resource 出口供 Access 复用；原生 MIME、ETag、遍历和 HEAD 行为不改",
-      "撤销条件": "原生公开等价静态资源函数后撤回提取",
+      "原因": "三处守护入口（create/remove/update）和 awaitUpdate（等子项更新结算，app-boot 重载用它修一个竞态）",
+      "撤销条件": "保留；awaitUpdate 可单独提上游",
       "处置": "留作口子",
-      "这一程的状态": "已按新原生重加",
-      "changed": true
-    },
-    {
-      "路径": "packages/mcp/mcp-client/src/generation.ts",
-      "类别": "扩展点",
-      "原因": "显式字节预算才包装原 SDK HTTP fetch 并持有读者关闭；省略保持原生传输",
-      "撤销条件": "原生提供等价 fetch 和关闭注入口后把预算实现搬自有插件",
-      "处置": "必须携带",
-      "这一程的状态": "已验证",
-      "changed": true
-    },
-    {
-      "路径": "packages/schedule/schedule/src/types.ts",
-      "类别": "扩展点",
-      "原因": "可选 targetSessionId 在计数和分页前限定既有 Session 目标；省略保留原生全目标列表",
-      "撤销条件": "原生提供等价 Session 过滤后撤回",
-      "处置": "留作口子",
-      "这一程的状态": "已按新原生重加",
+      "这一程的状态": "没动",
       "changed": true
     },
     {
@@ -11382,84 +11510,12 @@
       "changed": true
     },
     {
-      "路径": "packages/api/workspace-files/src/types.ts",
+      "路径": "vendor/loader/src/index.ts",
       "类别": "扩展点",
-      "原因": "原生目录分页Remote DTO和流；只有所选提供方及账号清单开放时使用",
-      "撤销条件": "原生提供同等公开接口后改用原生",
+      "原因": "加 LoaderUpdateGuard、LoaderUpdateScope、withUpdateGuard，以及“受守护的销毁不自动写 disabled”一处判断",
+      "撤销条件": "保留；这是守护机制的唯一入口",
       "处置": "留作口子",
-      "这一程的状态": "已按新原生重加",
-      "changed": true
-    },
-    {
-      "路径": "packages/client/ui-sidebar-files/src/client/FileNavigator.tsx",
-      "类别": "扩展点",
-      "原因": "接目录分页到新版Native面板共享导航器；只有提供方声明分页能力时显示/调用，普通提供方行为保持；完整files页复用既有tree accessory并调用可选行操作Factory，缺定义为空",
-      "撤销条件": "原生提供同等公开接口后改用原生",
-      "处置": "留作口子",
-      "这一程的状态": "已按新原生重加",
-      "changed": true
-    },
-    {
-      "路径": "packages/client/ui-sidebar-files/src/client/FileTree.tsx",
-      "类别": "扩展点",
-      "原因": "接目录分页到新版Native面板共享导航器；只有提供方声明分页能力时显示/调用，普通提供方行为保持",
-      "撤销条件": "原生提供同等公开接口后改用原生",
-      "处置": "留作口子",
-      "这一程的状态": "已按新原生重加",
-      "changed": true
-    },
-    {
-      "路径": "packages/client/ui-sidebar-files/src/client/directory-node.ts",
-      "类别": "扩展点",
-      "原因": "接目录分页到新版Native面板共享导航器；只有提供方声明分页能力时显示/调用，普通提供方行为保持",
-      "撤销条件": "原生提供同等公开接口后改用原生",
-      "处置": "留作口子",
-      "这一程的状态": "已按新原生重加",
-      "changed": true
-    },
-    {
-      "路径": "packages/client/ui-sidebar-files/src/client/store.ts",
-      "类别": "扩展点",
-      "原因": "接目录分页到新版Native面板共享导航器；只有提供方声明分页能力时显示/调用，普通提供方行为保持",
-      "撤销条件": "原生提供同等公开接口后改用原生",
-      "处置": "留作口子",
-      "这一程的状态": "已按新原生重加",
-      "changed": true
-    },
-    {
-      "路径": "packages/client/ui-sidebar-files/src/client/workspace-tree.ts",
-      "类别": "扩展点",
-      "原因": "接目录分页到新版Native面板共享导航器；只有提供方声明分页能力时显示/调用，普通提供方行为保持",
-      "撤销条件": "原生提供同等公开接口后改用原生",
-      "处置": "留作口子",
-      "这一程的状态": "已按新原生重加",
-      "changed": true
-    },
-    {
-      "路径": "packages/fs/fs/src/types.ts",
-      "类别": "扩展点",
-      "原因": "目录分页的提供方接口及有界结果；默认提供方不声明分页，原listDir保留",
-      "撤销条件": "原生提供同等公开接口后改用原生",
-      "处置": "留作口子",
-      "这一程的状态": "已按新原生重加",
-      "changed": true
-    },
-    {
-      "路径": "packages/experimental/liveshare/src/endpoint-classification.ts",
-      "类别": "登记",
-      "原因": "新增目录分页Remote与原目录列举一致仅所有者可用，不向共享读者开放",
-      "撤销条件": "原生包含同等分页接口权限登记时撤回",
-      "处置": "必须携带",
-      "这一程的状态": "已按新原生重加",
-      "changed": true
-    },
-    {
-      "路径": "packages/client/ui-chat/src/client/chat/ChatFlow.tsx",
-      "类别": "扩展点",
-      "原因": "仅把原framework chain座传给RunningStatus，不改行、时钟及状态数据",
-      "撤销条件": "原生有默认不变的同等运行装饰位置时改用其入口",
-      "处置": "留作口子",
-      "这一程的状态": "已按新原生重加",
+      "这一程的状态": "没动",
       "changed": true
     }
   ],
