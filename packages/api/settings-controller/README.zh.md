@@ -39,7 +39,7 @@ kind: "package-reference"
 | 字段 | 默认值 | 含义 |
 |---|---|---|
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-api-settings-controller)是所有受支持字段及其 JSDoc 的完整来源。
+生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-api-settings-controller)是所有受支持字段及其 JSDoc 的完整来源。 Host 嵌入方可通过 `SettingsControllerInternals.withWrite` 持有原写入及其脱敏的 `SettingsNamespaceView` 结果；省略时保留不附加准入策略的原生写入。
 
 -----
 

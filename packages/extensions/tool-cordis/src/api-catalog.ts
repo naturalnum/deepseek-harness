@@ -11702,7 +11702,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SettingsControllerInternals',
-    declaration: 'export interface SettingsControllerInternals {\n    readonly openTextFile?: (path: string, signal: AbortSignal) => Promise<void>;\n    readonly withWrite?: <T>(request: SettingsWriteRequest, apply: (control?: import(\'@deepseek-ai/dsh-settings\').SettingsWriteControl) => Promise<T>) => Promise<T>;\n}',
+    declaration: 'export interface SettingsControllerInternals {\n    readonly openTextFile?: (path: string, signal: AbortSignal) => Promise<void>;\n    readonly withWrite?: (request: SettingsWriteRequest, apply: (control?: import(\'@deepseek-ai/dsh-settings\').SettingsWriteControl) => Promise<SettingsNamespaceView>) => Promise<SettingsNamespaceView>;\n}',
   },
   {
     name: 'SettingsDescribeOptions',

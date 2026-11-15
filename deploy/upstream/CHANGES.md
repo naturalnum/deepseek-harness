@@ -16,4 +16,6 @@ The source ledger is [ledger.tsv](ledger.tsv); the generated interface inventory
 
 Project catalog, graph, package and translation registrations live in [registrations.ts](registrations.ts); the Native scripts consume these entries through their existing checks.
 
+The config-catalog generator and its original tests use Native source without the generic-scope patch. The existing optional settings-write callback declares the redacted namespace result already returned by every caller; write execution, admission and settlement are unchanged.
+
 等您回来看的事：目前技能名额只做了过渡：每个账号只有两个工作区能挂技能，第三个工作区可以执行命令但不能用技能；释放闲置工作区占用名额的真正回收还没做。

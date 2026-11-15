@@ -282,7 +282,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-api-settings-controller`
 
-- `refs`: [`JsonValue`](../packages/util/values/src/index.ts) · [`SettingsPathOpView`](subsystems/settings.zh.md)
+- `refs`: [`JsonValue`](../packages/util/values/src/index.ts) · [`SettingsNamespaceView`](subsystems/settings.zh.md) · [`SettingsPathOpView`](subsystems/settings.zh.md)
 - `source`: [`packages/api/settings-controller/src/index.ts:49`](../packages/api/settings-controller/src/index.ts)
 
 ```ts config-catalog
@@ -292,8 +292,8 @@ export interface SettingsControllerInternals {
   readonly openTextFile?: (path: string, signal: AbortSignal) => Promise<void>
   /** Retain original request admission through native persistence and the redacted result.
    * Omission preserves native writes without an additional policy. */
-  readonly withWrite?: <T>(request: SettingsWriteRequest,
-    apply: (control?: import('@deepseek-ai/dsh-settings').SettingsWriteControl) => Promise<T>) => Promise<T>
+  readonly withWrite?: (request: SettingsWriteRequest,
+    apply: (control?: import('@deepseek-ai/dsh-settings').SettingsWriteControl) => Promise<SettingsNamespaceView>) => Promise<SettingsNamespaceView>
 }
 
 /** Native write facts supplied to an optional Host admission owner. */

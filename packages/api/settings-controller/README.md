@@ -39,7 +39,7 @@ Mount this package as a Loader entry in a profile that serves browser configurat
 | Field | Default | Meaning |
 |---|---|---|
 
-The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-api-settings-controller) is the exhaustive source for accepted fields and their JSDoc.
+The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-api-settings-controller) is the exhaustive source for accepted fields and their JSDoc. Host embeddings can supply `SettingsControllerInternals.withWrite` around the original write and its redacted `SettingsNamespaceView` result; omission preserves Native writes without an additional admission policy.
 
 -----
 

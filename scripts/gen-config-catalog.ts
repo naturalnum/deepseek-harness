@@ -186,22 +186,19 @@ function resolveTypeName(
   return { ref: { alias: name, imported: imp.imported, specifier: imp.specifier } }
 }
 
-/** Collect free type names while keeping generic parameters in their declaring scope. */
+/** Collect every type NAME referenced in type positions under a node. */
 function collectTypeNames(node: ts.Node, out: Set<string>): void {
-  const visit = (n: ts.Node, bound: ReadonlySet<string>): void => {
-    const parameters = ts.isInterfaceDeclaration(n) || ts.isTypeAliasDeclaration(n) || ts.isFunctionLike(n)
-      ? n.typeParameters : undefined
-    const scope = parameters?.length ? new Set([...bound, ...parameters.map(parameter => parameter.name.text)]) : bound
+  const visit = (n: ts.Node): void => {
     if (ts.isTypeReferenceNode(n)) {
       let head: ts.EntityName = n.typeName
       while (ts.isQualifiedName(head)) head = head.left
-      if (!scope.has(head.text)) out.add(head.text)
+      out.add(head.text)
     } else if (ts.isExpressionWithTypeArguments(n) && ts.isIdentifier(n.expression)) {
-      if (!scope.has(n.expression.text)) out.add(n.expression.text) // heritage clause: `extends X`
+      out.add(n.expression.text) // heritage clause: `extends X`
     }
-    ts.forEachChild(n, (child) => { visit(child, scope) })
+    ts.forEachChild(n, visit)
   }
-  visit(node, new Set())
+  visit(node)
 }
 
 /** The verbatim paste text of a declaration: leading JSDoc through the end. */

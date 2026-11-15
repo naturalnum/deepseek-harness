@@ -1,7 +1,7 @@
 {
   "counts": {
-    "native_source_files": 189,
-    "non_seam_files": 42,
+    "native_source_files": 188,
+    "non_seam_files": 41,
     "uncentralized_internal_lines": 0
   },
   "added_native_sources": [
@@ -11743,12 +11743,12 @@
     },
     {
       "路径": "scripts/gen-config-catalog.ts",
-      "类别": "否，可提交给上游",
-      "原因": "`collectTypeNames` 的泛型参数作用域修复；通用缺陷修复",
-      "撤销条件": "可以向上游提交，提交后就不再是我们的差异。",
+      "类别": "通用修复",
+      "原因": "泛型自由变量作用域补丁及14项专用增强目的撤回，生成器和原spec逐字恢复固定Native；现有设置写入回调按原唯一调用返回值显式声明SettingsNamespaceView，不再用无其他消费者的泛型",
+      "撤销条件": "原生支持合法内联泛型配置时复查；当前账号写入/脱敏/未知守卫不变",
       "处置": "撤掉",
-      "这一程的状态": "没动",
-      "changed": true,
+      "这一程的状态": "已撤",
+      "changed": false,
       "added": false
     },
     {
