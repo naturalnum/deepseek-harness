@@ -1333,6 +1333,22 @@ test('directory profile rejects ambiguous providers decoded duplicate keys and w
   assert.throws(() => profileModule.directoryCandidate(text, directorySpec(), resolve, 64), e => e.code === 'NATIVE_PROFILE_UNCONFIRMED')
 })
 
+test('directory complete wire frames fit the existing 128 KiB deployment cap without increasing limits', () => {
+  const config = { ...directoryConfig(), maxPathBytes: 4096,
+    content: { ...directoryConfig().content, maxReplyBytes: 131072 } }
+  const capacity = profileModule.directoryCapacity(config, directoryBudgets, 2000)
+  const name = '\u0001'.repeat(config.content.maxNameBytes)
+  for (const size of [Number.MAX_SAFE_INTEGER, Number.MAX_VALUE, -Number.MAX_VALUE, -1.0000000000000002e-6]) {
+    const entry = { name, type: 'directory', size }
+    const frame = { kind: 'page', path: '\u0001'.repeat(config.maxPathBytes), version: '1'.repeat(255),
+      entries: Array.from({ length: 64 }, () => entry), nextCursor: '00000000-0000-4000-8000-000000000001', closed: false }
+    assert.ok(Buffer.byteLength(JSON.stringify(frame)) <= capacity.completeFrameBytesUpper)
+  }
+  assert.ok(capacity.completeFrameBytesUpper <= config.content.maxReplyBytes)
+  assert.equal(config.content.maxReplyBytes, 131072)
+  assert.equal(config.content.maxEntries, 64)
+})
+
 test('directory budgets reject absent real reader facts unsafe products incomplete frames and unavailable resident capacity', () => {
   const config = directoryConfig(), capacity = profileModule.directoryCapacity(config, directoryBudgets, 64)
   assert.ok(capacity.reservationBytesUpper <= capacity.laneAvailableBytes)
@@ -1739,7 +1755,7 @@ try {
   const spec={target,maxProfileBytes:1048576,original:{source,sha256:sha(bytes),identity:{device:'1',inode:'2',uid:0,gid:0,mode:0o444,nlink:1}},
    originalHelperPath:'/opt/dsh-feature-assets/fd-abi8.node',nextHelperPath:'/opt/dsh-feature-assets/fd-skill-store-v1-'+'a'.repeat(64)+'.node',
    nativeProtocol:api.DIRECTORY_PROTOCOL,directoryPaging:{idleTimeoutMs:1000,totalTimeoutMs:30000,maxPages:8},protectedInputs:inputs};
-  return {spec,io,unchanged:[...files.values()].map(file=>sha(file.bytes)),files,fds};
+  return {spec,io,unchanged:[...files.values()].map(file=>sha(file.bytes)),files,fds,put};
  }
  globalThis.__literalExpressionRan=false;
  const cases=[];
@@ -1773,6 +1789,29 @@ try {
  assert.equal(facts.capacity.readerMaxEntries,2000);assert.equal(factoryCalls,1);assert.equal(facts.capacity.pageEntriesUpper,64);
  assert.equal(literal.fds.size,0);assert.equal(writes,0);assert.equal(globalThis.__literalExpressionRan,false);
  assert.deepEqual([...literal.files.values()].map(file=>sha(file.bytes)),literal.unchanged);
+ const deployed=fixture(patch(),JSON.stringify([{name:'unrelated-account'}]));
+ const roots=['/srv/accounts/one','/srv/accounts/two'];
+ deployed.put('/run/dsh-feature-root/storage-plan.json',JSON.stringify({slots:roots.map(accountRoot=>({accountRoot}))}),3);
+ const accountPatch=config=>JSON.stringify([{insert:[{id:'reader',name:'cordis:pe-cloud-workspace-files',...config===undefined?{}:{config}}]}]);
+ roots.forEach((root,index)=>deployed.put(root+'/private/profile/cordis.patch.yml',accountPatch(),90+index,true));
+ deployed.spec.protectedInputs=api.readProtectedInputs(1048576,deployed.io);
+ factoryCalls=0;
+ const deployedFacts=api.readDirectoryFacts(deployed.spec,deployed.io);
+ assert.equal(deployedFacts.capacity.readerMaxEntries,resolveConfig(WorkspaceFiles,{}).maxEntries);
+ assert.equal(deployedFacts.capacity.pageEntriesUpper,64);assert.equal(factoryCalls,2);
+ assert.match(deployedFacts.readerProfilesSha256,/^[a-f0-9]{64}$/);
+ const selectedPath=roots[0]+'/private/profile/cordis.patch.yml';
+ deployed.put(selectedPath,accountPatch({__jsExpr:expression}),90,true);factoryCalls=0;
+ assert.throws(()=>api.readDirectoryFacts(deployed.spec,deployed.io),error=>error.phase==='profile-directory-config-expression');
+ assert.equal(factoryCalls,0);assert.equal(globalThis.__literalExpressionRan,false);
+ deployed.put(selectedPath,accountPatch({maxEntries:1}),90,true);
+ assert.throws(()=>api.readDirectoryFacts(deployed.spec,deployed.io),error=>error.phase==='profile-directory-reader-config');
+ deployed.put(selectedPath,JSON.stringify([{insert:[{id:'reader',name:'cordis:pe-cloud-workspace-files'}]},
+  {id:'reader',config:{maxEntries:1}}]),90,true);
+ assert.throws(()=>api.readDirectoryFacts(deployed.spec,deployed.io),error=>error.phase==='profile-directory-account-reader-override');
+ deployed.put(selectedPath,accountPatch(),90,true);deployed.files.get(selectedPath).stat.mode=0o644;
+ assert.throws(()=>api.readDirectoryFacts(deployed.spec,deployed.io),error=>error.phase==='profile-directory-account-file');
+ assert.equal(deployed.fds.size,0);assert.equal(writes,0);
  console.log(JSON.stringify({refused:results,literalDefaultFromOriginalConfig:facts.capacity.readerMaxEntries,noExpressionExecuted:true,noWrites:true}));
 }finally{fs.rmSync(directory,{recursive:true,force:true})}
 `

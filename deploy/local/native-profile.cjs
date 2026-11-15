@@ -39,8 +39,19 @@ function protect(name, directory = false, io = fs) {
   }
 }
 
-function read(name, maximum, io) {
-  if (name === ROOT + '/credentials.json') {
+function read(name, maximum, io, accountRoot) {
+  if (accountRoot !== undefined) {
+    need(name === accountRoot + '/private/profile/cordis.patch.yml', 'profile-directory-account-path')
+    protect(path.posix.dirname(accountRoot), true, io)
+    for (let item = path.posix.dirname(name); item.startsWith(accountRoot); item = path.posix.dirname(item)) {
+      const stat = io.lstatSync(item)
+      need(!stat.isSymbolicLink() && stat.isDirectory() && [0, 2000].includes(stat.uid)
+        && (stat.mode & 0o022) === 0, 'profile-directory-account-parent')
+    }
+    const stat = io.lstatSync(name)
+    need(stat.isFile() && !stat.isSymbolicLink() && stat.nlink === 1 && stat.uid === 2000 && stat.gid === 2000
+      && (stat.mode & 0o7777) === 0o600, 'profile-directory-account-file')
+  } else if (name === ROOT + '/credentials.json') {
     protect(path.posix.dirname(name), true, io)
     const stat = io.lstatSync(name)
     need(stat.isFile() && !stat.isSymbolicLink() && stat.nlink === 1 && stat.uid === 2000 && stat.gid === 2000
@@ -248,7 +259,10 @@ function directoryCapacity(config, paging, readerMaxEntries) {
     + (pageEntries + 1) * (2048 + 8 * (2 * x + 128)) + 4 * config.replyOverheadBytes
     + 8 * (256 + 128 + c.maxNameBytes)
   // Covers original C charge, JSON escaping, opaque version/cursor, and all complete control/page envelopes.
-  const frame = 4096 + 6 * x + pageEntries * (512 + 6 * c.maxNameBytes)
+  // The actual wire projection contains only name, type and numeric size. Its
+  // fixed JSON is at most 63 bytes (including a 25-character Number), plus one
+  // entry separator; child targets and file versions never enter this frame.
+  const frame = 4096 + 6 * x + pageEntries * (64 + 6 * c.maxNameBytes)
   const requiredPages = Math.ceil(129 / pageEntries) + 1
   need([metadata, rootReserved, rootAvailable, laneAvailable, reservation, frame].every(Number.isSafeInteger)
     && rootAvailable > 0 && laneAvailable > 0 && reservation <= rootAvailable && reservation <= laneAvailable
@@ -350,17 +364,54 @@ function directoryPreview(spec, io = fs) {
   const yaml = includeRequire('js-yaml'), include = includeRequire('./lib/index.js')
   const rows = yaml.load(base, { schema: include.entryListSchema })
   need(Array.isArray(rows), 'profile-directory-account-base-array')
-  // This is the original account-native provider name, not a caller-controlled entry id or alias.
-  const readers = literalEntries(rows).filter(entry => entry.row.name === 'pe-cloud-workspace-files')
-  need(readers.length === 1 && readers[0].ancestors.every(entryEnabled), 'profile-directory-account-reader')
-  requireDirectoryLiteral(readers[0].row.config)
+  const selectedReader = entry => ['pe-cloud-workspace-files', 'cordis:pe-cloud-workspace-files'].includes(entry.row.name)
+  let readers = literalEntries(rows).filter(selectedReader)
+  const readerProfiles = []
+  // The current deployment installs native builtins in each account's original patch,
+  // while account-base contains shared additions. Follow only the protected storage plan.
+  if (readers.length === 0) {
+    const storage = JSON.parse(read(ROOT + '/storage-plan.json', spec.maxProfileBytes, io))
+    need(Array.isArray(storage.slots) && storage.slots.length > 0 && storage.slots.length <= 65536,
+      'profile-directory-account-slots')
+    const roots = new Set()
+    let used = 0
+    for (const slot of storage.slots) {
+      const root = slot.accountRoot
+      need(typeof root === 'string' && root.startsWith('/srv/') && path.posix.normalize(root) === root
+        && !/[\\\0]/.test(root) && !roots.has(root), 'profile-directory-account-slot')
+      roots.add(root)
+      const filename = root + '/private/profile/cordis.patch.yml'
+      const raw = read(filename, spec.maxProfileBytes - used, io, root)
+      used += raw.length
+      const patch = yaml.load(raw.toString('utf8'), { schema: include.entryListSchema })
+      need(Array.isArray(patch), 'profile-directory-account-patch')
+      const selected = []
+      for (const operation of patch) {
+        need(operation && typeof operation === 'object' && !Array.isArray(operation), 'profile-directory-account-operation')
+        for (const entry of literalEntries(operation.insert ?? [])) if (selectedReader(entry)) {
+          need(operation.id === undefined, 'profile-directory-account-reader-override')
+          selected.push(entry)
+        }
+      }
+      need(selected.length === 1 && selected[0].ancestors.every(entryEnabled), 'profile-directory-account-reader')
+      const ids = new Set(selected[0].ancestors.map(row => row.id).filter(id => id !== undefined))
+      need(!patch.some(operation => operation.id !== undefined && ids.has(operation.id)),
+        'profile-directory-account-reader-override')
+      readers.push(selected[0])
+      readerProfiles.push([filename, hash(raw)])
+    }
+  } else need(readers.length === 1 && readers[0].ancestors.every(entryEnabled), 'profile-directory-account-reader')
+  for (const entry of readers) requireDirectoryLiteral(entry.row.config)
   const nativeRequire = require('node:module').createRequire('/opt/dsh-installed-products/packages/cloud/pe-cloud-runtime/package.json')
   const WorkspaceFiles = nativeRequire('@deepseek-ai/dsh-api-workspace-files').default
-  const readerConfig = nativeRequire('@deepseek-ai/cordis').resolveConfig(WorkspaceFiles, readers[0].row.config)
-  need(positive(readerConfig.maxEntries), 'profile-directory-reader-config')
+  const configs = readers.map(entry => nativeRequire('@deepseek-ai/cordis').resolveConfig(WorkspaceFiles, entry.row.config))
+  const readerConfig = configs[0]
+  need(configs.every(config => positive(config.maxEntries) && config.maxEntries === readerConfig.maxEntries),
+    'profile-directory-reader-config')
   const resolveModule = name => resolver.resolve(name.startsWith('file:') ? require('node:url').fileURLToPath(name) : name)
   const result = directoryCandidate(text, spec, resolveModule, readerConfig.maxEntries)
   result.facts.readerConfigSha256 = hash(Buffer.from(JSON.stringify(readerConfig)))
+  if (readerProfiles.length) result.facts.readerProfilesSha256 = hash(Buffer.from(JSON.stringify(readerProfiles)))
   need(result.bytes.length <= spec.maxProfileBytes, 'profile-directory-output-size')
   return result
 }
