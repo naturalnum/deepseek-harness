@@ -57,7 +57,7 @@ export async function apply(owner: Context): Promise<void> {
     assertMountCurrent: current, assertBusinessCurrent: current,
     withPeerUse(actual, consume) {
       assert.equal(actual, peer); current()
-      return consume({ binding, context: ctx, assertCurrent: current, release() {} }, current)
+      return consume({ binding, context: ctx, assertCurrent: current, release() {} }, current, async () => { current() })
     },
   })
   // This scenario supplies only account-private MCP storage, never project or execution readiness.

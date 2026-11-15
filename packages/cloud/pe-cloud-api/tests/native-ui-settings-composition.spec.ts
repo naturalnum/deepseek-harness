@@ -112,7 +112,7 @@ async function fixture(name: string) {
         withModelKeyPeerUse(actual, consume) {
           if (actual !== peer) throw new CloudApiError('cloud/forbidden', 'Wrong original login Peer.')
           const use: AccountUse = { binding, context: scope, assertCurrent: () => { current(binding) }, release() {} }
-          return consume(use, () => { current(binding) })
+          return consume(use, () => { current(binding) }, async () => { current(binding) })
         },
       },
     })

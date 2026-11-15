@@ -16,10 +16,11 @@ import type { SettingsPathOpView } from '@deepseek-ai/dsh-settings/types'
 export interface ModelKeyPeerConsumer {
   /**
    * @param peer Exact original Gateway invocation Peer.
-   * @param consume Actual native operation, awaited by the original carrier/task owner.
+   * @param consume Actual native work with the original borrow/check and captured-Cookie recheck, retained by its carrier.
    * @returns Actual operation settlement; current checks keep the same original login and generation.
    */
-  withModelKeyPeerUse<T>(peer: PeerScope, consume: (use: AccountUse, assertCurrent: () => void) => Promise<T>): Promise<T>
+  withModelKeyPeerUse<T>(peer: PeerScope,
+    consume: (use: AccountUse, assertCurrent: () => void, recheckLogin: () => Promise<void>) => Promise<T>): Promise<T>
 }
 
 /** Trusted native preparation; no account identity, reference or callback comes from request JSON. */
@@ -77,7 +78,9 @@ export class CloudModelKeyService extends TypertRemoteService {
     const invocation = this.ctx.invocation
     if (invocation?.service !== 'cloudModelKey' || invocation.request.namespace !== 'cloudModelKey'
       || invocation.request.method !== 'metadata') unavailable()
-    return this.input.withModelKeyPeerUse(invocation.peer, (use, current) => new Promise<ModelKeyMetadata>((resolve) => {
+    return this.input.withModelKeyPeerUse(invocation.peer, async (use, current, recheckLogin) => {
+      signal.throwIfAborted()
+      await recheckLogin()
       const check = (): void => {
         current(); signal.throwIfAborted(); use.assertCurrent()
         if (use.binding !== this.api.binding || use.context.root !== this.owner.root) unavailable()
@@ -100,8 +103,8 @@ export class CloudModelKeyService extends TypertRemoteService {
         const form = new z(schema)
         return form.type === 'object' && form.dict !== undefined && Object.hasOwn(form.dict, 'models')
       })) metadata.settings.writable = true
-      check(); resolve(metadata)
-    }))
+      check(); return metadata
+    })
   }
   /**
    * Audit before bootstrap policy checks.
@@ -201,7 +204,9 @@ export class CloudModelKeyService extends TypertRemoteService {
     // The native generated codec may strip extra object keys. Check the original carrier value before any save turn.
     const raw = invocation.request.args.request
     this.codecs[method].create().parse(raw)
-    return this.input.withModelKeyPeerUse(invocation.peer, async (use, current) => {
+    return this.input.withModelKeyPeerUse(invocation.peer, async (use, current, recheckLogin) => {
+      signal.throwIfAborted()
+      await recheckLogin()
       const check = (): void => {
         signal.throwIfAborted(); current(); use.assertCurrent()
         if (use.binding !== this.api.binding || use.context.root !== this.owner.root) unavailable()

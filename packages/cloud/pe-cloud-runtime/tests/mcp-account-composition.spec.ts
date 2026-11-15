@@ -29,7 +29,7 @@ async function account(name: string, selectedPolicy: ApprovedMcpConnections = po
       withPeerUse(peer, consume) {
         const use = uses.get(peer)
         if (use === undefined) throw new Error('Foreign test authentication Peer')
-        return consume(use, () => { use.assertCurrent() })
+        return consume(use, () => { use.assertCurrent() }, async () => { use.assertCurrent() })
       },
       defaultId: 'cloud-chat', declarations: [{ entryId: 'cloud-preset', selectable: true, config: { id: 'cloud-chat', plugins: [
         { id: 'persona', name: 'cordis:m8z-persona', config: { prefix: 'Reply briefly.', complete: true, includeRuntimeContext: false } },
@@ -464,7 +464,6 @@ it('rechecks the original login inside the actual native credential mutation and
   const external = await startHttpMcpFixture()
   try {
     const a = await account('mcp-credential-revoke'), initial = await a.invokeMcp({ action: 'list' })
-    // oxlint-disable-next-line typescript/unbound-method -- Invoked below with the original provider as explicit receiver.
     const modify = Credentials.prototype.modifyRecord
     const gate = vi.spyOn(Credentials.prototype, 'modifyRecord').mockImplementation(function (this: Credentials, key, mutate) {
       a.revokeLogin()

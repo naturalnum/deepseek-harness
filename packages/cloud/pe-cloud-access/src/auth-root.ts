@@ -141,7 +141,8 @@ export class PeAuthService extends Service {
    * @param consume Actual native work using the original retained Use and current checks.
    * @returns Actual operation settlement; this service issues no additional borrow.
    */
-  withModelKeyPeerUse<T>(peer: PeerScope, consume: (use: AccountUse, assertCurrent: () => void) => Promise<T>): Promise<T> {
+  withModelKeyPeerUse<T>(peer: PeerScope,
+    consume: (use: AccountUse, assertCurrent: () => void, recheckLogin: () => Promise<void>) => Promise<T>): Promise<T> {
     if (this.phase !== 'initialized' || this.ingress === undefined) throw new AuthAccessError('cloud/account-unavailable', this.requestId)
     return this.ingress.withModelKeyPeerUse(peer, consume)
   }

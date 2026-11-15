@@ -162,6 +162,31 @@ it('uses actual Peer identity, strict Remote input and serial versions across tw
     await expect(call(a,pa.peer,'describe',{ ref:REF })).rejects.toBeDefined()
   }finally{provider.options.config=before}
   expect(a.barrier.snapshot().pending).toEqual([]);expect(a.barrier.snapshot().failures).toEqual([])
+  const clock = vi.spyOn(performance, 'now')
+  let observedAt = performance.now()
+  clock.mockImplementation(() => observedAt)
+  const originalDescribe = a.ctx.credentials.describe.bind(a.ctx.credentials)
+  const describe = vi.spyOn(a.ctx.credentials, 'describe').mockImplementationOnce(async (ref) => {
+    observedAt += 2
+    return originalDescribe(ref)
+  })
+  try {
+    await auth.recheckLogin(pa.principal, id)
+    observedAt += accessConfig.sessionRecheckMs - 1
+    const readsBefore = getSession.mock.calls.length
+    const prepared = await call<ModelKeyState>(a, pa.peer, 'describe', { ref: REF })
+    expect(describe).toHaveBeenCalledOnce()
+    expect(prepared).toMatchObject({ configured: false, writable: true })
+    expect(getSession.mock.calls.slice(readsBefore)).toHaveLength(1)
+    expect(new Headers(getSession.mock.calls.at(-1)?.[0]?.headers).get('cookie')).toBe('component=a')
+    expect(borrows.get('a')).toBe(1)
+    expect(releases.get('a') ?? 0).toBe(0)
+  } finally {
+    describe.mockRestore()
+    clock.mockRestore()
+    await vi.waitFor(() => { expect(auth.pendingOperations).toBe(0) })
+    await auth.recheckLogin(pa.principal, id)
+  }
   const av=await call<ModelKeyState>(a,pa.peer,'describe',{ ref:REF }),bv=await call<ModelKeyState>(b,pb.peer,'describe',{ ref:REF })
   await expect(call(a,pa.peer,'set',{ ref:REF,value:KEYS.aBefore,version:{ ...av.version,extra:true } })).rejects.toBeDefined()
   expect(a.barrier.snapshot().pending.length).toBe(0)

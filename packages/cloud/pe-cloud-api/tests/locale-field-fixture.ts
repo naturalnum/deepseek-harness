@@ -197,7 +197,7 @@ export async function localeFixture(name = 'a', enabled = true, fields: readonly
         const check = (): void => { if (!current) throw new CloudApiError('cloud/stale-generation', 'Original fixture Peer ended.'); assert(binding) }
         check()
         const selected = wrongUse ? { ...use, binding: { ...binding, epoch: brandString<AccountBinding['epoch']>('other') } } : use
-        const operation = consume(selected, check)
+        const operation = consume(selected, check, async () => { check() })
         accepted.resolve(undefined)
         return operation
       } }

@@ -294,11 +294,11 @@ export class LoginPeerRegistry {
    * Join trusted native work to the exact existing Peer entry without another borrow or release owner.
    * @param peer Original Gateway invocation Peer; ids and copied objects cannot select an entry.
    * @param current Original ingress/generation check, repeated during this same borrowed operation.
-   * @param consume Actual native work, retained in this Entry's existing tasks until settlement.
+   * @param consume Actual native work with the original borrow/check and same-login recheck; retained until settlement.
    * @returns The actual result; observer loss cannot release the original Use early.
    */
   withOriginalUse<T>(peer: PeerScope, current: (handle: LoginPeer) => void,
-    consume: (use: AccountUse, assertCurrent: () => void) => Promise<T>): Promise<T> {
+    consume: (use: AccountUse, assertCurrent: () => void, recheckLogin: () => Promise<void>) => Promise<T>): Promise<T> {
     const id = this.requestId(), entry = [...this.entries.values()].find(value => value.handle?.peer === peer)
     const handle = entry?.handle, use = entry?.use
     if (entry === undefined || handle === undefined || use === undefined) throw new AuthAccessError('cloud/account-unavailable', id)
@@ -310,8 +310,16 @@ export class LoginPeerRegistry {
     check()
     const deferred = Promise.withResolvers<T>()
     const actual = this.trackCarrier(entry, deferred.promise, () => {})
+    const recheckLogin = async (): Promise<void> => {
+      if (this.currentEntry(handle, id) !== entry || entry.use !== use || handle.peer !== peer) {
+        throw new AuthAccessError('cloud/account-unavailable', id)
+      }
+      await this.beginRecheck(entry)
+      check()
+    }
     // Existing Entry task ownership precedes the first possibly reentrant native callback.
-    void (async () => { check(); const value = await consume(use, check); check(); return value })().then(deferred.resolve, deferred.reject)
+    void (async () => { check(); const value = await consume(use, check, recheckLogin); check(); return value })()
+      .then(deferred.resolve, deferred.reject)
     return actual
   }
 

@@ -247,7 +247,8 @@ export class CloudIngress {
    * @param consume Actual account operation; the existing Peer task set retains its settlement.
    * @returns Actual native settlement, with no additional AccountUse or release callback.
    */
-  withModelKeyPeerUse<T>(peer: PeerScope, consume: (use: AccountUse, assertCurrent: () => void) => Promise<T>): Promise<T> {
+  withModelKeyPeerUse<T>(peer: PeerScope,
+    consume: (use: AccountUse, assertCurrent: () => void, recheckLogin: () => Promise<void>) => Promise<T>): Promise<T> {
     const id = this.requestId()
     this.assertCurrent(id)
     return this.peers.withOriginalUse(peer, (handle) => { this.assertPeer(handle, id) }, consume)

@@ -2194,7 +2194,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'Actual current registrations; this creates neither a route nor business admission.',
       },
       {
-        signature: 'withModelKeyPeerUse<T>(peer: PeerScope, consume: (use: AccountUse, assertCurrent: () => void) => Promise<T>): Promise<T>',
+        signature: 'withModelKeyPeerUse<T>(peer: PeerScope, consume: (use: AccountUse, assertCurrent: () => void, recheckLogin: () => Promise<void>) => Promise<T>): Promise<T>',
         description: 'Delegate one native model-key invocation through the original login registry.',
         parameters: [{ name: 'peer', description: 'Exact Gateway invocation Peer, never a client identity.' }, { name: 'consume', description: 'Actual native work using the original retained Use and current checks.' }],
         returns: 'Actual operation settlement; this service issues no additional borrow.',
@@ -8103,7 +8103,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ModelKeyPeerConsumer',
-    declaration: 'export interface ModelKeyPeerConsumer {\n    withModelKeyPeerUse<T>(peer: PeerScope, consume: (use: AccountUse, assertCurrent: () => void) => Promise<T>): Promise<T>;\n}',
+    declaration: 'export interface ModelKeyPeerConsumer {\n    withModelKeyPeerUse<T>(peer: PeerScope, consume: (use: AccountUse, assertCurrent: () => void, recheckLogin: () => Promise<void>) => Promise<T>): Promise<T>;\n}',
   },
   {
     name: 'ModelKeyProvider',

@@ -329,7 +329,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
           withPeerUse: (actual, consume) => {
             if (actual !== localePeer) throw new Error('Foreign fixture plugin Peer')
             const check = (): void => { businessGraph(binding); peerLifetime.signal.throwIfAborted() }
-            return consume({ binding, context: owner, assertCurrent: check, release() {} }, check)
+            return consume({ binding, context: owner, assertCurrent: check, release() {} }, check, async () => { check() })
           },
           ...bootstrapPolicy ? { assertBootstrapCurrent: (signal: AbortSignal) => requireGuards().assertBootstrapCurrent(signal) } : {},
           ...bootstrapInventory,
@@ -379,7 +379,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
               if (actual !== localePeer) throw new Error('Foreign fixture locale Peer')
               const check = (): void => { actualGraph(binding); peerLifetime.signal.throwIfAborted() }
               const use: AccountUse = { binding, context: owner, assertCurrent: check, release() {} }
-              check(); return consume(use, check)
+              check(); return consume(use, check, async () => { check() })
             },
           } : undefined
           nativeFirstScreen = api.prepareFirstScreen(owner, { ...firstScreen, maxInventoryEntries: maxEntries,

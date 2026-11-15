@@ -32,7 +32,7 @@ it('reads credentials written by the original management action through the nati
         current()
         if (actual !== selected.peer || selected.account === undefined) throw new Error('Foreign fixture Peer')
         const use: AccountUse = { binding, context: selected.account.ctx, assertCurrent: current, release() {} }
-        return consume(use, current)
+        return consume(use, current, async () => { current() })
       },
     })
     selected.account = account; accounts.push(account)
