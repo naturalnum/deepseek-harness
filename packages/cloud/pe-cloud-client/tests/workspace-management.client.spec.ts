@@ -1,3 +1,4 @@
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar-files/src/client/management.ts'
 // @vitest-environment jsdom
 /** The prepared account callback uses original File HTTP bodies and retains directory paths. */
 import { Context } from '@deepseek-ai/cordis'

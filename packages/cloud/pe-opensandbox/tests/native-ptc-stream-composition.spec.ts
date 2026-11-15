@@ -8,7 +8,9 @@ import { ManagedCommandOperation, type CommandChannel, type CommandSnapshot } fr
 import { makePrepared } from '@deepseek-ai/dsh-pe-opensandbox/src/agent-data/canonical.ts'
 import { createProgramIssuer } from '@deepseek-ai/dsh-pe-opensandbox/src/agent-data/root-role-issuer.ts'
 import { decodeStreamFrame, encodeStreamFrame, ExecutionStream } from '@deepseek-ai/dsh-pe-opensandbox/src/agent-data/stream.ts'
-import { JsonChannel } from '../../../ptc-runtime/ptc-runtime-node/src/channel.ts'
+import { encodePtcJsonWire } from '../../../ptc-runtime/ptc-runtime-node/src/json-wire.ts'
+import { createProcessRpc } from '../../../ptc-runtime/ptc-runtime-node/src/rpc.ts'
+import { PROGRAM_PROTOCOL_VERSION, type HostMethods, type ProgramMethods, type ProgramResult } from '../../../ptc-runtime/ptc-runtime-node/src/protocol.ts'
 import { fixture } from './native-sandbox-fixture.ts'
 
 async function consumers(completeProgram = true) {
@@ -31,15 +33,17 @@ async function consumers(completeProgram = true) {
       const send = (channel: 1 | 2 | 3 | 4, kind: 1 | 2 | 3, payload: Uint8Array): void => {
         get().events.data(encodeStreamFrame({ channel, kind, sequence: sequences[channel]++, payload }))
       }
-      const protocol = new JsonChannel(peer, 65536, (raw) => {
-        if (typeof raw !== 'object' || raw === null || !('type' in raw) || raw.type !== 'boot') return
-        facts.boot++; boot.resolve(undefined)
-        if (completeProgram) {
+      const completion = Promise.withResolvers<ProgramResult>()
+      const protocol = createProcessRpc<HostMethods, ProgramMethods>(peer, 65536, {
+        async run() {
+          facts.boot++; boot.resolve(undefined)
+          if (!completeProgram) return await completion.promise
           send(2, 1, Buffer.from('raw stdout 你好'))
           send(3, 1, Buffer.from('raw stderr 🙂'))
-          void protocol.send({ type: 'done', value: [42] }).catch(() => { facts.peerEnded++ })
-        }
-      }, () => { facts.peerEnded++ })
+          return { value: encodePtcJsonWire(42) }
+        },
+        revoke() {},
+      }, ['ready'], () => { facts.peerEnded++ })
       peerOutput.on('data', (chunk: Buffer) => {
         for (let offset = 0; offset < chunk.length; offset += 4096) send(4, 1, chunk.subarray(offset, offset + 4096))
       })
@@ -70,13 +74,13 @@ async function consumers(completeProgram = true) {
         whenLocallySettled() { return get().settled },
         async commit() {
           get().noteSubmitted(); snapshot = { ...snapshot, submitted: true }
-          void protocol.send({ type: 'ready' }).catch(() => { facts.peerEnded++ })
+          void protocol.ready(PROGRAM_PROTOCOL_VERSION).catch(() => { facts.peerEnded++ })
           return snapshot
         },
         async poll() { return snapshot },
         async stop() {
           if (!stopped) {
-            stopped = true; facts.stops++; protocol.close()
+            stopped = true; facts.stops++; protocol.$close(); completion.resolve({})
             for (const channel of [2, 3, 4] as const) send(channel, 2, Buffer.alloc(0))
             snapshot = { ...snapshot, rangeEmpty: true, ioClosed: true, direct: { exitCode: 0, signal: null },
               stdout: { ...snapshot.stdout, eof: true }, stderr: { ...snapshot.stderr, eof: true } }

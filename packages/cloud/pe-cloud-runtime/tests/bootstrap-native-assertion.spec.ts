@@ -118,7 +118,7 @@ it('rejects a foreign actual LlmRuntime set by its native provider owner and a f
   const graph = await policyFixture().start(), other = await policyFixture().start()
   const owner = [...graph.ctx.loader.entries()].find(row => row.options.id === 'llm')?.fiber?.ctx
   if (owner === undefined) throw new Error('Native LLM owner absent')
-  const original: unknown = owner.fiber.store?.llm?.value
+  const original: unknown = owner.get('llm')
   if (!(original instanceof LlmRuntime)) throw new Error('Original native LLM absent')
   try {
     owner.set('llm', other.ctx.llm)

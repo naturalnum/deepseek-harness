@@ -2,7 +2,7 @@
 /** Configuration stays inside the actual native detail slot and original edit owner. */
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
-import { allowAllAccess } from '@deepseek-ai/dsh-client-test-runtime'
+import { allowAllAccess, contextMenuHook } from '@deepseek-ai/dsh-client-test-runtime'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime/src/translate.ts'
 import { NativePluginConfigurationSection, type NativePluginConfigurationProps } from '../src/client/management/plugins/NativePluginConfigurationSection.tsx'
 import { pluginManagementDictionaries } from '../src/client/management/plugins/locales.ts'
@@ -16,6 +16,7 @@ it('opens the approved configuration only for the exact native detail subject', 
     toggle: 'available', configuration: 'available' }] }
   const props: NativePluginConfigurationProps = { ...allowAllAccess, useSessions: unavailable, useSessionStatus: unavailable,
     useSessionRetainInfo: unavailable, usePanelInfo: unavailable, useWorkspaces: unavailable, useResource: unavailable,
+    useContextMenu: contextMenuHook(),
     subject: { kind: 'item', id: 'test' }, t: makeTranslate(pluginManagementDictionaries.en),
     useAccountPluginCatalog: selector => selector(catalog), configurationId: () => id, openPluginConfiguration: open }
   render(<NativePluginConfigurationSection {...props}/>)

@@ -2,7 +2,7 @@
 /** The legacy editor retains its original source through a test renderer hook and scripted native edit callback. */
 import { afterEach, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { allowAllAccess, bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { allowAllAccess, bindSnapshotSelector, makeTranslate, contextMenuHook } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { SkillsPage, type SkillsPageProps } from '../src/client/management/skills/SkillsPage.tsx'
@@ -26,7 +26,7 @@ function fixture() {
     assertCurrent: () => {}, prepare, title: () => 'Actual sample' })
   const unused = (): never => { throw new Error('No session or service belongs in this sample editor') }
   const props: SkillsPageProps = { ...allowAllAccess, useSessions: unused, useSessionStatus: unused, useSessionRetainInfo: unused,
-    usePanelInfo: unused, useWorkspaces: unused, useResource: unused, scope: 'original-page', useSkillManagement: bindSnapshotSelector(source),
+    usePanelInfo: unused, useWorkspaces: unused, useResource: unused, useContextMenu: contextMenuHook(), scope: 'original-page', useSkillManagement: bindSnapshotSelector(source),
     t: makeTranslate(en), report: vi.fn() }
   return { source, props, publish, prepare, withdraw }
 }

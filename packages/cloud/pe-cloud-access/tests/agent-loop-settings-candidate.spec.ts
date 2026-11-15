@@ -51,7 +51,7 @@ it('writes the bounded actual native loop, preserves policy and Session, reopens
     const originalLoop: unknown = loopEntry.options.config, originalPreset: unknown = presetEntry.options.config
     const originalModule = loopEntry.moduleNamespace
     const runtime = loopEntry.fiber?.runtime, originalSchema: unknown = runtime?.Config
-    const provider = loopEntry.fiber?.store?.agentLoop, originalProvider: unknown = provider?.value
+    const provider = loopEntry.fiber?.ctx, originalProvider: unknown = provider?.get('agentLoop')
     try {
       loopEntry.options.config = { ...(originalLoop as object), maxParallelToolCalls: 9 }
       expect(() => first.guards.allowedModel('local-text', 'plain-text')).toThrow()
@@ -69,14 +69,14 @@ it('writes the bounded actual native loop, preserves policy and Session, reopens
       expect(() => first.guards.allowedModel('local-text', 'plain-text')).toThrow()
       Reflect.set(runtime, 'Config', originalSchema)
       if (provider === undefined) throw new Error('Original AgentLoop provider is absent')
-      Reflect.set(provider, 'value', {})
+      provider.set('agentLoop', {})
       expect(() => first.guards.allowedModel('local-text', 'plain-text')).toThrow()
     } finally {
       loopEntry.options.config = originalLoop
       presetEntry.options.config = originalPreset
       loopEntry.moduleNamespace = originalModule
       if (runtime !== undefined && runtime !== null) Reflect.set(runtime, 'Config', originalSchema)
-      if (provider !== undefined) Reflect.set(provider, 'value', originalProvider)
+      if (provider !== undefined) provider.set('agentLoop', originalProvider)
     }
   })
   await expect(first.invokeSettings('agent-loop', [{ op: 'set', path: ['maxParallelToolCalls'], value: 2 }], initial.revision))

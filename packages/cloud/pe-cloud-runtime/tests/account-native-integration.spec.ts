@@ -407,7 +407,7 @@ async function fixture(options: {
         })
       }
       if (options.controllerEntered !== undefined) {
-        const plugin: unknown = ctx.loader.builtins[names.controller]
+        const plugin: typeof NativeController = ctx.loader.builtins[names.controller]
         if (typeof plugin !== 'function') throw new Error('Actual Controller constructor is absent')
         ctx.loader.builtins[names.controller] = class {
           static inject = [...NativeController.inject, 'peCloudApi']
@@ -510,7 +510,7 @@ it('mounts Native preset settings and read-only Cordis providers in the actual a
   const ctx = outcome.context
   expect(ctx.cordisInspect).toBeInstanceOf(CordisInspectRegistryService)
   expect(ctx.cordisInspect.list().map(row => row.id)).toEqual(['Service', 'Event', 'Config', 'Tool'])
-  expect(ctx.subagentModelSelection.current()).toEqual({ enabled: false, allowedModels: [] })
+  expect(ctx.settingsController.describe().namespaces.find(row => row.ns === 'subagent-model-selection-settings')?.value).toEqual({ enabled: false, allowedModels: [] })
   expect(ctx.get('dynamicCordisRunner')).toBeUndefined()
   expect([...ctx.loader.entries()].every(row => row.fiber?.state === FiberState.ACTIVE)).toBe(true)
 })
@@ -2066,7 +2066,7 @@ it.each(['readBytes', 'list'])('traces real Access HTTP %s through the native Ga
   cleanups.push(async () => { await ingress.closeActual(); await auth.close(); await pool.end(); await connection.dispose() })
   await ingress.install()
   const route = register.mock.calls.map(([row]) => row).find(row => row.path === '/api')
-  if (route === undefined) throw new Error('Original Access API route missing')
+  if (route === undefined || !('handler' in route)) throw new Error('Original Access API route missing')
   const generations = Reflect.get(ingress, 'generations') as { current(value: AccountBinding, id: Branded<'pe-request-id'>): string }
   const generation = generations.current(binding, brandString<Branded<'pe-request-id'>>('fixture-generation'))
   const originalLogin = auth.assertLoginCurrent.bind(auth)

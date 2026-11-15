@@ -105,7 +105,7 @@ export async function managementAccount(home: string, binding: AccountBinding,
       artifacts: TypertLoader, json: Json, domains: Domains, credentials: actual.providers.credentials,
       connection: Connection, 'remote-access': RemoteAccess, gateway: Gateway,
       dependencies: { apply(scope: Context) {
-        new Storage(scope); new SystemPrompt(scope, SystemPrompt.Config({})); new Tools(scope, { mode: 'native' })
+        new Storage(scope); new SystemPrompt(scope, SystemPrompt.Config({})); new Tools(scope)
       } },
       execution: { inject: ['tools'], apply(scope: Context) {
         managed.installProviders(scope, execution)

@@ -1,4 +1,3 @@
-import { loadRecentTimeZones, rememberTimeZone } from '../src/client/recent-time-zones.ts'
 // @vitest-environment jsdom
 import { contextMenuHook } from '@deepseek-ai/dsh-client-test-runtime'
 import { readFileSync } from 'node:fs'
@@ -176,7 +175,6 @@ function mount(
     onClearEnded: vi.fn(async () => {}),
     onCreateTask: vi.fn<TaskManagerPageProps['onCreateTask']>(async () => ({ created: at })),
     onOpenSession: vi.fn(),
-    loadRecentTimeZones, rememberTimeZone,
     loadHistory: vi.fn<TaskManagerPageProps['loadHistory']>(async ({ id }) => {
       const receipt = snapshot.records.find(record => record.id === id)?.lastDelivery
       return { ok: true, value: {

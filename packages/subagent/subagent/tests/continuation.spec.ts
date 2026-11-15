@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { liveConfig } from '../../../settings/settings/tests/live-config.ts'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Agent, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
 import { agentEvents } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
@@ -379,7 +379,7 @@ describe('continuable activation capacity', () => {
   it('reserves the last slot before asynchronous creation and returns it after failure', async () => {
     const { ctx, parent } = await setupWith(new MockAdapter([textResponse('replacement')]), { maxActiveSubagents: 1 })
     parkParent(ctx, parent)
-    const agents = managerState(ctx).ownerCtx.agents
+    const agents: Context['agents'] = managerState(ctx).ownerCtx.agents
     const entered = Promise.withResolvers<undefined>()
     const release = Promise.withResolvers<undefined>()
     const createSpy = vi.spyOn(agents, 'create').mockImplementationOnce(async () => {
@@ -1867,7 +1867,7 @@ describe('continuable durability and teardown', () => {
 
   it('awaits and rolls back an admitted materialization below a scoped root', async () => {
     const { ctx, parent } = await setup([])
-    const agents = managerState(ctx).ownerCtx.agents
+    const agents: Context['agents'] = managerState(ctx).ownerCtx.agents
     const create = agents.create.bind(agents)
     const published = Promise.withResolvers<SessionId>()
     const releaseMaterialization = Promise.withResolvers<undefined>()
@@ -4209,7 +4209,7 @@ describe('native activation admission', () => {
     cleanups.unshift(() => ctx.fiber.dispose())
     const invoked = vi.fn(async () => { throw new Error('denied provider must not start') })
     const provider: SubagentProvider = {
-      name: 'admitted-provider', capabilities: {}, inheritsParentContext: false,
+      name: 'admitted-provider', capabilities: { agentOptions: false, agentPreset: false, outputSchema: false, depthLimit: false }, inheritsParentContext: false,
       ...kind === 'local' ? { prepareContinuable: invoked } : { start: invoked },
     }
     ctx.subagents.registerProvider(provider)
@@ -4236,7 +4236,7 @@ describe('native activation admission', () => {
     const entered: PromiseWithResolvers<void> = Promise.withResolvers(), release: PromiseWithResolvers<void> = Promise.withResolvers()
     cleanups.unshift(async () => { release.resolve(); await ctx.fiber.dispose() })
     const provider: SubagentProvider = {
-      name: 'awaited-admission', capabilities: {}, inheritsParentContext: false,
+      name: 'awaited-admission', capabilities: { agentOptions: false, agentPreset: false, outputSchema: false, depthLimit: false }, inheritsParentContext: false,
       async prepareContinuable() { entered.resolve(); await release.promise; return {} },
     }
     const retireProvider = ctx.subagents.registerProvider(provider)
@@ -4286,10 +4286,10 @@ describe('native activation admission', () => {
   it('rechecks the retained contribution at the original factory publication commit', async () => {
     const { ctx, parent } = await setup([])
     const entered: PromiseWithResolvers<void> = Promise.withResolvers(), release: PromiseWithResolvers<void> = Promise.withResolvers()
-    const agents = managerState(ctx).ownerCtx.agents
+    const agents: Context['agents'] = managerState(ctx).ownerCtx.agents
     const originalCreate = agents.create.bind(agents)
     // Hold after the real manager composition but before the factory consumes its commit.
-    const create = vi.spyOn(agents, 'create').mockImplementation(options => originalCreate({
+    const create = vi.spyOn(agents, 'create').mockImplementation((options: CreateAgentOptions) => originalCreate({
       ...options,
       async setup(scope, agent) {
         const commit = await options.setup?.(scope, agent)

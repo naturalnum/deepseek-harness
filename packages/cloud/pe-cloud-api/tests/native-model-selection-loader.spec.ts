@@ -159,7 +159,7 @@ async function fixture(account = 'a', selected = true) {
         llm.registerAdapter(['approved', 'foreign'], adapter)
       } },
       'models-controller': class {
-        static inject = [...SessionController.inject, 'peAccount']
+        static inject: string[] = [...SessionController.inject, 'peAccount']
         static Config = SessionController.Config
         constructor(scope: Context, config: ConstructorParameters<typeof SessionController>[1]) {
           return createNativeController(scope, binding, assertCurrent, policy, guards, config)
@@ -210,7 +210,7 @@ it('commits native Session selection and drains its original background default 
   expect(await f.select({ sessionId: agent.id, provider: 'approved', model: 'flash', reasoningEffort: 'off' }))
     .toEqual({ selected: { provider: 'approved', model: 'flash', reasoningEffort: 'off' } })
   expect(f.events(agent)).toHaveLength(1)
-  expect(f.ctx.sessionProjections.stateOf(agent.session, 'modelSelection')?.pending)
+  expect(f.ctx.sessionProjections.snapshot(agent.session, ['modelSelection']).values.modelSelection?.next)
     .toEqual({ provider: 'approved', model: 'flash', reasoningEffort: 'off' })
   const receipt = await f.barrier.pauseAccountChanges(Date.now() + 10000)
   expect(receipt.status).toBe('confirmed')

@@ -61,7 +61,7 @@ async function appendEntry(ctx: Context, entry: EntryOptions): Promise<void> {
 
 function rows(ctx: Context): IndexInjection[] {
   const table: IndexInjection[] = []
-  ctx.emit('webserver/index-inject', table)
+  ctx.emit('webserver/public-index-inject', table)
   return table.filter(row => row.kind === 'global' && row.name === '__DSH_CLOUD_WEB__')
 }
 
@@ -80,7 +80,7 @@ describe('existing Cloud declaration public Web injection', () => {
   it('keeps ordinary declarations empty and provides no native service', async () => {
     const ctx = new Context(), rows: IndexInjection[] = []
     await apply(ctx, Config({}))
-    ctx.emit('webserver/index-inject', rows)
+    ctx.emit('webserver/public-index-inject', rows)
     expect(rows).toEqual([])
     expect(ctx.get('connection')).toBeUndefined()
     await ctx.fiber.dispose()
@@ -107,7 +107,7 @@ describe('existing Cloud declaration public Web injection', () => {
   it('rejects missing budgets before contributing any row', async () => {
     const ctx = new Context(), rows: IndexInjection[] = []
     expect(() => z.resolve({ web: { ...manifest(), auth: {} } }, Config, {})).toThrow()
-    ctx.emit('webserver/index-inject', rows)
+    ctx.emit('webserver/public-index-inject', rows)
     expect(rows).toEqual([])
     await ctx.fiber.dispose()
   })
@@ -116,7 +116,7 @@ describe('existing Cloud declaration public Web injection', () => {
     const ctx = new Context(), rows: IndexInjection[] = []
     const input = { web: { ...manifest(), token: 'unsupported' } }
     await expect(apply(ctx, Config(input))).rejects.toThrow()
-    ctx.emit('webserver/index-inject', rows)
+    ctx.emit('webserver/public-index-inject', rows)
     expect(rows).toEqual([])
     await ctx.fiber.dispose()
   })

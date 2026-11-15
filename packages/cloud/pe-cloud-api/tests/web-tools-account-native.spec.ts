@@ -1,3 +1,4 @@
+import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 /** Actual C06 AccountCredentials and native web tool/provider calls; only provider HTTP is stubbed. */
 import { afterEach, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -35,7 +36,7 @@ function transport() {
   return seen
 }
 async function execute(ctx: Context, name: string, args: unknown) {
-  return ctx.tools.execute({ name, arguments: args, callId: ToolCallId('fixture'), signal: new AbortController().signal })
+  return executeToolFixture(ctx, { name, arguments: args, callId: ToolCallId('fixture'), signal: new AbortController().signal })
 }
 it('uses each actual C06 account key for native Messages and Search/Fetch tools; unset cannot fall back to Root', async () => {
   const seen = transport()
@@ -114,14 +115,14 @@ it('mounts the native tools in a real Agent preset, scoped to that Agent', async
   const names = f.ctx.tools.schemas(handle.agent).map(row => row.name)
   expect(names).toContain('web_search'); expect(names).toContain('web_fetch')
   expect(f.ctx.tools.schemas().map(row => row.name)).not.toContain('web_search')
-  const result = await f.ctx.tools.execute({ name: 'web_search', arguments: { queries: ['test'] },
+  const result = await executeToolFixture(f.ctx, { name: 'web_search', arguments: { queries: ['test'] },
     agent: handle.agent, callId: ToolCallId('preset-call'), signal: new AbortController().signal })
   expect(result.isError).toBe(false)
   expect(JSON.stringify(result.content)).toContain('Example')
   expect(seen).toHaveLength(1)
   f.ctx.on('tools/pre-execute', (exec, next) => exec.name === 'web_search'
     ? Promise.resolve({ kind: 'deny', reason: 'fixture policy' }) : next())
-  const denied = await f.ctx.tools.execute({ name: 'web_search', arguments: { queries: ['test'] },
+  const denied = await executeToolFixture(f.ctx, { name: 'web_search', arguments: { queries: ['test'] },
     agent: handle.agent, callId: ToolCallId('denied-call'), signal: new AbortController().signal })
   expect(denied.isError).toBe(true)
   expect(seen).toHaveLength(1)

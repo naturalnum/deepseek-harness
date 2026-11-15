@@ -1,3 +1,4 @@
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar-files/src/client/management.ts'
 /** Original management callbacks with native absolute tree paths, bounded Files and the explicit server-selected upload metadata. */
 import { Context } from '@deepseek-ai/cordis'
 import { SessionId } from '@deepseek-ai/dsh-session/types'

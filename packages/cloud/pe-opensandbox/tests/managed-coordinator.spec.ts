@@ -1,3 +1,5 @@
+import * as PtcToolExecutor from '@deepseek-ai/dsh-tool-executor-ptc'
+import { executeModelToolFixture, executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 /** Actual Cordis/binding composition with scripted Root SQL and SDK transport; no Agent, network or sandbox is created. */
 import { Context } from '@deepseek-ai/cordis'
 import { copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
@@ -643,7 +645,7 @@ async function applicationFixture(options: {
     const start = async (index = 0): Promise<OriginalDevServiceWork<Workspace>> => {
       const agent = agents[index]
       if (agent === undefined) throw new Error('No original fixture Agent')
-      const result = await a.ctx.tools.execute({ callId: ToolCallId(`service-${++serial}`), name: 'dev_service', agent,
+      const result = await executeToolFixture(a.ctx, { callId: ToolCallId(`service-${++serial}`), name: 'dev_service', agent,
         signal: new AbortController().signal, arguments: { action: 'start', script: 'server.py' } })
       if (result.isError) throw new Error(result.error.message)
       const original = attach.mock.results.at(-1)
@@ -693,9 +695,9 @@ it.each(['foreground', 'background', 'cancel'] as const)('joins a real Native PT
   await a.ctx.plugin(ToolBash)
   const agent = a.agents[0], other = a.agents[1]
   if (agent === undefined || other === undefined) throw new Error('Original Native Agents absent')
-  agent.ctx.tools.presentAs('ptc')
+  await agent.ctx.plugin(PtcToolExecutor)
   const controller = new AbortController()
-  const pending = a.ctx.tools.execute({ callId: ToolCallId(`real-${mode}`), name: 'run_code', agent,
+  const pending = executeModelToolFixture(a.ctx, { callId: ToolCallId(`real-${mode}`), name: 'run_code', agent,
     signal: controller.signal, arguments: { description: 'Original Native nested shell', code:
       `return await tools.bash({command:"printf native-nested; exec sleep ${mode === 'foreground' ? '0.3' : '10'}",description:"Original shell",run_in_background:${mode === 'background'}})` } })
   const observed = pending.catch((cause: unknown) => cause)
@@ -709,7 +711,7 @@ it.each(['foreground', 'background', 'cancel'] as const)('joins a real Native PT
     + 8192 + 4 * 256, 0)
   expect(bytes).toBeLessThanOrEqual(524288)
   expect(f.owner).toMatchObject({ state: { active: 1, resident: 2, bytes } })
-  const refused = await a.ctx.tools.execute({ callId: ToolCallId('foreign-admission'), name: 'run_code', agent: other,
+  const refused = await executeToolFixture(a.ctx, { callId: ToolCallId('foreign-admission'), name: 'run_code', agent: other,
     signal: new AbortController().signal, arguments: { description: 'Independent second Session', code: 'return 1' } })
   expect(refused.isError).toBe(true)
   expect(program).toHaveBeenCalledTimes(1); expect(command).toHaveBeenCalledTimes(1)
@@ -938,9 +940,9 @@ async function continuationFixture(sessions = 2, ownedHandles = false) {
       return { exitCode: outcome.exitCode }
     } }))
   applicationCleanups.push(dispose)
-  const run = (signal = new AbortController().signal) => a.ctx.tools.execute({ callId: ToolCallId(`continuation-${++serial}`),
+  const run = (signal = new AbortController().signal) => executeToolFixture(a.ctx, { callId: ToolCallId(`continuation-${++serial}`),
     name: 'bash', arguments: {}, agent: a.agents[0]!, signal })
-  const runSession = (index: number, signal = new AbortController().signal) => a.ctx.tools.execute({ callId: ToolCallId(`continuation-${++serial}`),
+  const runSession = (index: number, signal = new AbortController().signal) => executeToolFixture(a.ctx, { callId: ToolCallId(`continuation-${++serial}`),
     name: 'bash', arguments: {}, agent: a.agents[index]!, signal })
   return { ...f, a, counts, stop, due, command, retire, run, runSession }
 }
@@ -1366,7 +1368,7 @@ it.each(['not-published', 'unknown', 'untyped-cause', 'outside-mount', 'getter-c
     // Four known no-create refusals must not turn the two concurrent compute slots into a historical Session limit.
     const attempts = kind === 'not-published' ? 4 : 1
     for (let i = 0; i < attempts; i++) {
-      const result = await a.ctx.tools.execute({ callId: ToolCallId(`environment-capacity-${i}`), name: 'bash', arguments: {},
+      const result = await executeToolFixture(a.ctx, { callId: ToolCallId(`environment-capacity-${i}`), name: 'bash', arguments: {},
         agent: a.agents[i]!, signal: new AbortController().signal })
       expect(result.isError).toBe(true)
       if (!result.isError) throw new Error('The refused environment unexpectedly executed')
@@ -1470,7 +1472,7 @@ it.each(['capacity', 'parent-borrows', 'metadata', 'stale', 'unassociated', 'unk
       } }))
     applicationCleanups.push(dispose)
     let serial = 0
-    const run = (index: number) => a.ctx.tools.execute({ callId: ToolCallId(`skill-capacity-${++serial}`), name: 'bash', arguments: {},
+    const run = (index: number) => executeToolFixture(a.ctx, { callId: ToolCallId(`skill-capacity-${++serial}`), name: 'bash', arguments: {},
       agent: a.agents[index]!, signal: new AbortController().signal })
     if (kind === 'concurrent') {
       // Foreground Shell and service startup are the two permitted simultaneous roles of one original Session.
@@ -1622,7 +1624,7 @@ it('[managed-skills] sends the complete mixed copy set on each native Shell oper
       return { completed: true }
     } }))
   applicationCleanups.push(dispose)
-  const run = () => a.ctx.tools.execute({ callId: ToolCallId('managed-copy-command'), name: 'bash', arguments: {},
+  const run = () => executeToolFixture(a.ctx, { callId: ToolCallId('managed-copy-command'), name: 'bash', arguments: {},
     agent: a.agents[0]!, signal: new AbortController().signal })
   const running = run()
   const outcome: { result?: Awaited<ReturnType<typeof run>> } = {}
@@ -1697,7 +1699,7 @@ it.each(['sdk/closed', 'sdk/bounds', 'sdk/capacity', 'sdk/selection', 'sdk/creat
       await command.done; return { completed: true }
     } }))
   applicationCleanups.push(dispose)
-  const result = await a.ctx.tools.execute({ callId: ToolCallId('classified-preparation'), name: 'bash', arguments: {},
+  const result = await executeToolFixture(a.ctx, { callId: ToolCallId('classified-preparation'), name: 'bash', arguments: {},
     agent: a.agents[0]!, signal: new AbortController().signal })
   expect(result.isError).toBe(true)
   if (!result.isError) throw new Error('Scripted preparation must not execute')

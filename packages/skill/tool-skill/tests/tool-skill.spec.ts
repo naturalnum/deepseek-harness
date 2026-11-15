@@ -902,7 +902,7 @@ describe('dsh-tool-skill', () => {
       openMessageTurn(agent.session)
       expect(JSON.stringify(await composePrefixForAgent(ctx, agent))).toContain('listed-skill')
       expect(catalogMessages(agent.session)).toHaveLength(1)
-      expect(await ctx.tools.execute({ agent, signal: testToolSignal, callId: ToolCallId('preset-original-skill'),
+      expect(await executeToolFixture(ctx, { agent, signal: testToolSignal, callId: ToolCallId('preset-original-skill'),
         name: 'skill', arguments: { name: 'listed-skill' } })).toMatchObject({ isError: false })
       await nested.dispose()
       const restore = withdrawal === 'restricted' ? scope.ctx.tools.restrict({ deny: ['skill'] })
@@ -942,7 +942,7 @@ describe('dsh-tool-skill', () => {
       await fireStep(ctx, child.agent, 1, 2)
       expect(catalogMessages(child.agent.session)).toHaveLength(2)
       expect(catalogMessages(child.agent.session).at(-1)?.data.source).toMatchObject({ entries: [] })
-      const childCall = await ctx.tools.execute({ agent: child.agent, signal: testToolSignal,
+      const childCall = await executeToolFixture(ctx, { agent: child.agent, signal: testToolSignal,
         callId: ToolCallId('child-hidden-original'), name: 'skill', arguments: withdrawal === 'restricted' ? { name: 'listed-skill' } : {} })
       if (withdrawal === 'restricted') {
         expect(ctx.tools.get('skill', child.agent)).toBeUndefined()
@@ -954,14 +954,14 @@ describe('dsh-tool-skill', () => {
       }
       expect(ctx.tools.get('skill')).toBe(globalTool)
       expect(ctx.tools.get('skill', parent.agent)).toBe(presetTool)
-      expect(await ctx.tools.execute({ agent: parent.agent, signal: testToolSignal,
+      expect(await executeToolFixture(ctx, { agent: parent.agent, signal: testToolSignal,
         callId: ToolCallId('parent-still-original'), name: 'skill', arguments: { name: 'listed-skill' } })).toMatchObject({ isError: false })
       restore()
       await fireStep(ctx, child.agent, 1, 3)
       expect(catalogMessages(child.agent.session)).toHaveLength(3)
       expect(catalogMessages(child.agent.session).at(-1)?.data.source).toMatchObject({ entries: [{ name: 'listed-skill', description: 'Listed' }] })
       expect(ctx.tools.get('skill', child.agent)).toBe(presetTool)
-      expect(await ctx.tools.execute({ agent: child.agent, signal: testToolSignal,
+      expect(await executeToolFixture(ctx, { agent: child.agent, signal: testToolSignal,
         callId: ToolCallId('child-restored-original'), name: 'skill', arguments: { name: 'listed-skill' } })).toMatchObject({ isError: false })
     } finally {
       await child.scope.dispose()

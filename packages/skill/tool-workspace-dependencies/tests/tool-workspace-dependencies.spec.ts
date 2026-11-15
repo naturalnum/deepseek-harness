@@ -491,7 +491,7 @@ it('returns image-bound guest paths from a foreign-platform manifest without Hos
   try {
     await ctx.plugin(AgentRegistry); await ctx.plugin(SystemPrompt); await ctx.plugin(ToolRuntime)
     await ctx.plugin(workspaceDependencies, { source: '/opt/dsh/runtime', executionManifest: source })
-    const result = await ctx.tools.execute({ signal: new AbortController().signal,
+    const result = await executeToolFixture(ctx, { signal: new AbortController().signal,
       name: 'load_workspace_dependencies', arguments: {}, callId: ToolCallId('guest-paths') })
     expect(result.isError).toBe(false)
     expect(result.content).toEqual([{ type: 'text', text: JSON.stringify(workspaceDependencyPaths('/opt/dsh/runtime', guest), undefined, 2) }])

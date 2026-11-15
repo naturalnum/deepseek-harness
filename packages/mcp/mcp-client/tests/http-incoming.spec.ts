@@ -1,3 +1,5 @@
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
+import { executeModelToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 /** Real HTTP byte admission before JSON/SSE materialization; default native transport behavior remains separate. */
 import { createServer } from 'node:http'
 import { gzipSync } from 'node:zlib'
@@ -59,7 +61,7 @@ it('bounds chunked success/error/SSE and decoded gzip bytes, cancels the real re
 it('bounds real SDK initialize and tools/list before publication, and a cumulative SSE tool response can recover', async () => {
   const external = await startHttpMcpFixture(), ctx = new Context()
   onTestFinished(async () => { await ctx.fiber.dispose(); await external.close() })
-  await ctx.plugin(SystemPrompt); await ctx.plugin(Tools)
+  await ctx.plugin(SystemPrompt); await ctx.plugin(Tools); await ctx.plugin(NativeToolExecutor)
   const config = Config({ transport: 'streamable-http', serverName: 'bounded', url: external.url,
     maxIncomingResponseBytes: 1024, listMaxPages: 4, failOnStartupError: true,
     reconnect: { enabled: false }, toolCallTimeoutMs: 2000 })
@@ -81,11 +83,11 @@ it('bounds real SDK initialize and tools/list before publication, and a cumulati
   await active
   expect(ctx.tools.schemas().map(tool => tool.name)).toEqual(['mcp__bounded__ping'])
   external.setSsePadding(4096)
-  const tooLarge = await ctx.tools.execute({ name: 'mcp__bounded__ping', arguments: {}, callId: ToolCallId('sse-over-limit'),
+  const tooLarge = await executeModelToolFixture(ctx, { name: 'mcp__bounded__ping', arguments: {}, callId: ToolCallId('sse-over-limit'),
     signal: new AbortController().signal })
   expect(tooLarge.isError).toBe(true)
   external.setSsePadding(1)
-  expect(await ctx.tools.execute({ name: 'mcp__bounded__ping', arguments: {}, callId: ToolCallId('sse-recovered'),
+  expect(await executeModelToolFixture(ctx, { name: 'mcp__bounded__ping', arguments: {}, callId: ToolCallId('sse-recovered'),
     signal: new AbortController().signal })).toMatchObject({ isError: false, value: { content: [{ type: 'text', text: 'pong' }] } })
   expect(await lifecycle?.close()).toBe(true); await active.dispose()
 })
@@ -93,7 +95,7 @@ it('bounds real SDK initialize and tools/list before publication, and a cumulati
 it('uses the official SDK pagination cap without publishing a partial list and preserves omitted native pagination behavior', async () => {
   const external = await startHttpMcpFixture(), ctx = new Context()
   onTestFinished(async () => { await ctx.fiber.dispose(); await external.close() })
-  await ctx.plugin(SystemPrompt); await ctx.plugin(Tools)
+  await ctx.plugin(SystemPrompt); await ctx.plugin(Tools); await ctx.plugin(NativeToolExecutor)
   external.setListPageCount(5)
   const base = Config({ transport: 'streamable-http', serverName: 'pages', url: external.url,
     maxIncomingResponseBytes: 4096, failOnStartupError: true, reconnect: { enabled: false } })

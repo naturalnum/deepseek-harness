@@ -31,6 +31,7 @@ import type { WorkspaceTransferSelection } from '../src/workspace-transfers.ts'
 const ref = credentialRef('ACCOUNT_API_SERVICE_FIXTURE')
 const nativeFileConfig = {
   maxBytes: 1024, maxFileBytes: 4096, maxLines: 32, maxEntries: 16,
+  search: { maxResults: 512, maxEntries: 100000, graceMs: 3000, timeoutMs: 30000, stderrMaxBytes: 65536 },
 } satisfies ConstructorParameters<typeof WorkspaceFiles>[1]
 
 function observeNativeFiles() {

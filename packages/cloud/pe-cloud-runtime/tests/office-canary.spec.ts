@@ -1,3 +1,4 @@
+import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 /** Actual Native Loader/providers/tool and model dispatch; no image or production AccountFactory qualification. */
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -97,7 +98,7 @@ it('uses the actual base file with two real providers, original skill tool and t
   const versions = async (graph: typeof canary) => (await graph.ctx.skills.inspect()).candidates
     .map(({ candidate }) => ({ name: candidate.name, version: candidate.package?.version }))
   expect(await versions(canary)).toEqual(await versions(ordinary))
-  const call = (graph: typeof canary, scope: typeof agent) => graph.ctx.tools.execute({ agent: scope,
+  const call = (graph: typeof canary, scope: typeof agent) => executeToolFixture(graph.ctx, { agent: scope,
     signal: graph.lifetime.signal, callId: ToolCallId('real-native-skill'), name: 'skill', arguments: { name: 'office-docx' } })
   expect(await call(canary, agent)).toMatchObject({ isError: false, value: { provider: 'dsh-office', name: 'office-docx' } })
   expect(await call(ordinary, other)).toMatchObject({ isError: true })
@@ -114,8 +115,10 @@ it('publishes the original Office catalog through a Loader-mounted preset beside
     expect(snapshot.skills.filter(row => row.invocation.modelInvocable)).toHaveLength(13)
     expect(graph.ctx.tools.get('skill', agent)).not.toBe(graph.ctx.tools.get('skill'))
     agent.session.append('turn/start', { turn: 1 })
+    const modelSelection = agent.model.current()
+    if (modelSelection === undefined) throw new Error('Original Agent model selection absent')
     const decision = await agentEvents(graph.ctx, agent).waterfall('agent/pre-step', {
-      messages: [], turn: 1, step: 1, signal: graph.lifetime.signal,
+      messages: [], turn: 1, step: 1, signal: graph.lifetime.signal, modelSelection,
     }, () => Promise.resolve({ kind: 'enter' as const, messages: [] }))
     expect(decision.kind).toBe('enter')
     if (decision.kind !== 'enter') throw new Error('Original Native step rejected')
@@ -155,7 +158,7 @@ it('publishes the original Office catalog through a Loader-mounted preset beside
           ],
         ]
       `)
-    expect(await graph.ctx.tools.execute({ agent, signal: graph.lifetime.signal,
+    expect(await executeToolFixture(graph.ctx, { agent, signal: graph.lifetime.signal,
       callId: ToolCallId('loader-preset-office'), name: 'skill', arguments: { name: 'office-xlsx' } })).toMatchObject({
       isError: false, value: { name: 'office-xlsx', provider: 'dsh-office', resourceBase: { path: '/opt/dsh/skills/office/office-xlsx' } },
     })
@@ -187,7 +190,7 @@ it.each([false, true].flatMap(scopedSkillTool => ['skill-office', 'bundled-repor
     await expect(graph.invoke('create', { requestId: 'stale-office' })).rejects.toThrow()
     expect(() => graph.ctx.settingsController.describe()).toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))
     await expect(model(graph)).rejects.toThrow()
-    const result = await graph.ctx.tools.execute({ agent, signal: graph.lifetime.signal,
+    const result = await executeToolFixture(graph.ctx, { agent, signal: graph.lifetime.signal,
       callId: ToolCallId('withdrawn-office'), name: 'skill', arguments: { name: 'office-docx' } })
     expect(result.isError).toBe(true); expect(graph.adapter.calls).toBe(calls)
   })
@@ -206,9 +209,9 @@ it('preserves launch overlays through an unrelated actual ConfigEditor save and 
   expect(second.binding.accountId).toBe(first.binding.accountId); expect(second.binding.epoch).not.toBe(first.binding.epoch)
   expect(second.ctx.profileContext.overlays).toEqual(profile.overlays)
   expect((await second.ctx.skills.list()).filter(row => row.invocation?.modelInvocable)).toHaveLength(13)
-  expect(await second.ctx.tools.execute({ agent: old, signal: second.lifetime.signal, callId: ToolCallId('old-epoch'),
+  expect(await executeToolFixture(second.ctx, { agent: old, signal: second.lifetime.signal, callId: ToolCallId('old-epoch'),
     name: 'skill', arguments: { name: 'office-docx' } })).toMatchObject({ isError: true })
-  expect(await second.ctx.tools.execute({ agent: current, signal: second.lifetime.signal, callId: ToolCallId('new-epoch'),
+  expect(await executeToolFixture(second.ctx, { agent: current, signal: second.lifetime.signal, callId: ToolCallId('new-epoch'),
     name: 'skill', arguments: { name: 'office-docx' } })).toMatchObject({ isError: false })
 })
 
@@ -235,7 +238,7 @@ it('rejects original settings, model and tool consumers after a rejected Fiber u
   expect(graph.api.requireRpc('session/create')).toMatchObject({ guard: 'account-project' })
   expect(() => graph.ctx.settingsController.describe()).toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))
   await expect(model(graph)).rejects.toThrow()
-  expect(await graph.ctx.tools.execute({ agent, signal: graph.lifetime.signal, callId: ToolCallId('invalid-fiber-gap'),
+  expect(await executeToolFixture(graph.ctx, { agent, signal: graph.lifetime.signal, callId: ToolCallId('invalid-fiber-gap'),
     name: 'skill', arguments: { name: 'office-docx' } })).toMatchObject({ isError: true })
 })
 
@@ -263,9 +266,9 @@ it.each([false, true])('selects the same original13 resources for independent or
     expect((await graph.ctx.skills.list()).filter(row => row.invocation?.modelInvocable && row.invocation.userInvocable)).toHaveLength(13)
     await model(graph); expect(graph.adapter.calls).toBe(1)
   }
-  expect(await first.ctx.tools.execute({ agent, signal: first.lifetime.signal, callId: ToolCallId('ordinary-own'),
+  expect(await executeToolFixture(first.ctx, { agent, signal: first.lifetime.signal, callId: ToolCallId('ordinary-own'),
     name: 'skill', arguments: { name: 'office-docx' } })).toMatchObject({ isError: false })
-  expect(await first.ctx.tools.execute({ agent: other, signal: first.lifetime.signal, callId: ToolCallId('ordinary-other'),
+  expect(await executeToolFixture(first.ctx, { agent: other, signal: first.lifetime.signal, callId: ToolCallId('ordinary-other'),
     name: 'skill', arguments: { name: 'office-docx' } })).toMatchObject({ isError: true })
   expect((await first.ctx.skills.inspect()).candidates.map(row => row.candidate.package?.version))
     .toEqual((await second.ctx.skills.inspect()).candidates.map(row => row.candidate.package?.version))
@@ -282,9 +285,9 @@ it('overlays historical saved false provider rows through the original compositi
   const second = await f.owner.start('2'), current = await session(second)
   expect(readFileSync(f.owner.patchPath, 'utf8')).toBe(bytes)
   expect((await second.ctx.skills.list()).filter(row => row.invocation?.modelInvocable)).toHaveLength(13)
-  expect(await second.ctx.tools.execute({ agent: current, signal: second.lifetime.signal, callId: ToolCallId('ordinary-saved'),
+  expect(await executeToolFixture(second.ctx, { agent: current, signal: second.lifetime.signal, callId: ToolCallId('ordinary-saved'),
     name: 'skill', arguments: { name: 'office-docx' } })).toMatchObject({ isError: false })
-  expect(await second.ctx.tools.execute({ agent: old, signal: second.lifetime.signal, callId: ToolCallId('ordinary-old'),
+  expect(await executeToolFixture(second.ctx, { agent: old, signal: second.lifetime.signal, callId: ToolCallId('ordinary-old'),
     name: 'skill', arguments: { name: 'office-docx' } })).toMatchObject({ isError: true })
 })
 
@@ -300,7 +303,7 @@ it.each([false, true])('retains ordinary provider withdrawal for model, settings
   expect(() => graph.ctx.settingsController.describe()).toThrow()
   await expect(graph.invoke('create', { requestId: 'ordinary-revoked' })).rejects.toThrow()
   await expect(model(graph)).rejects.toThrow()
-  expect(await graph.ctx.tools.execute({ agent, signal: graph.lifetime.signal, callId: ToolCallId('ordinary-revoked'),
+  expect(await executeToolFixture(graph.ctx, { agent, signal: graph.lifetime.signal, callId: ToolCallId('ordinary-revoked'),
     name: 'skill', arguments: { name: 'office-docx' } })).toMatchObject({ isError: true })
   expect(graph.adapter.calls).toBe(calls)
 })

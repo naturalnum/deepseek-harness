@@ -226,7 +226,7 @@ it('applies an eight-to-three Settings save to following native admissions witho
   f.ctx.on('agent/pre-step', async ({ agent }, following) => agent === parent ? { kind: 'reject' as const } : following())
   const ids: SessionId[] = [], signal = new AbortController().signal
   const start = () => f.ctx.subagents.startActivation({ provider: 'settings-proof', label: 'settings capacity proof',
-    request: { parent, prompt: [{ type: 'text', text: 'hold until released' }] }, signal, delivery: 'parent' })
+    parent, prompt: [{ type: 'text', text: 'hold until released' }], signal, delivery: 'parent' })
   const count = () => ids.filter(id => f.ctx.agents.get(id) !== undefined).length
   try {
     for (let i = 0; i < 8; i++) ids.push((await start()).childId)

@@ -99,7 +99,7 @@ it('runs the original goal command with native lifecycle and projection, and rem
   expect(result).toHaveProperty('result.text', expect.stringContaining('No goal is currently set'))
   expect(f.events.filter(event => event.type.startsWith('command/')).map(event => event.type))
     .toEqual(['command/run', 'command/done'])
-  expect(f.ctx.sessionProjections.stateOf(f.agent.session, 'goal')?.current).toBeNull()
+  expect(f.ctx.sessionProjections.snapshot(f.agent.session, ['goal']).values.goal).toBeNull()
   const commands = f.ctx.get('commands')
   await f.ctx.fiber.dispose()
   expect(commands?.find(f.agent, 'goal')).toBeUndefined()
@@ -132,7 +132,7 @@ it.each(['generation', 'business'] as const)('does not dispatch after receipt pr
   released.resolve(undefined)
   await rejected
   expect(f.events.filter(event => event.type.startsWith('command/'))).toHaveLength(0)
-  expect(f.ctx.sessionProjections.stateOf(f.agent.session, 'goal')?.current).toBeNull()
+  expect(f.ctx.sessionProjections.snapshot(f.agent.session, ['goal']).values.goal).toBeNull()
   if (closed === 'business') expect(f.lifetime.signal.aborted).toBe(false)
 })
 

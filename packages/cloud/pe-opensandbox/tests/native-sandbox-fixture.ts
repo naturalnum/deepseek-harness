@@ -1,3 +1,4 @@
+import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 /** Real Native policy/Agents/Registry with a deliberately unqualified external-profile fixture. */
 import { expect, onTestFinished } from 'vitest'
 import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
@@ -42,7 +43,7 @@ export async function fixture(accountId = 'native-sandbox-candidate') {
         return null
       } }))
     try {
-      const result = await graph.ctx.tools.execute({ callId: ToolCallId(`candidate-${++sequence}`), name, arguments: {}, agent: selected,
+      const result = await executeToolFixture(graph.ctx, { callId: ToolCallId(`candidate-${++sequence}`), name, arguments: {}, agent: selected,
         signal: signal ?? new AbortController().signal })
       if (failure !== undefined) throw failure
       if (result.isError) throw new Error(JSON.stringify(result.content))

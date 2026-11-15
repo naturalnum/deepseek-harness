@@ -1,3 +1,4 @@
+import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 /** Actual native tool pipeline; only its unrelated directory collaborator is substituted. */
 import { access, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -60,7 +61,7 @@ it('routes a real native bash tool call to the closed provider and never execute
   expect(accountServiceAvailability(ctx)).toEqual({ developmentServices: false, servicePreview: false })
   expect(accountTerminalLimits(ctx)).toBeUndefined()
   const marker = join(directory, 'must-not-exist')
-  const result = await ctx.tools.execute({
+  const result = await executeToolFixture(ctx, {
     callId: ToolCallId('closed-bash'), name: 'bash', signal: new AbortController().signal,
     arguments: { command: 'printf forbidden > must-not-exist', description: 'Closed execution refusal', workdir: directory },
   })

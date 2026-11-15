@@ -109,7 +109,7 @@ it('uses the original /goal command, projected state and UI Remote mutations on 
   const cleared = await f.goal('clear', { ref: { id: resumed.id, revision: resumed.revision } })
   expect(cleared).toEqual({ id: created.id, revision: 5 })
   await expect(f.goal('get')).resolves.toBeUndefined()
-  expect(f.ctx.sessionProjections.stateOf(f.agent.session, 'goal')?.current).toBeNull()
+  expect(f.ctx.sessionProjections.snapshot(f.agent.session, ['goal']).values.goal).toBeNull()
   expect(f.events.filter(event => event.type === 'goal/change').map(event => event.data.operation))
     .toEqual(['create', 'edit', 'pause', 'resume', 'clear'])
   expect(f.service.inspect().rpcEndpoints).toHaveLength(7)

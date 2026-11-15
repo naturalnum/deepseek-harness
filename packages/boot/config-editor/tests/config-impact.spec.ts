@@ -429,13 +429,14 @@ it('invalidates an original plan before a rejected Fiber candidate is resolved',
   const effective = fiber.effectiveConfig, raw = fiber.rawConfig
   const revision = fiber.configMutationRevision
   let observed = false
-  onTestFinished(ctx.on('internal/config', (actual, next) => {
+  const removeConfigObserver = ctx.on('internal/config', (actual, next) => {
     if (actual === fiber) {
       observed = true
       expect(entry.isConfigPlanVersionCurrent(plan)).toBe(false)
     }
     return next()
-  }, { prepend: true }))
+  }, { prepend: true })
+  onTestFinished(() => { removeConfigObserver() })
   expect(() => fiber.update({ ...(raw as Record<string, unknown>), ordinary: 1 }, true)).toThrow()
   expect(observed).toBe(true)
   expect(fiber.configMutationRevision).toBe(revision + 1)
@@ -454,7 +455,7 @@ it.each(['create', 'move'] as const)('blocks a caught tree %s command before nat
   const addition = { name: target.options.name, config: structuredClone(target.options.config) }
   let attempted = false
   onTestFinished(ctx.configEditor.registerImpactGuard({ check() {} }))
-  onTestFinished(ctx.on('loader/patch-context', async (entry, next) => {
+  const removePatchObserver = ctx.on('loader/patch-context', async (entry, next) => {
     if (entry === carrier && !attempted) {
       attempted = true
       const action = operation === 'create' ? tree.create(addition)
@@ -468,7 +469,8 @@ it.each(['create', 'move'] as const)('blocks a caught tree %s command before nat
       expect(commit).not.toHaveBeenCalled()
     }
     return next()
-  }))
+  })
+  onTestFinished(() => { removePatchObserver() })
   const edit = ctx.configEditor.edit(target, value => ({ ...value, count: 5 })).catch((error: unknown) => {
     expect(ctx.configEditor.editFailureOutcome(error)).toBe('unknown')
     throw error
@@ -491,7 +493,7 @@ it('rejects a saved live edit when an awaited native Fiber update invalidates it
     prepared = plan.entries.find(row => row.entry === target)
     expect(prepared?.impact).toBe('live')
   } }))
-  onTestFinished(ctx.on('loader/patch-context', async (entry, next) => {
+  const removePatchObserver = ctx.on('loader/patch-context', async (entry, next) => {
     if (entry === carrier && !invalidatedAfterWrite) {
       expect(readFileSync(profile.patchPath, 'utf8')).toContain('count: 5')
       if (prepared === undefined) throw new Error('Original child plan is absent')
@@ -502,7 +504,8 @@ it('rejects a saved live edit when an awaited native Fiber update invalidates it
       invalidatedAfterWrite = true
     }
     return next()
-  }))
+  })
+  onTestFinished(() => { removePatchObserver() })
   let rejection: unknown
   try { await ctx.configEditor.edit(target, value => ({ ...value, count: 5 })) }
   catch (error) { rejection = error }
@@ -540,9 +543,9 @@ it.each([
   } })
   await ctx.plugin(Loader)
   ctx.loader.builtins.probe = {
-    Config: z.object({ value: z.number() }),
-    apply(owner: Context, config: { value: number }) {
-      if (owner.fiber.entry?.options.id === 'slow' && config.value === 1) owner.effect(() => async () => {
+    Config: z.object({ value: z.number(), slow: z.boolean().default(false) }),
+    apply(owner: Context, config: { value: number; slow: boolean }) {
+      if (config.slow && config.value === 1) owner.effect(() => async () => {
         disposing.resolve(undefined)
         await release.promise
         siblingClosed = true
@@ -551,7 +554,7 @@ it.each([
   }
   const errors = Array.from({ length: failures }, (_, index) => new Error(`Original child ${String(index)} failed`))
   for (const id of [...errors.map((_, index) => `bad-${String(index)}`), 'slow']) {
-    const created = await ctx.loader.create({ id, name: 'cordis:probe', config: { value: 1 } })
+    const created = await ctx.loader.create({ name: 'cordis:probe', config: { value: 1, slow: id === 'slow' } })
     children.push(ctx.loader.resolve(created))
   }
   await ctx.loader.await()

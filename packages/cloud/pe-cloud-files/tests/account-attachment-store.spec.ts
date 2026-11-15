@@ -75,7 +75,7 @@ it('activates through the real class-plugin constructor with inherited Config, o
   expect(store.imageLimits.maxImageBytes).toBe(DEFAULT_MAX_IMAGE_BYTES)
   expect(store.imageLimits.mediaTypes).toEqual([])
   const providers = [...a.ctx.registry.values()].flatMap(runtime => [...runtime.fibers])
-    .filter(current => current.store?.['attachments']?.fiber === current)
+    .filter(current => [...current.provisions].some(provision => provision.name === 'attachments' && provision.ctx.fiber === current))
   expect(providers.map(current => current.uid)).toEqual([fiber.uid])
   const ref = await store.saveFileStream({ name: 'plugin.bin', data: (async function* () { yield bytes })() })
   const path = await a.publishCopy(ref)

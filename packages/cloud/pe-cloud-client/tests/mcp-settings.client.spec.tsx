@@ -2,7 +2,7 @@
 /** Real native Settings form controls; Gateway/native-client behavior is covered by account composition tests. */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
-import { allowAllAccess, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { allowAllAccess, makeTranslate, contextMenuHook } from '@deepseek-ai/dsh-client-test-runtime'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { McpConnectionId } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { CloudMcpConnectionReply, CloudMcpConnectionRequest, CloudMcpConnectionView } from '@deepseek-ai/dsh-pe-cloud-api/types'
@@ -13,7 +13,7 @@ afterEach(cleanup)
 const en = mcpSettingsDictionaries.en
 const unused = (): never => { throw new Error('Unused native slot prop') }
 const props = { ...allowAllAccess, useSessions: unused, useSessionStatus: unused, useSessionRetainInfo: unused,
-  usePanelInfo: unused, useWorkspaces: unused, useResource: unused, scope: 'A:1', close() {}, t: makeTranslate(en) }
+  usePanelInfo: unused, useWorkspaces: unused, useResource: unused, useContextMenu: contextMenuHook(), scope: 'A:1', close() {}, t: makeTranslate(en) }
 const limits = { maxConnections: 4, maxToolCallTimeoutMs: 2000 }
 
 it('configures HTTP plus a private Bearer token, tests, edits without reading credentials, toggles and removes', async () => {

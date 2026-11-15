@@ -1,3 +1,5 @@
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
+import { executeModelToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 /** Real native storage, credentials, client and HTTP tools in independent account contexts. */
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -42,7 +44,7 @@ it('keeps credentials, tool scopes and restored HTTP connections within the orig
     const binding: AccountBinding = Object.freeze({ accountId: brandString<AccountBinding['accountId']>(name),
       epoch: brandString<AccountBinding['epoch']>(epoch), recipeVersion: 'mcp-test', lifetime: lifetime.signal })
     ctx.provide('peAccount', binding)
-    await ctx.plugin(SystemPrompt); await ctx.plugin(ToolRuntime)
+    await ctx.plugin(SystemPrompt); await ctx.plugin(ToolRuntime); await ctx.plugin(NativeToolExecutor)
     await ctx.plugin(Storage); await ctx.plugin(JsonBackend, { root: join(directory, name, 'storage') })
     await ctx.plugin(Domains, { backend: 'json' })
     await ctx.plugin(Credentials, { path: join(directory, name, 'credentials.json'), watch: false })
@@ -65,7 +67,7 @@ it('keeps credentials, tool scopes and restored HTTP connections within the orig
     await a.runtime.apply(row)
     expect(b.store.list()).toEqual([]); expect(b.ctx.tools.schemas()).toEqual([])
     expect(JSON.stringify(a.store.list())).not.toContain('synthetic-account-token')
-    const result = await a.ctx.tools.execute({ name: 'mcp__compute__ping', arguments: {},
+    const result = await executeModelToolFixture(a.ctx, { name: 'mcp__compute__ping', arguments: {},
       callId: ToolCallId('mcp-first'), signal: new AbortController().signal })
     expect(result).toMatchObject({ isError: false, value: { content: [{ type: 'text', text: 'pong' }] } })
     const privateBytes = await readFile(join(directory, 'A', 'credentials.json'), 'utf8')
@@ -84,7 +86,7 @@ it('keeps credentials, tool scopes and restored HTTP connections within the orig
     expect(a.store.list()).toEqual([]); expect(await a.ctx.credentials.listRecords()).toEqual([])
     const replacement = await a.store.save(undefined, input); await a.runtime.apply(replacement)
     a.lifetime.abort()
-    const stale = await a.ctx.tools.execute({ name: 'mcp__compute__ping', arguments: {},
+    const stale = await executeModelToolFixture(a.ctx, { name: 'mcp__compute__ping', arguments: {},
       callId: ToolCallId('mcp-revoked'), signal: new AbortController().signal })
     expect(stale.isError).toBe(true)
     expect(() => a.store.list()).toThrow()

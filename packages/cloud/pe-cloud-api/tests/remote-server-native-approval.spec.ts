@@ -1,3 +1,4 @@
+import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 /** Minimal native limitation reproduction. Actual Agent/Session/approval; no cloud readiness or SSH claim. */
 import { Context } from '@deepseek-ai/cordis'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -45,7 +46,7 @@ it('the same original native request reaches answerers under ask and audits the 
 it('the cloud adapter uses a registry-minted tool call and rejects the unchanged native never policy', async () => {
   const { brandString } = await import('@deepseek-ai/dsh-brand')
   const { ToolCallId } = await import('@deepseek-ai/dsh-llm')
-  const { defineContentToolFixture } = await import('@deepseek-ai/dsh-tools')
+  const { defineContentToolFixture } = await import('@deepseek-ai/dsh-tool-testkit')
   const { remoteServerApproval } = await import('../src/remote-server-approval.ts')
   const ctx = new Context(), lifetime = new AbortController()
   const binding = Object.freeze({ accountId: brandString<import('@deepseek-ai/dsh-pe-cloud-runtime/types').AccountId>('native-approval-fixture'),
@@ -63,7 +64,7 @@ it('the cloud adapter uses a registry-minted tool call and rejects the unchanged
         const asker = remoteServerApproval(ctx, binding, exec, () => { lifetime.signal.throwIfAborted() })
         return [{ type: 'text', text: String(await asker?.ask('mandatory remote approval')) }]
       } }))
-    const result = await ctx.tools.execute({ name: 'remote_approval_fixture', arguments: {}, agent,
+    const result = await executeToolFixture(ctx, { name: 'remote_approval_fixture', arguments: {}, agent,
       callId: ToolCallId('original-remote-approval'), signal: new AbortController().signal })
     expect(body).toBe(1)
     expect(result.content).toEqual([{ type: 'text', text: 'false' }])

@@ -12,7 +12,7 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime/src/translat
 import { ApprovedSettingsForm } from '../src/client/ApprovedSettings.tsx'
 import { approvedSettingsDictionaries } from '../src/client/approved-settings-locales.ts'
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
-import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
+import { TestRemote, contextMenuHook } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { ConfigForms } from '../../../client/ui-settings/src/client/config-form.ts'
@@ -130,7 +130,7 @@ it('renders approved scalar controls once, reports unsupported fields and writes
   const f = await fixture(), unused = (): never => { throw new Error('No unrelated native UI data is read') }
   const props: Parameters<typeof ApprovedSettingsForm>[0] = {
     ...allowAllAccess, useSessions: unused, useSessionStatus: unused, useSessionRetainInfo: unused,
-    usePanelInfo: unused, useWorkspaces: unused, useResource: unused,
+    usePanelInfo: unused, useWorkspaces: unused, useResource: unused, useContextMenu: contextMenuHook(),
     t: makeTranslate(approvedSettingsDictionaries.en), edit: f.record.face.edit, resetField: f.record.face.resetField,
     save: f.record.face.save, discard: f.record.face.discard,
     useApprovedSettings: selector => selector(f.record.face.hooks.approvedSettings.getSnapshot()),

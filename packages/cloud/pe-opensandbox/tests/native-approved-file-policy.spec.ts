@@ -1,3 +1,4 @@
+import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 /** Real Native approval and Bash dispatch over the production policy selector; no process or kernel execution. */
 import { Context } from '@deepseek-ai/cordis'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
@@ -44,7 +45,7 @@ async function fixture(outcome: 'allowed-once' | 'rejected' | 'cancelled' | 'una
   await ctx.plugin(ToolBash, { enableRunInBackground: false, promoteOnTimeout: false })
   const approval = vi.fn(() => Promise.resolve(outcome))
   ctx.on('approval/request', approval)
-  const execute = (args: Record<string, unknown>) => ctx.tools.execute({ callId: ToolCallId('approved-bash-call'), name: 'bash',
+  const execute = (args: Record<string, unknown>) => executeToolFixture(ctx, { callId: ToolCallId('approved-bash-call'), name: 'bash',
     agent, signal: new AbortController().signal, arguments: { command: 'one approved command', description: 'Native escalation', ...args } })
   return { ctx, agent, prepared, approval, execute }
 }

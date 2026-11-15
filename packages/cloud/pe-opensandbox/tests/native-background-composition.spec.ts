@@ -1,3 +1,4 @@
+import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 /** Native Agent, Bash and JobRegistry composition; the external command channel is explicitly scripted. */
 import { AsyncResource } from 'node:async_hooks'
 import { Context, FiberState } from '@deepseek-ai/cordis'
@@ -104,7 +105,7 @@ async function fixture() {
     cwd: '/host/private/cwd', home: '/host/private/home', startedBundles: [], overlays: [], telemetryDisabledEnv: undefined })
   const producer = await ctx.plugin(ToolBash)
   let sequence = 0
-  const call = (name: string, args: Record<string, unknown>) => ctx.tools.execute({
+  const call = (name: string, args: Record<string, unknown>) => executeToolFixture(ctx, {
     callId: ToolCallId(`native-background-${++sequence}`), name, arguments: args, agent, signal: new AbortController().signal,
   })
   const start = async () => {

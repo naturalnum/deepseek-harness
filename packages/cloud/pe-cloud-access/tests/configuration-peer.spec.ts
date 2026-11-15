@@ -31,7 +31,8 @@ import { BetterAuthAccess } from '../src/auth.ts'
 import { LoginPeerRegistry, type ConfigurationPeerOperation, type LoginPeer } from '../src/peers.ts'
 import { accessConfig, carrier } from './ingress-fixture.ts'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import { SessionHistoryController } from '../../../api/session-controller/src/history.ts'
+import { HistoryController } from '../../../api/session-controller/src/history/controller.ts'
+import { WebController } from '../../../api/session-controller/src/web/controller.ts'
 import { installSessionReadTestServices, testSessionPersistence } from '../../../api/session-controller/tests/test-remote.ts'
 import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 import * as JsonlSessionPersistence from '../../../session/session-persistence-jsonl/src/index.ts'
@@ -460,7 +461,7 @@ it('does not expose persistence diagnostics in a real follow Gateway error frame
   vi.spyOn(f.ctx.sessionQuery, 'observeSession').mockImplementation(async (sessionId, options) => {
     try { return await observe(sessionId, options) } catch (error: unknown) { internalFailure = error; throw error }
   })
-  const history = new SessionHistoryController(f.ctx, () => { throw new Error('No promotion expected') })
+  const history = new WebController(f.ctx, new HistoryController(f.ctx), () => { throw new Error('No promotion expected') })
   class FollowFixture extends TypertRemoteService {
     constructor(owner: Context) { super(owner, 'session') }
     @Remote({ mode: 'stream' })
@@ -495,7 +496,7 @@ it('retains a real JSONL header close failure after follow cancellation in the o
     options?.signal?.addEventListener('abort', () => { cancelled.resolve(undefined) }, { once: true })
     return observe(sessionId, options)
   })
-  const history = new SessionHistoryController(f.ctx, () => { throw new Error('No promotion expected') })
+  const history = new WebController(f.ctx, new HistoryController(f.ctx), () => { throw new Error('No promotion expected') })
   class FollowFixture extends TypertRemoteService {
     constructor(owner: Context) { super(owner, 'session') }
     @Remote({ mode: 'stream' })
@@ -548,7 +549,7 @@ it.each(['distinct', 'same-reason'] as const)('retains legacy-flat close ENOENT 
     options?.signal?.addEventListener('abort', () => { cancelled.resolve(undefined) }, { once: true })
     return observe(sessionId, options)
   })
-  const history = new SessionHistoryController(f.ctx, () => { throw new Error('No promotion expected') })
+  const history = new WebController(f.ctx, new HistoryController(f.ctx), () => { throw new Error('No promotion expected') })
   class FollowFixture extends TypertRemoteService {
     constructor(owner: Context) { super(owner, 'session') }
     @Remote({ mode: 'stream' })
@@ -604,7 +605,7 @@ it.each(['read', 'close'] as const)('releases a real JSONL follow after its %s h
     options?.signal?.addEventListener('abort', () => { cancelled.resolve(undefined) }, { once: true })
     return observe(sessionId, options)
   })
-  const history = new SessionHistoryController(f.ctx, () => { throw new Error('No promotion expected') })
+  const history = new WebController(f.ctx, new HistoryController(f.ctx), () => { throw new Error('No promotion expected') })
   class FollowFixture extends TypertRemoteService {
     constructor(owner: Context) { super(owner, 'session') }
     @Remote({ mode: 'stream' })
@@ -681,7 +682,7 @@ it.each([
     options?.signal?.addEventListener('abort', () => { cancelled.resolve(undefined) }, { once: true })
     return observe(sessionId, options)
   })
-  const history = new SessionHistoryController(f.ctx, () => { throw new Error('No promotion expected') })
+  const history = new WebController(f.ctx, new HistoryController(f.ctx), () => { throw new Error('No promotion expected') })
   class FollowFixture extends TypertRemoteService {
     constructor(owner: Context) { super(owner, 'session') }
     @Remote({ mode: 'stream' })
@@ -739,7 +740,7 @@ it.each(['cancel', 'shared-cancel', 'same-reason'] as const)('retains the real P
     options?.signal?.addEventListener('abort', () => { cancelled.resolve(undefined) }, { once: true })
     return observe(sessionId, options)
   })
-  const history = new SessionHistoryController(f.ctx, () => { throw new Error('No promotion expected') })
+  const history = new WebController(f.ctx, new HistoryController(f.ctx), () => { throw new Error('No promotion expected') })
   class FollowFixture extends TypertRemoteService {
     constructor(owner: Context) { super(owner, 'session') }
     @Remote({ mode: 'stream' })
@@ -816,7 +817,7 @@ it.each(['close', 'read-and-close', 'no-cancel-read-and-close'] as const)('retai
     options?.signal?.addEventListener('abort', () => { cancelled.resolve(undefined) }, { once: true })
     return observe(sessionId, options).catch((error: unknown) => { observed.resolve(error); throw error })
   })
-  const history = new SessionHistoryController(f.ctx, () => { throw new Error('No promotion expected') })
+  const history = new WebController(f.ctx, new HistoryController(f.ctx), () => { throw new Error('No promotion expected') })
   class FollowFixture extends TypertRemoteService {
     constructor(owner: Context) { super(owner, 'session') }
     @Remote({ mode: 'stream' })
@@ -893,7 +894,7 @@ it.each(['cancel', 'same-reason', 'close-failure'] as const)('joins handle looku
     options?.signal?.addEventListener('abort', () => { cancelled.resolve(undefined) }, { once: true })
     return observe(sessionId, options)
   })
-  const history = new SessionHistoryController(f.ctx, () => { throw new Error('No promotion expected') })
+  const history = new WebController(f.ctx, new HistoryController(f.ctx), () => { throw new Error('No promotion expected') })
   class FollowFixture extends TypertRemoteService {
     constructor(owner: Context) { super(owner, 'session') }
     @Remote({ mode: 'stream' })
@@ -949,7 +950,7 @@ it.each(['return', 'abort'] as const)('releases a cancelled follow only after a 
     },
   }) as never)
   const id = SessionId('peer-follow-settled-stat')
-  const history = new SessionHistoryController(f.ctx, () => { throw new Error('No promotion expected') })
+  const history = new WebController(f.ctx, new HistoryController(f.ctx), () => { throw new Error('No promotion expected') })
   class FollowFixture extends TypertRemoteService {
     constructor(owner: Context) { super(owner, 'session') }
     @Remote({ mode: 'stream' })
@@ -991,7 +992,7 @@ it.each(['io', 'cleanup'] as const)('keeps a certified stat %s failure unknown a
     },
   }) as never)
   const id = SessionId('peer-follow-failed-stat')
-  const history = new SessionHistoryController(f.ctx, () => { throw new Error('No promotion expected') })
+  const history = new WebController(f.ctx, new HistoryController(f.ctx), () => { throw new Error('No promotion expected') })
   class FollowFixture extends TypertRemoteService {
     constructor(owner: Context) { super(owner, 'session') }
     @Remote({ mode: 'stream' })
@@ -1033,7 +1034,7 @@ it('keeps follow unknown when stat capability appears after the operation began'
   Object.defineProperty(provider, 'statSettlesOnAbort', { get: () => enabled })
   f.ctx.provide('sessionPersistence', provider as never)
   const id = SessionId('peer-follow-drifting-stat')
-  const history = new SessionHistoryController(f.ctx, () => { throw new Error('No promotion expected') })
+  const history = new WebController(f.ctx, new HistoryController(f.ctx), () => { throw new Error('No promotion expected') })
   class FollowFixture extends TypertRemoteService {
     constructor(owner: Context) { super(owner, 'session') }
     @Remote({ mode: 'stream' })
@@ -1080,7 +1081,7 @@ it.each(['false-to-true', 'true-to-false'] as const)('keeps the Peer unknown acr
     options?.signal?.addEventListener('abort', () => { cancelled.resolve(undefined) }, { once: true })
     return observe(sessionId, options)
   })
-  const history = new SessionHistoryController(f.ctx, () => { throw new Error('No promotion expected') })
+  const history = new WebController(f.ctx, new HistoryController(f.ctx), () => { throw new Error('No promotion expected') })
   class FollowFixture extends TypertRemoteService {
     constructor(owner: Context) { super(owner, 'session') }
     @Remote({ mode: 'stream' })
@@ -1119,7 +1120,7 @@ it('detaches the cancelled follow while the actual Peer and mux still await its 
     },
   }) as never)
   const id = SessionId('peer-follow-buffer')
-  const history = new SessionHistoryController(f.ctx, () => { throw new Error('No promotion expected') })
+  const history = new WebController(f.ctx, new HistoryController(f.ctx), () => { throw new Error('No promotion expected') })
   class FollowFixture extends TypertRemoteService {
     constructor(owner: Context) { super(owner, 'session') }
     @Remote({ mode: 'stream' })

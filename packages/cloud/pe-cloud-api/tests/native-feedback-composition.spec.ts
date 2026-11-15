@@ -124,7 +124,8 @@ async function fixture(id: string, selected = true) {
     rating: 'positive', note: 'native feedback', ifVersion: null })
   const cold = async () => { await writer?.close(); writer = undefined; detach?.(); detach = undefined }
   const command = async (line: string) => {
-    const agent: Agent = { id: session.id, ctx, session, status: 'idle', options: {}, inbox: unsupportedInbox(),
+    const agent: Agent = { id: session.id, ctx, session, status: 'idle', options: {},
+      model: { current() { throw new Error('Feedback commands do not select a model') }, select() { throw new Error('Feedback commands do not change a model') } }, inbox: unsupportedInbox(),
       send() {}, followup() {}, steer() {}, inject() {}, cancel() {}, whenIdle: () => Promise.resolve(),
       runMaintenance: operation => operation(new AbortController().signal) }
     return ctx.commands.execute(agent, line, [], new AbortController().signal)

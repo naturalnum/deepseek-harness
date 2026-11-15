@@ -2,7 +2,7 @@
 /** Actual server page controls over explicit backend answers; no authentication or execution claim. */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
-import { allowAllAccess, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { allowAllAccess, makeTranslate, contextMenuHook } from '@deepseek-ai/dsh-client-test-runtime'
 import { ServersSection } from '../src/client/remote-servers/ServersSection.tsx'
 import { remoteServerDictionaries } from '../src/client/remote-servers/locales.ts'
 import type { RemoteServerReply, RemoteServerRequest } from '@deepseek-ai/dsh-pe-cloud-api/types'
@@ -18,7 +18,7 @@ it('uses account callbacks for CRUD and shows unknown facts and the native never
   })
   const unused = (): never => { throw new Error('Unused native slot prop') }
   render(<ServersSection {...allowAllAccess} useSessions={unused} useSessionStatus={unused} useSessionRetainInfo={unused}
-    usePanelInfo={unused} useWorkspaces={unused} useResource={unused} scope="account-A-generation-1" close={() => {}} t={makeTranslate(en)} call={call}/>)
+    usePanelInfo={unused} useWorkspaces={unused} useResource={unused} useContextMenu={contextMenuHook()} scope="account-A-generation-1" close={() => {}} t={makeTranslate(en)} call={call}/>)
   await screen.findByText(en.empty)
   fireEvent.change(screen.getByLabelText(en.alias), { target: { value: 'fixture' } })
   fireEvent.change(screen.getByLabelText(en.host), { target: { value: '192.0.2.1' } })
@@ -38,7 +38,7 @@ it('uses account callbacks for CRUD and shows unknown facts and the native never
 it('shows the local-wait limitation and retry guidance in Chinese', async () => {
   const unused = (): never => { throw new Error('Unused native slot prop') }
   render(<ServersSection {...allowAllAccess} useSessions={unused} useSessionStatus={unused} useSessionRetainInfo={unused}
-    usePanelInfo={unused} useWorkspaces={unused} useResource={unused} scope="account-A-generation-1" close={() => {}}
+    usePanelInfo={unused} useWorkspaces={unused} useResource={unused} useContextMenu={contextMenuHook()} scope="account-A-generation-1" close={() => {}}
     t={makeTranslate(remoteServerDictionaries.zh)} call={async () => ({ servers: [],
       limits: { maxPrivateKeyBytes: 2048, maxKnownHostsBytes: 2048, maxImportBytes: 4096 } })}/>)
   expect(await screen.findByText(/取消或超时仅停止本地等待，远端程序可能仍在运行，重试前请先核实远端状态/)).toBeTruthy()

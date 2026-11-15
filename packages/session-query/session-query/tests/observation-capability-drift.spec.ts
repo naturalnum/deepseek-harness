@@ -79,7 +79,7 @@ it.each(['false-to-true', 'true-to-false'] as const)('keeps read cancellation un
       async read() { entered.resolve(undefined); await release.promise; return { eventState: 'detached', events: [] } },
       async close() {} } },
   } as never)
-  const pending = new SessionObservationReader(ctx).read(id, { signal: abort.signal, settleCancellation: true })
+  const pending = new SessionObservationReader(ctx).read(id, { signal: abort.signal })
   void pending.catch(() => {})
   await entered.promise
   abort.abort(reason); enabled = !enabled; release.resolve(undefined)
@@ -103,7 +103,7 @@ it('keeps cancellation unknown when a different provider replaces the one whose 
       async close() {} } },
   }
   const unprovide = ctx.provide('sessionPersistence', first as never)
-  const pending = new SessionObservationReader(ctx).read(id, { signal: abort.signal, settleCancellation: true })
+  const pending = new SessionObservationReader(ctx).read(id, { signal: abort.signal })
   void pending.catch(() => {})
   await entered.promise
   unprovide()
@@ -129,7 +129,7 @@ it('does not certify read cancellation without a valid provider identity', async
       async read() { entered.resolve(undefined); await release.promise; return { eventState: 'detached', events: [] } },
       async close() {} } },
   } as never)
-  const pending = new SessionObservationReader(ctx).read(id, { signal: abort.signal, settleCancellation: true })
+  const pending = new SessionObservationReader(ctx).read(id, { signal: abort.signal })
   void pending.catch(() => {})
   await entered.promise
   abort.abort(reason); release.resolve(undefined)

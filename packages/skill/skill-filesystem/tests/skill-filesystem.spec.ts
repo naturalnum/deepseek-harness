@@ -185,88 +185,6 @@ describe('dsh-skill-filesystem plugin exports', () => {
 })
 
 describe('FileSystemSkillProvider', () => {
-  it.each([false, true])('restricts only bundled invocation without enabling source-disabled skills (%s)', async (allowed) => {
-    const home = await tempDir('skill-invocation-ceiling')
-    const bundled = join(home, 'builtin'), custom = join(home, 'custom')
-    await writeSkill(bundled, 'builtin-report', 'Bundled report')
-    await writeSkill(custom, 'user-report', 'User report')
-    await writeSkill(bundled, 'source-disabled', 'Disabled report')
-    const path = join(bundled, 'source-disabled/SKILL.md')
-    const original = (await readFile(path, 'utf8')).replace('description: Disabled report',
-      'description: Disabled report\ndisable-model-invocation: true\nuser-invocable: false')
-    await writeFile(path, original)
-    const ctx = await setupLocal(home, { includeDefaultRoots: false, bundledSkillDir: bundled,
-      customSkillDirs: [custom], bundledInvocation: { modelInvocable: allowed, userInvocable: allowed } })
-    try {
-      const catalog = await ctx.skills.list()
-      for (const [name, expected] of [['builtin-report', allowed], ['user-report', true], ['source-disabled', false]] as const) {
-        const invocation = { modelInvocable: expected, userInvocable: expected }
-        expect(catalog.find(skill => skill.name === name)?.invocation).toEqual(invocation)
-        expect((await ctx.skills.get(name))?.invocation).toEqual(invocation)
-      }
-      expect(await readFile(path, 'utf8')).toBe(original)
-    } finally { await ctx.fiber.dispose() }
-  })
-
-  it('requires an explicit bundled root for a deployment invocation restriction', async () => {
-    const ctx = new Context()
-    try {
-      await ctx.plugin(SkillRegistry)
-      await expect(ctx.plugin(SkillFileSystem, {
-        bundledInvocation: { modelInvocable: false, userInvocable: false },
-      })).rejects.toThrow('bundledInvocation')
-    } finally { await ctx.fiber.dispose() }
-  })
-
-  it.each([undefined, '/opt/dsh/shared-skills'])('keeps bundled filenames in catalog and loaded paths (%s)', async (executionRoot) => {
-    const home = await tempDir('skill-bundled-path-home')
-    const bundled = await tempDir('skill-bundled-path-assets')
-    await writeFlatSkill(bundled, 'bundled-flat', 'flat bundled skill')
-    await writeSkill(bundled, 'bundled-directory', 'directory bundled skill')
-    const ctx = await setupLocal(home, {
-      includeDefaultRoots: false, bundledSkillDir: bundled,
-      ...executionRoot === undefined ? {} : { bundledExecutionRoot: executionRoot },
-    })
-    try {
-      const catalog = await ctx.skills.list({ cwd: home })
-      for (const [name, file, directory] of [
-        ['bundled-flat', 'bundled-flat.md', ''],
-        ['bundled-directory', join('bundled-directory', 'SKILL.md'), 'bundled-directory'],
-      ] as const) {
-        const path = join(executionRoot ?? bundled, file)
-        expect(catalog.find(skill => skill.name === name)?.path).toBe(path)
-        const loaded = await ctx.skills.get(name)
-        expect(loaded?.path).toBe(path)
-        expect(loaded?.resourceBase).toEqual({ kind: 'directory', path: join(executionRoot ?? bundled, directory) })
-        if (executionRoot === undefined) expect((await stat(path)).isFile()).toBe(true)
-      }
-    } finally {
-      await ctx.fiber.dispose()
-    }
-  })
-
-  it('appends deployment instructions only to bundled loads without changing source files or catalog descriptions', async () => {
-    const home = await tempDir('skill-runtime-guidance')
-    const bundled = join(home, 'builtin')
-    const custom = join(home, 'custom')
-    await writeSkill(bundled, 'builtin-report', 'Bundled report')
-    await writeSkill(custom, 'user-report', 'User report')
-    const input = await readFile(join(bundled, 'builtin-report/SKILL.md'), 'utf8')
-    const ctx = await setupLocal(home, { includeDefaultRoots: false, bundledSkillDir: bundled,
-      customSkillDirs: [custom], bundledInstructions: 'Run the installed Linux catalog refresh before delivery.' })
-    try {
-      expect((await ctx.skills.get('builtin-report'))?.content).toContain('Linux catalog refresh')
-      expect((await ctx.skills.get('user-report'))?.content).toBe('Use the skill.')
-      expect((await ctx.skills.list()).find(skill => skill.name === 'builtin-report')?.description).toBe('Bundled report')
-      expect(await readFile(join(bundled, 'builtin-report/SKILL.md'), 'utf8')).toBe(input)
-    } finally { await ctx.fiber.dispose() }
-    const invalid = new Context()
-    try {
-      await invalid.plugin(SkillRegistry)
-      await expect(invalid.plugin(SkillFileSystem, { bundledInstructions: 'Missing explicit bundle root' })).rejects.toThrow('bundledInstructions')
-    } finally { await invalid.fiber.dispose() }
-  })
-
   it('discovers project, custom, user, and agents skill roots in priority order', async () => {
     const home = await tempDir('skill-home')
     const project = await tempDir('skill-project')
@@ -1106,20 +1024,4 @@ describe('FileSystemSkillProvider', () => {
       }
     }
   })
-})
-
-it('can omit default user roots without suppressing project or explicit roots', async () => {
-  const home = await tempDir('configured-roots')
-  const workspace = join(home, 'workspace'), custom = join(home, 'custom')
-  await writeSkill(join(workspace, '.agents/skills'), 'project-skill', 'Project skill')
-  await writeSkill(join(home, 'user/skills'), 'user-skill', 'User skill')
-  await writeSkill(custom, 'custom-skill', 'Custom skill')
-  const ctx = new Context()
-  await ctx.plugin(SkillRegistry)
-  await ctx.plugin(SkillFileSystem, { dshHome: join(home, 'user'), agentsHome: join(home, 'user'),
-    includeDefaultUserRoots: false, customSkillDirs: [custom], watch: false })
-  const result = await ctx.skills.snapshot({ cwd: workspace })
-  expect(result.complete).toBe(true)
-  expect(result.skills.map(skill => skill.name)).toEqual(['custom-skill', 'project-skill'])
-  await ctx.fiber.dispose()
 })

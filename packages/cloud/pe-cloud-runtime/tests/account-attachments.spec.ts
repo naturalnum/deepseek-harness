@@ -164,10 +164,13 @@ async function fixture(limitOverrides: Partial<AccountAttachmentLimits> = {}, al
     selected.set(agent, project)
     return agent
   }
-  const preStep = (agent: Agent, messages: UserMessage[], next: () => Promise<PreStepDecision>) =>
-    ctx.agents.withInitiator(agent, () => agentEvents(ctx, agent).waterfall('agent/pre-step', {
-      messages, turn: 1, step: 1, signal: lifetime.signal,
+  const preStep = (agent: Agent, messages: UserMessage[], next: () => Promise<PreStepDecision>) => {
+    const modelSelection = agent.model.current()
+    if (modelSelection === undefined) throw new Error('Original Agent model selection absent')
+    return ctx.agents.withInitiator(agent, () => agentEvents(ctx, agent).waterfall('agent/pre-step', {
+      messages, turn: 1, step: 1, signal: lifetime.signal, modelSelection,
     }, next))
+  }
   return { binding, ctx, store, uploads, native, adapter, feature, create, preStep, selected, a, b, inputs, releases,
     insideStage: () => insideStage, fail: (error: Error) => { failure = error }, revoke: () => { lifetime.abort() } }
 }

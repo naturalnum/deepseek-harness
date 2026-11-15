@@ -6,7 +6,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { resolveSlotLabel,type PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import { TestRemote,allowAllAccess,bindSnapshotSelector,makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { TestRemote,allowAllAccess,contextMenuHook,bindSnapshotSelector,makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { remoteDefaultResponses } from '@deepseek-ai/dsh-client-test-runtime/src/assembly/remote-default-responses.ts'
 import { RemoteMock,ok } from '@deepseek-ai/dsh-remote-mock'
 import { apply as settingsApply,inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
@@ -87,7 +87,7 @@ async function fixture(){
   const props:SettingsRootComponentProps={ ...sidebarOwner,reconnect:()=>{},openDesktopUpdate:()=>{},
     useStore:bindSnapshotSelector(shell),actions:shell.actions,
     useSessions:select=>select(sessions),useSessionStatus:unused,usePanelInfo:unused,
-    useSessionRetainInfo:unused,useResource:unused,useWorkspaces:unused,...allowAllAccess,
+    useSessionRetainInfo:unused,useResource:unused,useContextMenu:contextMenuHook(),useWorkspaces:unused,...allowAllAccess,
     useShortcuts:select=>select([]),useDesktopUpdate:select=>select({ failed:false,opening:false }),useConnectionState:select=>select('connected'),
     useSections:bindSnapshotSelector(sections),useOnboardingSteps:bindSnapshotSelector(steps),renderSlot,t:makeTranslate(shellEn) }
   const appRoot=document.createElement('div');appRoot.id='root';appRoot.inert=false

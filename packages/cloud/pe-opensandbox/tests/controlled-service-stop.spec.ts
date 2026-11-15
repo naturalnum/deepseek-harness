@@ -1,3 +1,4 @@
+import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import { readinessBudget } from './fixtures/readiness.ts'
 /** Real native rows, Registry, DataClient and Python snapshots over a synthetic kernel and transport; no Linux qualification. */
 import { afterEach, expect, it, vi } from 'vitest'
@@ -107,7 +108,7 @@ class SyntheticTransport implements OwnedTransport {
   destroy(): Promise<void> { this.closed = true; return Promise.resolve() }
 }
 
-type Result = Awaited<ReturnType<ToolRuntime['execute']>>
+type Result = Awaited<ReturnType<typeof executeToolFixture>>
 function reply(result: Result) {
   expect(result.isError).toBe(false)
   const value = result.value
@@ -177,9 +178,9 @@ async function fixture(kind: Kind) {
       const outcome = await process.done; return { exitCode: outcome.exitCode }
     } }))
   let count = 0
-  const call = (args: { action: string; [key: string]: unknown }) => ctx.tools.execute({ callId: ToolCallId(`service-${++count}`),
+  const call = (args: { action: string; [key: string]: unknown }) => executeToolFixture(ctx, { callId: ToolCallId(`service-${++count}`),
     name: 'dev_service', arguments: args.action === 'start' ? { script: 'hello.py', ...args } : args, agent, signal })
-  const bash = () => ctx.tools.execute({ callId: ToolCallId(`bash-${++count}`), name: 'bash', arguments: {}, agent, signal })
+  const bash = () => executeToolFixture(ctx, { callId: ToolCallId(`bash-${++count}`), name: 'bash', arguments: {}, agent, signal })
   cleanups.push(async () => { physical.resolve(undefined); await owner.closeProvider(); await ctx.fiber.dispose() })
   return { owner, registry, prepared, transport, client, reservations, physical, physicalStop, unknown, operations, call, bash }
 }

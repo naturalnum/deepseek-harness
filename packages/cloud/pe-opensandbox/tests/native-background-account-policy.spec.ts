@@ -1,3 +1,5 @@
+import * as PtcToolExecutor from '@deepseek-ai/dsh-tool-executor-ptc'
+import { executeModelToolFixture, executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 /** Real AccountPolicy, Native Bash/Jobs and Agent teardown; only the external process channel is scripted. */
 import PtcRuntime, { type PtcRunRequest, type PtcRunSpec, type PtcRunResult } from '@deepseek-ai/dsh-ptc-runtime'
 import { FiberState } from '@deepseek-ai/cordis'
@@ -70,8 +72,9 @@ it.each(['native', 'ptc'] as const)('drains the original %s-dispatched Native jo
   const { sessionId } = await ctx.sessionController.create({})
   const agent = ctx.agents.get(sessionId)
   if (agent === undefined) throw new Error('Original Native Agent absent.')
-  if (mode === 'ptc') agent.ctx.tools.presentAs('ptc')
-  const result = await ctx.tools.execute({ callId: ToolCallId('real-policy-background'), name: mode === 'ptc' ? 'run_code' : 'bash', agent,
+  if (mode === 'ptc') await agent.ctx.plugin(PtcToolExecutor)
+  const execute = mode === 'ptc' ? executeModelToolFixture : executeToolFixture
+  const result = await execute(ctx, { callId: ToolCallId('real-policy-background'), name: mode === 'ptc' ? 'run_code' : 'bash', agent,
     signal: new AbortController().signal,
     arguments: mode === 'ptc' ? { code: 'scripted external program invokes the Native Bash binding', description: 'Keep original nested background job' }
       : { command: 'sleep scripted', description: 'Scripted remote work under real AccountPolicy', run_in_background: true } })

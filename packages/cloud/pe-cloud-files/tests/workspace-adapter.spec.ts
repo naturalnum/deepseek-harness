@@ -80,6 +80,7 @@ async function fixture(mode = 'normal', waitTimeoutMs = 3000, readyCreation = fa
           loadAll: () => unit.loadAll(),
           putRecord: async (table, key, value) => { await beforeRecord?.(table, key); await unit.putRecord(table, key, value) },
           deleteRecord: (table, key) => unit.deleteRecord(table, key),
+          deleteRecords: (table, keys) => unit.deleteRecords(table, keys),
           setGlobal: async (value) => { await unit.setGlobal(value); if (committed(value)) await afterCommit?.() },
           close: () => unit.close(),
         }

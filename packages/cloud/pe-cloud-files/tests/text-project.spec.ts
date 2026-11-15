@@ -776,7 +776,7 @@ it('reports a missing ancestor as native not-found without weakening project iso
 it('publishes the Office catalog with scoped default roots and notices new workspace skills', async () => {
   const test = await fixture('normal', 8, 3000, contentLimits)
   await test.graph.plugin(SkillRegistry)
-  await test.graph.plugin(SkillFileSystem, { dshHome: '/outside-test-scope/dsh', agentsHome: '/outside-test-scope/agents', includeDefaultUserRoots: false })
+  await test.graph.plugin(SkillFileSystem, { dshHome: '/outside-test-scope/dsh', agentsHome: '/outside-test-scope/agents', includeDefaultRoots: false })
   await test.graph.plugin(Office)
   const first = await test.graph.skills.snapshot({ cwd: test.project })
   expect(first.complete).toBe(true)

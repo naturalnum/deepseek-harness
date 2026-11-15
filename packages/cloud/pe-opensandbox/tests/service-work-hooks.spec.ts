@@ -1,3 +1,4 @@
+import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 /** Original work rows/controllers over synthetic transport; no target process or resource qualification. */
 import { afterEach, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -60,7 +61,7 @@ function channel() {
     } }
 }
 
-type Result = Awaited<ReturnType<ToolRuntime['execute']>>
+type Result = Awaited<ReturnType<typeof executeToolFixture>>
 function reply(result: Result) {
   expect(result.isError).toBe(false)
   const value = result.value
@@ -117,13 +118,13 @@ async function fixture(next: () => ReturnType<typeof channel> = channel) {
       const outcome = await process.done; return { exitCode: outcome.exitCode }
     } }))
   cleanups.push(async () => { physical.resolve(undefined); for (const item of entries) item.entry.finish(); await owner.closeProvider() })
-  const rawCall = (args: unknown, signal = new AbortController().signal, id = ids[0]!) => ctx.tools.execute({ callId: ToolCallId(`call-${++count}`),
+  const rawCall = (args: unknown, signal = new AbortController().signal, id = ids[0]!) => executeToolFixture(ctx, { callId: ToolCallId(`call-${++count}`),
     name: 'dev_service', arguments: args, agent: agents.get(id)!, signal })
   const call = (args: { action: string; [key: string]: unknown }, signal?: AbortSignal, id?: SessionId) =>
     rawCall(args.action === 'start' ? { script: 'hello.py', ...args } : args, signal, id)
   return { ctx, owner, runtime, profile, binding, workspace, agents, entries, reservations, unknown, physical, call, rawCall,
     failReserve: () => { failReserve = true },
-    bash: () => ctx.tools.execute({ callId: ToolCallId(`bash-${++count}`), name: 'bash', arguments: {},
+    bash: () => executeToolFixture(ctx, { callId: ToolCallId(`bash-${++count}`), name: 'bash', arguments: {},
       agent: agents.get(ids[0]!)!, signal: new AbortController().signal }) }
 }
 

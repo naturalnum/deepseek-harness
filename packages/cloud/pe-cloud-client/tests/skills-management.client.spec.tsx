@@ -2,7 +2,7 @@
 /** Migrated Skills presentation consumes current sources and explicit callbacks, without a legacy transport. */
 import { afterEach, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
-import { allowAllAccess, bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { allowAllAccess, bindSnapshotSelector, makeTranslate, contextMenuHook } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { SkillsPage, type SkillsPageProps } from '../src/client/management/skills/SkillsPage.tsx'
 import { SkillInstallPanel } from '../src/client/management/skills/SkillInstallPanel.tsx'
@@ -20,7 +20,7 @@ function fixture() {
   ] })
   const unused = (): never => { throw new Error('No account service belongs in this presentation') }
   const props: SkillsPageProps = { ...allowAllAccess, useSessions: unused, useSessionStatus: unused, useSessionRetainInfo: unused,
-    usePanelInfo: unused, useWorkspaces: unused, useResource: unused, scope: 'original-account-page',
+    usePanelInfo: unused, useWorkspaces: unused, useResource: unused, useContextMenu: contextMenuHook(), scope: 'original-account-page',
     useSkillManagement: bindSnapshotSelector(source), t: makeTranslate(en), report: vi.fn(),
     limits: { nameCharacters: 80, descriptionCharacters: 500, instructionsBytes: 4096, archiveBytes: 1024 } }
   return { props, source }

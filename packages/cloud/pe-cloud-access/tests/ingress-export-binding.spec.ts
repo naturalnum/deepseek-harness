@@ -5,7 +5,8 @@ import { Context } from '@deepseek-ai/cordis'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 import { apply as applyConnection, inject as connectionInject } from '@deepseek-ai/dsh-client-connection'
 import { PeAccountRuntime } from '@deepseek-ai/dsh-pe-cloud-runtime/root'
-import { registerSessionLogExport, SESSION_LOG_EXPORT_PATH } from '@deepseek-ai/dsh-session-log-export'
+import { SESSION_LOG_EXPORT_PATH } from '@deepseek-ai/dsh-session-log-export'
+import { registerSessionLogExport } from '@deepseek-ai/dsh-session-log-export/src/registration.ts'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import pg from 'pg'
 import type { Auth } from 'better-auth'
@@ -87,7 +88,7 @@ async function fixture(reviewDownload = true) {
   { web, runtime, recipeVersion: graph.binding.recipeVersion, assertAuthenticationCurrent() {} })
   const server = createServer((request, response) => {
     const route = routes.mock.calls.find(([value]) => value.path === '/api')?.[0]
-    if (route === undefined) throw new Error('Original API ingress route absent')
+    if (route === undefined || !('handler' in route)) throw new Error('Original API ingress route absent')
     pending.push(Promise.resolve(route.handler(request, response)))
   })
   server.on('connection', (socket) => { sockets.add(socket); socket.on('error', () => {}); socket.once('close', () => { sockets.delete(socket) }) })

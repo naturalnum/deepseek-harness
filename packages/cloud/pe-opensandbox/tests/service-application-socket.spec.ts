@@ -1,3 +1,4 @@
+import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 /** Original native service row and selected-server adapter over owned loopback sockets; no OpenSandbox or Linux acceptance. */
 import { afterEach, expect, it, vi } from 'vitest'
 import { channel, unsubscribe as unsubscribeDiagnostic } from 'node:diagnostics_channel'
@@ -241,7 +242,7 @@ async function fixture(name: string, handler: (request: IncomingMessage, respons
   vi.spyOn(owner, 'attachOriginal').mockImplementation((...args) => { const work = attach(...args); workRows.push(work); return work })
   vi.spyOn(owner, 'create').mockImplementation((...args) => { const operation = create(...args); originalOperations.push(operation); return operation })
   const runtime = new CloudSubprocessRuntime(ctx, owner); registerDevServiceConsumer(ctx, owner.calls, runtime, owner, profile)
-  const started = await ctx.tools.execute({ callId: ToolCallId('worker6-loopback-start'), name: 'dev_service',
+  const started = await executeToolFixture(ctx, { callId: ToolCallId('worker6-loopback-start'), name: 'dev_service',
     arguments: { action: 'start', script: 'server.py' }, agent, signal: startCaller.signal })
   expect(started.isError).toBe(false)
   const work = workRows[0], operation = originalOperations[0]

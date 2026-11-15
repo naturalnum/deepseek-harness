@@ -189,7 +189,7 @@ it('selects and removes a real multi-entry provide/inject bundle with native per
   expect(second.ctx.get('terminalFixtureResult')).toBe('native-string-consumer')
   const provider = [...second.ctx.loader.entries()].find(entry => entry.id === 'include:terminal-provider')!.fiber!
   const consumer = [...second.ctx.loader.entries()].find(entry => entry.id === 'include:terminal-consumer')!.fiber!
-  expect(consumer.store?.terminalFixtureValue?.fiber).toBe(provider)
+  expect(consumer.committed?.terminalFixtureValue?.ctx.fiber).toBe(provider)
   const disabled = await f.commit(second, false)
   expect(disabled.persisted.native).toMatchObject({ changed: true, application: 'restart-required', restartReason: 'no-hmr' })
   expect(second.ctx.get('terminalFixtureResult')).toBe('native-string-consumer')

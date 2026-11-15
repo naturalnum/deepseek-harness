@@ -4,7 +4,8 @@ import { expect, it, vi } from 'vitest'
 import { SubprocessRuntime, type SubprocessSpawnSpec, type SubprocessHandle,
   type SubprocessOutcome, type SubprocessTerminalSpawnSpec, type SubprocessTerminalHandle } from '@deepseek-ai/dsh-subprocess'
 import NodePtcRuntime from '@deepseek-ai/dsh-ptc-runtime-node'
-import { JsonChannel } from '../../../ptc-runtime/ptc-runtime-node/src/channel.ts'
+import { createProcessRpc } from '../../../ptc-runtime/ptc-runtime-node/src/rpc.ts'
+import { PROGRAM_PROTOCOL_VERSION, type HostMethods, type ProgramMethods, type ProgramResult } from '../../../ptc-runtime/ptc-runtime-node/src/protocol.ts'
 import { encodePtcJsonWire } from '../../../ptc-runtime/ptc-runtime-node/src/json-wire.ts'
 import { BashTerminalBackend } from '@deepseek-ai/dsh-terminal-bash'
 import TerminalRegistry, { TerminalSessionId } from '@deepseek-ai/dsh-terminal'
@@ -28,18 +29,18 @@ async function consumers(completeProgram = true, terminalReady = true) {
       const peer = Duplex.from({ readable: outgoing, writable: incoming })
       const stdout = new PassThrough(), stderr = new PassThrough(), done = Promise.withResolvers<SubprocessOutcome>()
       let stopped = false
-      const protocol = new JsonChannel(peer, 65536, (raw) => {
-        if (typeof raw === 'object' && raw !== null && 'type' in raw && raw.type === 'boot' && completeProgram) {
-          void protocol.send({ type: 'done', value: encodePtcJsonWire({ candidate: true }) }).catch((error: unknown) => { if (!stopped) done.reject(error) })
-        }
-      }, (error) => { if (!stopped) done.reject(error) })
-      void protocol.send({ type: 'ready' }).catch((error: unknown) => { if (!stopped) done.reject(error) })
+      const completion = Promise.withResolvers<ProgramResult>()
+      const protocol = createProcessRpc<HostMethods, ProgramMethods>(peer, 65536, {
+        async run() { return completeProgram ? { value: encodePtcJsonWire({ candidate: true }) } : await completion.promise },
+        revoke() {},
+      }, ['ready'], (error, kind) => { if (!stopped && kind === 'protocol') done.reject(error) })
+      void protocol.ready(PROGRAM_PROTOCOL_VERSION).catch((error: unknown) => { if (!stopped) done.reject(error) })
       spawned.resolve(undefined)
       return { stdin: undefined, stdout, stderr, control: host, collected: {}, done: done.promise,
         terminate() {
           if (stopped) return
           stopped = true; state.programStops++; stdout.end(); stderr.end()
-          done.resolve({ exitCode: 0, signal: null }); protocol.close(); host.end()
+          done.resolve({ exitCode: 0, signal: null }); protocol.$close(); completion.resolve({}); host.end()
         },
         waitForExit: async () => { await done.promise; return true },
       }

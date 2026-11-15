@@ -1,3 +1,4 @@
+import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 /** Native command/account/tool cancellation with a synthetic allocation channel; no SSH or physical cleanup claim. */
 import { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
@@ -97,7 +98,7 @@ async function fixture(timeoutMs = 10000) {
   })
   const invoke = (signal: AbortSignal) => {
     agent.session.append('turn/start', { turn: 1 })
-    return ctx.tools.execute({ name: 'remote_exec', arguments: { server: reference, command: 'sleep 8' },
+    return executeToolFixture(ctx, { name: 'remote_exec', arguments: { server: reference, command: 'sleep 8' },
       callId: ToolCallId('direct-call'), agent, signal }).finally(() => {
       agent.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     })

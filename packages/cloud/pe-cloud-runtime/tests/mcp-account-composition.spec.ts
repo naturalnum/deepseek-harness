@@ -1,3 +1,4 @@
+import { executeModelToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 /**
  * Real native Loader, AccountPolicy, Gateway, Agent and HTTP MCP composition with an explicitly selected Native executor.
  * Authentication uses one synthetic Peer edge; executor selection and settlement use their original account owner.
@@ -146,10 +147,10 @@ it('discovers and calls an HTTP MCP tool through an original guarded account Age
     const other = await b.ctx.sessionController.create({}), foreign = b.ctx.agents.get(other.sessionId)
     if (agent === undefined || foreign === undefined) throw new Error('Original native Agents were not created')
     expect(a.guards.projectForAgent(agent)).toBe(a.files.project().workspace)
-    const called = await a.ctx.tools.execute({ agent, name: 'mcp__compute__ping', arguments: {},
+    const called = await executeModelToolFixture(a.ctx, { agent, name: 'mcp__compute__ping', arguments: {},
       callId: ToolCallId('account-mcp'), signal: new AbortController().signal })
     expect(called).toMatchObject({ isError: false, value: { content: [{ type: 'text', text: 'pong' }] } })
-    const denied = await a.ctx.tools.execute({ agent: foreign, name: 'mcp__compute__ping', arguments: {},
+    const denied = await executeModelToolFixture(a.ctx, { agent: foreign, name: 'mcp__compute__ping', arguments: {},
       callId: ToolCallId('foreign-account-mcp'), signal: new AbortController().signal })
     expect(denied.isError).toBe(true)
     let modelCalls = 0
@@ -210,7 +211,7 @@ it('contains an oversized remote HTTP result to its original account and admits 
     const agentA = a.ctx.agents.get(createdA.sessionId), agentB = b.ctx.agents.get(createdB.sessionId)
     if (agentA === undefined || agentB === undefined) throw new Error('Original native Agents absent')
     external.setToolText('x'.repeat(8192))
-    const invoke = (graph: typeof a, agent: typeof agentA, id: string) => graph.ctx.tools.execute({ agent,
+    const invoke = (graph: typeof a, agent: typeof agentA, id: string) => executeModelToolFixture(graph.ctx, { agent,
       name: 'mcp__compute__ping', arguments: {}, callId: ToolCallId(id), signal: new AbortController().signal })
     expect((await invoke(a, agentA, 'oversized-a')).isError).toBe(true)
     expect(await invoke(b, agentB, 'bounded-b')).toMatchObject({ isError: false,
@@ -237,11 +238,11 @@ it('recovers real HTTP discovery after a temporary outage and reports a bounded 
     const created = await a.ctx.sessionController.create({}), agent = a.ctx.agents.get(created.sessionId)
     if (agent === undefined) throw new Error('Original native Agent absent')
     external.setToolDelay(150)
-    const timeout = await a.ctx.tools.execute({ agent, name: 'mcp__compute__ping', arguments: {},
+    const timeout = await executeModelToolFixture(a.ctx, { agent, name: 'mcp__compute__ping', arguments: {},
       callId: ToolCallId('mcp-timeout'), signal: new AbortController().signal })
     expect(timeout.isError).toBe(true)
     external.setToolDelay(0)
-    const recovered = await a.ctx.tools.execute({ agent, name: 'mcp__compute__ping', arguments: {},
+    const recovered = await executeModelToolFixture(a.ctx, { agent, name: 'mcp__compute__ping', arguments: {},
       callId: ToolCallId('mcp-after-timeout'), signal: new AbortController().signal })
     expect(recovered).toMatchObject({ isError: false, value: { content: [{ type: 'text', text: 'pong' }] } })
     expect(external.authorization.every(header => header === 'Bearer synthetic-reconnect-token')).toBe(true)

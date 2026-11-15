@@ -1,3 +1,4 @@
+import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 /** Real Native approval/write tool over an owned local test file and the production cloud mutation guard. */
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
@@ -44,7 +45,7 @@ async function fixture(outcome: 'allowed-once' | 'rejected' = 'allowed-once') {
   await ctx.plugin(ToolFs, { read: false, readImage: false, edit: false })
   const approval = vi.fn(() => Promise.resolve(outcome))
   ctx.on('approval/request', approval)
-  const execute = (args: Record<string, unknown>) => ctx.tools.execute({ callId: ToolCallId('approved-fs-call'), name: 'write',
+  const execute = (args: Record<string, unknown>) => executeToolFixture(ctx, { callId: ToolCallId('approved-fs-call'), name: 'write',
     agent, signal: new AbortController().signal, arguments: { file_path: 'result.txt', content: 'one approved write', ...args } })
   return { ctx, agent, project, written, approval, execute }
 }

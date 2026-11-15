@@ -16,6 +16,16 @@ export interface HttpMcpFixture {
   setToolText: (text: string) => void
   /** Delay the real SDK tool handler, allowing Client-side timeout and late settlement. */
   setToolDelay: (milliseconds: number) => void
+  /** Set the real SDK initialize response instructions. */
+  setInstructions: (instructions: string) => void
+  /** Set the real SDK tool-list description. */
+  setToolDescription: (description: string) => void
+  /** Prefix actual SSE responses with a comment of this length. */
+  setSsePadding: (bytes: number) => void
+  /** Select how many distinct tool pages the SDK lists. */
+  setListPageCount: (pages: number) => void
+  /** Cursors received by the SDK tool-list handler. */
+  listRequests: string[]
   /** Hold one actual HTTP request until release or physical response closure. */
   holdNextRequest: () => { entered: Promise<void>; release: () => void }
   close: () => Promise<void>
@@ -29,14 +39,16 @@ export async function startHttpMcpFixture(options: {
   const calls: string[] = []
   const authorization: Array<string | undefined> = []
   let available = true, toolText = 'pong', toolDelay = 0
+  let instructions = '', toolDescription = 'Replies pong.', ssePadding = 0, listPageCount = 1
+  const listRequests: string[] = []
   const heldRequests = new Set<() => void>()
   let nextRequest: { entered: () => void; resumed: Promise<void>; release: () => void } | undefined
-  const handler = createMcpHandler(({ requestInfo }) => {
+  const createServerForRequest: Parameters<typeof createMcpHandler>[0] = ({ requestInfo }) => {
     const mcp = new McpServer(
       { name: 'http-fixture', version: '1.0.0' },
-      { capabilities: { tools: {} } },
+      { capabilities: { tools: {} }, instructions },
     )
-    mcp.registerTool('ping', { description: 'Replies pong.', inputSchema: z.object({}) }, async (): Promise<CallToolResult> => {
+    mcp.registerTool('ping', { description: toolDescription, inputSchema: z.object({}) }, async (): Promise<CallToolResult> => {
       calls.push('ping')
       if (toolDelay > 0) await new Promise<void>((resolve) => { setTimeout(resolve, toolDelay) })
       if (options.rejectToolCalls) {
@@ -44,9 +56,30 @@ export async function startHttpMcpFixture(options: {
       }
       return { content: [{ type: 'text', text: toolText }] }
     })
+    mcp.server.setRequestHandler('tools/list', async (request) => {
+      const cursor = request.params?.cursor ?? '0', page = Number(cursor)
+      if (!Number.isSafeInteger(page) || page < 0 || page >= listPageCount) throw new Error('Invalid fixture tool cursor')
+      listRequests.push(cursor)
+      return {
+        tools: [{ name: listPageCount === 1 ? 'ping' : `ping-${String(page)}`, description: toolDescription,
+          inputSchema: { type: 'object', properties: {} } }],
+        ...page + 1 < listPageCount ? { nextCursor: String(page + 1) } : {},
+      }
+    })
     return mcp
-  })
-  const handle = toNodeHandler(handler)
+  }
+  const handler = createMcpHandler(createServerForRequest)
+  const sseHandler = createMcpHandler(createServerForRequest, { responseMode: 'sse' })
+  const handle = toNodeHandler({ async fetch(request, options) {
+    const response = await (ssePadding > 0 ? sseHandler : handler).fetch(request, options)
+    if (ssePadding === 0 || response.body === null || !response.headers.get('content-type')?.includes('text/event-stream')) return response
+    const headers = new Headers(response.headers)
+    headers.delete('content-length')
+    const body = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({ start(controller) {
+      controller.enqueue(new TextEncoder().encode(': ' + 'x'.repeat(ssePadding) + '\n\n'))
+    } }))
+    return new Response(body, { status: response.status, statusText: response.statusText, headers })
+  } })
   const handleRequest = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     authorization.push(request.headers.authorization)
     if (!available) { response.writeHead(503).end('MCP fixture is temporarily unavailable.'); return }
@@ -85,6 +118,11 @@ export async function startHttpMcpFixture(options: {
     setAvailable: (value) => { available = value },
     setToolText: (value) => { toolText = value },
     setToolDelay: (value) => { toolDelay = value },
+    setInstructions: (value) => { instructions = value },
+    setToolDescription: (value) => { toolDescription = value },
+    setSsePadding: (value) => { ssePadding = value },
+    setListPageCount: (value) => { listPageCount = value },
+    listRequests,
     holdNextRequest: () => {
       if (nextRequest !== undefined) throw new Error('The next HTTP MCP request is already held.')
       const entered = Promise.withResolvers<undefined>(), resumed = Promise.withResolvers<undefined>()
@@ -96,7 +134,7 @@ export async function startHttpMcpFixture(options: {
     close: async () => {
       available = false
       for (const release of heldRequests) release()
-      await handler.close()
+      await Promise.all([handler.close(), sseHandler.close()])
       await new Promise<void>((resolve, reject) => {
         server.close((error) => { if (error === undefined) resolve(); else reject(error) })
       })

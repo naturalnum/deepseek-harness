@@ -1,3 +1,4 @@
+import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 /** Real Loader, Root, assembly, storage adapter and coordinator; scripted OS/PG and installed asset location only. */
 import { createHash } from 'node:crypto'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -253,7 +254,7 @@ it('refuses the original files current callback inside shared-path admission bef
     const agent = ctx.agents.get(SessionId('shared-path-denied-agent'))
     expect(agent).toBeDefined()
     if (agent === undefined) throw new Error('The original native Agent is unavailable.')
-    const result = await ctx.tools.execute({ callId: ToolCallId('shared-path-files-refusal'), name: 'bash', agent,
+    const result = await executeToolFixture(ctx, { callId: ToolCallId('shared-path-files-refusal'), name: 'bash', agent,
       signal: new AbortController().signal, arguments: { command: 'printf blocked', description: 'Check revoked files grant.' } })
     expect(result.isError).toBe(true)
     expect(filesCurrent).toHaveBeenCalledTimes(2)

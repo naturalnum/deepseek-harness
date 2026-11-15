@@ -113,7 +113,7 @@ async function fixture(phase: Phase, reject: 'none' | 'revoked' | 'replaced' | '
   const ownedIngress = ingress, pending: Promise<void>[] = []
   const server = createServer((request, response) => {
     const route = httpRoutes.mock.calls.find(([value]) => value.path === '/api')?.[0]
-    if (route === undefined) throw new Error('Original native route absent')
+    if (route === undefined || !('handler' in route)) throw new Error('Original native route absent')
     const actual = Promise.resolve(route.handler(request, response))
     void actual.catch(() => {})
     pending.push(actual)

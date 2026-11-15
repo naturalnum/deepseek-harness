@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** Original native controls drive complete files and an explicitly opened, once-only sample edit. */
 import { afterEach, expect, it, vi } from 'vitest'
-import { makeTranslate, allowAllAccess } from '@deepseek-ai/dsh-client-test-runtime'
+import { makeTranslate, allowAllAccess, contextMenuHook } from '@deepseek-ai/dsh-client-test-runtime'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { SkillSettings, type SkillSettingsProps } from '../src/client/SkillSettings.tsx'
 import { skillSettingsDictionaries } from '../src/client/skill-settings-locales.ts'
@@ -19,7 +19,7 @@ function fixture(outcome: SkillPublicationOutcome = { kind: 'persisted', applied
   const prepare = vi.fn<SkillSettingsProps['prepare']>(async (): Promise<PreparedSkillEdit> => ({ source: null, installed: false, applied: false, resources: 'unavailable', publish }))
   const unused = (): never => { throw new Error('No global session hook belongs to this local file editor') }
   const props: SkillSettingsProps = { ...allowAllAccess, useSessions: unused, useSessionStatus: unused, useSessionRetainInfo: unused,
-    usePanelInfo: unused, useWorkspaces: unused, useResource: unused, scope: 'G:original', maxFileBytes: 4096, prepare, close: () => {}, t: makeTranslate(en) }
+    usePanelInfo: unused, useWorkspaces: unused, useResource: unused, useContextMenu: contextMenuHook(), scope: 'G:original', maxFileBytes: 4096, prepare, close: () => {}, t: makeTranslate(en) }
   return { props, prepare, publish }
 }
 async function openAndChoose() {

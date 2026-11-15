@@ -31,7 +31,7 @@ it.each(['open', 'read', 'close'] as const)('waits for %s and closes before cert
       }
     },
   } as never)
-  const pending = new SessionObservationReader(ctx).read(id, { signal: abort.signal, projectionMode: 'none', settleCancellation: true })
+  const pending = new SessionObservationReader(ctx).read(id, { signal: abort.signal, projectionMode: 'none' })
   let settled = false
   void pending.then(() => { settled = true }, () => { settled = true })
   await entered.promise
@@ -64,7 +64,7 @@ it.each(['open', 'read', 'close'] as const)('does not certify a real %s failure 
       }
     },
   } as never)
-  const pending = new SessionObservationReader(ctx).read(id, { signal: abort.signal, projectionMode: 'none', settleCancellation: true })
+  const pending = new SessionObservationReader(ctx).read(id, { signal: abort.signal, projectionMode: 'none' })
   void pending.catch(() => {})
   await entered.promise
   abort.abort(failure); release.resolve(undefined)
@@ -84,7 +84,7 @@ it.each(['no-read-capability', 'no-stat-capability'] as const)('does not certify
     async stat() { return { header, revision: SessionPersistenceRevision('fixture') } },
     async open() { abort.abort(reason); throw reason },
   } as never)
-  const error: unknown = await new SessionObservationReader(ctx).read(id, { signal: abort.signal, settleCancellation: true })
+  const error: unknown = await new SessionObservationReader(ctx).read(id, { signal: abort.signal })
     .catch((failure: unknown) => failure)
   expect(error).toMatchObject({ code: 'SESSION_QUERY_ABORTED', cause: reason })
   expect((error as Error).constructor.name).toBe('SessionQueryError')
@@ -128,7 +128,7 @@ it('retains both read and close failures when a certified read races cancellatio
       async read() { entered.resolve(undefined); await release.promise; throw readFailure },
       async close() { throw closeFailure } } },
   } as never)
-  const pending = new SessionObservationReader(ctx).read(id, { signal: abort.signal, projectionMode: 'none', settleCancellation: true })
+  const pending = new SessionObservationReader(ctx).read(id, { signal: abort.signal, projectionMode: 'none' })
   void pending.catch(() => {})
   await entered.promise
   abort.abort(readFailure); release.resolve(undefined)
@@ -149,7 +149,7 @@ it('preserves an aggregate open failure even when it is the abort reason', async
     async stat() { return { header, revision: SessionPersistenceRevision('fixture') } },
     async open() { abort.abort(failure); throw failure },
   } as never)
-  await expect(new SessionObservationReader(ctx).read(id, { signal: abort.signal, settleCancellation: true }))
+  await expect(new SessionObservationReader(ctx).read(id, { signal: abort.signal }))
     .rejects.toMatchObject({ code: 'SESSION_QUERY_PERSISTENCE_FAILED', cause: failure })
 })
 
@@ -165,7 +165,7 @@ it('does not certify an aggregate abort reason after an otherwise successful rea
     async open() { return { id, header, access: 'read', inheritedEventCount: SessionLogOffset(0),
       async read() { abort.abort(reason); return { eventState: 'detached', events: [] } }, async close() {} } },
   } as never)
-  const error: unknown = await new SessionObservationReader(ctx).read(id, { signal: abort.signal, settleCancellation: true })
+  const error: unknown = await new SessionObservationReader(ctx).read(id, { signal: abort.signal })
     .catch((failure: unknown) => failure)
   expect(error).toMatchObject({ code: 'SESSION_QUERY_ABORTED', cause: reason })
   expect((error as Error).constructor.name).toBe('SessionQueryError')
@@ -189,7 +189,7 @@ it('keeps the private cancellation marker out of a failed handle close', async (
       async close() { throw closeFailure },
     } },
   } as never)
-  const pending = new SessionObservationReader(ctx).read(id, { signal: abort.signal, settleCancellation: true })
+  const pending = new SessionObservationReader(ctx).read(id, { signal: abort.signal })
   void pending.catch(() => {})
   await entered.promise
   abort.abort(reason); release.resolve(undefined)

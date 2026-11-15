@@ -1,3 +1,4 @@
+import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 /** Optional public-network probe; never supplies a key or contacts a Cloud Target. */
 import { expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -13,7 +14,7 @@ it.skipIf(process.env.WORKER1_LIVE_PUBLIC_PROBE !== '1')('runs native web_fetch 
   await ctx.plugin(SystemPrompt); await ctx.plugin(Tools)
   await ctx.plugin(Web, { fetchProvider: 'http' }); await ctx.plugin(Http)
   await ctx.plugin(ToolWeb, { search: false })
-  const result = await ctx.tools.execute({ callId: ToolCallId('public-probe'), name: 'web_fetch',
+  const result = await executeToolFixture(ctx, { callId: ToolCallId('public-probe'), name: 'web_fetch',
     arguments: { url: 'https://example.com/' }, signal: AbortSignal.timeout(15000) })
   expect(result.isError).toBe(false)
   expect(JSON.stringify(result.content)).toContain('Example Domain')

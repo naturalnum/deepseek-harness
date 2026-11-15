@@ -120,7 +120,7 @@ packages/boot/config-editor/src/index.ts	扩展点	加保存钩子 registerSaveH
 packages/api/gateway/src/index.ts	云端定制	加了 createNodeStreamTransport、远程事件队列上限参数、inspectInvocation 三个扩展点，同时把流清理从“不等待、只打日志”改成“等待并保留失败”（改默认）	三个扩展点保留；清理语义改动拆成独立补丁，提上游或回退
 packages/extensions/cordis-client-runner/src/client/slot-catalog.ts	生成	由 pnpm run gen-client-catalog 生成；每个槽位多一个标准属性 workspaceDeleteDisabledReason，新增 2 个槽位，并列出云端占用者	不手工合并，合并后重新生成
 packages/boot/plugin-manager/src/index.ts	扩展点	加 registerSaveHook、registerSelectionGuard、changeFailureOutcome、previewBundleSelection；没有守护时原启停写入不变	钩子在私有启停写入流程里，保留
-packages/skill/skill-filesystem/src/index.ts	扩展点	加可选的程序化文件来源 FileSystemSkillSource、includeDefaultUserRoots 和一组 bundled* 选项（调用上限、执行环境镜像路径、整包清单）；默认值保持原行为；含一句面向执行环境的提示文本	来源接口和选项保留；提示文本改由已有的 bundledInstructions 配置传入
+packages/skill/skill-filesystem/src/index.ts	扩展点	加可选的程序化文件来源 FileSystemSkillSource、includeDefaultUserRoots 和一组 bundled* 选项（调用上限、执行环境镜像路径、整包清单）；默认值保持原行为；含一句面向执行环境的提示文本	仅保留当前程序化文件来源；旧部署选项测试按原生当前配置撤回，调用限制和环境说明待迁入我方插件
 packages/api/gateway/src/stream-server.ts	云端定制	加扩展点 NodeStreamTransportOptions（帧上限、逻辑流占用回调），同时关闭和清理失败由打日志改为保留并在 close 抛出、关闭中拒绝新升级（改默认）	与 gateway/src/index.ts 一起处理
 packages/attachment/attachment-local/src/store.ts	云端定制	暂存写入区分“容量不足、清理未确认、发布未确认”三类错误，关闭句柄和删临时文件的失败不再吞掉（改了默认错误类型）	提上游；或让云端附件存储（已继承 LocalAttachmentStore）自己实现暂存
 packages/core/agent-loop/src/index.ts	云端定制	加扩展点 stop()、isQuiescent()、observeDisposal，同时未发布句柄的关闭失败由吞掉改为保留到工厂停止、停用后 create 直接拒绝（改默认）	三个扩展点保留；关闭失败保留部分提上游
@@ -136,7 +136,7 @@ vendor/loader/src/index.ts	扩展点	加 LoaderUpdateGuard、LoaderUpdateScope�
 packages/mcp/mcp-client/src/connection.ts	通用修复	严格启动失败在确认关闭后交给调用方，监督器不再重试和重复告警（改默认）；另含扩展点 closureConfirmed 和有界 HTTP 读取器的归属	修复部分提上游；扩展点保留
 packages/session-query/session-query/src/observation.ts	云端定制	取消后的结算认证（看提供方是否声明能结算），错误信息不再带会话号和后端原文（改默认文案）	随取消结算加固一起提上游或回退
 packages/api/session-controller/src/index.ts	扩展点	加四个受保护方法 ensureProjectDirectory、preparePromptFiles、assertModelSelection、controlBufferLimits 和 internals.skillCatalog；默认实现不做事	保留
-packages/skill/skill-office/src/index.ts	云端定制	把执行环境说明（guest 路径、Linux soffice/pdftoppm、技术报告目录刷新）写进原生技能提供方；由配置开启，但文本和选项是我方产品专用	改由云端包注册自己的技能提供方，或只留一个通用的“附加说明”配置项
+packages/skill/skill-office/src/index.ts	云端定制	把执行环境说明（guest 路径、Linux soffice/pdftoppm、技术报告目录刷新）写进原生技能提供方；由配置开启，但文本和选项是我方产品专用	原生源码和旧部署选项测试已撤回；云端 Office 技能与 Linux 执行说明待接我方提供方并实测
 packages/session/session-persistence-jsonl/src/storage.ts	云端定制	句柄静止观察 isQuiescent（扩展点），同时 read 取消后先结算、close 等已准入的读结束（改默认）	静止观察保留；其余随取消结算加固处理
 packages/subagent/subagent/src/manager.ts	扩展点	把准入检查穿进创建和恢复子 Agent 的各检查点	保留
 packages/api/settings-controller/src/index.ts	扩展点	加 internals.withWrite：写设置时由宿主包住原写入；不提供时原样写	保留

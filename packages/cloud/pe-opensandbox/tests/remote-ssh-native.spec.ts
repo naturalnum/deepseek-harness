@@ -1,3 +1,4 @@
+import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 /** Real SSH through the original NativeCommandAccount. The external allocation transport is a test-owned Docker range. */
 import { Context } from '@deepseek-ai/cordis'
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
@@ -133,7 +134,7 @@ it('uses real native tool tokens, approvals and original range reservations for 
         exec.signal, currentConfig, current, probe),
     })
     agent.session.append('turn/start', { turn: 1 })
-    const invoke = (name: string, args: object, signal = new AbortController().signal) => ctx.tools.execute({
+    const invoke = (name: string, args: object, signal = new AbortController().signal) => executeToolFixture(ctx, {
       callId: ToolCallId(randomUUID()), name, arguments: args, agent, signal })
     const denied = await invoke('remote_exec', { server: reference, command: 'printf must-not-run' })
     expect(denied.isError).toBe(false); expect(runs).toBe(0)

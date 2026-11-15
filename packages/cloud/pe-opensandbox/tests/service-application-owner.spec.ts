@@ -1,3 +1,4 @@
+import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 /** Original native service rows over synthetic command/HTTP terminals; no route, socket, backend or live resource is enabled. */
 import { afterEach, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -157,7 +158,7 @@ async function fixture(options: { application?: boolean; bind?: boolean; maximum
   registerDevServiceConsumer(ctx, owner.calls, runtime, owner, profile)
   let count = 0
   const start = async (id = ids[0]!) => {
-    const result = await ctx.tools.execute({ callId: ToolCallId(`start-${++count}`), name: 'dev_service',
+    const result = await executeToolFixture(ctx, { callId: ToolCallId(`start-${++count}`), name: 'dev_service',
       arguments: { action: 'start', script: 'hello.py' }, agent: agents.get(id)!, signal: new AbortController().signal })
     expect(result.isError).toBe(false)
     const work = works.at(-1)

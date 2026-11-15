@@ -15,6 +15,7 @@ import {
   createUserMessage,
 } from '@deepseek-ai/dsh-llm/message'
 import { brandString } from '@deepseek-ai/dsh-brand'
+import type { GoalId, GoalRef, GoalSnapshot } from '@deepseek-ai/dsh-goal/client'
 import type { RemoteAccessFrame, RemoteAccessGrant } from '@deepseek-ai/dsh-api-remote-access/client'
 import type { MessageId, ReasoningEffortId, ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 import type {
@@ -1865,13 +1866,7 @@ function backscanTodos(log: readonly SessionEvent[]): TodoItem[] | undefined {
 
 /** Fixture-local mirror of the goal projection value (dsh-goal's GoalProjection shape). */
 interface FxGoalProjection {
-  goal: {
-    id: string
-    revision: number
-    objective: string
-    phase: 'active' | 'paused' | 'blocked' | 'complete'
-    maxGoalRounds: number
-  }
+  goal: GoalSnapshot
   roundsStarted: number
   createdAt: number
   updatedAt: number
@@ -1879,15 +1874,15 @@ interface FxGoalProjection {
 
 /** One durable goal change. */
 type FxGoalChange =
-  | { kind: 'goal/change'; version: 1; operation: 'clear'; cleared: { id: string; revision: number }; clearedAt: number }
+  | { readonly kind: 'goal/change'; readonly version: 1; readonly operation: 'clear'; readonly cleared: GoalRef; readonly clearedAt: number }
   | {
-    kind: 'goal/change'
-    version: 1
-    operation: 'create' | 'edit' | 'pause' | 'resume' | 'complete'
-    goal: FxGoalProjection['goal']
-    roundsStarted: number
-    createdAt: number
-    updatedAt: number
+    readonly kind: 'goal/change'
+    readonly version: 1
+    readonly operation: 'create' | 'edit' | 'pause' | 'resume' | 'complete' | 'block'
+    readonly goal: GoalSnapshot
+    readonly roundsStarted: number
+    readonly createdAt: number
+    readonly updatedAt: number
   }
 
 /**
@@ -2614,7 +2609,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         } else {
           const created = appendGoalChange(id, {
             kind: 'goal/change', version: 1, operation: 'create',
-            goal: { id: `fx-goal-${logOf(id).length}`, revision: 1, objective, phase: 'active', maxGoalRounds: 256 },
+            goal: { id: brandString<GoalId>(`fx-goal-${logOf(id).length}`), revision: 1, objective, phase: 'active', maxGoalRounds: 256 },
             roundsStarted: 0, createdAt: Date.now(), updatedAt: Date.now(),
           })
           setGoalActivation(id, 'armed')
@@ -2922,7 +2917,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       const projection = appendGoalChange(id, {
         kind: 'goal/change', version: 1, operation: 'create',
         goal: {
-          id: `fx-goal-${logOf(id).length}`,
+          id: brandString<GoalId>(`fx-goal-${logOf(id).length}`),
           revision: 1,
           objective: request.objective,
           phase: 'active',

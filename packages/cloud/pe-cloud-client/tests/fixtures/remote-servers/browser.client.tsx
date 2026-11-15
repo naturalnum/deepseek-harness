@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ServersSection } from '../../../src/client/remote-servers/ServersSection.tsx'
 import { remoteServerDictionaries } from '../../../src/client/remote-servers/locales.ts'
-import { allowAllAccess, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { allowAllAccess, makeTranslate, contextMenuHook } from '@deepseek-ai/dsh-client-test-runtime'
 import type { RemoteServerRequest, RemoteServerReply } from '@deepseek-ai/dsh-pe-cloud-api/types'
 import '../../../../../client/ui-theme/src/styles/base.css'
 import '../../../../../client/ui-theme/src/styles/design-platform.css'
@@ -32,7 +32,7 @@ function Acceptance() {
   if (!signedIn) return <main><p>Isolated browser acceptance · native authentication and management RPC</p>
     <button onClick={() => { void signup() }}>Create acceptance account</button><p role="alert">{error}</p></main>
   return <ServersSection {...allowAllAccess} useSessions={unused} useSessionStatus={unused} useSessionRetainInfo={unused}
-    usePanelInfo={unused} useWorkspaces={unused} useResource={unused} scope="browser-fixture" close={() => {}}
+    usePanelInfo={unused} useWorkspaces={unused} useResource={unused} useContextMenu={contextMenuHook()} scope="browser-fixture" close={() => {}}
     t={makeTranslate(remoteServerDictionaries.zh)} call={call}/>
 }
 const root = document.getElementById('root')

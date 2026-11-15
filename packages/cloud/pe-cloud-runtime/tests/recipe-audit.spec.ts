@@ -413,7 +413,7 @@ it('rejects an invalid Fiber.update attempt before the native update event', asy
   const audit = new RootRecipeAudit(f.ctx, () => participants, () => ({ phase: 'active', recipeVersion: 'm8m', maximum: 1000 }))
   audit.seal(f.input)
   const current = audit.captureReadCurrent('m8m')
-  const event = vi.fn((_config: unknown, _noSave: boolean, next: () => void) => { next() })
+  const event = vi.fn((_config: unknown, next: () => void | Promise<void>) => next())
   f.ctx.on('internal/update', event, { global: true })
   expect(() => { fiber.update({ minimumHealthyWorkers: 0 }) }).toThrow()
   expect(fiber.state).toBe(FiberState.ACTIVE)
@@ -540,7 +540,7 @@ it.each(['update', 'patch-context'] as const)('retains actual %s waterfall settl
       if (event === 'update') owner.on('internal/update', async () => { await release.promise; throw failure })
     },
   }
-  const id = await ctx.loader.create({ id: 'target', name: 'cordis:test', config: { value: 1 } })
+  const id = await ctx.loader.create({ name: 'cordis:test', config: { value: 1 } })
   await ctx.loader.await()
   const entry = ctx.loader.resolve(id)
   const child = entry.fiber?.ctx.fiber

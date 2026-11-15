@@ -14,7 +14,7 @@ import { FsError } from '@deepseek-ai/dsh-fs'
 import { prepareInstructionSnapshot } from '../src/snapshot.ts'
 import { Reader, limits, directory, identity, signal } from './harness.ts'
 import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deepseek-ai/dsh-agent-loop-testkit'
-import { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
+import { defineContentToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import { installInstructionInjection } from '../src/injection.ts'
 import type { PreparedInstruction } from '../src/injection.ts'
 

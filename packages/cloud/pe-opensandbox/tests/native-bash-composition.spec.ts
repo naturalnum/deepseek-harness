@@ -1,3 +1,4 @@
+import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 /** Real native dispatch and production Agent/Session over scripted directory, Workspace and command collaborators. */
 import { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
@@ -116,7 +117,7 @@ it('projects one real native bash dispatch before releasing its original command
     events.push('native-result')
   })
   await ctx.plugin(ToolBash, { enableRunInBackground: false, promoteOnTimeout: false })
-  const result = await ctx.tools.execute({ callId: ToolCallId('native-bash-composition'), name: 'bash', agent,
+  const result = await executeToolFixture(ctx, { callId: ToolCallId('native-bash-composition'), name: 'bash', agent,
     signal: new AbortController().signal, arguments: { command: 'printf native-composition', description: 'One scripted native composition' } })
 
   expect(result.isError).toBe(false)

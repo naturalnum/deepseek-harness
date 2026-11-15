@@ -7,6 +7,7 @@
     "noEmit": true,
     "rewriteRelativeImportExtensions": false
   },
+  "files": ["packages/client/ui-settings-agent-loop/src/client/agent-loop-card-controller.ts"],
   "include": [
     "snapshots/session/headless.snapshot.ts",
     "apps/web/tests/home-whale.e2e.ts",

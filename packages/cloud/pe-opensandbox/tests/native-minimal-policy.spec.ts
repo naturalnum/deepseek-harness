@@ -1,3 +1,4 @@
+import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 /** Shipped Minimal through Loader/AccountPolicy/Native Bash and Cloud subprocess; the external kernel is a real local PTY. */
 import { readFileSync } from 'node:fs'
 import { Duplex, PassThrough, Writable } from 'node:stream'
@@ -151,7 +152,7 @@ it('runs the actual shipped Minimal persistent shell and joins its original owne
   expect(() => { graph.guards.presets.assertSession(agent) }).not.toThrow()
   const terminal = graph.ctx.agentPresets.serviceFor(agent, 'terminals')
   expect(terminal).toBeInstanceOf(Terminals)
-  const call = (id: string, command: string) => graph.ctx.tools.execute({ callId: ToolCallId(id), name: 'bash', agent,
+  const call = (id: string, command: string) => executeToolFixture(graph.ctx, { callId: ToolCallId(id), name: 'bash', agent,
     signal: new AbortController().signal, arguments: { command } })
   const firstResult = await call('minimal-first', 'DSH_MINIMAL_VALUE=forty-two; printf "first-live\\n"')
   expect(firstResult.isError, JSON.stringify(firstResult.content)).toBe(false)

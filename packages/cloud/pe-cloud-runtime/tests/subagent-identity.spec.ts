@@ -27,7 +27,7 @@ async function fixture(presetChildFiber?: 'active' | 'pending') {
   const parent = graph.ctx.agents.get(created.sessionId)
   if (parent === undefined) throw new Error('Original root Agent absent')
   const spec = (selected: Agent = parent) => ({ provider: 'spawn', label: 'B1 real native child', delivery: 'caller' as const,
-    request: { parent: selected, prompt: [{ type: 'text' as const, text: 'reply using the approved native composition' }], maxDepth: 4 },
+    parent: selected, prompt: [{ type: 'text' as const, text: 'reply using the approved native composition' }], maxDepth: 4,
     signal: new AbortController().signal })
   return { ...f, graph, parent, spec, root, runtime, capacity, observed, mounting }
 }
@@ -161,10 +161,10 @@ it.each(['cwd', 'model', 'preset'] as const)('rejects unapproved %s before origi
   const f = await fixture(), provider = f.graph.ctx.subagents.getProvider('spawn')!
   const prepare = vi.spyOn(provider, 'prepareContinuable'), create = vi.spyOn(f.graph.ctx.sessionPersistence, 'create')
   const spec = f.spec()
-  const request = { ...spec.request, ...invalid === 'cwd' ? { cwd: f.privateRoot } : {},
+  const request = { ...spec, ...invalid === 'cwd' ? { cwd: f.privateRoot } : {},
     ...invalid === 'model' ? { agentOptions: { provider: 'local-text', model: 'not-approved' } } : {},
     ...invalid === 'preset' ? { agentPreset: 'standard' } : {} }
-  await expect(f.graph.ctx.subagents.startActivation({ ...spec, request })).rejects.toBeDefined()
+  await expect(f.graph.ctx.subagents.startActivation(request)).rejects.toBeDefined()
   expect(prepare).not.toHaveBeenCalled()
   expect(create).not.toHaveBeenCalled()
 })

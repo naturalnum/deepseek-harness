@@ -135,7 +135,7 @@ it.each([false, true])('rechecks the captured login after slow production and pr
   try {
     await ingress.install()
     const route = registered.mock.calls.find(([row]) => row.path === '/cloud/bootstrap')?.[0]
-    if (route === undefined) throw new Error('Original bootstrap route was not registered')
+    if (route === undefined || !('handler' in route)) throw new Error('Original bootstrap route was not registered')
     await route.handler(input.request, input.response)
     expect(input.response.statusCode).toBe(withdraw ? 503 : 200)
     expect(recheck).toHaveBeenCalledTimes(withdraw ? 7 : 8)
@@ -173,7 +173,7 @@ it('releases each completed bootstrap login before admitting a new login', async
   try {
     await ingress.install()
     const route = registered.mock.calls.find(([row]) => row.path === '/cloud/bootstrap')?.[0]
-    if (route === undefined) throw new Error('Original bootstrap route was not registered')
+    if (route === undefined || !('handler' in route)) throw new Error('Original bootstrap route was not registered')
     for (login = 0; login < 3; login++) {
       const input = carrier('/cloud/bootstrap', 'GET', ['Cookie', 'better-auth.session_token=fixture'])
       try { await route.handler(input.request, input.response); expect(input.response.statusCode).toBe(200) }

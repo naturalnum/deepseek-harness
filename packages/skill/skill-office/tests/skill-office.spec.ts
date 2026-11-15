@@ -20,26 +20,6 @@ const workspacePython = 'Follow an explicit user or applicable AGENTS.md require
 const names = ['office', 'office-docx', 'office-pptx', 'office-xlsx']
 
 describe('bundled Office skills', () => {
-  it('keeps complete Office packages inspectable while deployment invocation is restricted', async () => {
-    const ctx = new Context()
-    try {
-      await ctx.plugin(SkillRegistry)
-      await ctx.plugin(SkillOffice, { packagedBundles: true, cli: false,
-        invocation: { modelInvocable: false, userInvocable: false } })
-      const catalog = await ctx.skills.list()
-      expect(catalog.map(skill => skill.name)).toEqual(names)
-      for (const skill of catalog) {
-        expect(skill.invocation).toEqual({ modelInvocable: false, userInvocable: false })
-        expect((await ctx.skills.get(skill.name))?.invocation).toEqual(skill.invocation)
-      }
-      const inspection = await ctx.skills.inspect()
-      for (const row of inspection.candidates) {
-        expect(row.candidate.package?.files.some(file => file.relativePath === 'SKILL.md')).toBe(true)
-        expect((await row.candidate.package!.readArchive(new AbortController().signal)).byteLength).toBeGreaterThan(0)
-      }
-    } finally { await ctx.fiber.dispose() }
-  })
-
   it('keeps routing and authoring within the progressive context budgets', async () => {
     const ctx = new Context()
     try {
@@ -346,32 +326,5 @@ it('directs Office operations to dedicated tools without executable paths', asyn
     for (const [format, legacy, library] of [['docx', 'doc', 'python-docx'], ['xlsx', 'xls', 'openpyxl'], ['pptx', 'ppt', 'python-pptx']]) {
       expect((await ctx.skills.get(`office-${format}`))!.content).toContain(`${library} cannot read legacy \`.${legacy}\` files. Use \`office_convert\` with \`format: "${format}"\`, copy the result into the workspace, then edit the copy.`)
     }
-  } finally { await ctx.fiber.dispose() }
-})
-
-it('selects explicit native Linux operation instructions without consulting Host Kit executables', async () => {
-  const ctx = new Context()
-  try {
-    await ctx.plugin(SkillRegistry)
-    await ctx.plugin(SkillOffice, { executionRoot: '/opt/dsh/skills/office', packagedBundles: true,
-      systemTools: { soffice: '/usr/bin/soffice', pdftoppm: '/usr/bin/pdftoppm' } })
-    for (const name of ['office-render', 'office-recalculate', 'office-export-pdf']) {
-      const loaded = await ctx.skills.get(name)
-      expect(loaded?.content).toContain('native Linux')
-      expect(loaded?.content).toContain('/usr/bin/soffice')
-      expect(loaded?.content).not.toContain('/Users/')
-      expect(loaded?.content).not.toContain('LibreOffice Kit CLI')
-    }
-    const authoring = await ctx.skills.get('office-docx')
-    expect(authoring?.content).toContain('load_workspace_dependencies')
-  } finally { await ctx.fiber.dispose() }
-})
-
-it('rejects a relative report operation and keeps catalog refresh opt-in', async () => {
-  const ctx = new Context()
-  try {
-    await ctx.plugin(SkillRegistry)
-    await expect(ctx.plugin(SkillOffice, { systemTools: { soffice: '/usr/bin/soffice',
-      pdftoppm: '/usr/bin/pdftoppm', wordRefresh: 'relative.py' } })).rejects.toThrow('absolute')
   } finally { await ctx.fiber.dispose() }
 })

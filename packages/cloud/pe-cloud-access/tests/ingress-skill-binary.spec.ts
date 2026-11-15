@@ -62,7 +62,7 @@ async function fixture(workspace = false) {
     { web, runtime, recipeVersion: graph.binding.recipeVersion, assertAuthenticationCurrent() {} })
   const server = createServer((request, response) => {
     const route = routes.mock.calls.find(([value]) => value.path === '/api')?.[0]
-    if (route === undefined) throw Error('Original API prefix absent')
+    if (route === undefined || !('handler' in route)) throw Error('Original API prefix absent')
     const actual = Promise.resolve(route.handler(request, response)); pending.push(actual); void actual.catch(() => {})
   })
   server.on('connection', (socket) => { sockets.add(socket); socket.on('error', () => {}); socket.once('close', () => { sockets.delete(socket) }) })

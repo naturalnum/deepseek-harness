@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { allowAllAccess, bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { allowAllAccess, bindSnapshotSelector, makeTranslate, contextMenuHook } from '@deepseek-ai/dsh-client-test-runtime'
 import { SkillsPage, type SkillsPageProps } from '../src/client/management/skills/SkillsPage.tsx'
 import { skillsManagementDictionaries } from '../src/client/management/skills/locales.ts'
 import { managedSkillCallbacks } from '../src/client/managed-skill-remote.ts'
@@ -20,7 +20,7 @@ function page() {
   const f = managedFixture()
   const unused = (): never => { throw new Error('No Session service belongs in this management presentation') }
   const props: SkillsPageProps = { ...allowAllAccess, useSessions: unused, useSessionStatus: unused, useSessionRetainInfo: unused,
-    usePanelInfo: unused, useWorkspaces: unused, useResource: unused, scope: 'original-page', useSkillManagement: bindSnapshotSelector(f.source),
+    usePanelInfo: unused, useWorkspaces: unused, useResource: unused, useContextMenu: contextMenuHook(), scope: 'original-page', useSkillManagement: bindSnapshotSelector(f.source),
     t: makeTranslate(en), report: vi.fn() }
   return { ...f, props }
 }

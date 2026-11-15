@@ -6,20 +6,37 @@
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
   "exports": {
-    ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" },
-    "./session": { "types": "./lib/types/session.d.ts", "default": "./lib/session.js" },
-    "./types": { "types": "./lib/types/types.d.ts", "default": "./lib/types/types.js" },
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./session": {
+      "types": "./lib/types/session.d.ts",
+      "default": "./lib/session.js"
+    },
+    "./types": {
+      "types": "./lib/types/types.d.ts",
+      "default": "./lib/types/types.js"
+    },
     "./package.json": "./package.json"
   },
-  "files": ["lib/*.js", "lib/types/**/*.js", "lib/types/**/*.d.ts"],
+  "files": [
+    "lib/*.js",
+    "lib/types/**/*.js",
+    "lib/types/**/*.d.ts"
+  ],
   "license": "MIT",
-  "publishConfig": { "access": "public" },
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
     "directory": "packages/cloud/pe-account-instructions"
   },
-  "dependencies": { "@deepseek-ai/schemastery": "workspace:~" },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "workspace:~"
+  },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-agent": "workspace:*",
@@ -39,12 +56,13 @@
     "@deepseek-ai/dsh-agent-preset-registry": "workspace:*",
     "@deepseek-ai/dsh-fs": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
-    "@deepseek-ai/dsh-pe-cloud-runtime": "workspace:*",
     "@deepseek-ai/dsh-pe-cloud-files": "workspace:*",
+    "@deepseek-ai/dsh-pe-cloud-runtime": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-session-format": "workspace:*",
     "@deepseek-ai/dsh-session-format-catalog": "workspace:*",
     "@deepseek-ai/dsh-session-snapshot": "workspace:*",
+    "@deepseek-ai/dsh-tool-testkit": "workspace:*",
     "@deepseek-ai/dsh-tools": "workspace:*",
     "@deepseek-ai/dsh-workspace": "workspace:*"
   }
