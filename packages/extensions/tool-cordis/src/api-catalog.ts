@@ -2206,6 +2206,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'Actual current registrations; this creates neither a route nor business admission.',
       },
       {
+        signature: 'attachApplicationListener(scope: Context, web: WebServer): void',
+        description: 'Attach the original dedicated Native content listener to this Root\'s authentication/ingress owner.',
+        parameters: [{ name: 'scope', description: 'Original isolated listener Loader fiber in this Root.' }, { name: 'web', description: 'Dedicated Native WebServer, distinct from management.' }],
+      },
+      {
         signature: 'withModelKeyPeerUse<T>(peer: PeerScope, consume: (use: AccountUse, assertCurrent: () => void) => Promise<T>): Promise<T>',
         description: 'Delegate one native model-key invocation through the original login registry.',
         parameters: [{ name: 'peer', description: 'Exact Gateway invocation Peer, never a client identity.' }, { name: 'consume', description: 'Actual native work using the original retained Use and current checks.' }],
@@ -11130,6 +11135,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WebSearchSource',
     declaration: 'export interface WebSearchSource {\n    readonly url: string;\n    readonly title?: string;\n    readonly snippet?: string;\n    readonly publishedAt?: string;\n}',
+  },
+  {
+    name: 'WebServer',
+    declaration: 'export class WebServer extends Service {\n    static Config: z<Config>;\n    constructor(ctx: Context, private config: Config);\n    get port(): number | undefined;\n    get host(): Config[\'host\'];\n    get protocol(): \'http:\' | \'https:\';\n    getOrigin(): string;\n    register(route: WebRoute): () => void;\n    registerUpgrade(route: WebUpgradeRoute): () => void;\n    registerFallback(handler: WebRoute[\'handler\']): () => void;\n    tapIndex(transform: (html: string) => string): () => void;\n    async [Service.init](): Promise<void>;\n    applyIndexTaps(html: string): string;\n    collectIndexInjections(): IndexInjection[];\n    renderIndex(html: string): string;\n}',
   },
   {
     name: 'WebSource',

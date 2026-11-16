@@ -126,8 +126,21 @@ function closing(close: (reason?: unknown) => Promise<void>): {
     },
   }
 }
-async function collect(response: OwnedPreviewResponse, method: 'GET' | 'HEAD', limits: ResponseLimits,
-  signal: AbortSignal, current: () => void): Promise<InertPreviewReply> {
+/**
+ * Read one bounded body and join the original response close before publishing its bytes.
+ * @param response Original service-owned response.
+ * @param head Whether HTTP semantics forbid an entity body.
+ * @param limits Original pre-reserved read budgets.
+ * @param signal Original request/credential cancellation.
+ * @param current Original authentication, account and service checks.
+ * @param declaredLength Validate complete response metadata before allocation and return its optional entity length.
+ * @returns Bounded retained bytes and declared length; actual cleanup failure remains unknown with its original owner.
+ */
+export async function readBoundedApplicationBody(response: OwnedPreviewResponse, head: boolean, limits: ApplicationReadLimits,
+  signal: AbortSignal, current: () => void, declaredLength: () => number | undefined): Promise<{
+  readonly body: Uint8Array
+  readonly declared: number | undefined
+}> {
   const close = closing(reason => response.close(reason))
   const abort = (): void => { close.start(signal.reason) }
   signal.addEventListener('abort', abort, { once: true })
@@ -135,20 +148,20 @@ async function collect(response: OwnedPreviewResponse, method: 'GET' | 'HEAD', l
   // Original request/execution owners must reserve maxBodyBytes+1 + maxChunkBytes before this allocation.
   let buffer: Uint8Array | undefined
   try {
-    current(); signal.throwIfAborted(); declared = metadata(response, limits)
+    current(); signal.throwIfAborted(); declared = declaredLength()
     const cap = declared === undefined ? limits.maxBodyBytes : Math.min(declared, limits.maxBodyBytes)
-    buffer = new Uint8Array(method === 'HEAD' ? 0 : cap + 1)
+    buffer = new Uint8Array(head ? 0 : cap + 1)
     for (let pulls = 0; ; pulls++) {
       current(); signal.throwIfAborted(); need(pulls < limits.maxChunks, 'cloud/capacity')
-      const allowance = method === 'HEAD' ? 1 : Math.min(limits.maxChunkBytes, cap - total + 1)
+      const allowance = head ? 1 : Math.min(limits.maxChunkBytes, cap - total + 1)
       const chunk = await response.read(allowance)
       current(); signal.throwIfAborted()
       if (chunk === null) break
       need(chunk instanceof Uint8Array && chunk.byteLength > 0 && chunk.byteLength <= allowance, 'cloud/capacity')
-      need(method !== 'HEAD' && total + chunk.byteLength <= cap, 'cloud/capacity')
+      need(!head && total + chunk.byteLength <= cap, 'cloud/capacity')
       buffer.set(chunk, total); total += chunk.byteLength
     }
-    need(method === 'HEAD' || declared === undefined || declared === total)
+    need(head || declared === undefined || declared === total)
   } catch (error) { failure = { error } }
   finally {
     close.start(failure?.error)
@@ -160,6 +173,12 @@ async function collect(response: OwnedPreviewResponse, method: 'GET' | 'HEAD', l
   }
   if (failure !== undefined) throw failure.error
   current(); signal.throwIfAborted(); need(buffer !== undefined)
+  return { body: buffer.subarray(0, total), declared }
+}
+async function collect(response: OwnedPreviewResponse, method: 'GET' | 'HEAD', limits: ResponseLimits,
+  signal: AbortSignal, current: () => void): Promise<InertPreviewReply> {
+  const { body, declared } = await readBoundedApplicationBody(response, method === 'HEAD', limits, signal, current,
+    () => metadata(response, limits))
   const headers: Record<string, string> = {
     'content-type': 'text/plain; charset=utf-8', 'x-content-type-options': 'nosniff',
     'cache-control': 'no-store, max-age=0', pragma: 'no-cache', expires: 'Thu, 01 Jan 1970 00:00:00 GMT',
@@ -167,9 +186,9 @@ async function collect(response: OwnedPreviewResponse, method: 'GET' | 'HEAD', l
     'x-frame-options': 'DENY', 'cross-origin-opener-policy': 'same-origin',
     'cross-origin-resource-policy': 'same-origin', 'referrer-policy': 'no-referrer',
   }
-  if (method === 'GET' || declared !== undefined) headers['content-length'] = String(method === 'GET' ? total : declared)
+  if (method === 'GET' || declared !== undefined) headers['content-length'] = String(method === 'GET' ? body.byteLength : declared)
   // No upstream header is copied: Set-Cookie/Location/Refresh/CORS/cache/ETag/reporting headers all disappear.
-  return Object.freeze({ status: 200, headers: Object.freeze(headers), body: buffer.subarray(0, total) })
+  return Object.freeze({ status: 200, headers: Object.freeze(headers), body })
 }
 async function transfer(reply: InertPreviewReply, sink: OriginalIngressSink,
   signal: AbortSignal, current: () => void): Promise<void> {

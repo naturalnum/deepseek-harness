@@ -168,8 +168,10 @@ it('keeps byte-pool values as declarations rather than a process-pool or Root by
   expect(application).not.toHaveProperty('enabled')
 })
 
-it('uses the real GET-only adapter refusal before request retention and cannot turn declarations into transport authority', async () => {
-  const config = parseManagedCoordinatorConfig(enabled()).commands.services?.application
+it.each([1, 8192, 2 * Buffer.poolSize])('uses the real GET-only adapter refusal and runtime charge with legacy pool declaration %i', async (maxBufferPoolBytes) => {
+  const input = enabled()
+  input.commands.services.application.transport.maxBufferPoolBytes = maxBufferPoolBytes
+  const config = parseManagedCoordinatorConfig(input).commands.services?.application
   expect(config).toBeDefined()
   if (config === undefined) throw new Error('Expected fixture application policy')
   const refusal = new Error('original Root request reservation was not granted')
@@ -185,6 +187,6 @@ it('uses the real GET-only adapter refusal before request retention and cannot t
   expect(retain).toHaveBeenCalledTimes(1); expect(consume).not.toHaveBeenCalled()
   const first = retain.mock.calls[0]
   if (first === undefined) throw new Error('Expected original owner charge before I/O')
-  expect(first[0].charge).toEqual({ retainedPayloadBytes: 86529, headerEntries: 12,
+  expect(first[0].charge).toEqual({ retainedPayloadBytes: 70145 + 2 * Buffer.poolSize, headerEntries: 12,
     maxWireBytes: 1048576, timeoutMs: 5000 })
 })

@@ -9,6 +9,7 @@ import { FILE_UPLOAD_PATH } from '@deepseek-ai/dsh-client-file-upload'
 import { SESSION_LOG_EXPORT_PATH } from '@deepseek-ai/dsh-session-log-export'
 import type { EndpointExposure } from '@deepseek-ai/dsh-pe-cloud-api'
 import { SERVICE_PREVIEW_ROUTE } from './preview-route.ts'
+import { SERVICE_APPLICATION_LAUNCH_ROUTE } from './application-request.ts'
 import { decodeCloudBootstrap } from './bootstrap.ts'
 import { inspectBootstrapConfiguration } from './bootstrap-inventory.ts'
 import type { CloudBootstrap } from './types.ts'
@@ -119,7 +120,8 @@ export async function produceCloudBootstrap(
     && manifest.streamEndpoints.some(row => row.endpoint === fileStreamEndpoint)
   const services = accountServiceAvailability(ctx)
   const previewRouteSelected = manifest.exactFetchRoutes.some(row => row.method === SERVICE_PREVIEW_ROUTE.method
-    && row.path === SERVICE_PREVIEW_ROUTE.path)
+    && row.path === SERVICE_PREVIEW_ROUTE.path || row.method === SERVICE_APPLICATION_LAUNCH_ROUTE.method
+      && row.path === SERVICE_APPLICATION_LAUNCH_ROUTE.path)
   const identitiesCurrent = (): void => {
     signal.throwIfAborted()
     current()
@@ -139,18 +141,20 @@ export async function produceCloudBootstrap(
   }
   const factsCurrent = (): void => {
     identitiesCurrent()
-    // Only reviewed original upload, Session export and Root preview routes may coexist.
+    // Original account transfers and Root-owned service preview registrations may coexist.
     const settings = manifest.allowedSettings
     // Every approved native leaf agrees with the original C04 field declarations.
     if (!approvedSettingsMatch(catalog.fields, settings)
       || settingsWrites && (settingsWriter === undefined
         || settingsWriter.handlerId !== 'native:settingsController' || settingsWriter.guard !== 'authenticated-account')
-      || manifest.exactFetchRoutes.length > 10) unavailable()
+      || manifest.exactFetchRoutes.length > 11) unavailable()
     const selectedFetch = new Set<string>()
     for (const row of manifest.exactFetchRoutes) {
       const upload = row.method === 'POST' && row.path === FILE_UPLOAD_PATH && row.handlerId === 'native:fileUploads'
       const preview = row.method === SERVICE_PREVIEW_ROUTE.method && row.path === SERVICE_PREVIEW_ROUTE.path
         && row.handlerId === SERVICE_PREVIEW_ROUTE.handlerId
+      const application = row.method === SERVICE_APPLICATION_LAUNCH_ROUTE.method && row.path === SERVICE_APPLICATION_LAUNCH_ROUTE.path
+        && row.handlerId === SERVICE_APPLICATION_LAUNCH_ROUTE.handlerId
       const sessionExport = (row.method === 'GET' || row.method === 'HEAD') && row.path === SESSION_LOG_EXPORT_PATH
         && row.handlerId === 'native:sessionLogDownload'
       const workspaceTransfer = row.handlerId === 'native:workspaceFiles' && (
@@ -161,7 +165,7 @@ export async function produceCloudBootstrap(
         && row.path === '/api/skills/release-archive' && row.handlerId === 'cloud:bundledSkillArchive'
         && row.guard === 'authenticated-account'
       const key = `${row.method} ${row.path}`
-      if ((!skillArchive && !upload && !preview && !sessionExport && !workspaceTransfer) || !skillArchive && row.guard !== 'account-session' || selectedFetch.has(key)) unavailable()
+      if ((!skillArchive && !upload && !preview && !application && !sessionExport && !workspaceTransfer) || !skillArchive && row.guard !== 'account-session' || selectedFetch.has(key)) unavailable()
       selectedFetch.add(key)
       // Original API checks its audited manifest and freshly inspects actual native + Root inventory.
       const actual = api.requireFetch(row.method, row.path)

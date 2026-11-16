@@ -71,6 +71,7 @@
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-client-ui-conversation": "workspace:*",
     "@deepseek-ai/dsh-client-ui-sidebar-right": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-sidebar-browser": "workspace:*",
     "@deepseek-ai/dsh-client-web": "workspace:*",
     "@deepseek-ai/dsh-client-modules": "workspace:*",
     "@deepseek-ai/cordis-plugin-loader": "workspace:~",

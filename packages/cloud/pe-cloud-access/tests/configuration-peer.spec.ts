@@ -1267,6 +1267,73 @@ it('reports only bounded current-account Peer busy counts while a real other car
   } finally { completed.resolve(undefined); held.request.destroy(); held.socket.destroy() }
 })
 
+it.each(['complete', 'incomplete', 'socket-closed'] as const)('reauthenticates a completed real POST and rejects actual disconnects (%s)', async (mode) => {
+  const f = await fixture(), peer = await f.acquire('login=real-post')
+  const firstData = Promise.withResolvers<undefined>(), handled = Promise.withResolvers<undefined>()
+  let consumed = false, failure: unknown
+  const server = createServer((request, response) => {
+    const transferred = Promise.withResolvers<undefined>(), actual = Promise.withResolvers<undefined>()
+    response.once('finish', () => { transferred.resolve(undefined) })
+    response.once('close', () => { transferred.resolve(undefined) })
+    request.once('data', () => { firstData.resolve(undefined) })
+    void (async () => {
+      try { for await (const _chunk of request) { /* Consume the original HTTP body before carrier authentication. */ } }
+      catch (error) { if (mode !== 'incomplete') throw error }
+      if (mode === 'incomplete') {
+        expect(request.complete).toBe(false)
+        expect(request.aborted).toBe(true)
+      } else {
+        expect(request.complete).toBe(true)
+        expect(request.readableEnded).toBe(true)
+        expect(request.destroyed).toBe(true)
+        expect(request.socket.destroyed).toBe(false)
+        if (mode === 'socket-closed') {
+          const closed = new Promise<void>((resolve) => { request.socket.once('close', () => { resolve() }) })
+          request.socket.destroy(); await closed
+        }
+      }
+      try {
+        await f.registry.runCarrier(peer, request, requestId, {
+          authenticate: async () => { f.auth.retainPrincipal(peer.principal, requestId); return peer.principal },
+          actual: actual.promise, destroy: () => { request.socket.destroy() },
+          consume: async () => { consumed = true },
+        })
+      } catch (error) { failure = error }
+      finally {
+        if (!response.destroyed) response.end(consumed ? 'accepted' : 'refused')
+        await transferred.promise
+        actual.resolve(undefined)
+      }
+    })().then(() => { handled.resolve(undefined) }, (error: unknown) => {
+      response.destroy(); actual.resolve(undefined); handled.reject(error)
+    })
+  })
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject); server.listen(0, '127.0.0.1', () => { resolve() })
+  })
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('Real HTTP listener is unavailable')
+  const client = httpRequest({ host: '127.0.0.1', port: address.port, method: 'POST',
+    headers: { 'content-length': mode === 'incomplete' ? '10' : '4' } }, (response) => { response.resume() })
+  client.on('error', () => { /* Server-side assertions own the deliberately disconnected request. */ })
+  let closed = false
+  const close = async (): Promise<void> => {
+    if (closed) return
+    closed = true; client.destroy(); server.closeAllConnections()
+    await new Promise<void>((resolve, reject) => { server.close((error) => { if (error) reject(error); else resolve() }) })
+  }
+  onTestFinished(close)
+  try {
+    if (mode === 'incomplete') { client.write('x'); await firstData.promise; client.destroy() }
+    else client.end('body')
+    await handled.promise
+    expect(consumed).toBe(mode === 'complete')
+    if (mode === 'complete') expect(failure).toBeUndefined()
+    else expect(failure).toMatchObject({ code: 'cloud/account-unavailable' })
+    expect(f.registry.reservedCarriers).toBe(0)
+  } finally { await close() }
+})
+
 
 it('releases exactly the actual HTTP-owned reference after Peer admission before the original configuration consumer', async () => {
   const f = await fixture(), peer = await f.acquire('login=http-handoff')

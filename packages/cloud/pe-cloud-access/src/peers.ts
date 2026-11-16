@@ -549,7 +549,7 @@ export class LoginPeerRegistry {
   /**
    * Retain one Root HTTP operation under the original login carrier limits and canonical principal.
    * @param handle Original shared Peer; the first verified Cookie stays pinned for rechecks.
-   * @param request Original fixed-route request, used only to detect a disconnected carrier.
+   * @param request Original fixed-route request; completed body consumption does not disconnect its live socket.
    * @param requestId Original ingress correlation id.
    * @param input Trusted Root callbacks: real route-specific authentication, existing cancellation and body work.
    * The authentication callback returns an independently borrowed principal, released after carrier authentication.
@@ -895,7 +895,9 @@ export class LoginPeerRegistry {
         }
       }
       await recheck
-      if (request.destroyed) throw new AuthAccessError('cloud/account-unavailable', requestId)
+      if (request.aborted || request.socket.destroyed || (request.destroyed && !request.complete)) {
+        throw new AuthAccessError('cloud/account-unavailable', requestId)
+      }
       this.assertCurrent(handle, requestId)
     } finally {
       this.auth.releasePrincipal(principal)
