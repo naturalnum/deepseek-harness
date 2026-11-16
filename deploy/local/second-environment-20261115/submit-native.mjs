@@ -1,7 +1,7 @@
 /** One request to the original real AccountUse/Workspace/Session/tools consumer after actual app ready. */
 import fs from 'node:fs'
 import {randomBytes} from 'node:crypto'
-const A='/opt/dsh-features/arm-native-01',D='/dsh-state/namespace-arm-01',H='/run/dsh-feature-root',T='/tmp/dsh-feature-home/sdk-validation'
+const A='/opt/dsh-features/arm-native-01',D='/dsh-state/namespace-arm-02',H='/run/dsh-feature-root',T='/tmp/dsh-feature-home/sdk-validation'
 if(process.argv.length!==3||process.argv[2]!=='--submit-once-to-ready-app')throw Error('Explicit one-shot request required')
 const ready=JSON.parse(fs.readFileSync(D+'/ROOT-READY.public.json')),k=ready.keeper
 const t=fs.readFileSync('/proc/'+k.pid+'/stat','utf8')

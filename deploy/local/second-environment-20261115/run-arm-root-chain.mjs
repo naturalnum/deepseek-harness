@@ -6,7 +6,7 @@ import {createRequire} from 'node:module'
 import {pathToFileURL} from 'node:url'
 import {spawn,spawnSync} from 'node:child_process'
 import {setTimeout as delay} from 'node:timers/promises'
-const A='/opt/dsh-features/arm-native-01',D='/dsh-state/namespace-arm-01',H='/run/dsh-feature-root',T='/tmp/dsh-feature-home/sdk-validation'
+const A='/opt/dsh-features/arm-native-01',D='/dsh-state/namespace-arm-02',H='/run/dsh-feature-root',T='/tmp/dsh-feature-home/sdk-validation'
 const RESOURCE='587be4cb-705f-46ce-90bf-49f1d7a346e5'
 const BACKEND='e8ce05010ab49ad0a33d0a95d0eb02c4ae5ba5b56517476d130dba8ca2441a9c'
 const N='/dsh-tools/node24',NS='/usr/bin/nsenter',R=A
