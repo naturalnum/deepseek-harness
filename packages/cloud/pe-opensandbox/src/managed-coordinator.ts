@@ -133,7 +133,7 @@ const PREPARATION_CODES: ReadonlySet<string> = new Set([
   'files/deadline', 'files/aborted', 'FS_IO_ERROR', 'FS_TOO_LARGE', 'FS_PERMISSION_DENIED', 'FS_NOT_FOUND',
   'FS_NOT_DIRECTORY', 'FS_ALREADY_EXISTS', 'ENOENT', 'EACCES', 'EROFS', 'ENOSPC', 'EMFILE', 'EIO',
   'sdk/closed', 'sdk/bounds', 'sdk/capacity', 'sdk/selection', 'sdk/create-unknown', 'sdk/ready-unconfirmed',
-  'sdk/stop-unknown', 'sdk/close-unconfirmed', 'closed', 'binding', 'bounds', 'wire-unknown', 'command-unknown', 'endpoint-unrepresentable',
+  'sdk/stop-unknown', 'sdk/close-unconfirmed', 'closed', 'binding', 'bounds', 'wire-unknown', 'command-unknown', 'command-failed', 'endpoint-unrepresentable',
 ])
 
 function preparationCode(cause: unknown): string | undefined {

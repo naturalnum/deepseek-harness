@@ -23,7 +23,7 @@ import { isPinnedWorkloadImageDigest } from './workload-images.ts'
 /** Failure messages stay secret-free; only Root's private cause retains bounded tagged HTTP diagnostics. */
 export class BootstrapFailure extends Error {
   /** @param code Stable private handling classification. @param cause Retained private cause, never account output. */
-  constructor(readonly code: 'closed' | 'binding' | 'bounds' | 'wire-unknown' | 'command-unknown' | 'endpoint-unrepresentable', cause?: unknown) {
+  constructor(readonly code: 'closed' | 'binding' | 'bounds' | 'wire-unknown' | 'command-unknown' | 'command-failed' | 'endpoint-unrepresentable', cause?: unknown) {
     super(`Trusted bootstrap ${code}; Root retains the original allocation.`, { cause })
   }
 }
@@ -482,33 +482,53 @@ export class TrustedSdkBootstrap {
     const admission = { started: false, terminal: false }
     const step = expectedOutput === 's4-bootstrap-claimed\n' ? 'prep' : 'loader'
     let span: SemanticSpan | undefined
-    let complete = false, initialized = false, failed = false, output = '', count = 0
+    let initialized = false, failed = false, output = '', stderr = '', count = 0
+    let terminal: 'error' | 'complete' | undefined
+    let commandError: Readonly<{ name: string; value: string }> | undefined
+    function commandNeed(value: boolean, reason: string): asserts value {
+      if (!value) throw new BootstrapFailure('command-unknown', Object.freeze({
+        code: `bootstrap/${reason}`, step, events: count, initialized, streamTerminal: terminal !== undefined, failed,
+      }))
+    }
     try {
       const actual = connection.run('POST', base + '/command', async () => {
         admission.started = true
         span = this.audit.begin('bootstrap-stream', { intent: record.selection.intent, sandboxId: record.selection.sandboxId, step })
         for await (const event of execd.commands.runStream(['/usr/local/bin/python3', '-I', '-S', '-B', '-c', source],
           { uid: 0, gid: 0, background: false, workingDirectory: '/', timeoutSeconds: this.config.commandTimeoutSeconds })) {
-          need(++count <= this.config.maxEvents, 'command-unknown')
+          commandNeed(++count <= this.config.maxEvents, 'event-bound')
           if (event.type === 'ping') {
-            need(initialized && event.text === 'pong', 'command-unknown')
+            commandNeed(initialized && event.text === 'pong', 'heartbeat')
             continue
           }
-          need(!complete, 'command-unknown')
-          if (event.type === 'init') { need(!initialized, 'command-unknown'); initialized = true }
+          commandNeed(terminal === undefined || terminal === 'error' && event.type === 'execution_complete', 'after-terminal')
+          if (event.type === 'init') { commandNeed(!initialized, 'duplicate-init'); initialized = true }
           else if (event.type === 'stdout') {
-            need(typeof event.text === 'string', 'command-unknown')
+            commandNeed(typeof event.text === 'string', 'stdout-type')
             output += event.text
-            need(output.length <= expectedOutput.length, 'command-unknown')
-          } else if (event.type === 'stderr' || event.type === 'error') {
-            need(initialized, 'command-unknown')
-            failed = true // Startup fails, but keep bounded observation through its original terminal event.
-          } else if (event.type === 'execution_complete') complete = true
-          else throw new BootstrapFailure('command-unknown')
+            commandNeed(output.length <= expectedOutput.length, 'stdout-bound')
+          } else if (event.type === 'stderr') {
+            commandNeed(initialized && typeof event.text === 'string', 'stderr-type')
+            stderr += event.text
+            failed = true
+          } else if (event.type === 'error') {
+            const detail = event.error
+            commandNeed(initialized, 'error-before-init')
+            if (detail !== undefined && detail !== null
+              && typeof detail.ename === 'string' && typeof detail.evalue === 'string') {
+              commandError = Object.freeze({ name: detail.ename, value: detail.evalue })
+              terminal = 'error'
+            }
+            failed = true
+          } else if (event.type === 'execution_complete') terminal = 'complete'
+          else commandNeed(false, 'event-type')
         }
-        need(initialized && complete, 'command-unknown')
+        commandNeed(initialized && terminal !== undefined, 'terminal-missing')
         admission.terminal = true
-        need(!failed && output === expectedOutput, 'command-unknown')
+        if (failed) throw new BootstrapFailure('command-failed', Object.freeze({
+          code: 'bootstrap/command-error', step, error: commandError, stderr,
+        }))
+        commandNeed(output === expectedOutput, 'acknowledgement')
       })
       await this.audit.watch(span, actual, () => ({ intent: record.selection.intent, sandboxId: record.selection.sandboxId, step,
         events: count, initialized, streamTerminal: admission.terminal, failed }))

@@ -2218,6 +2218,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'Whether this operation belongs to the still-current original read carrier.',
       },
       {
+        signature: 'captureStreamCurrent(peer: PeerScope, binding: AccountBinding, endpoint: string, signal: AbortSignal): () => void',
+        description: 'Retain the original authenticated stream through its native work.',
+        parameters: [{ name: 'peer', description: 'Exact original invocation Peer.' }, { name: 'binding', description: 'Original installed account binding.' }, { name: 'endpoint', description: 'Exact admitted stream endpoint.' }, { name: 'signal', description: 'Original stream and native-work cancellation.' }],
+        returns: 'Current checks owned by the same original ingress and Peer/Use.',
+      },
+      {
         signature: 'withConfigurationPeer<T>(peer: PeerScope, consume: ConfigurationPeerOperation<T>, mode: \'if-idle\' | \'stop-and-apply\' = \'if-idle\'): Promise<T>',
         description: 'Delegate a guarded configuration handoff to the same original login/Peer owner.',
         parameters: [{ name: 'peer', description: 'Exact native invocation Peer.' }, { name: 'consume', description: 'Factory-owned exclusive update, without another login or state authority.' }, { name: 'mode', description: 'Explicit local idle operation or terminal acceptance followed by original full closure.' }],

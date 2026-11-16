@@ -634,42 +634,47 @@ test('known failure cannot authorize DELETE before the original body and dispatc
   assert.equal(await outcome, 'stopped'); assert.equal(f.ack.mock.calls.length, 1)
 })
 
-for (const status of [204, 404, 500]) test(`terminal failed bootstrap releases allocation capacity after DELETE ${status} and confirmed absence`, async () => {
-  const f = await bootstrapFailureFixture(completedFailure), release = vi.fn()
-  let row: SandboxAllocation | undefined
-  const store = {
-    begin: vi.fn(async (intent: Intent) => {
-      row = { ...intent, state: 'creating', sandboxId: null, lastActivityAt: intent.requestedAt, lastCheckedAt: intent.requestedAt,
-        runtimeIdentity: null, executionProtocolVersion: null, executionCapabilities: [], failureCode: null }
-      return { allocation: row, inserted: true }
-    }),
-    transition: vi.fn(async (_expected: AllocationExpectation, change: AllocationChange) => {
-      if (row === undefined) throw new Error('Missing original allocation row')
-      row = { ...row, state: change.to, sandboxId: change.sandboxId ?? row.sandboxId }; return row
-    }),
-    releaseStopped: vi.fn(async (_expected: AllocationExpectation) => {
-      if (row?.state !== 'stopping' || f.ack.mock.calls.length !== 1) throw new Error('Actual original stop must precede SQL release')
-      row = { ...row, state: 'released' }; return row
-    }),
-    failNotCreated: vi.fn(async (): Promise<never> => { throw new Error('Created bootstrap failure cannot become not-created') }),
-    reconcileCommitted: vi.fn(async (): Promise<never> => { throw new Error('No metadata reconciliation is scripted') }),
-  }
-  const request: NativeAllocationRequest<VerifiedExecutionMount> = { binding: f.selected.mount.grant.binding,
-    sessionId: f.selected.intent.sessionId, workspaceId: f.selected.intent.workspaceId, assertCurrent() {},
-    prepareMount: async () => ({ value: f.selected.mount, projectMountVersion: f.selected.intent.projectMountVersion,
-      assertCurrent() {}, release }) }
-  const owner = new SessionAllocationOwner(store, f.backend, { environmentVersion: config.environmentVersion,
-    provider: config.provider, createBudgetMs: 10000, maxAllocations: 1, maxAllocationsPerAccount: 1,
-    maxWaiters: 2, maxWaitersPerAllocation: 2 })
-  await assert.rejects(owner.prepare(request))
-  assert.equal(row?.state, 'creating'); assert.equal(row?.sandboxId, null); assert.equal(release.mock.calls.length, 0)
-  f.transport.deleteStatus = status
-  if (status === 500) f.transport.getStatus = 404
-  await owner.stop(request)
-  assert.equal(row?.state, 'released')
-  assert.equal(store.failNotCreated.mock.calls.length, 0); assert.equal(release.mock.calls.length, 1)
-  assert.equal(owner.inspect().allocations, 0)
-})
+for (const terminal of ['completion', 'error'] as const) for (const status of [204, 404, 500]) test(
+  `terminal failed bootstrap (${terminal}) releases allocation capacity after DELETE ${status} and confirmed absence`, async () => {
+    const events = terminal === 'completion' ? completedFailure : [
+      { type: 'init', text: 'loader' }, { type: 'stderr', text: 'original fixed loader failure' },
+      { type: 'error', error: { ename: 'CommandExecError', evalue: '7', exit_code: 7 } },
+    ]
+    const f = await bootstrapFailureFixture(events), release = vi.fn()
+    let row: SandboxAllocation | undefined
+    const store = {
+      begin: vi.fn(async (intent: Intent) => {
+        row = { ...intent, state: 'creating', sandboxId: null, lastActivityAt: intent.requestedAt, lastCheckedAt: intent.requestedAt,
+          runtimeIdentity: null, executionProtocolVersion: null, executionCapabilities: [], failureCode: null }
+        return { allocation: row, inserted: true }
+      }),
+      transition: vi.fn(async (_expected: AllocationExpectation, change: AllocationChange) => {
+        if (row === undefined) throw new Error('Missing original allocation row')
+        row = { ...row, state: change.to, sandboxId: change.sandboxId ?? row.sandboxId }; return row
+      }),
+      releaseStopped: vi.fn(async (_expected: AllocationExpectation) => {
+        if (row?.state !== 'stopping' || f.ack.mock.calls.length !== 1) throw new Error('Actual original stop must precede SQL release')
+        row = { ...row, state: 'released' }; return row
+      }),
+      failNotCreated: vi.fn(async (): Promise<never> => { throw new Error('Created bootstrap failure cannot become not-created') }),
+      reconcileCommitted: vi.fn(async (): Promise<never> => { throw new Error('No metadata reconciliation is scripted') }),
+    }
+    const request: NativeAllocationRequest<VerifiedExecutionMount> = { binding: f.selected.mount.grant.binding,
+      sessionId: f.selected.intent.sessionId, workspaceId: f.selected.intent.workspaceId, assertCurrent() {},
+      prepareMount: async () => ({ value: f.selected.mount, projectMountVersion: f.selected.intent.projectMountVersion,
+        assertCurrent() {}, release }) }
+    const owner = new SessionAllocationOwner(store, f.backend, { environmentVersion: config.environmentVersion,
+      provider: config.provider, createBudgetMs: 10000, maxAllocations: 1, maxAllocationsPerAccount: 1,
+      maxWaiters: 2, maxWaitersPerAllocation: 2 })
+    await assert.rejects(owner.prepare(request))
+    assert.equal(row?.state, 'creating'); assert.equal(row?.sandboxId, null); assert.equal(release.mock.calls.length, 0)
+    f.transport.deleteStatus = status
+    if (status === 500) f.transport.getStatus = 404
+    await owner.stop(request)
+    assert.equal(row?.state, 'released')
+    assert.equal(store.failNotCreated.mock.calls.length, 0); assert.equal(release.mock.calls.length, 1)
+    assert.equal(owner.inspect().allocations, 0)
+  })
 
 
 test('retains unknown or active SDK records and reclaims only stopped originals without replaying their create', async () => {

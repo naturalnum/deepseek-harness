@@ -697,6 +697,16 @@ withModelKeyPeerUse<T>(peer: PeerScope, consume: (use: AccountUse, assertCurrent
  */
 readOperationCurrent(peer: PeerScope, binding: AccountBinding, endpoint: string): boolean
 
+/**
+ * Retain the original authenticated stream through its native work.
+ * @param peer Exact original invocation Peer.
+ * @param binding Original installed account binding.
+ * @param endpoint Exact admitted stream endpoint.
+ * @param signal Original stream and native-work cancellation.
+ * @returns Current checks owned by the same original ingress and Peer/Use.
+ */
+captureStreamCurrent(peer: PeerScope, binding: AccountBinding, endpoint: string, signal: AbortSignal): () => void
+
 /** Delegate a guarded configuration handoff to the same original login/Peer owner.
  * @param peer Exact native invocation Peer.
  * @param consume Factory-owned exclusive update, without another login or state authority.
