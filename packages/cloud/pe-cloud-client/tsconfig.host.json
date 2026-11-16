@@ -9,6 +9,7 @@
     "src/index.ts",
     "src/config.ts",
     "src/schema.ts",
+    "src/web-copy.ts",
     "src/types.ts",
     "src/preview-policy.ts"
   ],

@@ -9,6 +9,7 @@
     "src/types.ts",
     "src/config.ts",
     "src/schema.ts",
+    "src/web-copy.ts",
     "src/client/index.ts",
     "src/client/branding.tsx",
     "src/client/branding-locales.ts",

@@ -27,6 +27,10 @@
       "types": "./lib/types/schema.d.ts",
       "default": "./lib/schema.js"
     },
+    "./web-copy": {
+      "types": "./lib/types/web-copy.d.ts",
+      "default": "./lib/web-copy.js"
+    },
     "./types": {
       "types": "./lib/types/types.d.ts",
       "default": "./lib/types/types.js"
