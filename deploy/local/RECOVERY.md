@@ -6,6 +6,8 @@
 
 `captureRecoveryRoot` 读取原六文件实际 bytes、UID/GID/mode、稳定文件身份和原 `profiles/cloud/node_modules` 链接或实际缺失。缺文件、读期间变更、普通目录冒链接或旁路目标已有不同链接均拒绝。原凭据由原 credentials-local 来源与解析器管理，不生成空值或复制其他账号秘密；空 mutable profile、BOM、CRLF 和未改字段保留。
 
+副本写入后，原采集器重新完整读取六文件及链接，对照实际 bytes、UID/GID/mode 和链接身份；文件系统静默忽略 chown 等元数据操作时即拒绝保存成功，不把稍后的 check 当作写入结果。失败保留原件和旁路文件。
+
 `mapRecoveryConfiguration` 从当前 JSON insert 结构定位十二个确切字节范围：三个哈希、监听主机/端口、内部地址、两份数据库主机/端口、公开入口和 SDK lifecycle 地址。重复键、重复条目、缺字段或范围不匹配拒绝。新地址须来自本次拓扑实测；plan 和两层配置哈希来自本次真实测量及新文件，原件不覆盖。
 
 `captureRecoveryStorage` 保存原 provisioner 十一 ext4 域的实际 UUID、原 loop、backing inode、文件系统几何、根权限与有效挂载选项。传入实际 installAnchor/app PID 时，还捕获确实依赖的产品只读 loop 和 arena backing 父盘；不存在的支持盘记为空，不按旧实例猜路径。恢复按产品盘、父盘、arena、十个子域排序，仅对缺失步骤接回原号并挂载，已就绪跳过。原号占用、重复 backing、inode/UUID/权限/exec 策略不符或结果未确认均停止。只检查不写任何域。

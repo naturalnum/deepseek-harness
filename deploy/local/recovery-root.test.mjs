@@ -84,6 +84,23 @@ test('a private source symlink or missing credential file refuses without normal
   assert.deepEqual(await fs.readFile(credential.path + '.original'), credential.bytes)
 })
 
+test('a filesystem that silently ignores requested ownership cannot report a saved Root copy', async t => {
+  const f = await fixture(t), captured = await captureRecoveryRoot(f.directory)
+  const prepared = { files: f.files.map((row, index) => ({ relativePath: row.name,
+    bytes: Object.values(captured.files)[index], ...captured.fileMetadata[row.name],
+    ...(index === 0 ? { uid: captured.fileMetadata[row.name].uid + 1 } : {}) })) }
+  const target = join(f.directory, 'silent-owner')
+  await fs.mkdir(join(target, 'profiles/cloud'), { recursive: true })
+  const io = { ...fs, open: async (...args) => {
+    const handle = await fs.open(...args)
+    return { stat: () => handle.stat(), readFile: () => handle.readFile(), writeFile: bytes => handle.writeFile(bytes),
+      chown: async () => {}, chmod: mode => handle.chmod(mode), sync: () => handle.sync(), close: () => handle.close() }
+  } }
+  await assert.rejects(writeRecoveryRoot(captured, prepared, target, io), /来源或读取期间/)
+  assert.deepEqual(await fs.readFile(f.files[0].path), f.files[0].bytes)
+  assert.equal((await fs.lstat(join(target, f.files[0].name))).uid, captured.fileMetadata[f.files[0].name].uid)
+})
+
 test('a file changed during capture refuses and every acquired descriptor actually closes', async t => {
   const f = await fixture(t), opened = new Set(), closed = new Set()
   const io = { lstat: fs.lstat, open: async (path, flags) => {

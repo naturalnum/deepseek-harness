@@ -73,6 +73,12 @@ export async function writeRecoveryRoot(captured, prepared, targetDirectory, io 
     await io.symlink(captured.moduleLink.target, target)
     await io.lchown(target, captured.moduleLink.uid, captured.moduleLink.gid)
   }
+  const actual = await captureRecoveryRoot(targetDirectory, io)
+  if (JSON.stringify(actual.moduleLink) !== JSON.stringify(captured.moduleLink)
+    || prepared.files.some(row => {
+      const index = RECOVERY_ROOT_FILES.indexOf(row.relativePath), metadata = actual.fileMetadata[row.relativePath]
+      return !actual.files[fields[index]].equals(row.bytes) || ['uid', 'gid', 'mode'].some(key => metadata[key] !== row[key])
+    })) fail()
   return written
 }
 
