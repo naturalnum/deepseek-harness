@@ -4,6 +4,7 @@ import {symbols} from '@deepseek-ai/cordis'
 import { setTimeout as delay } from 'node:timers/promises'
 import { randomBytes } from 'node:crypto'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import { runPreviewValidation } from './preview-validation-consumer.mjs'
 export const name = 'sdk-linux-native-validation'
 export const inject = ['peAccountRuntime', 'appReady']
 const TEST = '/tmp/dsh-feature-home/sdk-validation'
@@ -11,7 +12,7 @@ const shellArg = value => "'" + value.replaceAll("'", "'\\''") + "'"
 export function apply(ctx) {
   const controller = new AbortController()
   ctx.effect(() => () => { controller.abort() })
-  ctx.appReady.onReady(() => { fs.mkdirSync(TEST, { recursive: true, mode: 0o700 }); fs.writeFileSync(TEST + '/application-ready.json', JSON.stringify({ at: new Date().toISOString(), appReady: true, uid: process.getuid(), pid: process.pid, startTicks: fs.readFileSync('/proc/self/stat','utf8').slice(fs.readFileSync('/proc/self/stat','utf8').lastIndexOf(')')+2).split(/\s+/)[19], mountNamespace: fs.readlinkSync('/proc/self/ns/mnt'), architecture: process.arch, modelRequestSent: false }) + '\n', { flag: 'wx', mode: 0o600 }); void run().catch(error => {
+  ctx.appReady.onReady(() => { fs.mkdirSync(TEST, { recursive: true, mode: 0o700 }); fs.writeFileSync(TEST + '/application-ready.json', JSON.stringify({ at: new Date().toISOString(), appReady: true, uid: process.getuid(), pid: process.pid, startTicks: fs.readFileSync('/proc/self/stat','utf8').slice(fs.readFileSync('/proc/self/stat','utf8').lastIndexOf(')')+2).split(/\s+/)[19], mountNamespace: fs.readlinkSync('/proc/self/ns/mnt'), architecture: process.arch, modelRequestSent: false }) + '\n', { flag: 'wx', mode: 0o600 }); void runPreviewValidation(ctx,controller.signal).catch(error=>{if(!controller.signal.aborted)fs.writeFileSync(TEST+'/preview010-failed.json',JSON.stringify({status:'failed-retained',errorName:error?.name,code:error?.code})+'\n',{mode:0o600})}); void run().catch(error => {
     fs.writeFileSync(TEST + '/driver-failed.json', JSON.stringify({ status: 'failed-retained', errorName: error?.name, code: error?.code }) + '\n', { mode: 0o600 })
   }) })
   async function run() {
