@@ -273,6 +273,15 @@ export class CloudIngress {
   }
 
   /**
+   * Inspect this owner's actual dedicated listener registration; no wire data or caller proof is accepted.
+   * @returns A frozen detached registration while this owner accepts work, otherwise undefined.
+   */
+  inspectApplicationListener(): Readonly<{ ctx: Context; web: WebServer }> | undefined {
+    return this.accepting && this.dependencies.applications !== undefined && this.applicationListener !== undefined
+      ? Object.freeze({ ...this.applicationListener }) : undefined
+  }
+
+  /**
    * Close the exact original login through the sole registry, including revocation invoked by a carrier read.
    * @param loginId Original verified login id.
    * @returns Known native resource cleanup; full closure separately joins carrier/auth work.

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context, FiberState } from '@deepseek-ai/cordis'
 import { boot } from '@deepseek-ai/dsh-app-boot'
-import { Group, type LoaderUpdateGuard } from '@deepseek-ai/cordis-plugin-loader'
+import { EntryTree, Group, type LoaderUpdateGuard } from '@deepseek-ai/cordis-plugin-loader'
 import { ExposureService } from '@deepseek-ai/dsh-pe-cloud-api'
 import { RootStorageOwner } from '@deepseek-ai/dsh-pe-cloud-files/root'
 import z from '@deepseek-ai/schemastery'
@@ -32,6 +32,7 @@ async function fixture(options: {
   disabledFiles?: boolean
   resourceOnlyAuth?: boolean
   volatileFiles?: boolean
+  contentListener?: 'registered' | 'unregistered' | 'wrong-adapter' | 'wrong-group'
 } = {}) {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'm8m-root-recipe-')))
   directories.push(directory)
@@ -48,7 +49,8 @@ async function fixture(options: {
     stopEpoch: async binding => ({ participant: 'execution', accountId: binding.accountId, epoch: binding.epoch,
       status: 'unknown', pendingOperationIds: [], evidenceRefs: [], reason: 'external-execution-resource-fixture' }),
   }
-  const auth = { observe: () => ({ phase: 'initialized', ...options.resourceOnlyAuth ? {} : {
+  let contentRegistration: { ctx: Context; web: object } | undefined
+  const auth = { inspectApplicationListener: () => contentRegistration, observe: () => ({ phase: 'initialized', ...options.resourceOnlyAuth ? {} : {
     ingress: { state: ingressOpen ? 'installed' : 'closing', current: ingressOpen, registeredRoutes: 3, pendingOperations: 0 },
   } }) }
   const infra = { webServer: {}, credentials: {}, clientModules: {} }
@@ -68,6 +70,20 @@ async function fixture(options: {
   const infrastructure = { Config: z.object({}), apply(ctx: Context) {
     ctx.provide('webServer', infra.webServer); ctx.provide('credentials', infra.credentials); ctx.provide('clientModules', infra.clientModules)
   } }
+  if (options.contentListener !== undefined) {
+    const contentWeb = { Config: z.object({}), apply(ctx: Context) { ctx.provide('webServer', {}) } }
+    const contentAdapter = { Config: z.object({}), inject: ['peAuth', 'webServer'], apply(ctx: Context) {
+      const web = ctx.get('webServer')
+      if (web === undefined) throw new Error('Actual fixture listener missing')
+      if (options.contentListener !== 'unregistered') contentRegistration = { ctx, web }
+    } }
+    const originalImport = EntryTree.prototype.import
+    vi.spyOn(EntryTree.prototype, 'import').mockImplementation(function (this: EntryTree, name, stack) {
+      if (name === '@deepseek-ai/dsh-host-webserver') return contentWeb
+      if (name === '@deepseek-ai/dsh-pe-cloud-access/applications' || name === 'content-fixture-wrong-adapter') return contentAdapter
+      return originalImport.call(this, name, stack)
+    })
+  }
   const configPath = join(directory, 'root.cordis.yml')
   writeFileSync(configPath, JSON.stringify([
     { id: 'runtime', name: 'cordis:runtime', config: { maxMountedAccounts: 2, maxConcurrentMounts: 1, maxConcurrentDrains: 1 } },
@@ -77,6 +93,12 @@ async function fixture(options: {
     { id: 'execution', name: 'cordis:execution' }, { id: 'infra', name: 'cordis:infra' },
     ...options.duplicateEntry ? [{ id: 'another-access', name: 'cordis:access' }] : [],
     ...options.duplicateProvider ? [{ id: 'isolated-access', name: 'cordis:isolated-access', isolate: { peAuth: true } }] : [],
+    ...options.contentListener === undefined ? [] : [{ id: 'content', name: 'cordis:group', group: true,
+      isolate: options.contentListener === 'wrong-group' ? { webServer: 'other' } : { webServer: true }, config: [
+        { id: 'content-web', name: '@deepseek-ai/dsh-host-webserver', config: {} },
+        { id: 'content-adapter', name: options.contentListener === 'wrong-adapter' ? 'content-fixture-wrong-adapter'
+          : '@deepseek-ai/dsh-pe-cloud-access/applications', config: {} },
+      ] }],
   ]))
   const ctx = await boot('m8m-recipe-root', configPath, [], (owner) => {
     Object.assign(owner.loader.builtins, { runtime: PeAccountRuntime, access, api: ExposureService,
@@ -175,6 +197,21 @@ it('rejects an actual isolated duplicate provider and revokes an actual service 
   expect(f.runtime.inspectRecipe().status).toBe('revoked')
   expect(() => { f.runtime.sealRecipe(f.input) }).toThrow('not sealed')
   expect(f.runtime.inspectRecipe().issues).toContain('provider-replaced-or-missing')
+})
+
+it('audits the original registered isolated content transport without accepting unrelated duplicate providers', async () => {
+  const f = await fixture({ contentListener: 'registered' })
+  expect(() => { f.runtime.sealRecipe(f.input) }).toThrow('not sealed')
+  expect(f.runtime.inspectRecipe()).toMatchObject({ rootEntries: 5, providers: 8, participants: 2,
+    issues: ['runtime-control-unavailable', 'storage-root-capability-missing'] })
+  await f.entry('content-web').fiber?.dispose()
+  expect(f.runtime.inspectRecipe().status).toBe('revoked')
+})
+
+it.each(['unregistered', 'wrong-adapter', 'wrong-group'] as const)('rejects a %s isolated content lookalike', async (contentListener) => {
+  const f = await fixture({ contentListener })
+  expect(() => { f.runtime.sealRecipe(f.input) }).toThrow('not sealed')
+  expect(f.runtime.inspectRecipe().issues).toContain('provider-duplicate-or-missing')
 })
 
 it('rejects missing requirements and retains finite observations for an overlong catalog', async () => {

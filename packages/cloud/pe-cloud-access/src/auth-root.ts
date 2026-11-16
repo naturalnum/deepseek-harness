@@ -149,6 +149,14 @@ export class PeAuthService extends Service {
   }
 
   /**
+   * Inspect the original private registration for the Root recipe audit.
+   * @returns Detached registration objects, or undefined when authentication is unavailable; never readiness.
+   */
+  inspectApplicationListener(): Readonly<{ ctx: Context; web: WebServer }> | undefined {
+    return this.phase === 'initialized' ? this.ingress?.inspectApplicationListener() : undefined
+  }
+
+  /**
    * Delegate one native model-key invocation through the original login registry.
    * @param peer Exact Gateway invocation Peer, never a client identity.
    * @param consume Actual native work using the original retained Use and current checks.

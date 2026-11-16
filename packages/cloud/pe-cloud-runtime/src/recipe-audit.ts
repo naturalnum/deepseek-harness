@@ -27,12 +27,21 @@ export interface RegisteredRootParticipant {
 }
 
 interface EntryFact { readonly entry: Entry; readonly fiber: Fiber; readonly plan: Plan; readonly module: unknown }
+type ContentEntries = readonly [Entry, Entry, Entry]
+interface ContentTransport {
+  readonly fiber: Fiber
+  readonly entries: ContentEntries
+  readonly groupFiber: Fiber
+  readonly groupModule: unknown
+  readonly groupOptions: string
+}
 interface Candidate {
   readonly input: RootRecipeInput
   readonly facts: readonly EntryFact[]
   readonly providers: readonly { key: string; value: object; fiber: Fiber; record: object; registered: unknown }[]
   readonly participants: readonly RegisteredRootParticipant[]
   readonly manifest: object | undefined
+  readonly content: readonly ContentTransport[]
   readonly storage?: Readonly<{ pool: object; owner: RootStorageOwner }>
 }
 
@@ -52,6 +61,33 @@ function descends(fiber: Fiber, parent: Fiber): boolean {
     if (current.parent.fiber === current) return false
     current = current.parent.fiber
   }
+}
+
+/** Only the original Access owner's registered, isolated Native content listener is a separate transport role. */
+function contentListenerEntries(root: Context, fiber: Fiber): ContentEntries | undefined {
+  const auth: unknown = root.get('peAuth')
+  if (!object(auth)) return undefined
+  const owner = original(auth), inspect: unknown = Reflect.get(owner, 'inspectApplicationListener')
+  if (typeof inspect !== 'function') return undefined
+  const retained: unknown = inspect.call(owner)
+  if (!object(retained)) return undefined
+  const scope: unknown = Reflect.get(retained, 'ctx'), web: unknown = Reflect.get(retained, 'web')
+  if (!Context.is(scope) || !object(web) || scope.root !== root || scope.fiber.state !== FiberState.ACTIVE
+    || scope[symbols.isolate].webServer === root[symbols.isolate].webServer
+    || scope[symbols.isolate].webServer !== fiber.ctx[symbols.isolate].webServer
+    || scope[symbols.isolate].peAuth !== root[symbols.isolate].peAuth) return undefined
+  const installed = fiber.store?.webServer
+  if (installed?.fiber !== fiber || !object(installed.value) || original(installed.value) !== original(web)) return undefined
+  const current: unknown = scope.get('webServer'), currentAuth: unknown = scope.get('peAuth')
+  if (!object(current) || original(current) !== original(web) || !object(currentAuth) || original(currentAuth) !== owner) return undefined
+  const adapter = scope.fiber.entry, listener = fiber.entry, group = adapter?.parent.ctx.fiber.entry
+  if (adapter?.options.name !== '@deepseek-ai/dsh-pe-cloud-access/applications'
+    || listener?.options.name !== '@deepseek-ai/dsh-host-webserver'
+    || adapter.parent !== listener.parent || group?.options.name !== 'cordis:group' || group.options.group !== true
+    || group.options.isolate?.webServer !== true || group.fiber?.state !== FiberState.ACTIVE
+    || !Array.isArray(group.options.config) || group.options.config.length !== 2
+    || [group, listener, adapter].some(entry => entry.parent.tree.store[entry.options.id] !== entry)) return undefined
+  return [group, listener, adapter]
 }
 
 /** One runtime's lifetime-bound audit; no caller can manufacture a sealed result or storage certificate. */
@@ -136,6 +172,7 @@ export class RootRecipeAudit {
     const rows: Entry[] = []
     for (const entry of loader?.entries() ?? []) { consume(); rows.push(entry) }
     const facts = new Map<Entry, EntryFact>()
+    const content: Candidate['content'][number][] = []
     const rootEntries = new Map<string, Entry>()
     for (const expected of input.roots) {
       const matches = rows.filter(row => row.options.id === expected.entryId)
@@ -178,6 +215,20 @@ export class RootRecipeAudit {
         for (const expected of input.providers) {
           const implementation = fiber.store?.[expected.key]
           if (implementation === undefined || implementation.fiber !== fiber) continue
+          const transport = expected.key === 'webServer' ? contentListenerEntries(root, fiber) : undefined
+          if (transport !== undefined) {
+            const group = transport[0], groupOptions = JSON.stringify(group.options)
+            if (group.fiber === undefined) { issue('root-entry-inactive'); continue }
+            if (groupOptions.length > 1048576) { issue('root-config-unproven'); continue }
+            content.push({ fiber, entries: transport, groupFiber: group.fiber, groupModule: group.moduleNamespace, groupOptions })
+            for (const entry of transport.slice(1)) {
+              if (entry.fiber === undefined || entry.fiber.state !== FiberState.ACTIVE || entry.disabled) { issue('root-entry-inactive'); continue }
+              const plan = entry.prepareConfigUpdate(entry.options.config)
+              if (plan.impact !== 'none') { issue('root-config-unproven'); continue }
+              facts.set(entry, { entry, fiber: entry.fiber, plan, module: entry.moduleNamespace })
+            }
+            continue
+          }
           implementations.set(expected.key, implementations.has(expected.key) ? null
             : { fiber, value: implementation.value, record: implementation })
         }
@@ -241,7 +292,7 @@ export class RootRecipeAudit {
       roots: Object.freeze(input.roots.map(row => Object.freeze({ ...row }))),
       providers: Object.freeze(input.providers.map(row => Object.freeze({ ...row }))), manifest: input.manifest,
     })
-    this.candidate = { input: detached, facts: [...facts.values()], providers, participants: [...registered], manifest,
+    this.candidate = { input: detached, facts: [...facts.values()], providers, participants: [...registered], manifest, content,
       ...storage === undefined ? {} : { storage } }
     this.record(input.recipeVersion, [...rootEntries.values()], providers, registered, manifest, issues)
     if (issues.length !== 0) this.fail()
@@ -345,6 +396,7 @@ export class RootRecipeAudit {
         for (const key of PROVIDERS) {
           const installed = fiber.store?.[key], value: unknown = installed?.value
           if (installed === undefined || installed.fiber !== fiber) continue
+          if (key === 'webServer' && contentListenerEntries(root, fiber) !== undefined) continue
           if (!object(value) || implementations.has(key)) unavailable()
           implementations.set(key, { fiber, value: original(value) })
         }
@@ -379,6 +431,12 @@ export class RootRecipeAudit {
     let reason: RevokeReason = 'entry-identity'
     let provider: string | undefined
     try {
+      for (const transport of candidate.content) {
+        const actual = contentListenerEntries(this.owner.root, transport.fiber), group = transport.entries[0]
+        if (actual === undefined || actual.some((entry, index) => entry !== transport.entries[index])
+          || group.fiber !== transport.groupFiber || group.moduleNamespace !== transport.groupModule
+          || JSON.stringify(group.options) !== transport.groupOptions) throw new Error('changed')
+      }
       for (const { entry, fiber, module } of candidate.facts) {
         reason = 'entry-identity'
         if (entry.fiber !== fiber || fiber.state !== FiberState.ACTIVE || entry.moduleNamespace !== module) throw new Error('changed')
