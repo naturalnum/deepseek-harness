@@ -6,6 +6,45 @@ import { createBudget, findPreviousSessionRow, readDownload, StepTimeout, stopPe
 
 const { chromium } = createRequire(new URL('../../apps/web/package.json', import.meta.url))('playwright')
 
+test('retained Session navigation clicks the workspace row when hover overlays the folder icon', async t => {
+  const browser = await chromium.launch({ headless: true })
+  t.after(() => browser.close())
+  const page = await browser.newPage()
+  await page.setContent(`<style>
+    [role=treeitem] { position:relative;display:flex;width:400px;height:28px;padding:0 8px;box-sizing:border-box }
+    .folder,.chevron { position:absolute;left:16px;top:4px;width:20px;height:20px }
+    .chevron { visibility:hidden }
+    [role=treeitem]:hover .folder { visibility:hidden }
+    [role=treeitem]:hover .chevron { visibility:visible }
+    .actions { margin-left:auto }
+  </style><div data-row-key="workspace:retained" role="treeitem" aria-expanded="false">
+    <span class="folder">folder</span><span class="chevron">arrow</span><span>Retained workspace</span>
+    <span class="actions"><button onclick="event.stopPropagation();document.body.dataset.mutated='1'">New session</button></span>
+  </div><script>
+    const group=document.querySelector('[role=treeitem]');
+    group.addEventListener('click',()=>{
+      document.body.dataset.clicks=String(Number(document.body.dataset.clicks||0)+1);
+      group.setAttribute('aria-expanded','true');
+      const session=document.createElement('div');session.dataset.rowKey='session:retained';
+      session.textContent='retained session';group.after(session);
+    });
+  </script>`)
+  assert.notEqual(await findPreviousSessionRow(page, 'session:retained', 1000), undefined)
+  assert.equal(await page.locator('body').getAttribute('data-clicks'), '1')
+  assert.equal(await page.locator('body').getAttribute('data-mutated'), null)
+})
+
+test('retained Session navigation waits for the original session list after workspace rows are ready', async t => {
+  const browser = await chromium.launch({ headless: true })
+  t.after(() => browser.close())
+  const page = await browser.newPage()
+  await page.setContent(`<div data-row-key="workspace:ready" role="treeitem" aria-expanded="true">Workspace</div>
+    <script>setTimeout(()=>{
+      const row=document.createElement('div');row.dataset.rowKey='session:retained';row.textContent='retained session';document.body.append(row);
+    },50)</script>`)
+  assert.notEqual(await findPreviousSessionRow(page, 'session:retained', 1000), undefined)
+})
+
 test('retained Session navigation expands existing nested workspaces without invoking create or menu actions', async t => {
   const browser = await chromium.launch({ headless: true })
   t.after(() => browser.close())

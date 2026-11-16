@@ -60,13 +60,19 @@ export function buildLaunchCommand(snapshot, holder, logPath) {
     snapshot.appCwd, snapshot.profileHome, String(budget(snapshot)), String(holder.pid)]
 }
 
-/** Create lifecycle operations with explicit external operations for fixture-based failure checks. */
+/**
+ * Bind the original stop/start and namespace-holder operations to an explicit existing carrier.
+ * @param {object} operations Container plus original inspection, exec, Engine and clock operations; defaults
+ * retain the existing local candidate. Changing the target never changes identity or privilege checks.
+ * @returns {object} ensureNamespaceHolder, stopApplication and startApplication operations.
+ */
 export function createLifecycle({
+  container = CANDIDATE_CONTAINER,
   inspect = inspectCandidate, execute = execInCandidate, engine = engineRequest,
   execution = inspectExec, wait = () => delay(250), now = Date.now,
 } = {}) {
   async function detached(command) {
-    const created = await engine('POST', '/containers/' + CANDIDATE_CONTAINER + '/exec', {
+    const created = await engine('POST', '/containers/' + container + '/exec', {
       AttachStdin: false, AttachStdout: false, AttachStderr: false, Tty: false, User: '0', Cmd: command,
     })
     if (!/^[a-f0-9]{64}$/.test(created?.Id)) throw new CandidateError('Docker 未返回有效的启动标识。')

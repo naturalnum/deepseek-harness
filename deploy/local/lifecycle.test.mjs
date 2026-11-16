@@ -122,6 +122,7 @@ test('a missing keeper is retained through one owned detached sleep in the exist
   const observations = [unretained, unretained, snapshot], requests = [], commands = []
   let waited = 0
   const lifecycle = createLifecycle({
+    container: 'handed-over-runtime',
     inspect: async () => observations.shift(), execute: async args => { commands.push(args) },
     engine: async (method, route, payload) => { requests.push({ method, route, payload }); return route.endsWith('/exec') ? { Id: HOLDER_EXEC } : null },
     execution: async id => ({ execId: id, hostPid: 200, running: true, exitCode: null }),
@@ -134,6 +135,7 @@ test('a missing keeper is retained through one owned detached sleep in the exist
   assert.equal(waited, 1)
   assert.equal(JSON.parse(commands[0].at(-1)).signal, false)
   assert.deepEqual(requests[0].payload.Cmd.slice(0, 3), ['nsenter', '-t', '20'])
+  assert.equal(requests[0].route, '/containers/handed-over-runtime/exec')
   assert.deepEqual(requests[0].payload.Cmd.slice(-2), ['/bin/sleep', 'infinity'])
   assert.equal(requests[1].payload.Detach, true)
 })
