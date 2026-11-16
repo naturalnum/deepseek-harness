@@ -130,3 +130,5 @@ deploy/local/rollback --line '<工作线名>'
 ## 原操作的验证接续
 
 `node deploy/local/update.mjs continue-native-verify 1de3c28b-bb13-46da-91bb-950cb3073133 --line 主线` 只接受这次已安装目标、原应用/keeper、原绑定与 phase12。它重读原完成 job 和原 provider 完成记录，随后用原账号参数运行一次新的正常冒烟；只有退出0且前后实际 tuple 相同，才通过原 CAS 进入 verified13 并正常释放部署锁。旧失败记录、合法 ready 分配及原认证会话仍由原 owner 保管，不重放旧业务、不停止应用或归还账号/SDK资源。验证前独占持久保存新的 verify-attempt 记录，失败仍保留，已有记录拒绝再发。失败保留原意图与锁，不自动重试；这不是其他阶段或操作的恢复入口。
+
+独立测试数据库的[原认证初始化工具](second-environment-20261115/initialize-feature-auth.mjs)只由受信Linux Root消费0600私有输入；HTTP origin须为规范localhost站点、真正的IPv4 loopback或IPv6 loopback，HTTPS仍沿原规则。它保留原迁移、唯一管理员、关闭注册及初始化登录收尾。失败保留实际阶段和原责任，不能因输入修正而重放已提交的认证写入。
