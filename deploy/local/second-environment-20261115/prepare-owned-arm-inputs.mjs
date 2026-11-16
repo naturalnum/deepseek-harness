@@ -1,6 +1,7 @@
 /** Only this new ARM identity's public references; never loads old private deployment or account files. */
 import fs from 'node:fs'
 import {armValidationParameters} from './arm-validation-settings.mjs'
+import {managedRootParameters} from './arm-managed-composition.mjs'
 import {createHash} from 'node:crypto'
 import {renderAccountBase} from './prepare-feature-composition-v3.mjs'
 const A='/opt/dsh-features/arm-native-01',R='/opt/dsh-features',p=JSON.parse(fs.readFileSync(A+'/plan.json'))
@@ -9,7 +10,7 @@ if(process.arch!=='arm64'||process.getuid()!==0)throw Error('Actual native ARM R
 const auth=JSON.parse(fs.readFileSync(R+'/auth-result.public.json'))
 if(auth.status!=='initialized-and-verified'||auth.verified.bootstrapSessionsRemaining!==0)throw Error('Original new-identity auth initializer not settled')
 const physical=JSON.parse(fs.readFileSync(A+'/static-arm-existing.json'))
-const params=armValidationParameters(JSON.parse(fs.readFileSync(A+'/feature-root-v3.parameters.public-template.json')))
+const params=managedRootParameters(armValidationParameters(JSON.parse(fs.readFileSync(A+'/feature-root-v3.parameters.public-template.json'))))
 params.recipeVersion=physical.recipeVersion
 params.database={database:p.database,host:p.pgHost,port:5432,user:p.pgRole,passwordRef:'DSH_SDK_ARM_PG_PASSWORD',ssl:false}
 params.credentials={path:'/run/dsh-feature-root/credentials.json',authSecretRef:'DSH_SDK_ARM_AUTH_SECRET'}
