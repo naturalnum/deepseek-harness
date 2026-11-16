@@ -31,7 +31,7 @@ The Cloud browser fills the native sidebar brand positions with PowerEvolve and 
 
 The prepared Cloud page disables the native Workspace delete action for the lifetime of its page root because this composition does not expose the delete RPC. The menu and any open confirmation show a localized reason; this display restriction does not replace Host authorization.
 
-The `/schema` export provides browser-safe public configuration validation; `/types` contains its configuration types. Its empty runtime leaf is published at `lib/types/types.js`; unbundled browser compiler output is not part of the publication. The Host entry declares the browser package and optionally injects public Web deployment inputs, without business services or authentication routes.
+The `/web-copy` plain ESM export supplies the English and Chinese pre-Cordis login and page-exit copy. The Web entry owns its DOM and styles. The `/schema` export provides browser-safe public configuration validation; `/types` contains its configuration types. Its empty runtime leaf is published at `lib/types/types.js`; unbundled browser compiler output is not part of the publication. The Host entry declares the browser package and optionally injects public Web deployment inputs, without business services or authentication routes.
 
 ### When to choose it
 

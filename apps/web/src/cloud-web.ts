@@ -4,7 +4,7 @@ import type { ClientModuleLoader, DshWindow } from '@deepseek-ai/dsh-client-modu
 import { parseCloudWebManifest } from '@deepseek-ai/dsh-pe-cloud-client/schema'
 import type { CloudWebManifest } from '@deepseek-ai/dsh-pe-cloud-client/types'
 import type { CloudPagePreparation, PreparedCloudPage } from '@deepseek-ai/dsh-pe-cloud-client/client'
-import { cloudWebCopy } from './locales.ts'
+import { cloudWebCopy } from '@deepseek-ai/dsh-pe-cloud-client/web-copy'
 import styles from './cloud-web.module.css'
 
 type CloudModule = Pick<typeof import('@deepseek-ai/dsh-pe-cloud-client/client'), 'PreparedCloudPage' | 'ClientFailure'>
