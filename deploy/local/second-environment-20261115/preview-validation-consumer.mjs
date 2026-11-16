@@ -17,6 +17,7 @@ export async function runPreviewValidation(ctx,signal) {
   const persist=()=>fs.writeFileSync(T+'/preview010-results.json',JSON.stringify(result,null,2)+'\n',{mode:0o600})
   fs.writeFileSync(T+'/preview010-results.json',JSON.stringify(result)+'\n',{flag:'wx',mode:0o600})
   const use=await ctx.peAccountRuntime.acquireAccount(request.accountId,signal)
+  let finishObservation=()=>{}
   try {
     const account=use.context,registered=account.workspaceRegistry.list().find(x=>x.path.endsWith('/default-workspace'))
     if(!registered)throw Error('Original default Workspace required')
@@ -46,19 +47,23 @@ export async function runPreviewValidation(ctx,signal) {
     const start=await wait('PREVIEW010-START.json')
     if(start.sessionId!==result.sessionId)throw Error('Exact prepared Session required')
     const original=value=>Reflect.get(value,symbols.original)??value
-    const coordinator=original(ctx.peSandboxCoordinator),auth=original(ctx.peAuth)
+    let coordinator,auth
+    try {coordinator=original(ctx.peSandboxCoordinator);auth=original(ctx.peAuth)}catch(error){result.observerUnavailable={name:error?.name,message:error?.message};persist()}
     const observations={bufferPoolSize:Buffer.poolSize,rows:[],readOnlyOriginalOwner:true}
     let previous=''
     const sample=()=>{
+      try {
+      if(!coordinator||!auth)return
       const row={global:{active:coordinator.state.active,resident:coordinator.state.resident,bytes:coordinator.state.bytes,requests:coordinator.state.requests},
         accounts:[...coordinator.accounts].map(([accountId,work])=>({accountId,...work.capacity})),
         ingress:[...auth.ingress.operations.values()].filter(x=>x.application).map(x=>({method:x.request.method,path:x.request.url?.split('?')[0],
           forwardedHeaderEntries:Object.keys(x.request.headers).filter(name=>['accept','accept-language','if-none-match','if-modified-since','range','content-type'].includes(name)).length}))}
       const key=JSON.stringify(row)
       if(key!==previous&&observations.rows.length<1024){previous=key;observations.rows.push({at:new Date().toISOString(),...row});fs.writeFileSync(T+'/preview010-owner-observations.json',JSON.stringify(observations)+'\n',{mode:0o600})}
+      }catch(error){if(observations.unavailable)return;observations.unavailable={name:error?.name,message:error?.message};fs.writeFileSync(T+'/preview010-owner-observations.json',JSON.stringify(observations)+'\n',{mode:0o600})}
     }
     sample();const timer=setInterval(sample,1);const finish=()=>{clearInterval(timer);sample()};signal.addEventListener('abort',finish,{once:true})
-    ctx.effect(()=>()=>{finish();signal.removeEventListener('abort',finish)},'finite-preview-readonly-observer')
+    finishObservation=()=>{finish();signal.removeEventListener('abort',finish)}
     const started=await call('service-start','dev_service',{action:'start',script:'web_service_010.py'})
     result.serviceHandle=started.value?.serviceHandle
     if(typeof result.serviceHandle!=='string')throw Error('Original service handle required')
@@ -68,6 +73,6 @@ export async function runPreviewValidation(ctx,signal) {
     await call('service-stop','dev_service',{action:'stop',serviceHandle:result.serviceHandle})
     result.status='service-stop-returned-physical-release-not-inferred';persist();finish();signal.removeEventListener('abort',finish)
   } catch(error) {
-    result.status='failed-retained';result.errorName=error?.name;result.errorCode=error?.code;persist();throw error
-  } finally {use.release()}
+    result.status='failed-retained';result.errorName=error?.name;result.errorCode=error?.code;result.errorMessage=error?.message;persist();throw error
+  } finally {finishObservation();use.release()}
 }
