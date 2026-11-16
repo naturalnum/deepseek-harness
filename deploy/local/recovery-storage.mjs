@@ -88,8 +88,15 @@ export function observeRecoveryLoops(run, io = fs) {
       if (!before.isBlockDevice() || before.isSymbolicLink() || before.rdev !== expectedDevice || before.uid !== 0n
         || before.gid !== 0n || before.nlink !== 1n || (before.mode & 0o7777n) !== 0o400n) fail()
       try {
-        const first = identity(run('losetup', [...list, alias]).split(/\s+/), alias)
-        const second = identity(run('losetup', [...list, alias]).split(/\s+/), alias)
+        const scalars = () => ['loop/offset', 'loop/sizelimit', 'ro'].map(field =>
+          io.readFileSync('/sys/class/block/loop' + minor + '/' + field, 'utf8').trim())
+        const observedIdentity = () => {
+          const kernel = run('losetup', ['--list', '--raw', '--noheadings', '--output', 'NAME,BACK-INO,BACK-MAJ:MIN', alias]).split(/\s+/)
+          if (kernel.length !== 3) fail()
+          return identity([...kernel, ...scalars()], alias)
+        }
+        const beforeScalars = scalars(), first = observedIdentity(), second = observedIdentity()
+        if (JSON.stringify(beforeScalars) !== JSON.stringify([second.offset, second.sizelimit, second.ro])) fail()
         if (JSON.stringify(first) !== JSON.stringify(second) || first.offset !== fields[1]
           || first.sizelimit !== fields[2] || first.ro !== fields[3]) fail()
         observed = { ...first, name }

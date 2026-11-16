@@ -279,7 +279,11 @@ function missingLoopFixture({ duplicate = false, changed = false, permission = f
     nlink: 1n, ctimeNs: 1n, isBlockDevice: () => true, isSymbolicLink: () => false }
   let reads = 0
   const io = {
-    readFileSync: path => { assert.equal(path, '/sys/class/block/loop85/dev'); return '7:85\n' },
+    readFileSync: path => {
+      if (path === '/sys/class/block/loop85/dev') return '7:85\n'
+      assert.ok(['/sys/class/block/loop85/loop/offset', '/sys/class/block/loop85/loop/sizelimit', '/sys/class/block/loop85/ro'].includes(path))
+      return '0\n'
+    },
     lstatSync: path => {
       if (path === '/dev/loop85') throw Object.assign(new Error('unavailable'), { code: permission ? 'EACCES' : 'ENOENT' })
       if (path === '/run') return { ...file, mode: 0o40755n }
@@ -296,7 +300,8 @@ function missingLoopFixture({ duplicate = false, changed = false, permission = f
     if (argv.includes('--json')) return JSON.stringify({ loopdevices: [{ name: '/dev/loop54', 'back-file': '/a.ext4' }, { name: '/dev/loop85', 'back-file': '/b.ext4' }] })
     if (argv.at(-1) === alias) {
       reads++
-      return alias + ' ' + (changed && reads === 2 ? '9007199254740994' : '9007199254740993') + ' 7:54 0 0 0'
+      assert.deepEqual(argv.slice(0, 5), ['--list', '--raw', '--noheadings', '--output', 'NAME,BACK-INO,BACK-MAJ:MIN'])
+      return alias + ' ' + (changed && reads === 2 ? '9007199254740994' : '9007199254740993') + ' 7:54'
     }
     return '/dev/loop54 ' + (duplicate ? '9007199254740993' : '14') + ' 7:54 0 0 0\n/dev/loop85\\x20(lost)   0 0 0'
   }
@@ -328,4 +333,11 @@ test('a duplicate backing observed through a missing foreign node still refuses 
   f.io.loops = () => [...original(), { ...rows[1], 'back-ino': f.rows[0].backingInode, 'back-maj:min': '0:42' }]
   assert.throws(() => restoreRecoveryStorage(snapshot, { io: f.io }), error => error.completedDomains.length === 0)
   assert.deepEqual(f.calls, [])
+})
+
+test('canonical sysfs scalars must agree with the original lost-loop observation', () => {
+  const f = missingLoopFixture(), read = f.io.readFileSync
+  f.io.readFileSync = path => path.endsWith('/loop/offset') ? '4096\n' : read(path)
+  assert.throws(() => observeRecoveryLoops(f.run, f.io))
+  assert.deepEqual(f.removed, [['unlink', f.alias], ['rmdir', f.directory]])
 })
