@@ -74,11 +74,15 @@ test('an explicitly handed-over carrier uses the original process, product and n
     appCheckPath: '/opt/dsh-features/arm-native-01/feature-namespace-steps.v3.mjs', seccompPath: '/opt/dsh-feature-assets/app-seccomp.bpf', profileHome: '/run/dsh-feature-root' }
   const calls = [], operations = { container: 'handed-over-runtime', appCheckPath: observed.appCheckPath, execute: async argv => {
     calls.push(argv)
-    if (argv[0] === '/bin/ls') return '20 21'
+    if (argv[0] === '/bin/ls') return '20 21 99'
     if (argv.join(' ') === '/bin/readlink /proc/1/ns/mnt') return containerNamespace
-    if (argv[0] === '/bin/readlink') return namespaceId
-    if (argv[1] === '/proc/20/cmdline') return '/dsh-tools/node24\0/opt/dsh-installed-products/apps/cli/lib/bin.js\0--profile\0cloud\0'
-    if (argv[1] === '/proc/21/cmdline') return '/bin/sleep\0infinity\0'
+    if (argv[0] === '/dsh-tools/node24') {
+      new Script(argv[2])
+      if (argv[4] === 'namespace') return namespaceId
+      if (argv[3] === '20') return '/dsh-tools/node24\0/opt/dsh-installed-products/apps/cli/lib/bin.js\0--profile\0cloud\0'
+      if (argv[3] === '21') return '/bin/sleep\0infinity\0'
+      if (argv[3] === '99') return '' // The short-lived directory observer has actually gone.
+    }
     assert.equal(argv[0], '/proc/20/exe'); assert.equal(argv[1], '-e')
     assert.equal(argv[4], operations.appCheckPath)
     new Script(argv[2]) // Parse the actual remote program without executing any target operation.
@@ -86,7 +90,7 @@ test('an explicitly handed-over carrier uses the original process, product and n
   }, top: async () => [{ pid: 200, comm: 'MainThread' }], execIds: async () => [execution.execId], execution: async () => execution }
   const ready = await inspectCandidate(operations)
   assert.equal(ready.container, 'handed-over-runtime'); assert.equal(ready.canStopSafely, true)
-  assert.equal(ready.appExecId, execution.execId); assert.equal(calls.length, 6)
+  assert.equal(ready.appExecId, execution.execId); assert.equal(calls.length, 7)
   observed.productBlockReadOnly = false
   const refused = await inspectCandidate(operations)
   assert.equal(refused.canStopSafely, false)

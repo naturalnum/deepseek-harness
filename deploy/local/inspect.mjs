@@ -158,17 +158,29 @@ console.log(JSON.stringify({rows,containerNamespaceId:link('/proc/1/ns/mnt'),pro
 })().catch(_error=>{console.error('产品或运行态观察未确认。');process.exitCode=1;});
 `
 
+const PROCESS_READ = String.raw`
+const fs=require('node:fs'),pid=process.argv[1],kind=process.argv[2];
+if(!/^[1-9]\d*$/.test(pid)||!['cmdline','namespace'].includes(kind))throw Error('invalid process read');
+const base='/proc/'+pid;
+try{process.stdout.write(kind==='cmdline'?fs.readFileSync(base+'/cmdline'):fs.readlinkSync(base+'/ns/mnt'))}
+catch(error){
+ if(['ENOENT','ESRCH'].includes(error.code)){
+  try{fs.lstatSync(base)}catch(gone){if(['ENOENT','ESRCH'].includes(gone.code))process.exit(0);throw gone}
+ }
+ throw error;
+}
+`
+
 async function findProbeAnchor(execute) {
   const names = (await execute(['/bin/ls', '/proc'])).split(/\s+/).filter(value => /^\d+$/.test(value))
   const rootNamespace = (await execute(['/bin/readlink', '/proc/1/ns/mnt'])).trim()
   const apps = [], holders = []
   for (const name of names) {
-    let argv
-    try { argv = (await execute(['/bin/cat', '/proc/' + name + '/cmdline'])).split('\0').filter(Boolean) }
-    catch (_error) { continue /* Short-lived processes can exit between directory and cmdline reads. */ }
+    const argv = (await execute(['/dsh-tools/node24', '-e', PROCESS_READ, name, 'cmdline'])).split('\0').filter(Boolean)
     if (argv.includes(CLI_PATH)) apps.push(Number(name))
     else if (argv.length === 2 && argv[0].split('/').at(-1) === 'sleep' && argv[1] === 'infinity') {
-      const namespace = (await execute(['/bin/readlink', '/proc/' + name + '/ns/mnt'])).trim()
+      const namespace = (await execute(['/dsh-tools/node24', '-e', PROCESS_READ, name, 'namespace'])).trim()
+      if (!namespace) continue
       if (namespace !== rootNamespace) holders.push(Number(name))
     }
   }

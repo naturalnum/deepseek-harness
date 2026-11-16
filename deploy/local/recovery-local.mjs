@@ -50,6 +50,32 @@ for(const name of fs.readdirSync('/proc').filter(x=>/^[1-9]\d*$/.test(x))){const
 console.log(JSON.stringify({inputSha256:hash(input),operationDirectory:dir,carrier,processes,stage:'staged-before-launch'}));
 `
 
+const PUBLISHED_RECOVERY_OBSERVATION = String.raw`
+const fs=require('node:fs'),crypto=require('node:crypto'),expected=JSON.parse(process.argv[1]);
+const hash=bytes=>crypto.createHash('sha256').update(bytes).digest('hex');
+const read=path=>{const fd=fs.openSync(path,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW);try{
+ const a=fs.fstatSync(fd);if(!a.isFile()||a.nlink!==1||a.uid!==0||(a.mode&0o077)!==0||a.size<1||a.size>1048576)throw Error('unprotected observation');
+ const bytes=fs.readFileSync(fd),b=fs.fstatSync(fd),n=fs.lstatSync(path);if(['dev','ino','size','mtimeMs','ctimeMs'].some(k=>a[k]!==b[k]||b[k]!==n[k]))throw Error('changed observation');return bytes;
+}finally{fs.closeSync(fd)}};
+const input=read(expected.input);if(hash(input)!==expected.sha256)throw Error('original input changed');
+const spec=JSON.parse(input),meta=JSON.parse(read(spec.snapshotDirectory+'/metadata.json')),dir=spec.operationDirectory;
+const control=JSON.parse(read(dir+'/recovery-control.json')),ready=JSON.parse(read(dir+'/ready.json')),measurement=read(dir+'/measurement.json');
+const stat=fs.readFileSync('/proc/1/stat','utf8'),ticks=stat.slice(stat.lastIndexOf(')')+2).split(/\s+/)[19];
+if(control.carrier.startTicks!==ticks||control.snapshotDirectory!==spec.snapshotDirectory||control.resourceId!==meta.launch.resourceId
+ ||ready.resourceId!==control.resourceId||ready.configurationComplete!==true||hash(measurement)!==ready.planSha256)throw Error('publication binding mismatch');
+const rows=read(dir+'/launch.log').toString('utf8').split('\n').filter(Boolean).flatMap(line=>{try{return [JSON.parse(line)]}catch(error){return []}});
+const sealed=rows.filter(r=>r.phase==='sealed-new-root-inputs-not-application-ready'&&r.resourceId===ready.resourceId);
+if(sealed.length!==1||sealed[0].planSha256!==ready.planSha256||!Number.isSafeInteger(sealed[0].shellPid))throw Error('sealed publication missing');
+const pid=sealed[0].shellPid,home='/proc/'+pid+'/root/run/dsh-feature-root';
+if(hash(fs.readFileSync(home+'/rootDeployment.json'))!==ready.rootDeploymentSha256||hash(fs.readFileSync(home+'/profiles/cloud/cordis.patch.yml'))!==ready.profileSha256
+ ||hash(fs.readFileSync(home+'/storage-plan.json'))!==ready.planSha256)throw Error('sealed inputs changed');
+for(const [file,key]of[['credentials.json','credentialsBytes'],['profiles/cloud/package.json','packageBytes'],['profiles/cloud/cordis.yml','mutableProfileBytes']]){
+ if(hash(fs.readFileSync(home+'/'+file))!==meta.fileSha256[key])throw Error('original input changed');
+}
+console.log(JSON.stringify({ready:false,cliRunning:true,inputsValidated:true,publicationObserved:true,applicationPid:pid,
+ namespaceId:sealed[0].mountNamespace,appCheckPath:meta.launch.scripts.steps.path,productMount:meta.storage.support.find(r=>r.role==='products')??null}));
+`
+
 async function retireFailedPreparation(argv, { signal, report }) {
   if (argv.length !== 5 || argv[1] !== '--input' || argv[3] !== '--sha256' || !/^[a-f0-9]{64}$/.test(argv[4])) fail()
   const bytes = privateInput(argv[2]), request = JSON.parse(bytes)
@@ -162,6 +188,8 @@ async function childResult(executable, args, { signal, deadlineAtMs, logFd }) {
 export async function runLocalRecovery(argv, { signal = new AbortController().signal, report = console.log } = {}) {
   const startedAtMs = performance.now()
   if (argv[0] === 'retire-prelaunch') return retireFailedPreparation(argv, { signal, report })
+  const verifyStarted = argv[0] === 'verify-started'
+  if (verifyStarted) argv = argv.slice(1)
   if (argv.length === 0 || argv.length === 1 && argv[0] === '--help') { report(HELP); return 0 }
   if (argv.length !== 4 || argv[0] !== '--input' || argv[2] !== '--sha256' || !/^[a-f0-9]{64}$/.test(argv[3])) fail()
   const input = privateInput(argv[1]), spec = JSON.parse(input)
@@ -193,14 +221,25 @@ export async function runLocalRecovery(argv, { signal = new AbortController().si
   }
   within(signal, deadlineAtMs)
   const operation = randomUUID(), lockPath = join(spec.stateDirectory, 'operation.lock')
-  const lock = fs.openSync(lockPath, 'wx', 0o600)
+  let retainedExec
+  if (verifyStarted) {
+    const records = privateInput(lockPath).toString('utf8').trim().split('\n').map(line => JSON.parse(line)), original = records[0]
+    if (records.length !== 2 || original.format !== 'pe-cloud-cold-recovery-operation/v1' || original.inputSha256 !== argv[3]
+      || !Number.isSafeInteger(original.pid) || original.pid <= 0 || !/^[a-f0-9]{64}$/.test(records[1].createdExecId)) fail()
+    try { process.kill(original.pid, 0); fail() } catch (error) { if (error.code !== 'ESRCH') throw error }
+    retainedExec = records[1].createdExecId
+  }
+  const lock = fs.openSync(lockPath, verifyStarted ? 'a' : 'wx', 0o600)
   let lockOpen = true, transport, execId, result, appCheckPath, productMount
   const record = value => { fs.writeFileSync(lock, JSON.stringify(value) + '\n'); fs.fsyncSync(lock) }
   try {
-    record({ format: 'pe-cloud-cold-recovery-operation/v1', operation, inputSha256: argv[3], pid: process.pid })
+    if (!verifyStarted) record({ format: 'pe-cloud-cold-recovery-operation/v1', operation, inputSha256: argv[3], pid: process.pid })
     const parent = fs.openSync(spec.stateDirectory, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW)
     try { fs.fsyncSync(parent) } finally { fs.closeSync(parent) }
-    fs.mkdirSync(spec.logDirectory, { mode: 0o700 })
+    if (verifyStarted) {
+      const directory = fs.lstatSync(spec.logDirectory)
+      if (!directory.isDirectory() || directory.isSymbolicLink() || directory.uid !== process.getuid() || (directory.mode & 0o077) !== 0) fail()
+    } else fs.mkdirSync(spec.logDirectory, { mode: 0o700 })
     transport = createRecoveryEngine({ signal, deadlineAtMs, socketPath: spec.socketPath,
       dockerPath: spec.dockerPath, container: spec.container, maxOutputBytes: 1048576, via: spec.via })
     const settings = { signal, deadlineAtMs }
@@ -225,6 +264,15 @@ export async function runLocalRecovery(argv, { signal = new AbortController().si
     }
     const target = await engine('GET', '/containers/' + spec.container + '/json')
     if (target?.Id !== spec.containerId || target.Image !== spec.imageId || target.State?.Running !== true) fail()
+    let published
+    if (verifyStarted) {
+      execId = retainedExec
+      const original = await transport.inspectExec(execId)
+      if (!original.running || original.missing) fail()
+      published = JSON.parse(await execute([spec.nodePath, '-e', PUBLISHED_RECOVERY_OBSERVATION,
+        JSON.stringify({ input: spec.rootInput, sha256: spec.rootInputSha256 })]))
+      if (published.publicationObserved !== true) fail()
+    } else {
     const prepared = await stage('prepare')
     if (prepared.ready !== false || prepared.storageReady !== true || !Array.isArray(prepared.launchCommand)
       || prepared.resourceId !== spec.resourceId || prepared.launchCommand.some(value => typeof value !== 'string' || value.includes('\0'))) fail()
@@ -234,7 +282,8 @@ export async function runLocalRecovery(argv, { signal = new AbortController().si
     })
     execId = created.Id
     await engine('POST', '/exec/' + execId + '/start', { Detach: true, Tty: false })
-    const published = await stage('publish')
+    published = await stage('publish')
+    }
     if (published.ready !== false || published.cliRunning !== true || published.inputsValidated !== true || !absolute(published.appCheckPath)) fail()
     appCheckPath = published.appCheckPath
     productMount = published.productMount

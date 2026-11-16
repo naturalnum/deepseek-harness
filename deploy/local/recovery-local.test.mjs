@@ -21,11 +21,20 @@ test('host recovery rejects incomplete or malformed references before opening an
   }
 })
 
-async function privateFixture(t) {
+async function privateFixture(t, terminalExec = false) {
   const directory = await fs.mkdtemp('/tmp/pe-recovery-admission-'), state = join(directory, 'local-state')
   await fs.mkdir(state, { mode: 0o700 })
   const socket = join(directory, 'engine.sock'), requests = [], sockets = new Set()
-  const server = createServer((request, response) => { requests.push([request.method, request.url]); response.writeHead(500); response.end('{}') })
+  const server = createServer((request, response) => {
+    requests.push([request.method, request.url])
+    if (terminalExec && request.url === '/containers/owned-fixture/json') response.end(JSON.stringify({
+      Id: 'a'.repeat(64), Image: 'sha256:' + 'b'.repeat(64), State: { Running: true },
+    }))
+    else if (terminalExec && request.url === '/exec/' + 'e'.repeat(64) + '/json') response.end(JSON.stringify({
+      ID: 'e'.repeat(64), Running: false, ExitCode: 0, Pid: 0,
+    }))
+    else { response.writeHead(500); response.end('{}') }
+  })
   server.on('connection', socket => { sockets.add(socket); socket.once('close', () => sockets.delete(socket)) })
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socket, resolve) })
   t.after(async () => {
@@ -48,7 +57,26 @@ async function privateFixture(t) {
     smoke: { credentialsPath: credentials, account: 'ordinaryUserC', continueSession: 'session:fixture-original', continueMarker: 'fixture-public-marker' } }
   await write(input, spec)
   const sha = createHash('sha256').update(await fs.readFile(input)).digest('hex')
-  return { state, latest, write, requests, log, run: () => runLocalRecovery(['--input', input, '--sha256', sha]) }
+  return { state, latest, write, requests, log, input, sha, run: () => runLocalRecovery(['--input', input, '--sha256', sha]) }
+}
+
+for (const mode of ['live-host', 'stopped-launcher']) {
+  test(`verification of an existing publication never creates or starts another launcher (${mode})`, async t => {
+    const f = await privateFixture(t, true)
+    await f.write(join(f.state, 'latest.json'), f.latest)
+    const child = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' }), ended = child.pid
+    await new Promise((resolve, reject) => { child.once('error', reject); child.once('close', resolve) })
+    const bytes = Buffer.from(JSON.stringify({ format: 'pe-cloud-cold-recovery-operation/v1',
+      operation: f.latest.operation, inputSha256: f.sha, pid: mode === 'live-host' ? process.pid : ended })
+      + '\n' + JSON.stringify({ createdExecId: 'e'.repeat(64) }) + '\n')
+    const lock = join(f.state, 'operation.lock')
+    await fs.writeFile(lock, bytes, { flag: 'wx', mode: 0o600 }); await fs.mkdir(f.log, { mode: 0o700 })
+    await assert.rejects(runLocalRecovery(['verify-started', '--input', f.input, '--sha256', f.sha]))
+    assert.deepEqual(await fs.readFile(lock), bytes)
+    assert.ok(f.requests.every(([method]) => method === 'GET'))
+    if (mode === 'live-host') assert.deepEqual(f.requests, [])
+    else assert.deepEqual(f.requests, [['GET', '/containers/owned-fixture/json'], ['GET', '/exec/' + 'e'.repeat(64) + '/json']])
+  })
 }
 
 test('an unverified original native phase refuses even with a matching stale release file, before a new lock or Engine request', async t => {

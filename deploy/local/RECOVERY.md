@@ -39,6 +39,10 @@ FD4 发布前，`recovery-validation` 从实际 captured installAnchor 解析同
 
 ## 宿主恢复入口
 
+原 launcher 已运行、发布结果需要复核时，可显式执行 `node deploy/local/recovery-local.mjs verify-started --input 原宿主私密JSON --sha256 原SHA`。入口只接原失败锁记录的唯一 launcher，要求原宿主进程终态；核同一容器与活 exec，再只读核原 control、ready、measurement、sealed 日志和实际六文件绑定。它不重做 prepare、create/start 或 publish，沿原生命周期保留 namespace，然后核 401 与完整原冒烟，通过才结束原锁。本次有限观察预算用于复核已经完成的发布，不延长原准备期限或旧业务操作。
+
+进程枚举用原 `/dsh-tools/node24` 读取 `/proc` 条目。短进程在枚举后退出时，仅在读取和 PID 目录回读均为 ENOENT/ESRCH 时返回空条目；权限或其它错误仍拒绝。所选应用的 PID/startTicks/namespace 与完整产品实测继续由原 inspector 核对。
+
 ### 明确结束尚未启动的失败准备
 
 `node deploy/local/recovery-local.mjs retire-prelaunch --input 私密处置JSON --sha256 SHA256` 只归档已经终态、尚未创建 launcher 的失败准备锁。输入为 `pe-cloud-retire-failed-preparation/v1`，含原宿主输入路径及 SHA、原 operation、锁的 device/inode、调用线名和不超过 60000ms 的本次观察预算。入口核原宿主 PID 已结束、原精确容器与所有已知 exec 终态；Linux 实测旧 carrier/reference 生命周期结束，只有原初始进程，原目录仍仅有 input 与空 journal/log/measurement/ready 文件。任一来源、进程或发布结果未确认仍保锁。
