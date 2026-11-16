@@ -36,7 +36,7 @@ it.each(['arm64', 'amd64'] as const)('binds %s to its own exact local binary pin
 })
 
 it('preserves all ARM suppliers and refuses platform or execd mixing before remote work', () => {
-  expect(qualifiedSupplierTuples).toHaveLength(11)
+  expect(qualifiedSupplierTuples).toHaveLength(12)
   for (const tuple of qualifiedSupplierTuples.slice(0, 8)) {
     expect(tuple.platform).toBe('arm64')
     expect(tuple.execdImageDigest).toBe(RUNTIME_PROFILES.arm64.execdImageDigest)
@@ -47,7 +47,7 @@ it('preserves all ARM suppliers and refuses platform or execd mixing before remo
     expect(isQualifiedSupplierPair(tuple.schema, tuple.workloadImageDigest, tuple.serverImageDigest,
       'arm64', RUNTIME_PROFILES.amd64.execdImageDigest)).toBe(false)
   }
-  for (const tuple of qualifiedSupplierTuples.slice(8)) {
+  for (const tuple of qualifiedSupplierTuples.slice(8, 11)) {
     expect(tuple.platform).toBe('amd64')
     expect(tuple.execdImageDigest).toBe(RUNTIME_PROFILES.amd64.execdImageDigest)
     expect(isQualifiedSupplierPair(tuple.schema, tuple.workloadImageDigest, tuple.serverImageDigest,
@@ -65,4 +65,21 @@ it('preserves all ARM suppliers and refuses platform or execd mixing before remo
   expect(() => parseRootDeploymentInput({ ...input, lifecycle: { ...input.lifecycle, platform: 'amd64',
     imageDigest: 'sha256:84d3c8cd1520dfb2b088f9d3dbd296f4d18fabed3b18fb0aea01e6e378f9d5eb' } })).toThrow('selection.workloadImagePair')
   for (const value of ['x86_64', 'aarch64', 'auto', '', null]) expect(isRuntimePlatform(value)).toBe(false)
+})
+
+it('admits the exact imported ARM manifests without accepting legacy configs or mixed execd', () => {
+  const tuple = qualifiedSupplierTuples[11]!
+  const base = sharedPathDeploymentFixture()
+  const value = { ...base, lifecycle: { ...base.lifecycle, platform: 'arm64', imageDigest: tuple.workloadImageDigest },
+    selection: { ...base.selection, serverImageDigest: tuple.serverImageDigest, execdImageDigest: tuple.execdImageDigest } }
+  expect(parseRootDeploymentInput(value).selection).toMatchObject({ serverImageDigest: tuple.serverImageDigest })
+  expect(() => parseRootDeploymentInput({ ...value, selection: { ...value.selection,
+    execdImageDigest: RUNTIME_PROFILES.arm64.execdImageDigest } })).toThrow('selection.workloadImagePair')
+  for (const server of ['sha256:49b6badd5e23f1adcef3f1882ca031ca49da49890671595a652bfebfc8f00f47',
+    'sha256:c5f867d484f2ebe041eaf8702e0c183544786dc65db976598b0c36a61248eb1d']) {
+    expect(() => parseRootDeploymentInput({ ...value, selection: { ...value.selection,
+      serverImageDigest: server } })).toThrow('selection.originalPolicy')
+  }
+  expect(() => parseRootDeploymentInput({ ...value, lifecycle: { ...value.lifecycle,
+    imageDigest: 'sha256:4a7ce478412f06d3369ff338aaa971acaa7bc6e6778995c1558eb9c997cb263a' } })).toThrow('selection.workloadImagePair')
 })

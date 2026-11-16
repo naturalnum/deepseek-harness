@@ -73,11 +73,19 @@ const priorAmd64Suppliers = [...nativeSuppliers, {
   sessionDirectories: true,
 }] as const
 
-const suppliers = [...priorAmd64Suppliers, {
+const priorManifestSuppliers = [...priorAmd64Suppliers, {
   schema: 'pe-opensandbox-root-deployment-v2',
   workloadImageDigest: 'sha256:32c17c742af43a6d9c89c69441fbc543751af41b0f61bf8294ed00ac3a4df62f',
   serverImageDigest: 'sha256:e4fc713db05339d41b70215f2ffdbc1c37f8948b92c949eb4cd2c164ce90038a',
   platform: 'amd64', execdImageDigest: 'sha256:ca4ff631193b68ba0a47622773389b054994c77971cf2859c6beacf6cb9314de',
+  sessionDirectories: true,
+}] as const
+
+const suppliers = [...priorManifestSuppliers, {
+  schema: 'pe-opensandbox-root-deployment-v2',
+  workloadImageDigest: 'sha256:214323fe18dce90360b499cf069412efb8adf889ad02c94cef43fb87b8f42b9e',
+  serverImageDigest: 'sha256:a8b6fcac0077db9073389583162d85cb78c4aa6da1846a2cdca30f72985100f0',
+  platform: 'arm64', execdImageDigest: 'sha256:b6dc1290091b2d4c5b51e0776e718d275069224110ae07a07dad14d249447b4e',
   sessionDirectories: true,
 }] as const
 
@@ -87,6 +95,7 @@ it('retains the original suppliers and permits only the exact built v2 superset 
   expect(qualifiedSupplierTuples.slice(0, 8)).toEqual(armSuppliers)
   expect(qualifiedSupplierTuples.slice(0, 9)).toEqual(nativeSuppliers)
   expect(qualifiedSupplierTuples.slice(0, 10)).toEqual(priorAmd64Suppliers)
+  expect(qualifiedSupplierTuples.slice(0, 11)).toEqual(priorManifestSuppliers)
   expect(qualifiedSupplierTuples).toEqual(suppliers)
   expect(NATIVE_AMD64_WORKLOAD_IMAGE_DIGEST).toBe(suppliers[8].workloadImageDigest)
   expect(NATIVE_AMD64_SERVER_IMAGE_DIGEST).toBe(suppliers[8].serverImageDigest)
@@ -113,7 +122,7 @@ it('retains the original suppliers and permits only the exact built v2 superset 
 for (const schema of ['pe-opensandbox-root-deployment-v1', 'pe-opensandbox-root-deployment-v2'] as const) {
   for (const workload of new Set(suppliers.map(row => row.workloadImageDigest))) {
     for (const platform of ['arm64', 'amd64'] as const) {
-      for (const execd of Object.values(RUNTIME_PROFILES).map(profile => profile.execdImageDigest)) {
+      for (const execd of new Set(suppliers.map(row => row.execdImageDigest))) {
         it.each(suppliers.map(row => row.serverImageDigest))(`checks ${schema} / ${platform} / ${execd} / ${workload} / %s`, (server) => {
           const base = schema === 'pe-opensandbox-root-deployment-v1' ? rootDeploymentFixture() : sharedPathDeploymentFixture()
           const input = { ...base, lifecycle: { ...base.lifecycle, imageDigest: workload, platform },
