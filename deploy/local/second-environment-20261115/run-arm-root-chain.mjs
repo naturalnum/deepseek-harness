@@ -1,5 +1,6 @@
 /** Trusted operator for this owned, existing SDK. Inert without --execute-owned-arm-root-01. */
 import fs from 'node:fs'
+import {armValidationCredentials} from './arm-validation-settings.mjs'
 import http from 'node:http'
 import {createHash} from 'node:crypto'
 import {createRequire} from 'node:module'
@@ -86,7 +87,7 @@ try{
   fs.mkdirSync(dir,{mode:0o700});fs.chownSync(dir,2000,2000);write(target,bytes,0o600,2000,2000);initProfile(dir,[])
   for(const name of ['package.json','pnpm-workspace.yaml']){const st=fs.lstatSync(dir+'/'+name);need(st.isFile()&&!st.isSymbolicLink()&&st.nlink===1,'normal-profile-metadata-required');fs.chownSync(dir+'/'+name,2000,2000);fs.chmodSync(dir+'/'+name,0o600)}
   const st=fs.lstatSync(target);need(st.uid===2000&&st.gid===2000&&(st.mode&0o7777)===0o600&&sha(fs.readFileSync(target))===slot.sha256,'slot-installation-did-not-settle');observe('observed:install-slot',{slotId:slot.slotId})}
- stage='install-original-home-credentials';write(P+H+'/credentials.json',fs.readFileSync('/new-secrets/root-credentials.json'),0o600,2000,2000)
+ stage='install-original-home-credentials';write(P+H+'/credentials.json',JSON.stringify(armValidationCredentials(read('/new-secrets/root-credentials.json')))+'\n',0o600,2000,2000)
  // The app creates test output beneath its original auxiliary HOME on each actual boot.
  stage='collect-first-deployment-read-only-proof';current()
  const {Pool}=createRequire('/opt/dsh-installed-products/packages/cloud/pe-cloud-runtime/package.json')('pg'),password=fs.readFileSync('/new-secrets/pg-password','utf8').trim();const pool=new Pool({host:'10.247.121.3',port:5432,user:planInput.pgRole,database:planInput.database,password,max:1,connectionTimeoutMillis:3000,statement_timeout:3000})
