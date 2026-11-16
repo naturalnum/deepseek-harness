@@ -1,0 +1,34 @@
+{
+  "schema": "arm64-containerd-supplier-artifacts/v1",
+  "platform": "linux/arm64",
+  "deploymentSchema": "pe-opensandbox-root-deployment-v2",
+  "workload": {
+    "manifest": "sha256:214323fe18dce90360b499cf069412efb8adf889ad02c94cef43fb87b8f42b9e",
+    "config": "sha256:4a7ce478412f06d3369ff338aaa971acaa7bc6e6778995c1558eb9c997cb263a"
+  },
+  "server": {
+    "manifest": "sha256:a8b6fcac0077db9073389583162d85cb78c4aa6da1846a2cdca30f72985100f0",
+    "config": "sha256:c5f867d484f2ebe041eaf8702e0c183544786dc65db976598b0c36a61248eb1d",
+    "baseManifest": "sha256:49b6badd5e23f1adcef3f1882ca031ca49da49890671595a652bfebfc8f00f47",
+    "baseConfig": "sha256:87bbc26029f68dab351a3abd958fda82877cb29b3d15a77fe5887c858ab1de57",
+    "completionSourceSha256": "9de31c090e08425bb03a471db5d392f00c43d09c771ffbd63f7d60d5ec285f60"
+  },
+  "execd": {
+    "manifest": "sha256:b6dc1290091b2d4c5b51e0776e718d275069224110ae07a07dad14d249447b4e",
+    "config": "sha256:39ee9357842bc4a931a208170484ae6d1e33985f5d256b13d654a7c3ce35cbdf"
+  },
+  "carrierBase": {
+    "manifest": "sha256:3061b56e8e543ebb51a1c13bcfec7db9d1371e309edbbb6d7662762f52dd02a7",
+    "config": "sha256:651ddcd1c769a6d94cf4aaca9756f2abb6acd65e712f4a386a2ff4e730586d5b"
+  },
+  "qualificationSha256": "3f86d7fbe9d815a095e8f7f888644f93a17d4a2773b685f87e7cd113d419b6a3",
+  "recipe": {
+    "workload": "Normal single-role archive preserves the original config and every layer; containerd selects its actual OCI manifest.",
+    "server": "One selector-only layer based on the imported guarded server selects the exact workload manifest and preserves every closed-audit predecessor.",
+    "originalSourceSha256": "7d747a4ab6db05a8cac9bfc95cad6e806b3e96625b37415c611718d0e8487d40",
+    "originalGuardRetained": true,
+    "pipInstall": false,
+    "builderExitCode": 137
+  },
+  "scope": "Exact image identities and original guarded source; protected storage, managed Native execution and authenticated Web use require their actual deployment checks."
+}

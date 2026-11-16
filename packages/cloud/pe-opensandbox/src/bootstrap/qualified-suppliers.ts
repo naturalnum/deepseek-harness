@@ -29,6 +29,11 @@ export const OFFICE_RESEARCH_GIT_GETRANDOM_WORKLOAD_IMAGE_DIGEST = 'sha256:4a7ce
 /** COPY-only server paired exclusively with the getrandom Git workload. */
 export const OFFICE_RESEARCH_GIT_GETRANDOM_SERVER_IMAGE_DIGEST = 'sha256:87bbc26029f68dab351a3abd958fda82877cb29b3d15a77fe5887c858ab1de57'
 
+/** Actual containerd ARM64 manifest of the unchanged getrandom workload config and layers. */
+export const OFFICE_RESEARCH_GIT_GETRANDOM_ARM64_OCI_WORKLOAD_IMAGE_DIGEST = 'sha256:214323fe18dce90360b499cf069412efb8adf889ad02c94cef43fb87b8f42b9e'
+/** Selector-only guarded server for that exact ARM64 manifest; all closed-audit predecessors remain. */
+export const OFFICE_RESEARCH_GIT_GETRANDOM_ARM64_OCI_SERVER_IMAGE_DIGEST = 'sha256:a8b6fcac0077db9073389583162d85cb78c4aa6da1846a2cdca30f72985100f0'
+
 /** Actual Native AMD64 artifact; Office/Research layers and product use require separate qualification. */
 export const NATIVE_AMD64_WORKLOAD_IMAGE_DIGEST = 'sha256:84d3c8cd1520dfb2b088f9d3dbd296f4d18fabed3b18fb0aea01e6e378f9d5eb'
 /** Actual six-file guarded SDK overlay paired exclusively with the Native AMD64 artifact. */
@@ -92,6 +97,9 @@ export const qualifiedSupplierTuples: readonly QualifiedSupplierTuple[] = Object
   Object.freeze({ schema: 'pe-opensandbox-root-deployment-v2', workloadImageDigest: NATIVE_AMD64_REBUILD_20261115_WORKLOAD_IMAGE_DIGEST,
     platform: 'amd64', execdImageDigest: RUNTIME_PROFILES.amd64.execdImageDigest,
     serverImageDigest: NATIVE_AMD64_REBUILD_20261115_SERVER_IMAGE_DIGEST, sessionDirectories: true }),
+  Object.freeze({ schema: 'pe-opensandbox-root-deployment-v2', workloadImageDigest: OFFICE_RESEARCH_GIT_GETRANDOM_ARM64_OCI_WORKLOAD_IMAGE_DIGEST,
+    platform: 'arm64', execdImageDigest: 'sha256:b6dc1290091b2d4c5b51e0776e718d275069224110ae07a07dad14d249447b4e',
+    serverImageDigest: OFFICE_RESEARCH_GIT_GETRANDOM_ARM64_OCI_SERVER_IMAGE_DIGEST, sessionDirectories: true }),
 ])
 
 /**
