@@ -44,6 +44,11 @@ export const NATIVE_AMD64_REBUILD_20261115_WORKLOAD_IMAGE_DIGEST = 'sha256:32c17
 /** Exact guarded server rebuilt with only that Native AMD64 workload selected. */
 export const NATIVE_AMD64_REBUILD_20261115_SERVER_IMAGE_DIGEST = 'sha256:e4fc713db05339d41b70215f2ffdbc1c37f8948b92c949eb4cd2c164ce90038a'
 
+/** Native AMD64 workload rebuilt locally from the retained offline inputs. */
+export const NATIVE_AMD64_LOCAL_20261116_WORKLOAD_IMAGE_DIGEST = 'sha256:6f1b2bc9a315d612dfd211e40e545d80593cd19bb43a26f2dc24e1eaa86a73b8'
+/** Exact local guarded server paired only with that workload. */
+export const NATIVE_AMD64_LOCAL_20261116_SERVER_IMAGE_DIGEST = 'sha256:66ee3b642097f325f2338603f88fdcd865b9f8a99cfc37dfdd0ee0934f7d6e40'
+
 /** One reviewed storage schema, workload and server combination; no caller can register another supplier. */
 export interface QualifiedSupplierTuple {
   readonly schema: 'pe-opensandbox-root-deployment-v1' | 'pe-opensandbox-root-deployment-v2'
@@ -92,6 +97,9 @@ export const qualifiedSupplierTuples: readonly QualifiedSupplierTuple[] = Object
   Object.freeze({ schema: 'pe-opensandbox-root-deployment-v2', workloadImageDigest: NATIVE_AMD64_REBUILD_20261115_WORKLOAD_IMAGE_DIGEST,
     platform: 'amd64', execdImageDigest: RUNTIME_PROFILES.amd64.execdImageDigest,
     serverImageDigest: NATIVE_AMD64_REBUILD_20261115_SERVER_IMAGE_DIGEST, sessionDirectories: true }),
+  Object.freeze({ schema: 'pe-opensandbox-root-deployment-v2', workloadImageDigest: NATIVE_AMD64_LOCAL_20261116_WORKLOAD_IMAGE_DIGEST,
+    platform: 'amd64', execdImageDigest: RUNTIME_PROFILES.amd64.execdImageDigest,
+    serverImageDigest: NATIVE_AMD64_LOCAL_20261116_SERVER_IMAGE_DIGEST, sessionDirectories: true }),
 ])
 
 /**

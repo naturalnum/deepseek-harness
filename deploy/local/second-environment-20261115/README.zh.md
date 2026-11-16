@@ -10,6 +10,8 @@
 
 输出包含已安装的精确 Linux x64 ripgrep 文件、只读 workload 挂载和 `BACKEND-MOUNTS.private.json` 内的公开程序元数据。Root 在启动该 server 前，将这些生成文件复制到原 SDK 工作域并核对摘要。
 
+既有 `images.workload` 和 `images.server` 输入可显式选择原重建 pair 或[本机离线 pair](../../../packages/cloud/pe-opensandbox/runtime/server/native-amd64-rebuild-20261116-local.json)。server 必须匹配该精确 workload 及原 AMD64 execd。`supplierCompletionSource` 提供该 server 固定摘要的公开源码；相对原守卫只允许固定 workload selector 不同。原 pair 和默认夹具保持不变。镜像构建与源码检查不建立 SDK 启动、物理挂载或受管执行资格。
+
 ## 检索输入
 
 `node prepare-native-search-inputs.mjs --input /absolute/original-parameters.json --sha256 ORIGINAL_SHA256 --output-dir /absolute/new-directory` 生成新的账号 skeleton 和 Root 参数文件。它保留既有消费者，追加 glob/grep，把原生检索 stdout 和 stderr 各限为 4096 字节，并选择已有 single-instance 模式。激活前，原生成器校验所有账号组合及 Loader schema。

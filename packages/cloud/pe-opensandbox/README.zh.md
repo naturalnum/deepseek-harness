@@ -73,7 +73,7 @@ Root 可显式配置 `commands.additionalTools`，选择至多三十二个互不
 
 Git 组合将 Office/科研工作负载的独立 `/opt/dsh/research/git` 依赖目录分别与各自精确的仅 COPY 服务端配对。第八组采用官方 Git 的 `CSPRNG_METHOD=getrandom` 构建，通过已允许的系统调用获取熵；前七组原值全部保留。两个 Git 配对均支持同一 v2 共享路径部署和 Session 目录守卫，包括受保护的 v3 存储计划。登记镜像不会选择配对或改变执行限额、设备访问权限；受管 Git 与认证 Web 行为仍须单独验收。
 
-重建的 Native AMD64 组合仅选择其精确工作负载与守卫服务 manifest，并沿用原 AMD64 execd。[构建记录](runtime/server/native-amd64-rebuild-20261115.json) 分别记录 manifest 与 config 摘要。原有配对保持不变；源码和镜像资格不替代受保护存储、受管执行或认证 Web 验收。
+重建的 Native AMD64 tuple 只选择各自精确的 workload 与 guarded server manifest，并保留原 AMD64 execd。[原构建记录](runtime/server/native-amd64-rebuild-20261115.json)及[本机离线构建记录](runtime/server/native-amd64-rebuild-20261116-local.json)分别记录 manifest 与 config 摘要。原 pair 和默认 selector 保持不变；源码与镜像资格不替代受保护存储、受管执行或已认证 Web 验收。
 
 [Guest 上下文生成器](runtime/office-completion/heading-numbering/prepare_context.py) 是当前保留标题编号的 Office 工作负载的重建入口。在仓库根目录调用 `python3 packages/cloud/pe-opensandbox/runtime/office-completion/heading-numbering/prepare_context.py <retained-context-v6.tar> <exclusive-output-directory>`。须保留 SHA256 为 `4f17e2e7f6c92c9a5ce0c3b5e018e43c9d312d8a5bcb51f9d318f87e32962a90`、大小为 5,099,520 字节的原始上下文，以及外部不可变 UTF-8 Office 基础镜像 `sha256:3209e963a7b4f008818649e353c4af91da494e179cf3de54ae5c06b1edd79a97`；生成器拒绝不同的上下文字节。[单文件 COPY 配方](runtime/office-completion/heading-numbering/Dockerfile) 直接使用该基础镜像。仅执行 v6 依赖配方不会应用此修正。
 

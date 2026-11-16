@@ -10,6 +10,8 @@ These Root-owned producers retain the original scientific workload, execd and se
 
 The output includes the exact installed Linux x64 ripgrep executable, its read-only workload bind and public program metadata in `BACKEND-MOUNTS.private.json`. Root copies and verifies these generated files in the original SDK work domain before starting that server.
 
+The existing `images.workload` and `images.server` inputs select either the original rebuilt pair or the [local offline pair](../../../packages/cloud/pe-opensandbox/runtime/server/native-amd64-rebuild-20261116-local.json). The server must match that exact workload and the original AMD64 execd. `supplierCompletionSource` supplies that server’s pinned public source; only its fixed workload selector may differ from the original guard. The original pair and default fixture remain unchanged. Image construction and source checks do not establish SDK startup, physical mounts or managed execution.
+
 ## Search inputs
 
 `node prepare-native-search-inputs.mjs --input /absolute/original-parameters.json --sha256 ORIGINAL_SHA256 --output-dir /absolute/new-directory` prepares a new account skeleton and Root parameter file. It preserves existing consumers, appends glob/grep, bounds native search stdout and stderr to 4096 bytes, and selects the existing single-instance mode. The original generator validates all account compositions and Loader schemas before activation.

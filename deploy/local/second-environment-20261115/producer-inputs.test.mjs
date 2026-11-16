@@ -81,7 +81,44 @@ for (const name of ['assemble-native-sdk.mjs', 'prepare-native-search-inputs.mjs
 test('SDK rejects any other supplier digest without changing the declared fixed pair', () => {
   const f = fixture(); f.sdk.images.workload = 'sha256:' + '0'.repeat(64)
   const input = f.write('wrong-supplier.json', f.sdk), original = preserved(f)
-  refused(run(f, 'assemble-native-sdk.mjs', { input }), /Only the newly built exact Native pair/); unchanged(f, original)
+  refused(run(f, 'assemble-native-sdk.mjs', { input }), /Only an exact reviewed Native pair/); unchanged(f, original)
+})
+
+test('SDK accepts the exact local rebuilt pair with its original guard selector and no private output', () => {
+  const f = fixture()
+  Object.assign(f.sdk.images, { workload: 'sha256:6f1b2bc9a315d612dfd211e40e545d80593cd19bb43a26f2dc24e1eaa86a73b8',
+    server: 'sha256:66ee3b642097f325f2338603f88fdcd865b9f8a99cfc37dfdd0ee0934f7d6e40' })
+  const originalSource = fs.readFileSync(f.sdk.publicSources.originalCompletion.path, 'utf8')
+  const selector = "NATIVE_AMD64_IMAGE = 'sha256:84d3c8cd1520dfb2b088f9d3dbd296f4d18fabed3b18fb0aea01e6e378f9d5eb'"
+  assert.equal(originalSource.split(selector).length, 2)
+  const source = originalSource.replace(selector, "NATIVE_AMD64_IMAGE = '" + f.sdk.images.workload + "'")
+  assert.equal(digest(source), '5f3a61a4a23dcd71ce3c89ba814fd1054792b6871127e2b31b4383f805e760c1')
+  f.sdk.supplierCompletionSource = f.ref(f.write('public/local-completion.py', source))
+  const input = f.write('local-sdk.json', f.sdk), original = preserved(f)
+  const value = successful(run(f, 'assemble-native-sdk.mjs', { input }))
+  assert.equal(value.originalRootDeploymentParserPassed, true); assert.equal(value.allowedHostPaths, 6)
+  assert.equal(value.sdkModelValidationPending, true); assert.equal(value.dockerExecuted, false)
+  unchanged(f, original)
+})
+
+for (const [label, images] of [
+  ['local workload and previous server', { workload: 'sha256:6f1b2bc9a315d612dfd211e40e545d80593cd19bb43a26f2dc24e1eaa86a73b8', server: 'sha256:e4fc713db05339d41b70215f2ffdbc1c37f8948b92c949eb4cd2c164ce90038a' }],
+  ['previous workload and local server', { workload: 'sha256:32c17c742af43a6d9c89c69441fbc543751af41b0f61bf8294ed00ac3a4df62f', server: 'sha256:66ee3b642097f325f2338603f88fdcd865b9f8a99cfc37dfdd0ee0934f7d6e40' }],
+]) {
+  test('SDK refuses ' + label + ' without publishing output', () => {
+    const f = fixture(); Object.assign(f.sdk.images, images)
+    const input = f.write('mixed-pair.json', f.sdk), original = preserved(f)
+    refused(run(f, 'assemble-native-sdk.mjs', { input }), /Only an exact reviewed Native pair/)
+    unchanged(f, original)
+  })
+}
+
+test('SDK refuses the previous guard selector for the local rebuilt pair', () => {
+  const f = fixture(); Object.assign(f.sdk.images, { workload: 'sha256:6f1b2bc9a315d612dfd211e40e545d80593cd19bb43a26f2dc24e1eaa86a73b8',
+    server: 'sha256:66ee3b642097f325f2338603f88fdcd865b9f8a99cfc37dfdd0ee0934f7d6e40' })
+  const input = f.write('wrong-selector.json', f.sdk), original = preserved(f)
+  refused(run(f, 'assemble-native-sdk.mjs', { input }), /Only the exact Native selector may change/)
+  unchanged(f, original)
 })
 
 test('SDK checks the complete pinned public source before parser or output publication', () => {

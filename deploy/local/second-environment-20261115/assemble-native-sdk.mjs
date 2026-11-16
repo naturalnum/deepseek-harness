@@ -33,7 +33,8 @@ for (const [key, sha256] of Object.entries(expectedSources)) need(input.publicSo
 const seccomp = pinned(input.publicSources.nativeSeccomp).toString("utf8"); JSON.parse(seccomp)
 const candidateSource = pinned(input.supplierCompletionSource).toString("utf8")
 const workload=image(input.images.workload),server=image(input.images.server)
-need(workload === "sha256:32c17c742af43a6d9c89c69441fbc543751af41b0f61bf8294ed00ac3a4df62f" && server === "sha256:e4fc713db05339d41b70215f2ffdbc1c37f8948b92c949eb4cd2c164ce90038a", "Only the newly built exact Native pair is selected")
+need((workload === "sha256:32c17c742af43a6d9c89c69441fbc543751af41b0f61bf8294ed00ac3a4df62f" && server === "sha256:e4fc713db05339d41b70215f2ffdbc1c37f8948b92c949eb4cd2c164ce90038a")
+  || (workload === "sha256:6f1b2bc9a315d612dfd211e40e545d80593cd19bb43a26f2dc24e1eaa86a73b8" && server === "sha256:66ee3b642097f325f2338603f88fdcd865b9f8a99cfc37dfdd0ee0934f7d6e40"), "Only an exact reviewed Native pair is selected")
 const originalCompletion=pinned(input.publicSources.originalCompletion).toString("utf8")
 const before="NATIVE_AMD64_IMAGE = 'sha256:84d3c8cd1520dfb2b088f9d3dbd296f4d18fabed3b18fb0aea01e6e378f9d5eb'"
 need(originalCompletion.split(before).length === 2 && candidateSource === originalCompletion.replace(before,"NATIVE_AMD64_IMAGE = '"+workload+"'"), "Only the exact Native selector may change; original guards remain byte-identical")

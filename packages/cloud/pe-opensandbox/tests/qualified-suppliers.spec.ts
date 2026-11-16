@@ -11,6 +11,7 @@ import { NATIVE_WORKLOAD_IMAGE_DIGEST, REMOTE_CLIENT_WORKLOAD_IMAGE_DIGEST, OFFI
   OFFICE_RESEARCH_SERVER_IMAGE_DIGEST, OFFICE_RESEARCH_GIT_SERVER_IMAGE_DIGEST,
   OFFICE_RESEARCH_GIT_GETRANDOM_SERVER_IMAGE_DIGEST,
   NATIVE_AMD64_WORKLOAD_IMAGE_DIGEST, NATIVE_AMD64_SERVER_IMAGE_DIGEST,
+  NATIVE_AMD64_LOCAL_20261116_WORKLOAD_IMAGE_DIGEST, NATIVE_AMD64_LOCAL_20261116_SERVER_IMAGE_DIGEST,
   OFFICE_RESEARCH_GIT_SSH_AMD64_WORKLOAD_IMAGE_DIGEST, OFFICE_RESEARCH_GIT_SSH_AMD64_SERVER_IMAGE_DIGEST,
   qualifiedSupplierTuples, isPinnedWorkloadImageDigest, isSessionDirectoryServerImageDigest } from '../src/bootstrap/qualified-suppliers.ts'
 import { RUNTIME_PROFILES } from '../src/bootstrap/runtime-profiles.ts'
@@ -73,10 +74,18 @@ const priorAmd64Suppliers = [...nativeSuppliers, {
   sessionDirectories: true,
 }] as const
 
-const suppliers = [...priorAmd64Suppliers, {
+const rebuild20261115Suppliers = [...priorAmd64Suppliers, {
   schema: 'pe-opensandbox-root-deployment-v2',
   workloadImageDigest: 'sha256:32c17c742af43a6d9c89c69441fbc543751af41b0f61bf8294ed00ac3a4df62f',
   serverImageDigest: 'sha256:e4fc713db05339d41b70215f2ffdbc1c37f8948b92c949eb4cd2c164ce90038a',
+  platform: 'amd64', execdImageDigest: 'sha256:ca4ff631193b68ba0a47622773389b054994c77971cf2859c6beacf6cb9314de',
+  sessionDirectories: true,
+}] as const
+
+const suppliers = [...rebuild20261115Suppliers, {
+  schema: 'pe-opensandbox-root-deployment-v2',
+  workloadImageDigest: 'sha256:6f1b2bc9a315d612dfd211e40e545d80593cd19bb43a26f2dc24e1eaa86a73b8',
+  serverImageDigest: 'sha256:66ee3b642097f325f2338603f88fdcd865b9f8a99cfc37dfdd0ee0934f7d6e40',
   platform: 'amd64', execdImageDigest: 'sha256:ca4ff631193b68ba0a47622773389b054994c77971cf2859c6beacf6cb9314de',
   sessionDirectories: true,
 }] as const
@@ -87,7 +96,10 @@ it('retains the original suppliers and permits only the exact built v2 superset 
   expect(qualifiedSupplierTuples.slice(0, 8)).toEqual(armSuppliers)
   expect(qualifiedSupplierTuples.slice(0, 9)).toEqual(nativeSuppliers)
   expect(qualifiedSupplierTuples.slice(0, 10)).toEqual(priorAmd64Suppliers)
+  expect(qualifiedSupplierTuples.slice(0, 11)).toEqual(rebuild20261115Suppliers)
   expect(qualifiedSupplierTuples).toEqual(suppliers)
+  expect(NATIVE_AMD64_LOCAL_20261116_WORKLOAD_IMAGE_DIGEST).toBe(suppliers[11].workloadImageDigest)
+  expect(NATIVE_AMD64_LOCAL_20261116_SERVER_IMAGE_DIGEST).toBe(suppliers[11].serverImageDigest)
   expect(NATIVE_AMD64_WORKLOAD_IMAGE_DIGEST).toBe(suppliers[8].workloadImageDigest)
   expect(NATIVE_AMD64_SERVER_IMAGE_DIGEST).toBe(suppliers[8].serverImageDigest)
   expect(OFFICE_RESEARCH_GIT_SSH_AMD64_WORKLOAD_IMAGE_DIGEST).toBe(suppliers[9].workloadImageDigest)
@@ -143,6 +155,8 @@ it('uses one fixed bootstrap payload for every exact reviewed supplier', async (
 })
 
 it.each([
+  [suppliers[11], 'sha256:10167779315c80ff93d9374b20b7231e4d503671a7531cea8d6113fc3192d545',
+    'sha256:16211f34a327839a6ad7708924fa632112524a9acc26cc124d41fb8a9b14a54e'],
   [suppliers[10], 'sha256:0a06b620dfb9fa477e6e136e01786d39ab29be5d68c19a6c975c6a6205023374',
     'sha256:6ab048f3f4553f1e28d702900b41dd3f19fe0bce0a707bda8b5d7114474ea5c4'],
   [nativeSuppliers[8], 'sha256:9bd266bc2a847a977395c5ccfd5cfa73fecdf9fc7322b18aebf9b27be0c0b87b',
