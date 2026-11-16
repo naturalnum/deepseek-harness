@@ -22,7 +22,8 @@ import type { Session, SessionHeader } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-working-directory'
 import * as FilesAccount from '@deepseek-ai/dsh-pe-cloud-files/account'
 import * as InstructionsSession from '@deepseek-ai/dsh-pe-account-instructions/session'
-import { assertAccountExecutionProviders, accountTerminalLimits, installAccountExecutionPort,
+import { assertAccountExecutionProviders, accountTerminalLimits, accountExecutionMode,
+  prepareAccountSkillProject, installAccountExecutionPort,
   type AccountExecutionPort, type SandboxCoordinator } from '@deepseek-ai/dsh-pe-opensandbox'
 import * as ExecutionAccount from '@deepseek-ai/dsh-pe-opensandbox/account'
 import * as RuntimeAccount from './account.ts'
@@ -675,7 +676,8 @@ export class AccountNativeIntegration {
           }
           const resources = prepareAccountSkillResources(ctx, binding, requireFiles, requireGuards, (caller) => {
             this.input.assertRootCurrent(); rootBusinessCurrent(binding); api.assertInstalled(caller)
-          })
+          }, (caller, project, signal) => accountExecutionMode(caller) === 'session-collect'
+            ? prepareAccountSkillProject(caller, project, signal) : requireFiles(caller).prepareSkillProject(project, signal))
           this.skills = api.prepareCloudSkills(owner, { ...input.skills, files: filesOwner, resources,
             managed: { ...input.skills.managed, resources, assertWorkspace: (workspace) => {
               api.assertInstalled(owner); this.input.assertRootCurrent(); rootBusinessCurrent(binding)

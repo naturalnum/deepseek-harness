@@ -2,6 +2,7 @@
 import { symbols, type Context } from '@deepseek-ai/cordis'
 import { CloudShellExecutor } from './native-providers.ts'
 import type { Session } from '@deepseek-ai/dsh-session'
+import type { AccountFilesProject, CloudAccountFiles } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type {} from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import { ExecutionStateError } from './errors.ts'
@@ -42,6 +43,16 @@ export interface AccountExecutionPort {
 
 /** Private owner checks, retained by each original issued port rather than serialized account data. */
 export interface ExecutionPortOwner {
+  /**
+   * Prepare a files grant through this original execution owner, when supported.
+   * @param port Exact installed account port.
+   * @param ctx Original account caller.
+   * @param project Original files-issued project.
+   * @param signal Actual preparation cancellation.
+   * @returns Files-issued grant after any confirmed idle-compute retirement.
+   */
+  prepareSkillProject?(port: AccountExecutionPort, ctx: Context, project: AccountFilesProject,
+    signal: AbortSignal): ReturnType<CloudAccountFiles['prepareSkillProject']>
   /** Mandatory on an owner that issues enforcesSessionFilePolicy ports. */
   assertSessionFilePolicyChange?(port: AccountExecutionPort, ctx: Context, session: Session): void
   assertPort(port: AccountExecutionPort, ctx: Context): void
@@ -118,6 +129,21 @@ export abstract class IssuedExecutionPort implements AccountExecutionPort {
    * @returns Original owner facts without executing user work or asserting process readiness.
    */
   inspectServicesOwned(ctx: Context): AccountServiceAvailability { return this.#owner.inspectServices(this, ctx) }
+
+  /**
+   * Prepare the original project through its installed execution owner; unsupported owners remain closed.
+   * @param ctx Actual account caller.
+   * @param project Original files-issued project.
+   * @param signal Actual preparation cancellation.
+   * @returns Files-issued grant after any original idle-compute retirement has actually settled.
+   */
+  prepareSkillProjectOwned(ctx: Context, project: AccountFilesProject,
+    signal: AbortSignal): ReturnType<CloudAccountFiles['prepareSkillProject']> {
+    if (this.#owner.prepareSkillProject === undefined) {
+      throw new ExecutionStateError('cloud/execution-unavailable', 'Skill preparation requires its original execution owner.')
+    }
+    return this.#owner.prepareSkillProject(this, ctx, project, signal)
+  }
 
   /**
    * Test nominal issuance without checking current admission or provider installation.
@@ -233,6 +259,19 @@ export function accountServiceAvailability(ctx: Context): AccountServiceAvailabi
   const port = requireIssuedExecutionPort(ctx)
   IssuedExecutionPort.prototype.assertProvidersOwned.call(port, ctx)
   return IssuedExecutionPort.prototype.inspectServicesOwned.call(port, ctx)
+}
+
+/**
+ * Prepare a files-owned skill parent with the installed managed execution owner's bounded capacity relief.
+ * @param ctx Original account caller with its exact nominal execution port.
+ * @param project Original files-issued Workspace project.
+ * @param signal Actual preparation cancellation; retirement already started still joins its original owner.
+ * @returns Files-issued grant; active or uncertain compute is never released to obtain one.
+ */
+export function prepareAccountSkillProject(ctx: Context, project: AccountFilesProject,
+  signal: AbortSignal): ReturnType<CloudAccountFiles['prepareSkillProject']> {
+  const port = requireIssuedExecutionPort(ctx)
+  return IssuedExecutionPort.prototype.prepareSkillProjectOwned.call(port, ctx, project, signal)
 }
 
 declare module '@deepseek-ai/cordis' {

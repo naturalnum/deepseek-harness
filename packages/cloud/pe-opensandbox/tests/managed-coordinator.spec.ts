@@ -15,7 +15,7 @@ import { ManagedCoordinator, installManagedExecutionProviders } from '../src/man
 import type { ManagedCoordinatorConfig, ManagedExecutionDeployment } from '../src/managed-coordinator.ts'
 import type { NativeAccountExecutionAuthority } from '../src/coordinator.ts'
 import { assertAccountExecutionProviders, installIssuedExecutionPort, withAccountApplicationService,
-  accountServiceAvailability, accountTerminalLimits } from '../src/account-port.ts'
+  accountServiceAvailability, accountTerminalLimits, prepareAccountSkillProject } from '../src/account-port.ts'
 import type { AccountExecutionPort } from '../src/account-port.ts'
 import type { SandboxAllocation, AllocationCreateIntent, AllocationExpectation, AllocationChange } from '../src/allocation-types.ts'
 import { PostgresAllocationStore } from '../src/allocation-store.ts'
@@ -30,7 +30,8 @@ import * as accountEntry from '../src/account.ts'
 import * as rootEntry from '../src/root.ts'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
-import { CloudAccountFiles, FdMutationFailure, FilesFailure, SkillProjectCapacityFailure, type AccountFilesProject } from '@deepseek-ai/dsh-pe-cloud-files'
+import { CloudAccountFiles, FdMutationFailure, FilesFailure, SkillProjectCapacityFailure,
+  type AccountFilesProject, type ExecutionMountGrant } from '@deepseek-ai/dsh-pe-cloud-files'
 import { copyFacts } from '../src/skill-wire.ts'
 import type { SkillProjectGrant, SkillOperationCopies } from '../src/skill-files-types.ts'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
@@ -549,13 +550,14 @@ async function applicationFixture(options: {
   services?: boolean
   skillCopies?: number
   pipes?: boolean
+  allocationLimits?: Pick<ManagedCoordinatorConfig['allocations'], 'maxAllocations' | 'maxAllocationsPerAccount'>
 } = {}) {
   const managed: ManagedCoordinatorConfig = { ...config, maxActiveCommands: 8, maxActiveCommandsPerAccount: 4,
     maxResidentCommands: 16, maxResidentCommandsPerAccount: 8,
     ...options.pipes ? { maxActiveCommands: 2, maxActiveCommandsPerAccount: 1,
       maxResidentCommands: 8, maxResidentCommandsPerAccount: 4 } : {},
     maxResidentBytes: options.globalBytes ?? options.bytes ?? 1048576, maxResidentBytesPerAccount: options.bytes ?? 1048576,
-    allocations: { ...config.allocations, maxAllocations: 4, maxAllocationsPerAccount: 2 },
+    allocations: { ...config.allocations, maxAllocations: 4, maxAllocationsPerAccount: 2, ...options.allocationLimits },
     shell: { ...config.shell, ...options.pipes ? { enforceSessionFilePolicy: true, timeoutMs: 10000,
       maxTimeoutMs: 10000, maxOutputBytes: 4096, graceMs: 1000 } : {} },
     commands: { ...config.commands, allowedTools: options.pipes ? ['bash', 'run_code', 'terminal_open'] : ['bash', 'dev_service'], maxScopes: 8,
@@ -911,8 +913,8 @@ it.each([true, false])('uses original NativeBoot and account entry with service 
 
 
 /** Actual Tools/Agent/subprocess/coordinator path; the existing allocation and carrier frontiers are scripted. */
-async function continuationFixture(sessions = 2, ownedHandles = false) {
-  const f = await applicationFixture(), a = await f.account('continuation', sessions, ownedHandles), counts = new Map<string, number>()
+async function continuationFixture(sessions = 2, ownedHandles = false, options: Parameters<typeof applicationFixture>[0] = {}) {
+  const f = await applicationFixture(options), a = await f.account('continuation', sessions, ownedHandles), counts = new Map<string, number>()
   let generation = 0, serial = 0
   f.prepare.mockImplementation(async () => ({ sandboxId: `compute-${generation}`, runtimeIdentity: String(generation).padStart(64, '1'),
     protocolVersion: 'scripted-original-frontier', capabilities: ['argv-collect'] }))
@@ -1184,6 +1186,193 @@ it('reuses the fixed two compute slots across four idle Sessions only after orig
   expect(f.stop.mock.invocationCallOrder[0]).toBeLessThan(f.retire.mock.invocationCallOrder[0]!)
   expect(f.retire.mock.invocationCallOrder[0]).toBeLessThan(f.prepare.mock.invocationCallOrder[2]!)
   expect(f.create).not.toHaveBeenCalled(); expect(f.fetch).not.toHaveBeenCalled()
+})
+
+/** Actual Native command ownership; only Files grants and existing allocation/export frontiers are scripted. */
+async function parentPreparationPressureFixture() {
+  const f = await continuationFixture(4, false, { skillCopies: 2,
+    allocationLimits: { maxAllocations: 40, maxAllocationsPerAccount: 20 } })
+  const parents = new Set<SkillProjectGrant>(), prepared = new Map<object, PreparedSandbox>()
+  const mounts = new Map<object, { release(): void }>()
+  const shares = new Map<SessionId, NonNullable<VerifiedExecutionMount['skills']>>()
+  const skills = new Map<PreparedSandbox, NonNullable<VerifiedExecutionMount['skills']>>()
+  const events: string[] = []
+  const project: AccountFilesProject = { binding: f.a.binding, workspace: f.a.workspace,
+    projectDirectory: { binding: f.a.binding, prepare: async () => {} } }
+  const refused = new FdMutationFailure('not-published', 'FS_TOO_LARGE', undefined,
+    { cause: new SkillProjectCapacityFailure('parent-borrows', 'Two actual parents remain retained.') })
+  const prepareParent = vi.fn(async () => {
+    if (parents.size >= 2) { events.push('parent-refused'); throw refused }
+    const metadata = { relativePath: '.pe', device: '7', inode: '11', mountId: '8', uid: 2000, gid: 2000, mode: 0o40700 }
+    const value: SkillProjectGrant = { binding: f.a.binding, workspaceId: f.a.workspace.id,
+      project: { rootPath: '/project', rootDevice: '7', rootInode: '9', rootMountId: '8',
+        quota: { device: '7', mountId: '8', maximumBytes: '65536', maximumInodes: '128' } },
+      metadataDirectory: metadata, skillsDirectory: { ...metadata, inode: '12' } }
+    parents.add(value); events.push('parent-issued')
+    return { value, release: () => { if (parents.delete(value)) events.push('parent-released') } }
+  })
+  const scripted = { projectFor: async () => project,
+    prepareExecutionMounts: async (_project: AccountFilesProject, sessionId: SessionId) => {
+      const quota = { device: '7', mountId: '8', maximumBytes: '65536', maximumInodes: '128' }
+      const directory = { device: '7', mountId: '8', uid: 2000, gid: 2000, mode: 0o40700 }
+      const value: ExecutionMountGrant = { binding: f.a.binding, sessionId, workspaceId: f.a.workspace.id,
+        project: { rootPath: '/project', rootDevice: '7', rootInode: '9', rootMountId: '8', quota,
+          mountVersion: 'parent-pressure-v1', readOnlyPaths: ['.pe'],
+          metadataDirectory: { relativePath: '.pe', ...directory, inode: '11' } },
+        environment: { rootPath: '/environment', rootDevice: '7', rootInode: '20', rootMountId: '8', quota,
+          targetPath: '/opt/session-env', bankId: 'bank', slotId: 'slot', slotGeneration: 1,
+          environmentVersion: config.allocations.environmentVersion, rootReadOnly: true,
+          writablePaths: ['home', 'venv', 'tmp'], layout: { home: { ...directory, inode: '21' },
+            venv: { ...directory, inode: '22' }, tmp: { ...directory, inode: '23' } } } }
+      return { value, release() {} }
+    },
+    prepareSkillProject: prepareParent, assertExecutionMountGrant() {},
+    assertSkillProjectGrant(value: SkillProjectGrant) { if (!parents.has(value)) throw new Error('Parent already released') },
+    borrowAllBundleWorkingCopies: async (parent: SkillProjectGrant) => ({ value: { project: parent, copies: [] }, release() {} }),
+    assertBundleOperationCopies() {} }
+  f.a.authority.files.mockReturnValue(new Proxy(CloudAccountFiles.prototype, { get(_target, key): unknown {
+    return Reflect.get(scripted, key)
+  } }))
+  f.deployment.share.mockImplementation(async (grant, assertCurrent, selected) => {
+    if (selected === undefined) throw new Error('Original parent is required')
+    shares.set(grant.sessionId, selected)
+    return { value: { grant, skills: selected, exports: { project: '/project', protectedProject: '/project/.pe',
+      environment: '/environment' }, assertCurrent }, release() {} }
+  })
+  f.prepare.mockImplementation(async (request) => {
+    const previous = prepared.get(request)
+    if (previous !== undefined) return previous
+    const held = await request.prepareMount(), parent = shares.get(request.sessionId)
+    if (parent === undefined) throw new Error('No actual parent was exported')
+    const value: PreparedSandbox = { sandboxId: `parent-warm-${prepared.size}-${request.sessionId}`,
+      runtimeIdentity: '1'.repeat(64), protocolVersion: 'scripted-original-frontier', capabilities: ['argv-collect'] }
+    mounts.set(request, held); prepared.set(request, value); skills.set(value, parent)
+    return value
+  })
+  vi.spyOn(SessionAllocationOwner.prototype, 'preparedForRetirement').mockImplementation(request => prepared.get(request))
+  const stopActual = async (request: Pick<NativeAllocationRequest<VerifiedExecutionMount>, 'sessionId'>) => {
+    events.push('stop-confirmed'); mounts.get(request)?.release(); mounts.delete(request)
+  }
+  f.stop.mockImplementation(stopActual)
+  f.retire.mockImplementation((value) => {
+    events.push('runtime-retired')
+    for (const [request, selected] of prepared) if (selected === value) prepared.delete(request)
+    skills.delete(value)
+  })
+  vi.spyOn(f.deployment.runtimes, 'skillProject').mockImplementation(value => skills.get(value))
+  f.due.mockReturnValue(false)
+  const warm = async () => {
+    expect((await f.runSession(0)).isError).toBe(false)
+    expect((await f.runSession(1)).isError).toBe(false)
+  }
+  return { ...f, project, prepareParent, parents, prepared, events, stopActual, refused, warm }
+}
+
+it('reclaims a real quiescent Session when parent2 is full before account20 and Root40 compute thresholds', async () => {
+  const f = await parentPreparationPressureFixture()
+  for (let i = 0; i < 4; i++) expect((await f.runSession(i)).isError).toBe(false)
+  expect(f.parents.size).toBe(2); expect(f.prepared.size).toBe(2)
+  expect(f.prepareParent).toHaveBeenCalledTimes(6)
+  expect(f.retire).toHaveBeenCalledTimes(2)
+  expect(f.stop.mock.calls.map(([request]) => request.sessionId))
+    .toEqual([f.a.agents[0]!.session.id, f.a.agents[1]!.session.id])
+  expect(f.events.slice(2, 7)).toEqual(['parent-refused', 'stop-confirmed', 'parent-released', 'runtime-retired', 'parent-issued'])
+  expect(f.create).not.toHaveBeenCalled(); expect(f.fetch).not.toHaveBeenCalled()
+})
+
+it('prepares Native skill resources through the same original idle retirement without creating compute', async () => {
+  const f = await parentPreparationPressureFixture()
+  await f.warm()
+  const prepared = f.prepare.mock.calls.length
+  const shadow = f.a.ctx.isolate('peAccountExecution')
+  shadow.provide('peAccountExecution', { ...f.a.port } as AccountExecutionPort)
+  expect(() => prepareAccountSkillProject(shadow, f.project, new AbortController().signal)).toThrow()
+  expect(f.retire).not.toHaveBeenCalled(); expect(f.prepareParent).toHaveBeenCalledTimes(2)
+  const held = await prepareAccountSkillProject(f.a.agents[2]!.ctx, f.project, new AbortController().signal)
+  expect(held.value.workspaceId).toBe(f.a.workspace.id); expect(f.parents.size).toBe(2)
+  expect(f.retire).toHaveBeenCalledOnce(); expect(f.prepare).toHaveBeenCalledTimes(prepared)
+  held.release(); expect(f.parents.size).toBe(1)
+})
+
+it('joins actual retirement after Native skill observer cancellation before returning or releasing its old parent', async () => {
+  const f = await parentPreparationPressureFixture()
+  await f.warm()
+  const entered = Promise.withResolvers<undefined>(), gate = Promise.withResolvers<undefined>(), cancel = new AbortController()
+  f.stop.mockImplementationOnce(async (request) => { entered.resolve(undefined); await gate.promise; await f.stopActual(request) })
+  const result = prepareAccountSkillProject(f.a.ctx, f.project, cancel.signal).then(
+    value => ({ value, cause: undefined }), (cause: unknown) => ({ value: undefined, cause }))
+  onTestFinished(async () => { gate.resolve(undefined); await result })
+  await entered.promise; cancel.abort(new Error('Original observer cancelled'))
+  expect(f.parents.size).toBe(2); expect(f.retire).not.toHaveBeenCalled()
+  gate.resolve(undefined)
+  expect((await result).cause).toBe(cancel.signal.reason)
+  expect(f.parents.size).toBe(1); expect(f.retire).toHaveBeenCalledOnce()
+  expect(f.prepareParent).toHaveBeenCalledTimes(3)
+})
+
+it('retains both parents and refuses replacement after the original idle stop is unconfirmed', async () => {
+  const f = await parentPreparationPressureFixture()
+  await f.warm()
+  f.stop.mockRejectedValueOnce(new Error('Original physical or SQL stop is unconfirmed'))
+  expect((await f.runSession(2)).isError).toBe(true)
+  expect(f.parents.size).toBe(2); expect(f.retire).not.toHaveBeenCalled()
+  const attempts = f.prepareParent.mock.calls.length, stops = f.stop.mock.calls.length
+  expect((await f.runSession(3)).isError).toBe(true)
+  expect(f.prepareParent).toHaveBeenCalledTimes(attempts); expect(f.stop).toHaveBeenCalledTimes(stops)
+})
+
+it('keeps running Native operations when both parent holders are busy', async () => {
+  const f = await parentPreparationPressureFixture()
+  await f.warm()
+  const entered = [Promise.withResolvers<undefined>(), Promise.withResolvers<undefined>()]
+  const gate = Promise.withResolvers<undefined>(), original = f.command.getMockImplementation()!
+  f.command.mockImplementation((...args) => {
+    const channel = original(...args)
+    const index = f.a.agents.slice(0, 2).findIndex(agent => args[0].sandboxId.endsWith(agent.session.id))
+    if (index < 0) return channel
+    return { ...channel, commit: async () => {
+      entered[index]!.resolve(undefined); await gate.promise; return await channel.commit()
+    } }
+  })
+  const running = [f.runSession(0), f.runSession(1)]
+  onTestFinished(async () => { gate.resolve(undefined); await Promise.all(running) })
+  await Promise.all(entered.map(value => value.promise))
+  expect((await f.runSession(2)).isError).toBe(true)
+  expect(f.parents.size).toBe(2); expect(f.retire).not.toHaveBeenCalled()
+  expect(f.stop.mock.calls.map(([request]) => request.sessionId)).toEqual([f.a.agents[2]!.session.id])
+  gate.resolve(undefined)
+  for (const result of await Promise.all(running)) expect(result.isError).toBe(false)
+})
+
+it('shares the original pending retirement and never starts a second retirement for one refused preparation', async () => {
+  const f = await parentPreparationPressureFixture()
+  await f.warm()
+  const entered = Promise.withResolvers<undefined>(), gate = Promise.withResolvers<undefined>()
+  f.stop.mockImplementationOnce(async (request) => { entered.resolve(undefined); await gate.promise; await f.stopActual(request) })
+  const first = prepareAccountSkillProject(f.a.ctx, f.project, new AbortController().signal)
+  const second = prepareAccountSkillProject(f.a.ctx, f.project, new AbortController().signal)
+  const actual = Promise.allSettled([first, second])
+  onTestFinished(async () => {
+    gate.resolve(undefined)
+    for (const result of await actual) if (result.status === 'fulfilled') result.value.release()
+  })
+  await entered.promise
+  expect(f.parents.size).toBe(2); expect(f.stop).toHaveBeenCalledOnce(); expect(f.retire).not.toHaveBeenCalled()
+  gate.resolve(undefined)
+  const results = await actual
+  expect(results.filter(value => value.status === 'fulfilled')).toHaveLength(1)
+  expect(results.filter(value => value.status === 'rejected')).toEqual([{ status: 'rejected', reason: f.refused }])
+  expect(f.stop).toHaveBeenCalledOnce(); expect(f.retire).toHaveBeenCalledOnce()
+})
+
+it.each(['metadata', 'unknown'] as const)('does not retire ready compute for a different files refusal: %s', async (kind) => {
+  const f = await parentPreparationPressureFixture()
+  await f.warm()
+  f.prepareParent.mockRejectedValueOnce(new FdMutationFailure(kind === 'unknown' ? 'unknown' : 'not-published', 'FS_TOO_LARGE',
+    undefined, { cause: new SkillProjectCapacityFailure('metadata', 'Original metadata refusal') }))
+  expect((await f.runSession(2)).isError).toBe(true)
+  expect(f.parents.size).toBe(2); expect(f.retire).not.toHaveBeenCalled()
+  expect(f.events.filter(event => event === 'parent-released')).toHaveLength(0)
 })
 
 it.each(['third', 'same-id', 'same-id-cancel', 'uncertain'] as const)('reclaims a disposed native Session through the original allocation owner; case=%s', async (scenario) => {

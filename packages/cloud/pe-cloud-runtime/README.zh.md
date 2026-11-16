@@ -306,7 +306,7 @@ v3 管理启动要求 `idleTransactionTimeoutMs >= accountWaitTimeoutMs + (2 * s
 
 显式的 `approvedConfiguration.skills.mode: managed` 使用原 files issuer 和登录 Peer consumer 安装固定原生 `pe-cloud-skills` 条目。它要求现有 legacy 发布限额及全部四项管理 API 限额；仅 sample 的装配会在领取 owner 前拒绝。Root 从原健康 files pool 读取已配置的 18 项物理 bundle 限额，并要求完整源与投影 helper 支持。策略或 helper 缺失时拒绝，不以 runtime 回退值扩大存储限额。同一原生技能服务在原 AccountSaves 回合中恢复完整持久目录，再暂停保存并进行最终清单审核。技能发布和模型密钥编辑均要求原工厂故障收容回调；unknown 保存继续保留该图原有责任。
 
-资源加载在项目 I/O 前要求精确已发布 Agent、原 WorkingDirectory 和共享 Workspace 守卫。adapter 将当前 `withBundleSource` 回调内精确的 `snapshot.version` 租约传给原 files owner，准备项目父目录并投影完整树，保留可编辑副本。files owner 将持久副本版本规范化；返回以 Workspace 根目录为基准的绝对 `.pe/skills/<version>/` 指引前，由真实的单副本操作借用核验已签发对象身份。源、父目录、materialize 和 operation 结果在原 resident 预算中重叠保留。观察者取消不能在实际复制 I/O 结束前释放父借用；materialize 结果未知时保留父借用和原 files 责任。共享策略仍拒绝离开精确 Workspace 根目录的 cwd 变化。完整 Linux 投影、冷恢复及执行准入仍须集成验收。
+资源加载在项目 I/O 前要求精确已发布 Agent、原 WorkingDirectory 和共享 Workspace 守卫。adapter 在发布完成前持有实际源快照；已有同版本受保护副本继续使用原验证操作借用并保留可编辑内容。否则由原 files owner 准备普通工作区内完整的 `.skills/<version>/` 副本，不新增受保护技能项目关联。独立项目文件继续计入项目配额，原执行分配持有项目挂载到命令及实际分配关闭。源更新、卸载关闭未来加载准入，不删除已有工作区文件。观察者取消仍须等实际复制 I/O 结束才释放父借用；复制或借用结算未知时保留原父借用和 files 责任。共享策略仍拒绝离开精确 Workspace 根目录的 cwd 变化。完整多工作区、账号隔离和重启行为仍须真实集成证据。 受管 Native 技能准备使用原执行拥有者的[有界空闲退休](../pe-opensandbox/README.zh.md#understand-the-implementation)；关闭执行模式保留直接 files 准备。
 
 - **账户工厂** — 生产链要求原 files storage owner、准备期原生审核及实际 PostgreSQL ready CAS。账户持久化恢复、认证 Web 和完整 Linux 配方仍须集成验收；组件文本回合或冷读取不授予生产 `AccountUse`。
 - **根封口** — 原 files owner 必须直接复核受保护部署记录、当前 mount、写入者 namespace 及 bytes/inodes/private-reserve 上界。存储缺失或被撤销时准入关闭。非 Root 声明仍须在实际账户、Session 和客户端装配中核验。
