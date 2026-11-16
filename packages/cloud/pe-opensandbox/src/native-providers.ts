@@ -175,7 +175,9 @@ export class CloudShellExecutor extends ShellExecutor {
 
   override resolve(request: ShellExecRequest): ShellExecSpec {
     this.port.assertCurrent(this.ctx); request.signal?.throwIfAborted()
-    const spec: ShellExecSpec = { command: request.command, workdir: request.workdir ?? this.port.projectRoot(this.ctx),
+    const workdir = request.workdir ?? this.port.projectRoot(this.ctx)
+    const resolvedWorkdir = workdir.length > 1 && workdir.endsWith('/') ? workdir.slice(0, -1) : workdir
+    const spec: ShellExecSpec = { command: request.command, workdir: resolvedWorkdir,
       timeoutMs: clampTimeout(request.timeoutMs, this.config.timeoutMs, this.config.maxTimeoutMs, 'Cloud Shell timeoutMs'),
       stdoutMaxBytes: request.stdoutMaxBytes ?? this.config.maxOutputBytes, onExpiry: request.onExpiry ?? 'kill',
       sandboxPolicy: request.sandboxPolicy,
