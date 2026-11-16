@@ -310,6 +310,19 @@ export class BetterAuthAccess {
   }
 
   /**
+   * Charge the original captured login headers without exposing their names, values or cookie to another owner.
+   * @param principal Original currently retained authentication object.
+   * @param requestId Original Root request id.
+   * @returns Complete UTF-8 header bytes retained by this principal, including pair framing.
+   */
+  retainedPrincipalBytes(principal: AuthenticatedPrincipal, requestId: Branded<'pe-request-id'>): number {
+    const record = this.record(principal, requestId)
+    let bytes = 0
+    record.headers.forEach((value, name) => { bytes += Buffer.byteLength(name) + Buffer.byteLength(value) + 4 })
+    return bytes
+  }
+
+  /**
    * Release one owner after its actual work and any dependent cleanup settle.
    * @param principal Original authenticated object.
    * @throws Error when no corresponding borrow remains.

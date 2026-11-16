@@ -37,6 +37,8 @@ Root 可显式配置 `commands.additionalTools`，选择至多三十二个互不
 
 `/types` 入口提供 `ServicePreviewIdentity`，沿用原分配和 Session 的品牌化标识，并声明 `DevelopmentServiceId` 以及有界应用读取和已登记服务的定义。身份不授予权限；访问仍须持有执行拥有者当前签发的能力。访问适配层附加其已审计的 HTTP 暴露项及浏览器响应策略。原生开发服务工具仅将最终有界的任务句柄、操作及进程提交观察投影为展示元数据；基础设施标识和预览 URL 不进入模型结果或元数据。
 
+`ApplicationHttpRequest` 还为所选 SDK 的 GET、POST、PUT、PATCH、DELETE 方法提供有界写入正文。目标、端口、SDK 凭据、取消及请求预留仍属于原登记服务。传输在分配 socket 前计入写入正文的 backing storage，生成 Content-Length，只传递已审核的应用头部，不转发平台或浏览器凭据。HEAD 不转换成 GET；不提供 WebSocket/HMR。授权及独立的可执行页面响应策略属于 Access；原惰性读取保留既有请求类型及策略。
+
 ### 配置与失败
 
 只有 Files 在导出或创建分配之前报告 `FdMutationFailure.outcome: not-published`，且原分配拥有者已完成 `stop`，技能项目准备拒绝才允许再次尝试。此时删除失败的 Session 请求，同一或不同 Session 后续显式调用可以继续。明确容量不足使用 `cloud/capacity`；其他确定拒绝标明 Files 错误码，持久异常须检查关联。结构化拒绝日志只含错误码，不含私有失败消息。不确定写入、非类型化失败、后续准备阶段失败和未确认停止仍保留原账号失败与清理责任，不能转换为可重试容量不足。
@@ -74,6 +76,8 @@ Root 可显式配置 `commands.additionalTools`，选择至多三十二个互不
 Git 组合将 Office/科研工作负载的独立 `/opt/dsh/research/git` 依赖目录分别与各自精确的仅 COPY 服务端配对。第八组采用官方 Git 的 `CSPRNG_METHOD=getrandom` 构建，通过已允许的系统调用获取熵；前七组原值全部保留。两个 Git 配对均支持同一 v2 共享路径部署和 Session 目录守卫，包括受保护的 v3 存储计划。登记镜像不会选择配对或改变执行限额、设备访问权限；受管 Git 与认证 Web 行为仍须单独验收。
 
 重建的 Native AMD64 组合仅选择其精确工作负载与守卫服务 manifest，并沿用原 AMD64 execd。[构建记录](runtime/server/native-amd64-rebuild-20261115.json) 分别记录 manifest 与 config 摘要。原有配对保持不变；源码和镜像资格不替代受保护存储、受管执行或认证 Web 验收。
+
+containerd ARM64 组合使用实际 OCI manifest 选择器，工作负载仍为原 getrandom config 和层，execd 仍为原 config。[产物记录](runtime/server/arm64-containerd-supplier-20261116.json) 将仅修改选择器的服务端绑定到该工作负载，并保留全部关闭准入后的审计前驱；旧 config ID、混合配对和其他平台仍被拒绝。登记不改变默认选择或账号就绪。
 
 [Guest 上下文生成器](runtime/office-completion/heading-numbering/prepare_context.py) 是当前保留标题编号的 Office 工作负载的重建入口。在仓库根目录调用 `python3 packages/cloud/pe-opensandbox/runtime/office-completion/heading-numbering/prepare_context.py <retained-context-v6.tar> <exclusive-output-directory>`。须保留 SHA256 为 `4f17e2e7f6c92c9a5ce0c3b5e018e43c9d312d8a5bcb51f9d318f87e32962a90`、大小为 5,099,520 字节的原始上下文，以及外部不可变 UTF-8 Office 基础镜像 `sha256:3209e963a7b4f008818649e353c4af91da494e179cf3de54ae5c06b1edd79a97`；生成器拒绝不同的上下文字节。[单文件 COPY 配方](runtime/office-completion/heading-numbering/Dockerfile) 直接使用该基础镜像。仅执行 v6 依赖配方不会应用此修正。
 
@@ -123,9 +127,9 @@ Root 与 SDK bootstrap 共用[精确工作负载镜像列表](src/bootstrap/work
 
 挂载原生 JobRegistry 时，其同步 Bash 注册可以在 `tools/result` 后继续持有同一命令 scope。注册必须来自同一原生 Session 的原始有效 Bash 调用；返回的 job id 不授予任何权限。调用结束后禁止再次捕获或创建命令。取消与最终输出排空仍归原生 registry 所有；任务结算后释放持有的 scope 和输出预留。原 Agent 销毁时，仅原先已获租的句柄可在 fiber 处于 `UNLOADING` 时通过完整账户身份检查；新调用捕获仍要求 Agent 有效。[真实 AccountPolicy 组合测试](tests/native-background-account-policy.spec.ts) 覆盖该退出路径。账户撤销仍立即拒绝公开访问，实际清理由 Root 保留。既有 scope、命令、时限与租户配额均不变。[组合测试](tests/native-background-composition.spec.ts) 使用真实原生 Agent、Bash、Jobs 服务，外部命令通道明确使用脚本替身，不代表已部署后端或网页验收通过。
 
-私有[开发服务消费者](src/dev-service-consumer.ts) 要求显式完整的 `commands.services` 策略和原生工具 provider。严格解析配置后，Root 接入原 managed 拥有者的回调；省略策略时该消费者保持关闭。它复用该拥有者现有的工作记录和 subprocess provider，在8000端口运行项目相对路径的 Python HTTP 脚本。启动只报告进程已提交，HTTP 就绪单独判断；状态、有界日志和停止都指向同一保留操作。固定的安装与服务 payload 声明前台命令、已登记服务各一个运行范围，角色由 Root 签发，运行时限分别为150秒、120秒，绝对驻留时限300秒。这四个生命周期记录及已做组件检查的限制，不代表完整 Session 生命周期或真实服务隔离已通过。
+私有[开发服务消费者](src/dev-service-consumer.ts) 要求显式完整的 `commands.services` 策略和原生工具 provider。严格解析配置后，Root 接入原 managed 拥有者的回调；省略策略时该消费者保持关闭。它复用该拥有者现有的工作记录和 subprocess provider，在8000端口运行项目相对路径的 Python HTTP 脚本。启动只报告进程已提交，HTTP 就绪单独判断；状态、有界日志和停止都指向同一保留操作。固定的安装与服务 payload 声明前台命令、已登记服务各一个运行范围，角色由 Root 签发，运行时限分别为150秒、120秒，绝对驻留时限300秒。这四个生命周期记录及已做组件检查的限制，不代表完整 Session 生命周期或真实服务隔离已通过。 固定的 `python-http-v1` 配置选择已核证不可变工作负载镜像中的 `/usr/local/bin/python3`；它不要求或初始化 Session 虚拟环境。
 
-原服务记录只绑定一次分配，并独立于工具调用持有有界应用读取。可选的 `commands.services.application` 显式提供全局、账户和服务请求数量及全部 HTTP 传输限额，不授予网络权限。私有 [HTTP 适配器](src/application-http.ts) 只允许通过 Root 选定的服务器执行 GET，使用固定目标身份、有界缓冲区和实际本地 I/O 终结凭据。Root 在传输前预留全局、账户请求数量，并计入命令输出共用的原 resident 字节池。公开的 `withAccountApplicationService` helper 要求原始已安装账户 port 和 provider。固定控制跳显式退出访问续期，不接受调用方提供该控制头。服务停止、作用域释放和记录退休会取消读取，并等待其实际终结；清理未知时保留原记录和容量。缺少 Root 回调时，读取保持关闭。适配器和记录检查不代表已部署代理、浏览器授权或工作负载网络隔离通过验收。
+原服务记录只绑定一次分配，并独立于工具调用持有有界应用读取。可选的 `commands.services.application` 显式提供全局、账户和服务请求数量及全部 HTTP 传输限额，不授予网络权限。私有 [HTTP 适配器](src/application-http.ts) 只允许通过 Root 选定的服务器执行 GET，使用固定目标身份、有界缓冲区和实际本地 I/O 终结凭据。Root 在传输前预留全局、账户请求数量，并计入命令输出共用的原 resident 字节池。`maxBufferPoolBytes` 仍是必填的兼容声明；请求按当前进程 `Buffer.poolSize` 的两倍预留，小于实际池大小的旧声明不会单独拒绝请求。公开的 `withAccountApplicationService` helper 要求原始已安装账户 port 和 provider。固定控制跳显式退出访问续期，不接受调用方提供该控制头。服务停止、作用域释放和记录退休会取消读取，并等待其实际终结；清理未知时保留原记录和容量。缺少 Root 回调时，读取保持关闭。适配器和记录检查不代表已部署代理、浏览器授权或工作负载网络隔离通过验收。
 
 启用开发服务的执行账户条目要求 `inject: ['tools']`；未选择服务及关闭模式条目保留原依赖声明。`accountServiceAvailability(ctx)` 检查原始已安装消费者和应用工厂，不创建工作。工具定义、安装位置或实际消费位置的 Tools provider 被替换时，拒绝检查。
 

@@ -3,8 +3,10 @@ import type {
   ClientTransportHooks, ConnectionWebSocket, ConnectionWebSocketFactory, RpcFetch,
 } from '@deepseek-ai/dsh-client-connection/client'
 import type { BindingFieldNames, RequestExpectation } from '@deepseek-ai/dsh-pe-cloud-access/types'
-import type { CloudClientConfig, CloudServicePreviewPolicy } from '../types.ts'
+import type { CloudClientConfig, CloudServicePreviewPolicy, CloudServiceApplicationPolicy } from '../types.ts'
 import { parseServicePreviewPolicy } from '../preview-policy.ts'
+import { parseServiceApplicationPolicy } from '../application-policy.ts'
+import { launchServiceApplication } from './application-launch.ts'
 import type { CloudServicePreviewSelection } from './service-preview.ts'
 import { servicePreviewUrl } from './preview-url.ts'
 import type { BootstrapAttempt } from './bootstrap.ts'
@@ -18,6 +20,7 @@ export interface BoundTransportInput {
   readonly fields: BindingFieldNames
   /** Optional exact Root navigation policy; never widens ordinary HTTP/WS targets. */
   readonly servicePreview?: Readonly<CloudServicePreviewPolicy>
+  readonly serviceApplications?: Readonly<CloudServiceApplicationPolicy>
   readonly fetch: RpcFetch
   readonly createWebSocket: ConnectionWebSocketFactory
   readonly limits: Pick<CloudClientConfig, 'maxPendingFetches' | 'maxSockets' | 'maxErrorResponseBytes' | 'closeTimeoutMs'>
@@ -52,9 +55,11 @@ export class BoundTransport {
   private readonly expectation: Readonly<RequestExpectation>
   private readonly fields: Readonly<BindingFieldNames>
   private readonly preview: Readonly<CloudServicePreviewPolicy> | undefined
+  private readonly applications: Readonly<CloudServiceApplicationPolicy> | undefined
+  private readonly rawFetch: RpcFetch
   private readonly limits: BoundTransportInput['limits']
   private readonly abort = new AbortController()
-  private readonly pending = new Set<Promise<Response>>()
+  private readonly pending = new Set<Promise<unknown>>()
   private readonly sockets = new Set<SocketUse>()
   private readonly cleanupFailures: unknown[] = []
   private phase: TransportSnapshot['phase'] = 'open'
@@ -78,7 +83,10 @@ export class BoundTransport {
     this.expectation = Object.freeze({ ...input.expectation })
     this.fields = Object.freeze({ ...input.fields })
     this.preview = input.servicePreview === undefined ? undefined : parseServicePreviewPolicy(input.servicePreview)
+    this.applications = input.serviceApplications === undefined ? undefined : parseServiceApplicationPolicy(input.serviceApplications)
+    this.rawFetch = input.fetch
     if (this.preview !== undefined && this.preview.managementOrigin !== this.base.origin) throw new ClientFailure('target-denied')
+    if (this.applications !== undefined && this.applications.managementOrigin !== this.base.origin) throw new ClientFailure('target-denied')
     this.limits = Object.freeze({ ...input.limits })
     const send = input.fetch
     const createSocket = input.createWebSocket
@@ -116,6 +124,30 @@ export class BoundTransport {
     this.assertOpen()
     if (this.preview === undefined) throw new ClientFailure('target-denied')
     return servicePreviewUrl(selection, this.preview, this.fields, this.expectation)
+  }
+
+  /**
+   * Keep the exact private content handoff under this original transport's capacity and actual close join.
+   * @param selection Current Session/task selectors; Root performs all account and service authorization.
+   * @returns Credential-free Browser URL after the private host-only Cookie is confirmed.
+   */
+  serviceApplicationNavigationUrl(selection: CloudServicePreviewSelection): Promise<string> {
+    this.assertOpen()
+    const policy = this.applications
+    if (policy === undefined) throw new ClientFailure('target-denied')
+    if (this.pending.size >= this.limits.maxPendingFetches) throw new ClientFailure('capacity')
+    const deadline = new AbortController(), signal = AbortSignal.any([this.abort.signal, deadline.signal])
+    const timer = setTimeout(() => { deadline.abort(new ClientFailure('closed')) }, policy.requestTimeoutMs)
+    const fetch: RpcFetch = (target, init) => String(target) === policy.managementOrigin + '/cloud/service-application'
+      ? this.send(this.rawFetch, new URL(target), init, signal) : this.rawFetch(target, init)
+    const actual = launchServiceApplication(fetch, policy, this.fields, this.expectation, selection, signal,
+      () => { this.assertOpen() }, () => { void this.close('unauthenticated') })
+      .catch((error: unknown) => {
+        if (error instanceof ClientFailure && error.code === 'close-unconfirmed') this.cleanupFailures.push(error)
+        throw error
+      }).finally(() => { clearTimeout(timer); this.pending.delete(actual) })
+    this.pending.add(actual)
+    return actual
   }
 
   /**

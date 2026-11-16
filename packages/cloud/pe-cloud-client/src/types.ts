@@ -15,6 +15,16 @@ export interface CloudServicePreviewPolicy {
   readonly maxUrlBytes: number
 }
 
+/** Public inputs for a private POST handoff to one dedicated content origin; supplies no service authority. */
+export interface CloudServiceApplicationPolicy {
+  readonly managementOrigin: string
+  readonly contentOrigin: string
+  readonly requestTimeoutMs: number
+  readonly maxRequestBytes: number
+  readonly maxResponseBytes: number
+  readonly maxFieldBytes: number
+}
+
 /** Explicit finite UTF-8 budgets; total includes the physical key and serialized envelope. */
 export interface CloudPersistenceLimits {
   /** Maximum logical entries stored in one account/generation namespace. */
@@ -73,6 +83,8 @@ export interface CloudClientConfig {
   nativeSubagentSettingsNamespace?: string
   /** Omission keeps preview navigation closed, independently of descriptive bootstrap availability. */
   servicePreview?: Readonly<CloudServicePreviewPolicy>
+  /** Complete service pages use this private handoff instead of the inert preview URL. */
+  serviceApplications?: Readonly<CloudServiceApplicationPolicy>
 }
 
 /** Public deployment inputs for the existing Web entry; contains no login or account state. */

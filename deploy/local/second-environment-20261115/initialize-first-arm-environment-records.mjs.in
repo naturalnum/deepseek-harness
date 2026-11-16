@@ -1,0 +1,186 @@
+/** One trusted first-deployment producer for three original schema-one environment records. Inert without an explicit mode. */
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import {createHash} from 'node:crypto'
+import {createRequire} from 'node:module'
+import {pathToFileURL} from 'node:url'
+
+const RESOURCE='587be4cb-705f-46ce-90bf-49f1d7a346e5',CARRIER='dsh-sdk-arm-587be4cb'
+const KEEPER=@@KEEPER_PID@@,START='@@KEEPER_START_TICKS@@',NS='@@KEEPER_NAMESPACE@@'
+const ROOT='/srv/dsh-features-'+RESOURCE,HOME='/run/dsh-feature-root',PREFIX='/proc/'+KEEPER+'/root'
+const PLAN_SHA='@@PLAN_SHA@@'
+const OWNER_SHA='@@OWNER_SHA@@',PROVISION_SHA='@@PROVISION_SHA@@'
+const SDK='@@SDK_ID@@',WORKLOAD='@@WORKLOAD_IMAGE@@'
+const SDK_INVENTORY=@@SDK_ALL_IDS_JSON@@
+const JOURNAL='/opt/dsh-features/arm-native-01/private-control/environment-record-initialization.journal.jsonl'
+const RECEIPT='/opt/dsh-features/arm-native-01/private-control/environment-record-initialization.receipt.json'
+const hash=bytes=>createHash('sha256').update(bytes).digest('hex')
+const need=(value,code)=>{if(!value)throw Object.assign(new Error(code),{check:code})}
+const object=value=>value!==null&&typeof value==='object'&&!Array.isArray(value)
+const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b)
+const exact=(value,keys)=>need(object(value)&&same(Object.keys(value).sort(),[...keys].sort()),'exact-fields-required')
+const digest=value=>need(typeof value==='string'&&/^[a-f0-9]{64}$/.test(value),'exact-sha256-required')
+const exists=name=>{try{fs.lstatSync(name);return true}catch(error){if(error.code==='ENOENT')return false;throw error}}
+const identity=()=>{const text=fs.readFileSync('/proc/'+KEEPER+'/stat','utf8');return {pid:KEEPER,startTicks:text.slice(text.lastIndexOf(')')+2).trim().split(/\s+/)[19],mountNamespace:fs.readlinkSync('/proc/'+KEEPER+'/ns/mnt')}}
+const current=()=>{need(same(identity(),{pid:KEEPER,startTicks:START,mountNamespace:NS}),'keeper-identity-changed')}
+function stopped(){current();for(const name of fs.readdirSync('/proc'))if(/^\d+$/.test(name)){
+  try{const ids=/^Uid:\s+(.+)$/m.exec(fs.readFileSync('/proc/'+name+'/status','utf8'))?.[1].trim().split(/\s+/);need(ids!==undefined&&!ids.includes('2000'),'application-uid-still-present')}
+  catch(error){if(error.code!=='ENOENT'&&error.code!=='ESRCH')throw error}
+}}
+function protectedPath(name){
+  need(typeof name==='string'&&path.posix.normalize(name)===name&&(name.startsWith('/opt/dsh-features/')||name===ROOT+'/owner.json'),'protected-owned-path-required')
+  for(let p=path.dirname(name);p!=='/';p=path.dirname(p)){const s=fs.lstatSync(p);need(s.isDirectory()&&!s.isSymbolicLink()&&s.uid===0&&(s.mode&0o022)===0,'unprotected-input-parent')}
+  const s=fs.lstatSync(name);need(s.isFile()&&!s.isSymbolicLink()&&s.nlink===1&&s.uid===0&&(s.mode&0o022)===0,'unprotected-input-file')
+}
+function read(name,maximum,expected){
+  const before=fs.lstatSync(name);need(before.isFile()&&!before.isSymbolicLink()&&before.nlink===1&&before.size>0&&before.size<=maximum,'ordinary-bounded-file-required')
+  if(expected)need(before.uid===expected.uid&&before.gid===expected.gid&&(before.mode&0o7777)===expected.mode,'file-ownership-or-mode-changed')
+  const fd=fs.openSync(name,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW)
+  try{const s=fs.fstatSync(fd);need(s.dev===before.dev&&s.ino===before.ino,'file-open-identity-changed');const bytes=fs.readFileSync(fd),after=fs.fstatSync(fd)
+    need(bytes.length===before.size&&s.size===after.size&&s.mtimeMs===after.mtimeMs&&s.ctimeMs===after.ctimeMs,'file-changed-during-read');return bytes
+  }finally{fs.closeSync(fd)}
+}
+function pinned(ref,maximum){exact(ref,['path','sha256']);digest(ref.sha256);protectedPath(ref.path);const bytes=read(ref.path,maximum);need(hash(bytes)===ref.sha256,'pinned-input-digest-changed');return bytes}
+function parentSync(name){const fd=fs.openSync(path.dirname(name),fs.constants.O_RDONLY|fs.constants.O_DIRECTORY|fs.constants.O_NOFOLLOW);try{fs.fsyncSync(fd)}finally{fs.closeSync(fd)}}
+function writeAll(fd,bytes){for(let offset=0;offset<bytes.length;){const count=fs.writeSync(fd,bytes,offset,bytes.length-offset);need(count>0,'write-made-no-progress');offset+=count}}
+function publish(name,bytes){const fd=fs.openSync(name,fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_EXCL|fs.constants.O_NOFOLLOW,0o600)
+  try{fs.fchownSync(fd,0,0);fs.fchmodSync(fd,0o600);writeAll(fd,bytes);fs.fsyncSync(fd)}finally{fs.closeSync(fd)}parentSync(name)}
+function list(name,maximum){const d=fs.opendirSync(name,{bufferSize:16}),rows=[];try{for(let entry;(entry=d.readSync())!==null;){need(rows.length<maximum,'directory-entry-bound-exceeded');rows.push(entry.name)}}finally{d.closeSync()}return rows}
+function mountRows(){return fs.readFileSync('/proc/'+KEEPER+'/mountinfo','utf8').trim().split('\n').map(line=>{
+  const pair=line.split(' - '),a=pair[0].split(' '),b=pair[1]?.split(' ');need(pair.length===2&&a.length>=6&&b?.length>=3&&!a[4].includes('\\'),'unambiguous-mount-required')
+  return {id:a[0],path:a[4],flags:a[5].split(','),kind:b[0]}
+})}
+function initialBytes(bank,slot){return Buffer.from(JSON.stringify({schema:1,bankId:bank.bankId,slotId:slot.slotId,slotGeneration:1,state:'free'})+'\n')}
+function checkInitial(bytes,bank,slot){const raw=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes))
+  if(object(raw)&&raw.state==='bound')return 'bound-outside-initialization-check'
+  exact(raw,['schema','bankId','slotId','slotGeneration','state'])
+  need(raw.schema===1&&raw.bankId===bank.bankId&&raw.slotId===slot.slotId&&raw.slotGeneration===1&&raw.state==='free','not-the-exact-initial-free-record')
+  need(Buffer.from(bytes).equals(initialBytes(bank,slot)),'initial-record-bytes-changed');return 'initial-free-record'
+}
+function rootFreshProof(proof){
+  exact(proof,['schema','resourceId','carrier','keeper','bootId','observedAt','application','postgres','sdk'])
+  exact(proof.keeper,['pid','startTicks','mountNamespace'])
+  need(proof.schema==='dsh-feature-first-environment-evidence/v1'&&proof.resourceId===RESOURCE&&proof.carrier===CARRIER&&proof.keeper.pid===KEEPER&&proof.keeper.startTicks===START&&proof.keeper.mountNamespace===NS,'first-deployment-evidence-identity-mismatch')
+  need(proof.bootId===fs.readFileSync('/proc/sys/kernel/random/boot_id','utf8').trim(),'evidence-kernel-boot-mismatch')
+  const age=Date.now()-Date.parse(proof.observedAt);need(Number.isFinite(age)&&age>=0&&age<=120000,'fresh-root-evidence-required')
+  exact(proof.application,['neverStarted','cliLaunchIntentCount','uid2000ProcessCount'])
+  need(proof.application.neverStarted===true&&proof.application.cliLaunchIntentCount===0&&proof.application.uid2000ProcessCount===0,'first-application-not-started-evidence-required')
+  const state=JSON.parse(read(PREFIX+'/run/dsh-feature-launch-v1/state.json',32768))
+  need(state.resourceId===RESOURCE&&state.shellPid===KEEPER&&state.mountNamespace===NS&&state.planSha256===PLAN_SHA,'original-first-launch-state-required')
+  const expected=state.administratorDescriptors[1],fd=fs.openSync('/dsh-state/namespace-arm-02/ready.json',fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW)
+  try{const st=fs.fstatSync(fd);need(String(st.dev)===expected.device&&String(st.ino)===expected.inode&&st.uid===0&&st.nlink===1&&st.size===0&&(st.mode&0o7777)===0o600,'original-empty-unpublished-fd4-required')}finally{fs.closeSync(fd)}
+  const events=read('/dsh-state/namespace-arm-02/journal.jsonl',131072).toString().trim().split('\n').map(line=>JSON.parse(line))
+  need(events.length>0&&events.every(row=>row.phase==='prepare')&&events.some(row=>row.event==='launch-original-namespace'&&row.shellPid===KEEPER&&row.mountNamespace===NS&&row.inputSha256===state.inputSha256)&&events.some(row=>row.event==='observed:publish-namespace-state'&&row.planSha256===PLAN_SHA),'original-unsealed-first-launch-journal-required')
+  exact(proof.postgres,['database','allocationCount','ownedAccountCount','otherBackendCount','readOnlyObservation'])
+  need(proof.postgres.database==='dsh_combined_features_20261107_sdk_arm_20261116'&&proof.postgres.allocationCount===0&&proof.postgres.ownedAccountCount===0&&proof.postgres.otherBackendCount===0&&proof.postgres.readOnlyObservation===true,'root-postgres-no-allocation-observation-required')
+  exact(proof.sdk,['backendContainerId','qualifiedWorkloadImage','qualifiedWorkloadContainers','containerIds','runningContainerIds','readOnlyObservation'])
+  need(typeof proof.sdk.backendContainerId==='string'&&/^[a-f0-9]{64}$/.test(proof.sdk.backendContainerId)&&proof.sdk.qualifiedWorkloadImage===WORKLOAD&&proof.sdk.qualifiedWorkloadContainers===0&&proof.sdk.readOnlyObservation===true,'root-sdk-no-workload-observation-required')
+  need(Array.isArray(proof.sdk.containerIds)&&proof.sdk.containerIds.length===@@SDK_ALL_COUNT@@&&same([...proof.sdk.containerIds].sort(),SDK_INVENTORY)&&same(proof.sdk.runningContainerIds,@@SDK_RUNNING_IDS_JSON@@),'only-original-running-sdk-and-frozen-source-containers-required')
+}
+function originalFreshProvision(owner,input,plan){
+  need(owner.schema==='dsh-static-storage-v3-owner/v1'&&owner.resourceId===RESOURCE&&owner.phase==='preallocated-and-measured-not-activated'&&Array.isArray(owner.domains)&&owner.domains.length===11&&Array.isArray(owner.steps)&&owner.steps.length<=128&&owner.steps.every(step=>step.phase==='observed'),'complete-fresh-provision-journal-required')
+  need(input.schema==='dsh-static-storage-v3-provision/v1'&&input.resourceId===RESOURCE&&input.deploymentRoot===ROOT&&input.appUid===2000&&input.appGid===2000&&input.installAnchor==='/opt/dsh-installed-products/package.json'&&input.baseConfigPath==='/opt/dsh-features/account-base.yml','original-independent-provision-input-required')
+  need(Array.isArray(input.slots)&&input.slots.length===3&&Array.isArray(owner.slots)&&owner.slots.length===3,'original-three-slot-inventory-required')
+  for(const slot of plan.slots){
+    const seeded=owner.slots.filter(row=>row.slotId===slot.slotId),selected=input.slots.filter(row=>row.slotId===slot.slotId)
+    need(seeded.length===1&&selected.length===1&&seeded[0].storageKey===slot.storageKey&&seeded[0].accountRoot===slot.accountRoot&&seeded[0].templateId===slot.templateId&&selected[0].templateId===slot.templateId,'original-slot-inventory-changed')
+  }
+  const rows=[['arena',plan.arena],['control',plan.control],...plan.slots.flatMap(slot=>[[slot.slotId+'/private',slot.private],[slot.slotId+'/projects',slot.projects],...slot.environmentBank.slots.map(env=>[slot.slotId+'/environments/'+env.slotId,env.domain])])]
+  need(rows.length===11&&new Set(owner.domains.map(row=>row.role)).size===11,'exact-eleven-original-domains-required')
+  for(const [role,domain]of rows){const found=owner.domains.filter(row=>row.role===role);need(found.length===1,'original-domain-absent');const original=found[0]
+    need(original.mountPath===domain.rootPath&&original.device===domain.rootDevice&&original.inode===domain.rootInode&&original.filesystemBytes===domain.minimumBytes&&original.filesystemBytes===domain.maximumBytes&&original.filesystemInodes===domain.minimumInodes&&original.filesystemInodes===domain.maximumInodes&&original.image===domain.backing.path&&original.backingDevice===domain.backing.device&&original.backingInode===domain.backing.inode&&original.backingBytes===domain.backing.bytes,'original-physical-domain-changed')
+    for(const name of ['create-exclusive-backing','fully-allocate-owned-backing','format-only-original-new-image','rewrite-formatted-image-preserving-content','bind-new-free-loop','mount-new-owned-domain']){
+      const steps=owner.steps.filter(step=>step.name===name&&step.details?.role===role);need(steps.length===1&&steps[0].phase==='observed','complete-original-new-domain-steps-required')
+      if(name==='create-exclusive-backing')need(steps[0].result?.device===original.backingDevice&&steps[0].result?.inode===original.backingInode,'original-exclusive-backing-receipt-mismatch')
+    }
+  }
+  return rows
+}
+function domainCurrent(role,domain,mounts){
+  need(domain.rootPath.startsWith(ROOT+'/'),'outside-owned-resource-domain')
+  const s=fs.lstatSync(PREFIX+domain.rootPath,{bigint:true}),g=fs.statfsSync(PREFIX+domain.rootPath,{bigint:true}),found=mounts.filter(row=>row.path===domain.rootPath)
+  need(s.isDirectory()&&!s.isSymbolicLink()&&String(s.dev)===domain.rootDevice&&String(s.ino)===domain.rootInode&&g.type===0xef53n&&String(g.blocks*g.bsize)===domain.maximumBytes&&String(g.files)===domain.maximumInodes&&found.length===1&&found[0].id===domain.rootMountId&&found[0].kind==='ext4'&&found[0].flags.includes('rw'),'current-measured-domain-changed')
+  if(role!=='arena'&&role!=='control')need(s.uid===2000n&&s.gid===2000n&&(s.mode&0o7777n)===0o700n&&found[0].flags.includes('nosuid')&&found[0].flags.includes('nodev')&&(role.includes('/environments/')?!found[0].flags.includes('noexec'):found[0].flags.includes('noexec')),'account-domain-permissions-changed')
+}
+function emptyEnvironment(domain){
+  const names=list(PREFIX+domain.rootPath,2);need(names.length===1&&names[0]==='lost+found','environment-is-not-original-empty-filesystem')
+  const name=PREFIX+domain.rootPath+'/lost+found',s=fs.lstatSync(name,{bigint:true})
+  need(s.isDirectory()&&!s.isSymbolicLink()&&s.uid===0n&&s.gid===0n&&(s.mode&0o7777n)===0o700n&&String(s.dev)===domain.rootDevice&&s.ino===11n&&list(name,1).length===0,'original-empty-lost-found-required')
+}
+function openPrivate(row){const fd=fs.openSync(PREFIX+row.private.rootPath,fs.constants.O_RDONLY|fs.constants.O_DIRECTORY|fs.constants.O_NOFOLLOW)
+  try{const s=fs.fstatSync(fd,{bigint:true});need(s.isDirectory()&&String(s.dev)===row.private.rootDevice&&String(s.ino)===row.private.rootInode&&s.uid===2000n&&s.gid===2000n&&(s.mode&0o7777n)===0o700n,'private-anchor-changed')
+  need(new RegExp('^mnt_id:\\s*'+row.private.rootMountId+'$','m').test(fs.readFileSync('/proc/self/fdinfo/'+fd,'utf8')),'opened-private-mount-changed');return fd}catch(error){fs.closeSync(fd);throw error}
+}
+function createRecord(row){const parent=openPrivate(row)
+  try{const name='/proc/self/fd/'+parent+'/'+row.leaf,bytes=initialBytes(row.bank,row.slot)
+    const fd=fs.openSync(name,fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_EXCL|fs.constants.O_NOFOLLOW,0o600)
+    try{fs.fchownSync(fd,2000,2000);fs.fchmodSync(fd,0o600);writeAll(fd,bytes);fs.fsyncSync(fd)}finally{fs.closeSync(fd)}
+    fs.fsyncSync(parent)
+    const actual=read(name,1024,{uid:2000,gid:2000,mode:0o600});checkInitial(actual,row.bank,row.slot);need(actual.equals(bytes),'exact-created-record-readback-required')
+    const s=fs.lstatSync(name,{bigint:true});return {accountSlotId:row.accountSlotId,bankId:row.bank.bankId,slotId:row.slot.slotId,leaf:row.leaf,device:String(s.dev),inode:String(s.ino),sha256:hash(actual),uid:2000,gid:2000,mode:'0600',singleLink:true,fileAndParentSynced:true}
+  }finally{fs.closeSync(parent)}
+}
+
+let stage='arguments',journalFd,attempted=false
+const append=value=>{writeAll(journalFd,Buffer.from(JSON.stringify({at:new Date().toISOString(),...value})+'\n'));fs.fsyncSync(journalFd)}
+try{
+  if(process.argv.length===2){console.log(JSON.stringify({inert:true,modes:['--initialize','--check-existing','--self-check'],resourceId:RESOURCE}));process.exit(0)}
+  if(process.argv.length===3&&process.argv[2]==='--self-check'){
+    const bank={bankId:'account-slot-a-env'},slot={slotId:'slot-0'},bytes=initialBytes(bank,slot)
+    need(checkInitial(bytes,bank,slot)==='initial-free-record','producer-self-check')
+    need(checkInitial(Buffer.from('{"state":"bound"}'),bank,slot)==='bound-outside-initialization-check','bound-must-defer-not-reseed')
+    for(const edit of [row=>{row.extra=true},row=>{row.bankId='other'},row=>{row.slotGeneration=2},row=>{row.state='unknown'}]){const raw=JSON.parse(bytes);edit(raw);let refused=false;try{checkInitial(Buffer.from(JSON.stringify(raw)+'\n'),bank,slot)}catch{refused=true}need(refused,'invalid-initial-record-accepted')}
+    console.log(JSON.stringify({syntheticProducerAndExactReadbackPassed:true,extraFieldsWrongBankGenerationAndStateRejected:true,boundDeferredWithoutValidationOrReseeding:true,originalPublicParserRequiresInstalledRuntime:true,runtimeTouched:false}));process.exit(0)
+  }
+  need(process.argv.length===7&&['--initialize','--check-existing'].includes(process.argv[2])&&process.argv[3]==='--input'&&process.argv[5]==='--sha256','exact-cli-required')
+  const initialize=process.argv[2]==='--initialize'
+  stage='fixed-root-and-protected-input';need(process.platform==='linux'&&process.arch==='arm64'&&process.getuid()===0&&process.getgid()===0&&os.hostname()===CARRIER,'fixed-independent-root-carrier-required');current()
+  const inputBytes=pinned({path:process.argv[4],sha256:process.argv[6]},32768),input=JSON.parse(inputBytes)
+  exact(input,['schema','resourceId','originalProvisionInput','originalProvisionOwner','rootEvidence'])
+  need(input.schema==='dsh-environment-record-initialization/v1'&&input.resourceId===RESOURCE&&input.originalProvisionOwner.path===ROOT+'/owner.json','fixed-initialization-input-required')
+  need(input.originalProvisionInput.sha256===PROVISION_SHA&&input.originalProvisionOwner.sha256===OWNER_SHA,'fixed-original-fresh-provision-pins-required')
+  const provisionBytes=pinned(input.originalProvisionInput,32768),provision=JSON.parse(provisionBytes),ownerBytes=pinned(input.originalProvisionOwner,1048576),owner=JSON.parse(ownerBytes)
+  need(owner.inputSha256===hash(provisionBytes),'original-provision-input-digest-mismatch')
+  stage='original-public-plan-and-bank-selectors'
+  const planBytes=read(PREFIX+HOME+'/storage-plan.json',262144,{uid:0,gid:0,mode:0o444});need(hash(planBytes)===PLAN_SHA,'fixed-protected-plan-required')
+  const patch=JSON.parse(read(PREFIX+HOME+'/profiles/cloud/cordis.patch.yml',1048576,{uid:0,gid:0,mode:0o444})),filesRows=patch.flatMap(op=>op.insert??[]).filter(row=>row.id==='files-root')
+  need(filesRows.length===1&&filesRows[0].config.staticStorage.planSha256===PLAN_SHA,'original-root-plan-policy-required')
+  const maximum=filesRows[0].config.maxPathBytes;need(Number.isSafeInteger(maximum)&&maximum>0&&maximum<=16384,'original-path-ceiling-required')
+  const require=createRequire('/opt/dsh-installed-products/package.json'),original=await import(pathToFileURL(require.resolve('@deepseek-ai/dsh-pe-cloud-files/root')).href)
+  const plan=original.parseStorageDeploymentPlan(planBytes,maximum)
+  need(plan.version===3&&plan.appUid===2000&&plan.appGid===2000&&plan.maxAccounts===3&&plan.slots.length===3,'exact-three-slot-v3-plan-required')
+  const physical=originalFreshProvision(owner,provision,plan),mounts=mountRows()
+  for(const name of ['/','/opt/dsh-installed-products'])need(mounts.filter(row=>row.path===name&&row.flags.includes('ro')).length===1,'original-root-products-readonly-required')
+  const records=plan.slots.flatMap(account=>{const bank=original.accountEnvironmentBank(account);need(bank!==undefined&&bank.slots.length===1,'exact-one-preallocated-environment-per-slot-required')
+    return bank.slots.map(slot=>{const leaf='.pe-env-'+bank.bankId+'-'+slot.slotId+'.json';need(path.posix.basename(leaf)===leaf,'single-record-leaf-required');return {accountSlotId:account.slotId,private:account.private,bank,slot,leaf}})
+  })
+  need(records.length===3&&new Set(records.map(row=>row.private.rootPath+'/'+row.leaf)).size===3,'exact-three-distinct-records-required')
+  for(const [role,domain]of physical)domainCurrent(role,domain,mounts)
+  for(const row of records)need(!mounts.some(m=>m.path.startsWith(row.slot.domain.rootPath+'/')||m.path.startsWith(row.private.rootPath+'/')),'unexpected-private-or-environment-submount')
+  current()
+  if(!initialize){stage='read-only-initialization-record-check';const observations=[]
+    for(const row of records){const parent=openPrivate(row);try{const bytes=read('/proc/self/fd/'+parent+'/'+row.leaf,1024,{uid:2000,gid:2000,mode:0o600});observations.push({accountSlotId:row.accountSlotId,bankId:row.bank.bankId,slotId:row.slot.slotId,status:checkInitial(bytes,row.bank,row.slot)})}finally{fs.closeSync(parent)}}
+    current();const deferred=observations.some(row=>row.status==='bound-outside-initialization-check')
+    console.log(JSON.stringify({status:deferred?'bound-state-requires-original-owner-check':'initial-free-records-checked-not-owner-ready',observations,recordWrites:0,originalOwnerValidationPerformed:false,reseedAttempted:false}));process.exitCode=deferred?2:0
+  }else{
+    stage='stopped-application-and-explicit-root-observations';stopped();const proofBytes=pinned(input.rootEvidence,32768),proof=JSON.parse(proofBytes);rootFreshProof(proof)
+    stage='original-empty-environments-and-no-prior-records'
+    for(const row of records){emptyEnvironment(row.slot.domain);need(!list(PREFIX+row.private.rootPath,256).some(name=>name.startsWith('.pe-env')),'existing-environment-record-or-partial-initialization')}
+    const directory=path.dirname(JOURNAL),parent=fs.lstatSync(directory);need(parent.isDirectory()&&!parent.isSymbolicLink()&&parent.uid===0&&(parent.mode&0o077)===0&&!exists(JOURNAL)&&!exists(RECEIPT),'exclusive-root-operation-evidence-required')
+    stage='root-intent-before-first-record';stopped();rootFreshProof(proof)
+    journalFd=fs.openSync(JOURNAL,fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_EXCL|fs.constants.O_NOFOLLOW,0o600);fs.fchownSync(journalFd,0,0);fs.fchmodSync(journalFd,0o600);fs.fsyncSync(journalFd);parentSync(JOURNAL)
+    append({phase:'intent',operation:'first-environment-record-initialization',resourceId:RESOURCE,keeper:identity(),planSha256:PLAN_SHA,inputSha256:hash(inputBytes),ownerSha256:hash(ownerBytes),rootEvidenceSha256:hash(proofBytes),plannedRecords:records.map(row=>({accountSlotId:row.accountSlotId,privateRoot:row.private.rootPath,bankId:row.bank.bankId,slotId:row.slot.slotId,leaf:row.leaf,generation:1})),accountProfileWrites:0,sqlWrites:0})
+    const observed=[]
+    for(const [index,row]of records.entries()){
+      stage='exclusive-record-'+index;stopped();rootFreshProof(proof);emptyEnvironment(row.slot.domain);need(!list(PREFIX+row.private.rootPath,256).some(name=>name.startsWith('.pe-env')),'record-appeared-before-create')
+      append({phase:'intent',operation:'create-if-absent',index,accountSlotId:row.accountSlotId,leaf:row.leaf})
+      attempted=true;const result=createRecord(row);observed.push(result);append({phase:'observed',operation:'create-if-absent',index,...result})
+    }
+    stage='durable-completion-receipt';stopped();const result={schema:'dsh-environment-record-initialization-receipt/v1',resourceId:RESOURCE,keeper:identity(),planSha256:PLAN_SHA,inputSha256:hash(inputBytes),rootEvidenceSha256:hash(proofBytes),observed,recordWrites:3,accountProfileWrites:0,sqlWrites:0,applicationStarted:false,originalOwnerValidationPerformed:false}
+    publish(RECEIPT,Buffer.from(JSON.stringify(result)+'\n'));append({phase:'complete',operation:'first-environment-record-initialization',receiptPath:RECEIPT,receiptSha256:hash(read(RECEIPT,32768,{uid:0,gid:0,mode:0o600}))})
+    fs.closeSync(journalFd);journalFd=undefined;console.log(JSON.stringify({status:'three-initial-free-records-created-not-owner-ready',receiptPath:RECEIPT,journalPath:JOURNAL,...result}))
+  }
+}catch(error){if(journalFd!==undefined){try{append({phase:'failed-or-unknown-no-retry',stage,recordCreationAttempted:attempted})}catch(_journalFailure){/* Original evidence and any record remain for Root inspection. */}try{fs.closeSync(journalFd)}catch(_closeFailure){/* Do not retry, unlink or replace an uncertain record. */}}
+  console.error(JSON.stringify({status:'environment-initialization-refused-or-unknown-no-retry',stage,...typeof error.check==='string'?{check:error.check}:{},...typeof error.code==='string'&&/^[A-Z][A-Z0-9_]{0,63}$/.test(error.code)?{errorCode:error.code}:{},recordCreationAttempted:attempted,cleanupAttempted:false}));process.exitCode=1
+}

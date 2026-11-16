@@ -664,6 +664,17 @@ async function applicationFixture(options: {
     emptyChannels: () => { for (const channel of channels) channel.empty() } }
 }
 
+it('starts python-http-v1 with the qualified workload image interpreter without requiring a Session venv', async () => {
+  const f = await applicationFixture(), a = await f.account('image-python')
+  const resolve = vi.spyOn(NativeCommandAccount.prototype, 'serviceSpec')
+  await a.start()
+  expect(resolve).toHaveBeenCalledTimes(1)
+  expect(resolve.mock.results[0]?.value).toMatchObject({
+    argv: ['/usr/local/bin/python3', '-B', '/project/server.py'], cwd: '/project',
+  })
+  expect(f.service).toHaveBeenCalledTimes(1)
+})
+
 function trackApplication(actual: Promise<void>) {
   const state: { settled: boolean; cause?: unknown } = { settled: false }
   const joined = actual.then(() => { state.settled = true }, (cause: unknown) => { state.settled = true; state.cause = cause })

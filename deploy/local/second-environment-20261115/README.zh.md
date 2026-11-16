@@ -16,6 +16,10 @@
 
 ## 激活候选
 
+`generate-feature-root-profile-v3.mjs` 消费原固定摘要的 Root 参数及公开来源，校验匹配已安装产物的 Loader schema 和账号组合，仅在 Linux Root 下写入全新输出目录。可选 `servicePreview` 选择 `inert-text-v1` 或 `service-application-v1`。两者均要求显式 Cookie domain、惰性 origin、完整惰性限额及精确 API 批准。完整模式还要求全部应用/客户端/监听器限额及准确启动批准，并启用原生右侧 Browser，以及隔离 Cordis 分组内的独立原生 WebServer。管理和内容传输均具备显式有限限额。生成的 profile、package 依赖和 `GENERATION.json` 覆盖完整分组；原启动器及最终 profile SHA/FD4 封存仍为准。该生成器不修改运行中的 profile、不启动应用。
+
+将 `DSH_DEPLOY_TEST_INSTALL_ANCHOR` 指向本匹配已构建工作树的 `packages/cloud/pe-cloud-client/package.json`，从其依赖作用域解析真实配置模块，运行 `node --test deploy/local/second-environment-20261115/service-preview-profile.test.mjs`。有限用例覆盖组合、缺省/惰性模式、精确批准、分组发现，以及真实 Root/客户端/监听器配置解析器，不创建监听器、SDK、数据库登录或部署 profile。实际候选仍须经过原生成器 `--check-only true`、正常受保护生成/封存及 Browser/服务验收。
+
 两个生成器均接受 `--check-only true`，校验输入而不创建输出目录。SDK 校验使用精确 Linux x64 检索字节及真实 Root 部署解析器；临时新凭据值仅保留在内存。检索校验使用真实账号组合器并报告计划输出的摘要。实际输出写入仍要求 Linux Root。这些检查不验证运行中的 SDK、物理挂载或服务启动。
 
 生成器产物测试要求匹配的已构建工作树和调用者自有的公开夹具。将 `DSH_DEPLOY_TEST_INSTALL_ANCHOR` 设为该工作树的 `package.json`，将 `DSH_DEPLOY_TEST_PUBLIC_INPUTS` 设为明确的公开输入目录，再运行 `node --test deploy/local/second-environment-20261115/producer-inputs.test.mjs`。夹具读取器仅接受具名公开 SDK 源、参数模板和固定 Linux 检索二进制，不读取既有部署或用户凭据；缺少夹具时测试失败。平台检索路径解析在夹具内隔离，以便在 macOS 校验字节，不执行 Linux 程序。

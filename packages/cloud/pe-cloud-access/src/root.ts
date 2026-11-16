@@ -4,6 +4,7 @@ import { PeAuthService } from './auth-root.ts'
 import { AuthRootConfigSchema, type AuthRootConfig } from './root-config.ts'
 export { AuthAccessError } from './auth-error.ts'
 export { PeAuthService } from './auth-root.ts'
+export { parseAuthRootConfig } from './root-config.ts'
 
 /** Stable root plugin name. */
 export const name = 'pe-cloud-access/root'

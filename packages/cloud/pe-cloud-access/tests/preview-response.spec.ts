@@ -3,7 +3,8 @@ import assert from 'node:assert/strict'
 import { test } from 'vitest'
 import { ExposurePolicy } from '@deepseek-ai/dsh-pe-cloud-api/src/exposure.ts'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
-import type { ExistingPreviewAdmission, PreviewPolicy, SanitizedPreviewRequest } from '../src/preview-access.ts'
+import type { ExistingPreviewAdmission, PreviewPolicy } from '../src/preview-access.ts'
+import type { ApplicationHttpRequest } from '@deepseek-ai/dsh-pe-opensandbox/types'
 import { forwardInertPreview, type InertPreviewReply, type OriginalIngressSink, type OwnedPreviewResponse,
   PreviewResponseError, type ResponseExecutionPreviewPort, type ResponseLimits, type ResponsePreviewService } from '../src/preview-response.ts'
 
@@ -33,7 +34,7 @@ function fixture() {
     closeCalls: 0, sinkCloseCalls: 0, upstreamClosed: false, sinkClosed: false,
     sourceUnknown: false, ingressUnknown: false, serviceBorrow: false, accountUseHeld: true, current: true,
     closeFailure: undefined as Error | undefined, sinkCloseFailure: undefined as Error | undefined,
-    get closeReason() { return closeReason }, captured: undefined as SanitizedPreviewRequest | undefined,
+    get closeReason() { return closeReason }, captured: undefined as ApplicationHttpRequest | undefined,
     reply: undefined as InertPreviewReply | undefined,
     beforeHeaders: async () => {}, beforeClose: async () => {}, beforeCommit: async () => {},
     beforeSendSettles: async () => {}, beforeSinkClose: async () => {},

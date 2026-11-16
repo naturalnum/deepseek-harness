@@ -18,6 +18,8 @@ import type { ExactFetchExposure } from '@deepseek-ai/dsh-pe-cloud-api/types'
 import type { ConfigurationPeerOperation } from './peers.ts'
 
 import { assertAuthSchemaCurrent } from './auth-schema.ts'
+import { ServiceApplicationViews } from './application-views.ts'
+import type { WebServer } from '@deepseek-ai/dsh-host-webserver'
 
 function startupFailure(value: unknown) {
   let code: string | undefined
@@ -63,6 +65,7 @@ export class PeAuthService extends Service {
   private ingress: CloudIngress | undefined
   private ingressFinal: IngressObservation | undefined
   private ownerRouting: OwnerRouting | undefined
+  private applicationViews: ServiceApplicationViews | undefined
 
   private constructor(ctx: Context, private readonly config: AuthRootConfig, private readonly credentials: CredentialProvider) {
     super(ctx, 'peAuth')
@@ -133,6 +136,24 @@ export class PeAuthService extends Service {
   inspectRootFetch(): readonly ExactFetchExposure[] {
     if (this.phase !== 'initialized' || this.ingress === undefined) throw new AuthAccessError('cloud/account-unavailable', this.requestId)
     return this.ingress.inspectRootFetch()
+  }
+
+  /**
+   * Attach the original dedicated Native content listener to this Root's authentication/ingress owner.
+   * @param scope Original isolated listener Loader fiber in this Root.
+   * @param web Dedicated Native WebServer, distinct from management.
+   */
+  attachApplicationListener(scope: Context, web: WebServer): void {
+    if (this.phase !== 'initialized' || this.ingress === undefined) throw new AuthAccessError('cloud/account-unavailable', this.requestId)
+    this.ingress.attachApplicationListener(scope, web)
+  }
+
+  /**
+   * Inspect the original private registration for the Root recipe audit.
+   * @returns Detached registration objects, or undefined when authentication is unavailable; never readiness.
+   */
+  inspectApplicationListener(): Readonly<{ ctx: Context; web: WebServer }> | undefined {
+    return this.phase === 'initialized' ? this.ingress?.inspectApplicationListener() : undefined
   }
 
   /**
@@ -226,6 +247,7 @@ export class PeAuthService extends Service {
     })
     this.auth = await BetterAuthAccess.create(this.config, this.pool, secret, async (loginId) => {
       // Before optional ingress exists, no request route can have issued a Peer.
+      this.applicationViews?.invalidateLogin(loginId)
       await this.ingress?.invalidateLogin(loginId)
     })
     this.assertStarting()
@@ -254,12 +276,18 @@ export class PeAuthService extends Service {
         })
         this.auth.installAccountResources({ templates, states, prepare, disable })
       }
+      if (this.config.applications !== undefined) {
+        this.applicationViews = new ServiceApplicationViews(this.auth, this.config.applications.views)
+      }
       this.ingress = new CloudIngress(this.ctx, this.config, this.config.ingress, this.auth, {
         web, runtime, exposure, recipeVersion: exposure.policy.manifest.recipeVersion,
         assertAuthenticationCurrent: () => {
           if (this.phase !== 'initialized') throw new AuthAccessError('cloud/account-unavailable', this.requestId)
         },
         ...(this.ownerRouting === undefined ? {} : { ownerRouting: this.ownerRouting }),
+        ...this.applicationViews === undefined || this.config.applications === undefined ? {} : {
+          applications: { config: this.config.applications, views: this.applicationViews },
+        },
       })
       await this.ingress.install()
       this.assertStarting()
@@ -293,6 +321,7 @@ export class PeAuthService extends Service {
   private async finishClose(): Promise<void> {
     await Promise.allSettled([this.starting])
     await this.ingress?.closeActual()
+    await this.applicationViews?.closeActual()
     await this.ownerRouting?.closeActual()
     this.ingressFinal = this.ingress?.observe()
     await this.auth?.close()
@@ -302,6 +331,7 @@ export class PeAuthService extends Service {
     this.auth = undefined
     this.ingress = undefined
     this.ownerRouting = undefined
+    this.applicationViews = undefined
     this.phase = 'closed'
   }
 

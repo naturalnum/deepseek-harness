@@ -15,6 +15,10 @@
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
   "exports": {
+    "./applications": {
+      "types": "./lib/types/applications.d.ts",
+      "default": "./lib/applications.js"
+    },
     ".": {
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
@@ -50,6 +54,7 @@
     "@deepseek-ai/dsh-host-frontend-static": "workspace:*"
   },
   "peerDependencies": {
+    "@deepseek-ai/dsh-host-webserver": "workspace:*",
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-pe-cloud-runtime": "workspace:*",
     "@deepseek-ai/dsh-client-connection": "workspace:*",

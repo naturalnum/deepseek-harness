@@ -2,6 +2,7 @@
 import z from '@deepseek-ai/schemastery'
 import type { CloudClientConfig, CloudNativeManagement, CloudNativeSessionControl, CloudWebManifest } from './types.ts'
 import { parseServicePreviewPolicy } from './preview-policy.ts'
+import { parseServiceApplicationPolicy } from './application-policy.ts'
 
 const MAX_TIMER_MS = 2_147_483_647
 const NATIVE_CONTROLS = ['commands', 'models', 'permissions', 'goals', 'plan', 'feedback', 'export', 'attachments'] as const
@@ -31,6 +32,13 @@ export const CloudClientConfigSchema: z<CloudClientConfig> = z.object({
     maxFieldBytes: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
     maxUrlBytes: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
   })]),
+  serviceApplications: z.union([z.object({
+    managementOrigin: z.string().required(), contentOrigin: z.string().required(),
+    requestTimeoutMs: z.natural().min(1).max(MAX_TIMER_MS).required(),
+    maxRequestBytes: z.natural().min(1).max(MAX_TIMER_MS).required(),
+    maxResponseBytes: z.natural().min(1).max(MAX_TIMER_MS).required(),
+    maxFieldBytes: z.natural().min(1).max(MAX_TIMER_MS).required(),
+  })]),
 })
 
 const CLIENT_FIELDS = ['bootstrapPath', 'bootstrapTimeoutMs', 'maxBootstrapResponseBytes',
@@ -43,7 +51,7 @@ const CLIENT_FIELDS = ['bootstrapPath', 'bootstrapTimeoutMs', 'maxBootstrapRespo
  * @throws Error when a limit or relative route is invalid.
  */
 export function parseCloudClientConfig(input: unknown): CloudClientConfig {
-  const value = fields(input, CLIENT_FIELDS, ['maxDownloadBytes', 'servicePreview', 'modelSettingsRequestTimeoutMs', 'skillSettings', 'nativeSessionControls', 'nativeManagement', 'nativeSubagentSettingsNamespace'])
+  const value = fields(input, CLIENT_FIELDS, ['maxDownloadBytes', 'servicePreview', 'serviceApplications', 'modelSettingsRequestTimeoutMs', 'skillSettings', 'nativeSessionControls', 'nativeManagement', 'nativeSubagentSettingsNamespace'])
   let subagentNamespace: string | undefined
   if (Object.hasOwn(value, 'nativeSubagentSettingsNamespace')) {
     const candidate = value['nativeSubagentSettingsNamespace']
@@ -78,6 +86,7 @@ export function parseCloudClientConfig(input: unknown): CloudClientConfig {
     management = Object.freeze([...checked])
   }
   const preview = Object.hasOwn(value, 'servicePreview') ? parseServicePreviewPolicy(value.servicePreview) : undefined
+  const applications = Object.hasOwn(value, 'serviceApplications') ? parseServiceApplicationPolicy(value.serviceApplications) : undefined
   let skills: CloudClientConfig['skillSettings']
   if (Object.hasOwn(value, 'skillSettings')) {
     const configured = fields(value.skillSettings, ['requestTimeoutMs', 'maxFileBytes'])
@@ -109,6 +118,7 @@ export function parseCloudClientConfig(input: unknown): CloudClientConfig {
   delete config.maxDownloadBytes
   delete config.skillSettings
   delete config.servicePreview
+  delete config.serviceApplications
   delete config.nativeSessionControls
   delete config.nativeManagement
   delete config.nativeSubagentSettingsNamespace
@@ -122,6 +132,7 @@ export function parseCloudClientConfig(input: unknown): CloudClientConfig {
     ...modelDeadline === undefined ? {} : { modelSettingsRequestTimeoutMs: modelDeadline },
     ...limit === undefined ? {} : { maxDownloadBytes: limit },
     ...preview === undefined ? {} : { servicePreview: preview },
+    ...applications === undefined ? {} : { serviceApplications: applications },
     ...skills === undefined ? {} : { skillSettings: skills },
   }
 }

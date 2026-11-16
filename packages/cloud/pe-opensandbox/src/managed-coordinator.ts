@@ -475,7 +475,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
           }
         },
         serviceSpec: (scope, _profile, start) => ({
-          argv: ['/opt/session-env/venv/bin/python', '-B', posix.join(scope.project.path, start.script), ...start.args],
+          argv: ['/usr/local/bin/python3', '-B', posix.join(scope.project.path, start.script), ...start.args],
           cwd: scope.project.path, graceMs: service.graceMs, signal: scope.lifetime,
           stdio: { stdin: 'ignore', stdout: { maxBytes: service.maxOutputBytes }, stderr: { maxBytes: service.maxOutputBytes } },
         }),

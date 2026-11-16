@@ -1032,6 +1032,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   TypertSchemaRecord: 'typert.md',
   WorkspaceDirectoryControl: 'workspace.md',
   WorkspaceDirectoryCursor: 'workspace.md',
+  WebServer: 'web-server.md',
   WorkspaceDirectoryFrame: 'workspace.md',
 }
 
