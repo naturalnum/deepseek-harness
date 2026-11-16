@@ -50,6 +50,7 @@ type GuardStage = 'run.start' | 'request.url' | 'request.transport' | 'ingress.c
   | 'beforeHttp.peer' | 'beforeHttp.request' | 'beforeDispatch.peer' | 'beforeDispatch.request'
   | 'beforeDispatch.api' | 'beforeDispatch.peer-current' | 'native.invoke-or-transfer'
   | 'preview.authenticate' | 'preview.selection' | 'preview.borrow' | 'preview.forward' | 'preview.transfer'
+  | 'application.identity' | 'application.fetch' | 'application.borrow' | 'application.service'
   | 'owner.hop' | 'owner.resolve' | 'owner.borrow' | 'owner.forward' | 'owner.recheck'
 
 const FAILURE_CODES: readonly string[] = Object.freeze([
@@ -742,9 +743,15 @@ export class CloudIngress {
     const exposure = this.dependencies.exposure
     if (exposure === undefined) throw new AuthAccessError('cloud/account-unavailable', operation.id)
     await this.withAccount(operation, principal, expected, async (use) => {
+      operation.stage = 'peer.acquire'
       const peer = await this.peers.acquire(principal, use.binding, operation.deadlineAtMs, operation.observer.signal, operation.id)
+      operation.stage = 'auth.login-current'
       await this.recheckOperationLogin(operation, principal)
-      this.assertOperation(operation); this.pinGeneration(peer, operation.id)
+      operation.stage = 'ingress.current'
+      this.assertOperation(operation)
+      operation.stage = 'peer.generation'
+      this.pinGeneration(peer, operation.id)
+      operation.stage = 'peer.http'
       await this.peers.runCarrier(peer, operation.request, operation.id, {
         authenticate: async () => {
           await this.recheckOperationLogin(operation, principal)
@@ -753,23 +760,33 @@ export class CloudIngress {
         }, actual: operation.actual,
         destroy: () => { operation.observer.abort(); operation.request.destroy(); operation.response?.destroy() },
         consume: async () => {
+          operation.stage = 'beforeDispatch.api'
           const api = this.accountApi(use.context, use.binding), manifest = exposure.policy.manifest
           const accountCurrent = (): void => {
-            this.assertOperation(operation); this.assertPeer(peer, operation.id); use.assertCurrent()
+            operation.stage = 'ingress.current'; this.assertOperation(operation)
+            operation.stage = 'beforeHttp.peer'; this.assertPeer(peer, operation.id)
+            operation.stage = 'account.use-current'; use.assertCurrent()
+            operation.stage = 'account.binding'
             assertExpectedAccount(expected, principal.accountId, operation.id)
+            operation.stage = 'account.generation'
             assertExpectedGeneration(expected, this.generations.current(use.binding, operation.id), operation.id)
+            operation.stage = 'beforeDispatch.api'
             const currentApi = this.accountApi(use.context, use.binding)
+            operation.stage = 'application.identity'
             if ((Reflect.get(currentApi, symbols.original) ?? currentApi) !== (Reflect.get(api, symbols.original) ?? api)
               || exposure.policy.manifest !== manifest) throw new AuthAccessError('cloud/account-unavailable', operation.id)
+            operation.stage = 'application.fetch'
             const row = api.requireFetch(SERVICE_APPLICATION_LAUNCH_ROUTE.method, SERVICE_APPLICATION_LAUNCH_ROUTE.path)
             if (row.handlerId !== SERVICE_APPLICATION_LAUNCH_ROUTE.handlerId || row.guard !== 'account-session') {
               throw new AuthAccessError('cloud/forbidden', operation.id)
             }
           }
           accountCurrent()
+          operation.stage = 'application.borrow'
           await withAccountApplicationService(use.context, selected, operation.observer.signal, operation.deadlineAtMs, async (service) => {
             const current = (): void => {
-              accountCurrent(); service.assertCurrent()
+              accountCurrent()
+              operation.stage = 'application.service'; service.assertCurrent()
               if (service.port !== 8000 || view !== undefined && (service.scope.accountId !== view.service.accountId
                 || service.scope.epoch !== view.service.epoch || service.scope.allocationId !== view.service.allocationId
                 || service.scope.sessionId !== view.service.sessionId || service.scope.serviceId !== view.service.serviceId)) {
@@ -1261,8 +1278,14 @@ export class CloudIngress {
         ? errorData(error, 'requestId') : undefined
       const requestId = typeof originalId === 'string' && originalId.length === 36
         && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(originalId) ? originalId : operation.id
+      let ingress: IngressObservation | undefined
+      if (operation.application) {
+        try { ingress = this.observe() } catch (_diagnosticFailure) { /* Retain the original failure row. */ }
+      }
       const fields = {
         requestId, stage: operation.stage, code: failureCode(error),
+        ...operation.application ? { operationRequestId: operation.id } : {},
+        ...ingress === undefined ? {} : { ingress },
         failure: failureDiagnostic(error), ...(cause === undefined ? {} : { cause: failureDiagnostic(cause) }),
         causeCodes: [cause === undefined ? null : failureCode(cause), nested === undefined ? null : failureCode(nested)],
         sites: [...cloudFailureSites(error), ...cloudFailureSites(cause)].slice(0, 6),
