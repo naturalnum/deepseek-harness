@@ -123,7 +123,7 @@ Root 与 SDK bootstrap 共用[精确工作负载镜像列表](src/bootstrap/work
 
 私有[开发服务消费者](src/dev-service-consumer.ts) 要求显式完整的 `commands.services` 策略和原生工具 provider。严格解析配置后，Root 接入原 managed 拥有者的回调；省略策略时该消费者保持关闭。它复用该拥有者现有的工作记录和 subprocess provider，在8000端口运行项目相对路径的 Python HTTP 脚本。启动只报告进程已提交，HTTP 就绪单独判断；状态、有界日志和停止都指向同一保留操作。固定的安装与服务 payload 声明前台命令、已登记服务各一个运行范围，角色由 Root 签发，运行时限分别为150秒、120秒，绝对驻留时限300秒。这四个生命周期记录及已做组件检查的限制，不代表完整 Session 生命周期或真实服务隔离已通过。
 
-原服务记录只绑定一次分配，并独立于工具调用持有有界应用读取。可选的 `commands.services.application` 显式提供全局、账户和服务请求数量及全部 HTTP 传输限额，不授予网络权限。私有 [HTTP 适配器](src/application-http.ts) 只允许通过 Root 选定的服务器执行 GET，使用固定目标身份、有界缓冲区和实际本地 I/O 终结凭据。Root 在传输前预留全局、账户请求数量，并计入命令输出共用的原 resident 字节池。公开的 `withAccountApplicationService` helper 要求原始已安装账户 port 和 provider。固定控制跳显式退出访问续期，不接受调用方提供该控制头。服务停止、作用域释放和记录退休会取消读取，并等待其实际终结；清理未知时保留原记录和容量。缺少 Root 回调时，读取保持关闭。适配器和记录检查不代表已部署代理、浏览器授权或工作负载网络隔离通过验收。
+原服务记录只绑定一次分配，并独立于工具调用持有有界应用读取。可选的 `commands.services.application` 显式提供全局、账户和服务请求数量及全部 HTTP 传输限额，不授予网络权限。私有 [HTTP 适配器](src/application-http.ts) 只允许通过 Root 选定的服务器执行 GET，使用固定目标身份、有界缓冲区和实际本地 I/O 终结凭据。Root 在传输前预留全局、账户请求数量，并计入命令输出共用的原 resident 字节池。`maxBufferPoolBytes` 仍是必填的兼容声明；请求按当前进程 `Buffer.poolSize` 的两倍预留，小于实际池大小的旧声明不会单独拒绝请求。公开的 `withAccountApplicationService` helper 要求原始已安装账户 port 和 provider。固定控制跳显式退出访问续期，不接受调用方提供该控制头。服务停止、作用域释放和记录退休会取消读取，并等待其实际终结；清理未知时保留原记录和容量。缺少 Root 回调时，读取保持关闭。适配器和记录检查不代表已部署代理、浏览器授权或工作负载网络隔离通过验收。
 
 启用开发服务的执行账户条目要求 `inject: ['tools']`；未选择服务及关闭模式条目保留原依赖声明。`accountServiceAvailability(ctx)` 检查原始已安装消费者和应用工厂，不创建工作。工具定义、安装位置或实际消费位置的 Tools provider 被替换时，拒绝检查。
 

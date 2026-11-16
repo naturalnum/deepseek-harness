@@ -126,9 +126,10 @@ async function fixture() {
     emailVerified: true, createdAt: now, updatedAt: now }, session: { id: 'original-login', userId: 'original-account',
     token: 'synthetic-cookie-token', expiresAt: new Date(Date.now() + 60000), createdAt: now, updatedAt: now, ipAddress: null, userAgent: null } }
   const sessions = vi.spyOn(library.api, 'getSession').mockImplementation(async () => login)
+  const requestHeaders = ['Host', 'public.example.test', 'Origin', config.publicOrigin, 'Cookie', 'original-cookie=one', 'Connection', 'close']
   const call = (path: string, extra: string[] = [], client = false) => {
     const request = httpsRequest({ host: '127.0.0.1', port: web.port, servername: 'owner.test', ca: Buffer.from(m.pki.identity.ca),
-      rejectUnauthorized: true, agent: false, path, headers: ['Host', 'public.example.test', 'Origin', config.publicOrigin, 'Cookie', 'original-cookie=one', ...extra],
+      rejectUnauthorized: true, agent: false, path, headers: [...requestHeaders, ...extra],
       ...(client ? { cert: Buffer.from(m.pki.identity.cert), key: Buffer.from(m.pki.identity.key) } : {}) })
     const result = new Promise<{ status: number; body: string }>((resolve, reject) => {
       request.on('error', reject); request.on('response', (response) => {
@@ -138,7 +139,8 @@ async function fixture() {
     })
     request.end(); return result
   }
-  return { ...m, graph, runtime, web, access, auth, sessions, login, call, release, config, poolEnds }
+  return { ...m, graph, runtime, web, access, auth, sessions, login, call,
+    requestHeaderPairs: requestHeaders.length / 2, release, config, poolEnds }
 }
 
 it('uses real Loader client-CA ingress and rejects forged hop before auth or any account creation under an unsealed Root', async () => {
@@ -151,8 +153,12 @@ it('uses real Loader client-CA ingress and rejects forged hop before auth or any
   const marker = encodeOwnerHop(hop, 2048, brandString<Branded<'pe-request-id'>>('fixture-request'))
   expect((await f.call('/cloud/bootstrap', [OWNER_HOP_HEADER, marker], true)).status).toBe(403)
   expect((await f.call('/cloud/bootstrap', [], true)).status).toBe(403)
-  const excess = Array.from({ length: 65 }, (_value, index) => ['X-Pad', String(index)]).flat()
+  const sentinel = f.forwarding.limits.maxHeaderPairs + 1
+  const excess = Array.from({ length: sentinel - f.requestHeaderPairs }, (_value, index) => ['X-Pad', String(index)]).flat()
   expect((await f.call('/cloud/bootstrap', excess)).status).toBe(429)
+  // Larger input may be refused by Node's parser before the ingress sees its sentinel.
+  const larger = Array.from({ length: sentinel }, (_value, index) => ['X-Pad', String(index)]).flat()
+  expect([429, 431]).toContain((await f.call('/cloud/bootstrap', larger)).status)
   expect((await f.call('/cloud/bootstrap')).status).toBe(503)
   expect(f.sessions).not.toHaveBeenCalled(); expect(borrowed).not.toHaveBeenCalled()
   expect(claim).not.toHaveBeenCalled(); expect(mount).not.toHaveBeenCalled()

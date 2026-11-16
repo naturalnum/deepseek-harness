@@ -12,6 +12,7 @@ export interface HttpTransportLimits {
   readonly maxRequestHeaderBytes: number
   readonly maxPathBytes: number
   readonly timeoutMs: number
+  /** Required legacy declaration; resident charges use the current process's Buffer.poolSize. */
   readonly maxBufferPoolBytes: number
 }
 /** Captured only by Root from its original protected deployment selection. */
@@ -96,7 +97,6 @@ export function createSelectedServerHttp(selection: SelectedServerHttpInput, tar
   need(key.length > 0 && key.length <= 1024 && /^[\x21-\x7e]+$/.test(key))
   for (const bound of Object.values(limits)) positive(bound)
   need(limits.readBufferBytes <= limits.prefetchBytes && limits.readBufferBytes <= limits.maxWireBytes)
-  need(Buffer.poolSize <= limits.maxBufferPoolBytes, 'cloud/capacity')
   const sandboxId = target.sandboxId, port = target.port, residentDeadlineAtMs = target.deadlineAtMs
   need(/^[A-Za-z0-9_-]{1,256}$/.test(sandboxId) && Number.isInteger(port) && port >= 1024 && port <= 65535)
   need(Number.isFinite(residentDeadlineAtMs))
@@ -136,7 +136,7 @@ export function createSelectedServerHttp(selection: SelectedServerHttpInput, tar
         retained = owner.retainRequest({ controller, settled: terminal.promise, charge: {
           retainedPayloadBytes: responseLimits.maxBodyBytes + 1 + responseLimits.maxChunkBytes
             + 2 * limits.prefetchBytes + 4 * limits.readBufferBytes
-            + 8 * (limits.maxRequestHeaderBytes + responseLimits.maxHeaderBytes) + 2 * limits.maxBufferPoolBytes,
+            + 8 * (limits.maxRequestHeaderBytes + responseLimits.maxHeaderBytes) + 2 * Buffer.poolSize,
           headerEntries: responseLimits.maxHeaderCount + request.headers.length + 4,
           maxWireBytes: limits.maxWireBytes, timeoutMs,
         } })
@@ -159,7 +159,6 @@ export function createSelectedServerHttp(selection: SelectedServerHttpInput, tar
         controller.signal.throwIfAborted(); assertSelected(); assertTarget(); retained.assertCurrent()
         if (deadlineAt !== undefined && performance.now() >= deadlineAt) fail(new PreviewHttpError('cloud/account-unavailable'))
         controller.signal.throwIfAborted()
-        need(Buffer.poolSize <= limits.maxBufferPoolBytes, 'cloud/capacity')
       }
       let timer: ReturnType<typeof setTimeout> | undefined
       const finishTransport = (): Promise<void> => {

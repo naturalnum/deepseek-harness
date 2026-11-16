@@ -467,6 +467,23 @@ for (const kind of ['http', 'upgrade'] as const) for (const count of [2100, 3100
   })
 }
 
+it('refuses exactly one incoming header pair beyond the forwarding limit before upstream contact', async () => {
+  const maxHeaderPairs = 3000, sentinel = maxHeaderPairs + 1
+  let received: string[] | undefined, captured = 0
+  const f = await fixture((request, response) => {
+    received = request.rawHeaders; response.end()
+  }, { limits: { maxHeaderPairs, maxHeaderBytes: 131072 }, before(input) {
+    captured = input.request.rawHeaders.length / 2
+    return input
+  } })
+  const headers = ['Host: public.example.test', 'X-Remove-Me: hop', 'Connection: close, x-remove-me']
+  const pads = Array.from({ length: sentinel - headers.length }, (_, index) => `X-Pad-${index}: a`)
+  const bytes = await rawExchange(f, 'GET /opaque HTTP/1.1\r\n' + [...headers, ...pads].join('\r\n') + '\r\n\r\n')
+  expect(captured).toBe(sentinel)
+  expect(bytes.toString()).toContain('503 Service Unavailable')
+  expect(received).toBeUndefined(); expect(f.transfers).toHaveLength(0)
+})
+
 for (const count of [2100, 3100]) {
   it(`uses the incoming Server capture contract to preserve or refuse ${count} request headers`, async () => {
     let received: string[] | undefined
@@ -477,7 +494,8 @@ for (const count of [2100, 3100]) {
     const bytes = await rawExchange(f, 'GET /opaque HTTP/1.1\r\nHost: public.example.test\r\nX-Remove-Me: hop\r\n'
       + pads + 'Connection: close, x-remove-me\r\n\r\n')
     if (count > 3000) {
-      expect(bytes.toString()).toContain('503 Service Unavailable'); expect(received).toBeUndefined(); expect(f.transfers).toHaveLength(0)
+      expect(bytes.toString()).toMatch(/^HTTP\/1\.1 (?:431 Request Header Fields Too Large|503 Service Unavailable)\r\n/u)
+      expect(received).toBeUndefined(); expect(f.transfers).toHaveLength(0)
     } else {
       expect(received?.filter(value => value.startsWith('X-Pad-'))).toHaveLength(count); expect(received).not.toContain('X-Remove-Me')
       expect(await f.transfers[0]!.settled).toMatchObject({ status: 'completed' })
