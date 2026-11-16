@@ -97,6 +97,14 @@ test('Python canonical Unicode/DEL/codepoint ordering and frozen world hashes ma
     assert.throws(() => makePrepared(RUNTIME, 'one', { argv: ['/bin/x', value], cwd: PROJECT, stdin: { mode: 'ignore' } }), LocalRefusal)
   }
 })
+test('command wire paths refuse directory suffixes and traversal before contacting the Linux agent', () => {
+  for (const cwd of [PROJECT + '/', PROJECT + '//', PROJECT + '/x/../y', PROJECT + '//x']) {
+    assert.throws(() => makePrepared(RUNTIME, 'invalid-path', { argv: ['/bin/true'], cwd, stdin: { mode: 'ignore' } }), LocalRefusal)
+  }
+  assert.equal(makePrepared(RUNTIME, 'skill', { argv: ['/bin/true'], cwd: PROJECT + '/.skills/version',
+    stdin: { mode: 'ignore' } }).spec.cwd, PROJECT + '/.skills/version')
+})
+
 test('bounded strict reply JSON rejects duplicates, unsafe numbers, surrogates and non-ASCII payload', () => {
   for (const value of ['{"a":1,"a":2}', '{"n":9007199254740993}', '{"n":1.0}', '{"n":NaN}', '"\\ud800"', '{"x":1} trailing']) {
     assert.throws(() => parseReply(Buffer.from(value, 'ascii')))

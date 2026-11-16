@@ -63,6 +63,16 @@ function fixture(holdAllocation = false) {
   return { ctx, port, shell, lifetime, scopeLifetime, invocation, operations, allocations, channel }
 }
 
+it('resolves a native skill directory suffix before preparing the original Cloud command', async () => {
+  const f = fixture(), spec = f.shell.resolve({ command: 'python3 scripts/probe.py', workdir: '/project/.skills/version/' })
+  const handle = await f.shell.execute(spec)
+  await expect(handle.result()).resolves.toMatchObject({ exitCode: 0 })
+  expect(f.channel.prepare).toHaveBeenCalledWith({ argv: ['/bin/bash', '--noprofile', '--norc', '-c', 'python3 scripts/probe.py'],
+    cwd: '/project/.skills/version', stdin: { mode: 'ignore' } })
+  expect(f.shell.resolve({ command: 'refused', workdir: '/project/../foreign/' }).workdir).toBe('/project/../foreign')
+  expect(f.shell.resolve({ command: 'refused', workdir: '/project//nested/' }).workdir).toBe('/project//nested')
+})
+
 it('runs native foreground Shell through the original prepared command controller and fixed literal Bash argv', async () => {
   const f = fixture(), spec = f.shell.resolve({ command: 'printf 原生' }), handle = await f.shell.execute(spec)
   await expect(handle.result()).resolves.toMatchObject({ exitCode: 0, timedOut: false, aborted: false,

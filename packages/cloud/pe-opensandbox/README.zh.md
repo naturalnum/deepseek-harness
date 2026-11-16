@@ -89,6 +89,8 @@ runtime 先在独立账户图中安装不可变绑定。原生 prepare 期间，
 
 可信 bootstrap 装配可调用 `assertClosedAccountExecution(ctx)`，确认原始有效 port 仍持有原始且活跃的原生 Shell 和子进程提供方。缺失、未安装、影子替换、更换或已停止的提供方均被拒绝；此读取不会执行命令、停止 port 或签发 drain 证据。 `accountTerminalLimits(ctx)` 复核同一账户持有的提供方，返回受管 Shell 执行器的实际超时、最大超时和单流输出上限；关闭执行时不返回限制值。
 
+Cloud Shell 的解析步骤在原命令检查前，仅去掉原生工作目录引用末尾的一个斜杠。传输路径保留 Linux 执行端的规范路径规则：根目录之外的末尾斜杠、上级跳转和重复分隔符均在远端准备前拒绝。
+
 -----
 
 显式 `managed.commands.remoteServers: true` 仅向固定原生消费者列表加入 `remote_exec` 和 `remote_server_info`，并要求执行 Session 文件策略。SSH 通过原有受管 Subprocess 范围运行，沿用原有载体上限。固定事实探针以压缩数据和凭据共用原有私有批量输入，不再增大 guardian 的 argv frame。helper 仅接受 command 或 probe 的精确字段集合，并在 SSH 前消费这些字段；私有输入与完整 guardian frame 各自原有的 4096 字节上限保持不变。只读工作负载镜像必须包含所配置的 Python 和 OpenSSH 可执行文件。密钥与 known_hosts 保存在该范围私有 PID 命名空间中的密封内存描述符中，不写入项目、命令参数或模型日志。本地超时或取消不代表远程后代进程终止。确认是原始用户取消原因时报告“本地等待已取消，远端程序可能仍在运行。”；原 SSH 截止时间到达时报告对应的超时提示。两者保留原始 cause，其他执行或清理失败原样传递。重试前请先核实远端状态；本地进程范围、IO 和凭据清理仍由 Root 负责。

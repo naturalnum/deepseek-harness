@@ -108,6 +108,7 @@ export const digest = (value: unknown): string => createHash('sha256').update(as
 export function absolute(value: unknown): asserts value is string {
   text(value)
   need(value.startsWith('/') && !value.startsWith('//') && posix.normalize(value) === value
+    && (value === '/' || !value.endsWith('/'))
     && Buffer.byteLength(value, 'utf8') <= 512 && !/[\x00-\x1f\x7f]/.test(value), 'invalid_path')
 }
 /**
