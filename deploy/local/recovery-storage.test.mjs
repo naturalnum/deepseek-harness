@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { captureRecoveryStorage, inspectRecoveryProductMount, restoreRecoveryStorage } from './recovery-storage.mjs'
+import { captureRecoveryStorage, inspectRecoveryProductMount, observeRecoveryLoops, restoreRecoveryStorage } from './recovery-storage.mjs'
 
 function fixture({ support = false } = {}) {
   const resourceId = '00000000-0000-4000-8000-000000000014', root = '/srv/dsh-features-' + resourceId
@@ -270,4 +270,62 @@ test('cancellation during product pin validation stops before creating a missing
     assert.deepEqual(error.completedDomains, []); return true
   })
   assert.deepEqual(f.calls, []); assert.equal(f.state.mounted, false)
+})
+
+function missingLoopFixture({ duplicate = false, changed = false, permission = false, wrongNode = false } = {}) {
+  const directory = '/run/pe-cloud-recovery-loop-fixture', alias = directory + '/loop85', calls = [], removed = []
+  const file = { dev: 37n, ino: 2n, uid: 0n, gid: 0n, mode: 0o40700n, isDirectory: () => true, isSymbolicLink: () => false }
+  const node = { dev: 37n, ino: 3n, rdev: wrongNode ? 7n : 7n * 256n + 85n, uid: 0n, gid: 0n, mode: 0o60400n,
+    nlink: 1n, ctimeNs: 1n, isBlockDevice: () => true, isSymbolicLink: () => false }
+  let reads = 0
+  const io = {
+    readFileSync: path => { assert.equal(path, '/sys/class/block/loop85/dev'); return '7:85\n' },
+    lstatSync: path => {
+      if (path === '/dev/loop85') throw Object.assign(new Error('unavailable'), { code: permission ? 'EACCES' : 'ENOENT' })
+      if (path === '/run') return { ...file, mode: 0o40755n }
+      if (path === directory) return file
+      assert.equal(path, alias); return node
+    },
+    mkdtempSync: prefix => { assert.equal(prefix, '/run/pe-cloud-recovery-loop-'); return directory },
+    unlinkSync: path => removed.push(['unlink', path]), rmdirSync: path => removed.push(['rmdir', path]),
+  }
+  const run = (command, argv) => {
+    calls.push([command, argv])
+    if (command === 'mknod') { assert.deepEqual(argv, ['-m', '0400', alias, 'b', '7', '85']); return '' }
+    assert.equal(command, 'losetup')
+    if (argv.includes('--json')) return JSON.stringify({ loopdevices: [{ name: '/dev/loop54', 'back-file': '/a.ext4' }, { name: '/dev/loop85', 'back-file': '/b.ext4' }] })
+    if (argv.at(-1) === alias) {
+      reads++
+      return alias + ' ' + (changed && reads === 2 ? '9007199254740994' : '9007199254740993') + ' 7:54 0 0 0'
+    }
+    return '/dev/loop54 ' + (duplicate ? '9007199254740993' : '14') + ' 7:54 0 0 0\n/dev/loop85\\x20(lost)   0 0 0'
+  }
+  return { io, run, calls, removed, directory, alias }
+}
+
+test('a missing foreign loop node is queried through private read-only aliases without losing 64-bit identity', () => {
+  const f = missingLoopFixture(), rows = observeRecoveryLoops(f.run, f.io)
+  assert.equal(rows[1].name, '/dev/loop85')
+  assert.equal(rows[1]['back-ino'], '9007199254740993')
+  assert.deepEqual(f.removed, [['unlink', f.alias], ['rmdir', f.directory]])
+  assert.equal(f.calls.filter(([command]) => command === 'mknod').length, 1)
+  assert.equal(f.calls.filter(([command, argv]) => command === 'losetup' && argv.at(-1) === f.alias).length, 2)
+  assert.ok(f.calls.every(([command, argv]) => command === 'mknod' || argv[0] === '--list'))
+})
+
+test('lost-node observations refuse permission errors, wrong devices and changing kernel identities', () => {
+  for (const change of [{ permission: true }, { wrongNode: true }, { changed: true }]) {
+    const f = missingLoopFixture(change)
+    assert.throws(() => observeRecoveryLoops(f.run, f.io))
+    if (change.permission) assert.equal(f.calls.filter(([command]) => command === 'mknod').length, 0)
+    if (change.changed) assert.deepEqual(f.removed, [['unlink', f.alias], ['rmdir', f.directory]])
+  }
+})
+
+test('a duplicate backing observed through a missing foreign node still refuses the original domain', () => {
+  const f = fixture(), snapshot = captureRecoveryStorage(f.owner, f.io), original = f.io.loops
+  const missing = missingLoopFixture({ duplicate: true }), rows = observeRecoveryLoops(missing.run, missing.io)
+  f.io.loops = () => [...original(), { ...rows[1], 'back-ino': f.rows[0].backingInode, 'back-maj:min': '0:42' }]
+  assert.throws(() => restoreRecoveryStorage(snapshot, { io: f.io }), error => error.completedDomains.length === 0)
+  assert.deepEqual(f.calls, [])
 })

@@ -49,6 +49,68 @@ function mountRows(text) {
   })
 }
 
+
+/**
+ * Read every bound loop's integer kernel identity, including devices absent from this carrier's /dev.
+ * @param {Function} run Existing fixed-argv command runner; only losetup list and private mknod are used.
+ * @param {object} io Filesystem implementation. Missing nodes are queried through temporary root-only aliases.
+ * @returns {object[]} Kernel backing identities; incomplete observations or changed aliases refuse.
+ */
+export function observeRecoveryLoops(run, io = fs) {
+  const columns = 'NAME,BACK-INO,BACK-MAJ:MIN,OFFSET,SIZELIMIT,RO'
+  const list = ['--list', '--raw', '--noheadings', '--output', columns]
+  const text = run('losetup', list)
+  if (!text) return []
+  const aliases = JSON.parse(run('losetup', ['--list', '--json', '--output', 'NAME,BACK-FILE'])).loopdevices
+  if (!Array.isArray(aliases)) fail()
+  const identity = (fields, name) => {
+    if (fields.length !== 6 || fields[0] !== name || ![fields[1], fields[3], fields[4]].every(numeric)
+      || !/^\d+:\d+$/.test(fields[2]) || !/^[01]$/.test(fields[5])) fail()
+    return { name, 'back-ino': fields[1], 'back-maj:min': fields[2], offset: fields[3], sizelimit: fields[4], ro: fields[5] }
+  }
+  const rows = text.split('\n').map(line => {
+    const fields = line.trim().split(/\s+/), lost = /^\/dev\/loop(0|[1-9]\d*)\\x20\(lost\)$/.exec(fields[0])
+    let name = fields[0], observed
+    if (lost) {
+      const minor = Number(lost[1]); name = '/dev/loop' + minor
+      if (minor > 4095 || fields.length !== 4 || !fields.slice(1, 3).every(numeric) || !/^[01]$/.test(fields[3])
+        || io.readFileSync('/sys/class/block/loop' + minor + '/dev', 'utf8').trim() !== '7:' + minor) fail()
+      try { io.lstatSync(name); fail() } catch (error) { if (error.code !== 'ENOENT') throw error }
+      const parent = io.lstatSync('/run', { bigint: true })
+      if (!parent.isDirectory() || parent.isSymbolicLink() || parent.uid !== 0n || (parent.mode & 0o022n) !== 0n) fail()
+      const directory = io.mkdtempSync('/run/pe-cloud-recovery-loop-'), alias = directory + '/loop' + minor
+      const protectedDirectory = io.lstatSync(directory, { bigint: true })
+      if (!protectedDirectory.isDirectory() || protectedDirectory.isSymbolicLink() || protectedDirectory.uid !== 0n
+        || (protectedDirectory.mode & 0o7777n) !== 0o700n) fail()
+      run('mknod', ['-m', '0400', alias, 'b', '7', String(minor)])
+      const before = io.lstatSync(alias, { bigint: true })
+      const expectedDevice = (7n << 8n) | (BigInt(minor) & 255n) | ((BigInt(minor) & ~255n) << 12n)
+      if (!before.isBlockDevice() || before.isSymbolicLink() || before.rdev !== expectedDevice || before.uid !== 0n
+        || before.gid !== 0n || before.nlink !== 1n || (before.mode & 0o7777n) !== 0o400n) fail()
+      try {
+        const first = identity(run('losetup', [...list, alias]).split(/\s+/), alias)
+        const second = identity(run('losetup', [...list, alias]).split(/\s+/), alias)
+        if (JSON.stringify(first) !== JSON.stringify(second) || first.offset !== fields[1]
+          || first.sizelimit !== fields[2] || first.ro !== fields[3]) fail()
+        observed = { ...first, name }
+      } finally {
+        const after = io.lstatSync(alias, { bigint: true }), currentDirectory = io.lstatSync(directory, { bigint: true })
+        if (['dev', 'ino', 'rdev', 'uid', 'gid', 'mode', 'nlink', 'ctimeNs'].some(key => before[key] !== after[key])
+          || ['dev', 'ino', 'uid', 'gid', 'mode'].some(key => protectedDirectory[key] !== currentDirectory[key])) fail()
+        io.unlinkSync(alias); io.rmdirSync(directory)
+      }
+    } else {
+      if (!/^\/dev\/loop(?:0|[1-9]\d*)$/.test(name) || Number(name.slice(9)) > 4095) fail()
+      observed = identity(fields, name)
+    }
+    const candidates = aliases.filter(row => row.name === fields[0] || row.name === name)
+    if (candidates.length > 1) fail()
+    return { ...observed, 'back-file': candidates[0]?.['back-file'] }
+  })
+  if (new Set(rows.map(row => row.name)).size !== rows.length) fail()
+  return rows
+}
+
 function linuxIo() {
   const run = (command, argv) => execFileSync(command, argv, { encoding: 'utf8', maxBuffer: 1048576, stdio: ['ignore', 'pipe', 'pipe'] }).trim()
   const stat = path => fs.lstatSync(path, { bigint: true })
@@ -74,21 +136,7 @@ function linuxIo() {
   return {
     platform: () => process.platform === 'linux' && process.getuid() === 0,
     mounts: pid => mountRows(fs.readFileSync('/proc/' + (pid === undefined ? 'self' : pid) + '/mountinfo', 'utf8')),
-    loops: () => {
-      const text = run('losetup', ['--list', '--raw', '--noheadings', '--output', 'NAME,BACK-INO,BACK-MAJ:MIN,OFFSET,SIZELIMIT,RO'])
-      if (!text) return []
-      const aliases = JSON.parse(run('losetup', ['--list', '--json', '--output', 'NAME,BACK-FILE'])).loopdevices
-      if (!Array.isArray(aliases)) fail()
-      return text.split('\n').map(line => {
-        const fields = line.trim().split(/\s+/)
-        if (fields.length !== 6 || !/^\/dev\/loop(?:0|[1-9]\d*)$/.test(fields[0])
-          || ![fields[1], fields[3], fields[4]].every(numeric) || !/^\d+:\d+$/.test(fields[2]) || !/^[01]$/.test(fields[5])) fail()
-        const candidates = aliases.filter(row => row.name === fields[0])
-        if (candidates.length > 1) fail()
-        return { name: fields[0], 'back-file': candidates[0]?.['back-file'], 'back-ino': fields[1],
-          'back-maj:min': fields[2], offset: fields[3], sizelimit: fields[4], ro: fields[5] }
-      })
-    },
+    loops: () => observeRecoveryLoops(run),
     backing: path => {
       protectedParent(path)
       const info = stat(path)

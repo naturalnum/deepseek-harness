@@ -14,7 +14,7 @@
 
 产品类型由实际挂载确定。原 ext4 全根 loop 保留原 UUID、backing、原号和块设备只读要求。原 V3 的产品目录 self-bind 须有唯一独立只读挂载、与父挂载对应的实际 source/root/device/filesystem、受保护目录的 dev/inode/UID/GID/mode，且基础与应用 namespace 的产品挂载一致、没有额外子挂载。只读 bind 不报告块设备只读，普通目录或不明来源仍拒绝。
 
-loop 的 backing 身份使用内核给出的设备号和 inode，与原受保护镜像文件的实际身份核对；原设备号、UUID、只读位及零 offset/sizelimit 同时保留。原 namespace 消失后，`losetup BACK-FILE` 的显示路径可能改变，显示路径不代替 backing 身份。整数列从原始文本读取，避免 JSON 数字精度丢失。
+loop 的 backing 身份使用内核给出的设备号和 inode，与原受保护镜像文件的实际身份核对；原设备号、UUID、只读位及零 offset/sizelimit 同时保留。原 namespace 消失后，`losetup BACK-FILE` 的显示路径可能改变，显示路径不代替 backing 身份。整数列从原始文本读取，避免 JSON 数字精度丢失。 carrier 缺少其他已绑定 loop 的设备节点时，只在自己的 `/run` 新建 0700 目录与 0400 临时设备别名，用原 `losetup --list` 两次只读查询内核身份；核 sysfs 设备号及别名身份后只删除自己创建的别名。原 `/dev`、其他实例挂载和 backing 不改写；无法确认的 loop 仍拒绝，跨号重复 backing 检查不跳过。
 
 再次快照可显式给出 `supportSnapshotDirectory`，引用同一 resource 的原受保护快照。当前原存储检查通过后，沿其已验证产品盘、arena 父盘的规范镜像路径重捕实际身份。未给引用时，`BACK-FILE` 仅作初次定位候选；显示路径不可达或物理身份不符仍拒绝，不扫描或猜测其他路径。
 
