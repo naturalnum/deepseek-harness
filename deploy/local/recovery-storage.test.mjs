@@ -25,7 +25,9 @@ function fixture({ support = false } = {}) {
     mounts: () => allRows.filter(row => mounts.has(row.mountPath)).map(row => ({ path: row.mountPath, root: '/', filesystem: 'ext4', source: row.loop,
       options: [row.readOnly ? 'ro' : 'rw', 'nodev', 'nosuid', ...(row.role === 'products' || row.role.includes('environments') ? [] : ['noexec'])] })),
     loops: () => [...loops].map(name => { const row = allRows.find(row => row.loop === name)
-      return { name, 'back-file': row.image, ro: row.readOnly === true } }),
+      return { name, 'back-file': row.image, 'back-ino': row.backingInode,
+        'back-maj:min': row.backingDevice === '1000' ? '3:232' : '0:' + row.backingDevice,
+        offset: '0', sizelimit: '0', ro: row.readOnly === true } }),
     backing: path => {
       const row = allRows.find(row => row.image === path)
       if (rows.includes(row) && row.role !== 'arena' && !mounts.has(rows[0].mountPath)
@@ -69,9 +71,27 @@ test('a private product overlay or occupied original support loop refuses before
   assert.throws(() => captureRecoveryStorage(f.owner, f.io, scope))
   f.io.mounts = originalMounts
   const snapshot = captureRecoveryStorage(f.owner, f.io, scope), originalLoops = f.io.loops
-  f.io.loops = () => originalLoops().map(row => row.name === '/dev/loop80' ? { ...row, 'back-file': '/foreign.ext4' } : row)
+  f.io.loops = () => originalLoops().map(row => row.name === '/dev/loop80' ? { ...row, 'back-ino': '99999' } : row)
   assert.throws(() => restoreRecoveryStorage(snapshot, { io: f.io }), error => error.completedDomains.length === 0)
   assert.deepEqual(f.calls, [])
+})
+
+test('kernel backing identity survives a changed displayed path after the original namespace is gone', () => {
+  const f = fixture({ support: true }), scope = { installAnchor: '/opt/dsh-installed-products/assets', applicationPid: 123 }
+  const snapshot = captureRecoveryStorage(f.owner, f.io, scope), original = f.io.loops
+  f.io.loops = () => original().map(row => ({ ...row, 'back-file': '/kernel-relative/alias.ext4' }))
+  assert.equal(restoreRecoveryStorage(snapshot, { io: f.io, check: true }).ready, true)
+  assert.deepEqual(f.calls, [])
+})
+
+test('changed kernel backing identity, offset, size or readonly bit refuses before a mount', () => {
+  for (const change of [{ 'back-ino': '9007199254740993' }, { 'back-maj:min': '7:43' }, { offset: '4096' }, { sizelimit: '4096' }, { ro: false }]) {
+    const f = fixture({ support: true }), scope = { installAnchor: '/opt/dsh-installed-products/assets', applicationPid: 123 }
+    const snapshot = captureRecoveryStorage(f.owner, f.io, scope), original = f.io.loops
+    f.io.loops = () => original().map(row => row.name === '/dev/loop80' ? { ...row, ...change } : row)
+    assert.throws(() => restoreRecoveryStorage(snapshot, { io: f.io }), error => error.completedDomains.length === 0 && !error.mutationAttempted)
+    assert.deepEqual(f.calls, [])
+  }
 })
 
 test('actual domain observations produce only owned metadata and an idempotent check', () => {
@@ -105,7 +125,7 @@ test('read-only check stops at the missing arena and never reads hidden child ba
 })
 
 test('an occupied original loop or duplicate backing binding stops without moving any data', () => {
-  for (const conflict of [rows => rows[0]['back-file'] = '/foreign.ext4', rows => rows.push({ ...rows[0], name: '/dev/loop999' })]) {
+  for (const conflict of [rows => rows[0]['back-ino'] = '99999', rows => rows.push({ ...rows[0], name: '/dev/loop999' })]) {
     const f = fixture(), snapshot = captureRecoveryStorage(f.owner, f.io), original = f.io.loops
     f.io.loops = () => { const rows = original(); conflict(rows); return rows }
     assert.throws(() => restoreRecoveryStorage(snapshot, { io: f.io }), error => error.completedDomains.length === 0)

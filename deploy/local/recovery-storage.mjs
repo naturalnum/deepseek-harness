@@ -75,9 +75,14 @@ function linuxIo() {
     platform: () => process.platform === 'linux' && process.getuid() === 0,
     mounts: pid => mountRows(fs.readFileSync('/proc/' + (pid === undefined ? 'self' : pid) + '/mountinfo', 'utf8')),
     loops: () => {
-      const rows = JSON.parse(run('losetup', ['--list', '--json', '--output', 'NAME,BACK-FILE,RO'])).loopdevices
-      if (!Array.isArray(rows)) fail()
-      return rows
+      const text = run('losetup', ['--list', '--raw', '--noheadings', '--output', 'NAME,BACK-INO,BACK-MAJ:MIN,OFFSET,SIZELIMIT,RO'])
+      if (!text) return []
+      return text.split('\n').map(line => {
+        const fields = line.trim().split(/\s+/)
+        if (fields.length !== 6 || !/^\/dev\/loop(?:0|[1-9]\d*)$/.test(fields[0])
+          || ![fields[1], fields[3], fields[4]].every(numeric) || !/^\d+:\d+$/.test(fields[2]) || !/^[01]$/.test(fields[5])) fail()
+        return { name: fields[0], 'back-ino': fields[1], 'back-maj:min': fields[2], offset: fields[3], sizelimit: fields[4], ro: fields[5] }
+      })
     },
     backing: path => {
       protectedParent(path)
@@ -164,14 +169,20 @@ function mounted(row, io, retained) {
 function loopReady(row, io) {
   const all = io.loops(), matches = all.filter(loop => loop.name === row.loop)
   if (matches.length > 1) fail()
+  const device = BigInt(row.backingDevice)
+  const major = ((device >> 8n) & 0xfffn) | ((device >> 32n) & ~0xfffn)
+  const minor = (device & 0xffn) | ((device >> 12n) & ~0xffn)
+  const sameBacking = loop => loop['back-ino'] === row.backingInode && loop['back-maj:min'] === major + ':' + minor
   for (const loop of all) {
-    if (typeof loop['back-file'] !== 'string') fail()
-    if (loop.name !== row.loop && loop['back-file'] === row.image) fail()
+    if (!numeric(loop['back-ino']) || !/^\d+:\d+$/.test(loop['back-maj:min'])
+      || !numeric(loop.offset) || !numeric(loop.sizelimit)) fail()
+    if (loop.name !== row.loop && sameBacking(loop)) fail()
   }
   if (!matches.length) return false
   const loop = matches[0]
   const readOnly = [true, 1, '1'].includes(loop.ro) ? true : [false, 0, '0'].includes(loop.ro) ? false : null
-  if (loop['back-file'] !== row.image || readOnly !== (row.readOnly === true) || io.uuid(row.loop) !== row.fsUuid) fail()
+  if (!sameBacking(loop) || loop.offset !== '0' || loop.sizelimit !== '0'
+    || readOnly !== (row.readOnly === true) || io.uuid(row.loop) !== row.fsUuid) fail()
   return true
 }
 

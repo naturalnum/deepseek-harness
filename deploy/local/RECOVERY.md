@@ -12,6 +12,8 @@
 
 产品类型由实际挂载确定。原 ext4 全根 loop 保留原 UUID、backing、原号和块设备只读要求。原 V3 的产品目录 self-bind 须有唯一独立只读挂载、与父挂载对应的实际 source/root/device/filesystem、受保护目录的 dev/inode/UID/GID/mode，且基础与应用 namespace 的产品挂载一致、没有额外子挂载。只读 bind 不报告块设备只读，普通目录或不明来源仍拒绝。
 
+loop 的 backing 身份使用内核给出的设备号和 inode，与原受保护镜像文件的实际身份核对；原设备号、UUID、只读位及零 offset/sizelimit 同时保留。原 namespace 消失后，`losetup BACK-FILE` 的显示路径可能改变，显示路径不代替 backing 身份。整数列从原始文本读取，避免 JSON 数字精度丢失。
+
 V3 self-bind 还要求显式原 `productManifest:{path,sha256}`：Root 从受保护原件核正常清单，调用原 `collectManagedFiles` 比较全部已安装产品文件，并保存实际 anchor、SOURCE-PACKAGE、PRODUCT-ASSEMBLY 及原产品文件校验模块的 pins。cold 后先核同一目录身份和产品 pins，再仅对缺失 self-bind 做原 bind/remount readonly 并复核全部事实；已有挂载冲突、字节漂移或未知步骤均停止。inspector 校验器 SHA 必须同时等于实际捕获值和本次宿主控制源码，并再次核真实来源、两侧挂载和产品 pins。外部 `allow/verified` 布尔量不能代替这些观察。SDK 后端、PG 和 typed/physical 收尾继续由原 owner 及正常机制负责。
 
 ## Linux 私有阶段
