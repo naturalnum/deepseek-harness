@@ -1,7 +1,7 @@
 /** One request to the original real AccountUse/Workspace/Session/tools consumer after actual app ready. */
 import fs from 'node:fs'
 import {randomBytes} from 'node:crypto'
-const A='/opt/dsh-features/arm-native-01',D='/dsh-state/namespace-arm-04',H='/run/dsh-feature-root',T='/tmp/dsh-feature-home/sdk-validation'
+const A='/opt/dsh-features/arm-native-01',D='/dsh-state/namespace-arm-05',H='/run/dsh-feature-root',T='/tmp/dsh-feature-home/sdk-validation'
 if(process.argv.length!==3||process.argv[2]!=='--submit-once-to-ready-app')throw Error('Explicit one-shot request required')
 const ready=JSON.parse(fs.readFileSync(D+'/ROOT-READY.public.json')),k=ready.keeper
 const t=fs.readFileSync('/proc/'+k.pid+'/stat','utf8')
@@ -10,9 +10,9 @@ const P='/proc/'+k.pid+'/root',plan=JSON.parse(fs.readFileSync(P+H+'/storage-pla
 const first=plan.slots.find(s=>s.slotId==='account-slot-a'),second=plan.slots.find(s=>s.slotId==='account-slot-b')
 const output=P+T+'/application-ready.json'
 if(!fs.existsSync(output)||fs.existsSync(P+T+'/SDK-TEST-REQUEST.json'))throw Error('App not ready or original Native request already issued')
-const project=first.projects.rootPath+'/sdk-owned-native-03';fs.mkdirSync(P+project,{mode:0o700});fs.chownSync(P+project,2000,2000)
+const project=first.projects.rootPath+'/sdk-owned-native-04';fs.mkdirSync(P+project,{mode:0o700});fs.chownSync(P+project,2000,2000)
 const marker=randomBytes(18).toString('hex')
-const privateMarker=first.private.rootPath+'/sdk-owned-private-boundary-03.txt',foreignMarker=second.projects.rootPath+'/sdk-owned-foreign-boundary-03.txt'
+const privateMarker=first.private.rootPath+'/sdk-owned-private-boundary-04.txt',foreignMarker=second.projects.rootPath+'/sdk-owned-foreign-boundary-04.txt'
 for(const name of [privateMarker,foreignMarker]){fs.writeFileSync(P+name,marker,{flag:'wx',mode:0o600});fs.chownSync(P+name,2000,2000)}
 const auth=JSON.parse(fs.readFileSync('/opt/dsh-features/auth-result.public.json'))
 const request={accountId:auth.userId,projectPath:project,searchProgramPath:'/opt/dsh-installed-products/node_modules/@vscode/ripgrep-linux-arm64/bin/rg',privateMarkerPath:privateMarker,foreignMarkerPath:foreignMarker}
