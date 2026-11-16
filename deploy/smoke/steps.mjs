@@ -147,15 +147,28 @@ export async function findPreviousSessionRow(page, key, timeoutMs) {
     if (await collapsed.count() !== 0) {
       const workspace = collapsed.first()
       const workspaceKey = await workspace.getAttribute('data-row-key')
-      // Rows.tsx places the folder in the first span; its click bubbles to onToggle, away from create/menu buttons.
-      await workspace.locator(':scope > span').first().click({ timeout: remaining() })
+      // The row owns expansion; its left padding stays outside the hover-swapped icons and trailing actions.
+      await workspace.click({ position: { x: 8, y: 8 }, timeout: remaining() })
       await page.waitForFunction(workspaceKey => [...document.querySelectorAll('[data-row-key^="workspace:"]')]
         .some(element => element.getAttribute('data-row-key') === workspaceKey && element.getAttribute('aria-expanded') === 'true'),
       workspaceKey, { timeout: remaining() })
       continue
     }
     const more = page.getByRole('button', { name: /^(Show \d+ more sessions|展开其余 \d+ 个会话)$/ })
-    if (await more.count() === 0) return
+    if (await more.count() === 0) {
+      // Workspace rows can arrive before the original asynchronous session-list response.
+      try {
+        await page.waitForFunction(key => [...document.querySelectorAll('[data-row-key]')]
+          .some(element => element.getAttribute('data-row-key') === key)
+          || document.querySelector('[data-row-key^="workspace:"][role="treeitem"][aria-expanded="false"]') !== null
+          || [...document.querySelectorAll('button')].some(element => /^(Show \d+ more sessions|展开其余 \d+ 个会话)$/.test(element.textContent ?? '')),
+        key, { timeout: remaining() })
+      } catch (error) {
+        if (error.name === 'TimeoutError') return
+        throw error
+      }
+      continue
+    }
     const previous = await sessions.count()
     await more.first().click({ timeout: remaining() })
     await page.waitForFunction(({ previous, key }) => {

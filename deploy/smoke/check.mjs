@@ -381,9 +381,8 @@ async function run(options) {
       await login()
       if (!sessionKey) throw new SmokeUnavailable('尚未建立可复核的原对话；退出重登已完成')
       if (!originalConversationReady) throw new SmokeUnavailable('原对话收尾未确认；退出重登已完成，继续执行未验证')
-      await page.locator(`[data-row-key="${sessionKey}"]`).click()
-      await page.locator('[data-turn-process]').first().waitFor({ state: 'attached' })
-      requireThat((await page.locator('[data-chat-flow-kind="assistant-step"][data-chat-group-part="response"]').allTextContents()).join('\n').includes(`${prefix}-CHAT`), '重新登录后没有找到原对话内容')
+      const content = await openPreviousSession(sessionKey)
+      await waitForPreviousReply(content, `${prefix}-CHAT`, remaining())
       const token = `${prefix}-RELOGIN`
       await send(`Use Bash to execute printf '%s\\n' '${token}'. Report actual stdout.`, { tokens: [token], bash: 1 })
     }, [2])
