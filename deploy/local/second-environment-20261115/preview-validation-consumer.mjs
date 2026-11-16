@@ -48,7 +48,7 @@ export async function runPreviewValidation(ctx,signal) {
     if(start.sessionId!==result.sessionId)throw Error('Exact prepared Session required')
     const original=value=>Reflect.get(value,symbols.original)??value
     let coordinator,auth
-    try {coordinator=original(ctx.peSandboxCoordinator);auth=original(ctx.peAuth)}catch(error){result.observerUnavailable={name:error?.name,message:error?.message};persist()}
+    try {coordinator=original(ctx.get('peSandboxCoordinator'));auth=original(ctx.get('peAuth'))}catch(error){result.observerUnavailable={name:error?.name,message:error?.message};persist()}
     const observations={bufferPoolSize:Buffer.poolSize,rows:[],readOnlyOriginalOwner:true}
     let previous=''
     const sample=()=>{
