@@ -48,8 +48,8 @@ export function apply(ctx) {
       const call = async (label, name, args, expected) => {
         use.assertCurrent()
         result.stage = label; persist()
-        const outcome = await account.tools.execute({ callId: ToolCallId('sdk-linux-' + label), name, agent,
-          signal: controller.signal, arguments: args })
+        const outcome = await account.agents.withInitiator(agent, () => agent.ctx.tools.execute({ callId: ToolCallId('sdk-linux-' + label), name, agent,
+          signal: controller.signal, arguments: args }))
         const item = { label, name, arguments: args, outcome, resultNotifications: notifications }
         result.steps.push(item); persist()
         if (outcome.isError || (typeof outcome.value?.exitCode === 'number' && outcome.value.exitCode !== 0) || (expected !== undefined && !JSON.stringify(outcome).includes(expected))) {
