@@ -60,7 +60,7 @@ async function privateFixture(t, terminalExec = false) {
   return { state, latest, write, requests, log, input, sha, run: () => runLocalRecovery(['--input', input, '--sha256', sha]) }
 }
 
-for (const mode of ['live-host', 'stopped-launcher']) {
+for (const mode of ['live-host', 'stopped-launcher', 'duplicate-continuation']) {
   test(`verification of an existing publication never creates or starts another launcher (${mode})`, async t => {
     const f = await privateFixture(t, true)
     await f.write(join(f.state, 'latest.json'), f.latest)
@@ -71,10 +71,13 @@ for (const mode of ['live-host', 'stopped-launcher']) {
       + '\n' + JSON.stringify({ createdExecId: 'e'.repeat(64) }) + '\n')
     const lock = join(f.state, 'operation.lock')
     await fs.writeFile(lock, bytes, { flag: 'wx', mode: 0o600 }); await fs.mkdir(f.log, { mode: 0o700 })
+    if (mode === 'duplicate-continuation') await f.write(join(f.state, 'cold-continuation-' + f.latest.operation + '.lock'), {
+      format: 'pe-cloud-cold-continuation/v1', operation: f.latest.operation, pid: process.pid,
+    })
     await assert.rejects(runLocalRecovery(['verify-started', '--input', f.input, '--sha256', f.sha]))
     assert.deepEqual(await fs.readFile(lock), bytes)
     assert.ok(f.requests.every(([method]) => method === 'GET'))
-    if (mode === 'live-host') assert.deepEqual(f.requests, [])
+    if (mode === 'live-host' || mode === 'duplicate-continuation') assert.deepEqual(f.requests, [])
     else assert.deepEqual(f.requests, [['GET', '/containers/owned-fixture/json'], ['GET', '/exec/' + 'e'.repeat(64) + '/json']])
   })
 }

@@ -84,6 +84,16 @@ test('kernel backing identity survives a changed displayed path after the origin
   assert.deepEqual(f.calls, [])
 })
 
+test('a new capture reuses protected original support paths when kernel identity rows carry no display path', () => {
+  const f = fixture({ support: true }), scope = { installAnchor: '/opt/dsh-installed-products/assets', applicationPid: 123 }
+  const before = captureRecoveryStorage(f.owner, f.io, scope), original = f.io.loops
+  f.io.loops = () => original().map(({ 'back-file': display, ...identity }) => identity)
+  const observed = captureRecoveryStorage(f.owner, f.io, { ...scope,
+    supportBackings: before.support.map(row => ({ role: row.role, image: row.image })) })
+  assert.equal(restoreRecoveryStorage(observed, { io: f.io, check: true }).ready, true)
+  assert.deepEqual(f.calls, [])
+})
+
 test('changed kernel backing identity, offset, size or readonly bit refuses before a mount', () => {
   for (const change of [{ 'back-ino': '9007199254740993' }, { 'back-maj:min': '7:43' }, { offset: '4096' }, { sizelimit: '4096' }, { ro: false }]) {
     const f = fixture({ support: true }), scope = { installAnchor: '/opt/dsh-installed-products/assets', applicationPid: 123 }

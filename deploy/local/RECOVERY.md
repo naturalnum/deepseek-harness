@@ -14,6 +14,8 @@
 
 loop 的 backing 身份使用内核给出的设备号和 inode，与原受保护镜像文件的实际身份核对；原设备号、UUID、只读位及零 offset/sizelimit 同时保留。原 namespace 消失后，`losetup BACK-FILE` 的显示路径可能改变，显示路径不代替 backing 身份。整数列从原始文本读取，避免 JSON 数字精度丢失。
 
+再次快照可显式给出 `supportSnapshotDirectory`，引用同一 resource 的原受保护快照。当前原存储检查通过后，沿其已验证产品盘、arena 父盘的规范镜像路径重捕实际身份。未给引用时，`BACK-FILE` 仅作初次定位候选；显示路径不可达或物理身份不符仍拒绝，不扫描或猜测其他路径。
+
 V3 self-bind 还要求显式原 `productManifest:{path,sha256}`：Root 从受保护原件核正常清单，调用原 `collectManagedFiles` 比较全部已安装产品文件，并保存实际 anchor、SOURCE-PACKAGE、PRODUCT-ASSEMBLY 及原产品文件校验模块的 pins。cold 后先核同一目录身份和产品 pins，再仅对缺失 self-bind 做原 bind/remount readonly 并复核全部事实；已有挂载冲突、字节漂移或未知步骤均停止。inspector 校验器 SHA 必须同时等于实际捕获值和本次宿主控制源码，并再次核真实来源、两侧挂载和产品 pins。外部 `allow/verified` 布尔量不能代替这些观察。SDK 后端、PG 和 typed/physical 收尾继续由原 owner 及正常机制负责。
 
 ## Linux 私有阶段
@@ -40,6 +42,8 @@ FD4 发布前，`recovery-validation` 从实际 captured installAnchor 解析同
 ## 宿主恢复入口
 
 原 launcher 已运行、发布结果需要复核时，可显式执行 `node deploy/local/recovery-local.mjs verify-started --input 原宿主私密JSON --sha256 原SHA`。入口只接原失败锁记录的唯一 launcher，要求原宿主进程终态；核同一容器与活 exec，再只读核原 control、ready、measurement、sealed 日志和实际六文件绑定。它不重做 prepare、create/start 或 publish，沿原生命周期保留 namespace，然后核 401 与完整原冒烟，通过才结束原锁。本次有限观察预算用于复核已经完成的发布，不延长原准备期限或旧业务操作。
+
+续行在原锁同 inode、原 SHA 回读后，以 `wx` 原子认领与该 operation 绑定的独占 claim；已有 claim 不自动接管，原锁以 O_NOFOLLOW 打开并重核。发生失败保留原锁及 claim 的具名责任；成功在原记录持有当前续行身份后归还 claim，再按原完成流程结束操作锁。
 
 进程枚举用原 `/dsh-tools/node24` 读取 `/proc` 条目。短进程在枚举后退出时，仅在读取和 PID 目录回读均为 ENOENT/ESRCH 时返回空条目；权限或其它错误仍拒绝。所选应用的 PID/startTicks/namespace 与完整产品实测继续由原 inspector 核对。
 

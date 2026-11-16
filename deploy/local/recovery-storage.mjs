@@ -77,11 +77,16 @@ function linuxIo() {
     loops: () => {
       const text = run('losetup', ['--list', '--raw', '--noheadings', '--output', 'NAME,BACK-INO,BACK-MAJ:MIN,OFFSET,SIZELIMIT,RO'])
       if (!text) return []
+      const aliases = JSON.parse(run('losetup', ['--list', '--json', '--output', 'NAME,BACK-FILE'])).loopdevices
+      if (!Array.isArray(aliases)) fail()
       return text.split('\n').map(line => {
         const fields = line.trim().split(/\s+/)
         if (fields.length !== 6 || !/^\/dev\/loop(?:0|[1-9]\d*)$/.test(fields[0])
           || ![fields[1], fields[3], fields[4]].every(numeric) || !/^\d+:\d+$/.test(fields[2]) || !/^[01]$/.test(fields[5])) fail()
-        return { name: fields[0], 'back-ino': fields[1], 'back-maj:min': fields[2], offset: fields[3], sizelimit: fields[4], ro: fields[5] }
+        const candidates = aliases.filter(row => row.name === fields[0])
+        if (candidates.length > 1) fail()
+        return { name: fields[0], 'back-file': candidates[0]?.['back-file'], 'back-ino': fields[1],
+          'back-maj:min': fields[2], offset: fields[3], sizelimit: fields[4], ro: fields[5] }
       })
     },
     backing: path => {
@@ -247,6 +252,9 @@ function captureSupport(owner, scope, io) {
   const arena = domains(owner)[0]
   const ancestor = mounts.filter(row => arena.image.startsWith(row.path.replace(/\/$/, '') + '/')).sort((a, b) => b.path.length - a.path.length)[0]
   const selected = [], products = []
+  if (scope.supportBackings !== undefined && (!Array.isArray(scope.supportBackings) || scope.supportBackings.length > 2
+    || new Set(scope.supportBackings.map(row => row.role)).size !== scope.supportBackings.length
+    || scope.supportBackings.some(row => !['products', 'arena-parent'].includes(row.role) || !absolute(row.image)))) fail()
   if (baseProducts.length) {
     if (baseProducts.length !== 1 || baseProducts[0].path !== productRoot) fail()
     if (baseProducts[0].root === '/' && /^\/dev\/loop\d+$/.test(baseProducts[0].source)) selected.push(['products', baseProducts[0]])
@@ -265,8 +273,10 @@ function captureSupport(owner, scope, io) {
   return [...products, ...selected.map(([role, mount]) => {
     if (mount.root !== '/' || mount.filesystem !== 'ext4') fail()
     const loops = io.loops().filter(row => row.name === mount.source)
-    if (loops.length !== 1 || typeof loops[0]['back-file'] !== 'string') fail()
-    const image = loops[0]['back-file'], backing = io.backing(image), actual = io.domain(mount.path)
+    if (loops.length !== 1) fail()
+    const image = scope.supportBackings?.find(row => row.role === role)?.image ?? loops[0]['back-file']
+    if (!absolute(image)) fail()
+    const backing = io.backing(image), actual = io.domain(mount.path)
     const readOnly = [true, 1, '1'].includes(loops[0].ro) ? true : [false, 0, '0'].includes(loops[0].ro) ? false : null
     if (readOnly === null || readOnly !== (role === 'products') || actual.uid !== 0 || actual.gid !== 0 || actual.mode !== 0o755
       || actual.inode !== '2' || role === 'arena-parent' && actual.device !== arena.backingDevice) fail()

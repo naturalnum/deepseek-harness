@@ -85,7 +85,15 @@ async function snapshot(specification) {
   if (hash(staticBytes) !== launch.staticInput.sha256) fail()
   const staticInput = JSON.parse(staticBytes)
   if (staticInput.resourceId !== owner.resourceId) fail()
+  let supportBackings
+  if (specification.supportSnapshotDirectory !== undefined) {
+    const reference = retained({ snapshotDirectory: specification.supportSnapshotDirectory })
+    if (reference.storage.owner.resourceId !== owner.resourceId || reference.storage.supportScope.installAnchor !== staticInput.installAnchor
+      || !restoreRecoveryStorage(reference.storage, { check: true }).ready) fail()
+    supportBackings = reference.storage.support.filter(row => row.kind === 'loop').map(row => ({ role: row.role, image: row.image }))
+  }
   const storage = captureRecoveryStorage(owner, undefined, { installAnchor: staticInput.installAnchor, applicationPid,
+    ...(supportBackings === undefined ? {} : { supportBackings }),
     ...(specification.productManifest === undefined ? {} : { productManifest: specification.productManifest }) })
   const namespaceReferences = originalNamespaceReferences(application.namespaceId)
   if (!sameIdentity(application, liveApplication(applicationPid, launch.assets.node.path))) fail()

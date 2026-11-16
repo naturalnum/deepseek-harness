@@ -221,18 +221,32 @@ export async function runLocalRecovery(argv, { signal = new AbortController().si
   }
   within(signal, deadlineAtMs)
   const operation = randomUUID(), lockPath = join(spec.stateDirectory, 'operation.lock')
-  let retainedExec
+  let retainedExec, retainedLock, retainedBytes, retainedOperation
   if (verifyStarted) {
-    const records = privateInput(lockPath).toString('utf8').trim().split('\n').map(line => JSON.parse(line)), original = records[0]
+    retainedBytes = privateInput(lockPath); retainedLock = fs.lstatSync(lockPath)
+    const records = retainedBytes.toString('utf8').trim().split('\n').map(line => JSON.parse(line)), original = records[0]
     if (records.length !== 2 || original.format !== 'pe-cloud-cold-recovery-operation/v1' || original.inputSha256 !== argv[3]
+      || !/^[a-f0-9-]{36}$/.test(original.operation)
       || !Number.isSafeInteger(original.pid) || original.pid <= 0 || !/^[a-f0-9]{64}$/.test(records[1].createdExecId)) fail()
     try { process.kill(original.pid, 0); fail() } catch (error) { if (error.code !== 'ESRCH') throw error }
     retainedExec = records[1].createdExecId
+    retainedOperation = original.operation
   }
-  const lock = fs.openSync(lockPath, verifyStarted ? 'a' : 'wx', 0o600)
-  let lockOpen = true, transport, execId, result, appCheckPath, productMount
+  const lock = fs.openSync(lockPath, verifyStarted
+    ? fs.constants.O_WRONLY | fs.constants.O_APPEND | fs.constants.O_NOFOLLOW
+    : fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_NOFOLLOW, 0o600)
+  let lockOpen = true, transport, execId, result, appCheckPath, productMount, claim, claimPath, claimIdentity
   const record = value => { fs.writeFileSync(lock, JSON.stringify(value) + '\n'); fs.fsyncSync(lock) }
   try {
+    if (verifyStarted) {
+      const opened = fs.fstatSync(lock)
+      if (opened.dev !== retainedLock.dev || opened.ino !== retainedLock.ino || !privateInput(lockPath).equals(retainedBytes)) fail()
+      claimPath = join(spec.stateDirectory, 'cold-continuation-' + retainedOperation + '.lock')
+      claim = fs.openSync(claimPath, 'wx', 0o600); claimIdentity = fs.fstatSync(claim)
+      fs.writeFileSync(claim, JSON.stringify({ format: 'pe-cloud-cold-continuation/v1', operation: retainedOperation,
+        inputSha256: argv[3], lockDevice: String(opened.dev), lockInode: String(opened.ino), pid: process.pid }) + '\n')
+      fs.fsyncSync(claim)
+    }
     if (!verifyStarted) record({ format: 'pe-cloud-cold-recovery-operation/v1', operation, inputSha256: argv[3], pid: process.pid })
     const parent = fs.openSync(spec.stateDirectory, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW)
     try { fs.fsyncSync(parent) } finally { fs.closeSync(parent) }
@@ -272,6 +286,7 @@ export async function runLocalRecovery(argv, { signal = new AbortController().si
       published = JSON.parse(await execute([spec.nodePath, '-e', PUBLISHED_RECOVERY_OBSERVATION,
         JSON.stringify({ input: spec.rootInput, sha256: spec.rootInputSha256 })]))
       if (published.publicationObserved !== true) fail()
+      record({ verificationOwner: { pid: process.pid, operation: retainedOperation, inputSha256: argv[3] } })
     } else {
     const prepared = await stage('prepare')
     if (prepared.ready !== false || prepared.storageReady !== true || !Array.isArray(prepared.launchCommand)
@@ -317,6 +332,13 @@ export async function runLocalRecovery(argv, { signal = new AbortController().si
     result = { ready: true, resourcesReady: true, bootstrapStatus: 401, smokeStatus: 'passed',
       appExecId: execId, applicationPid: final.appPid, namespaceId: final.namespaceId }
     await transport.close(); transport = undefined
+    if (claim !== undefined) {
+      const named = fs.lstatSync(claimPath)
+      if (!named.isFile() || named.isSymbolicLink() || named.dev !== claimIdentity.dev || named.ino !== claimIdentity.ino || named.nlink !== 1) fail()
+      fs.closeSync(claim); claim = undefined; fs.unlinkSync(claimPath)
+      const parent = fs.openSync(spec.stateDirectory, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW)
+      try { fs.fsyncSync(parent) } finally { fs.closeSync(parent) }
+    }
     const original = fs.fstatSync(lock)
     lockOpen = false; fs.closeSync(lock)
     const named = fs.lstatSync(lockPath)
@@ -329,6 +351,7 @@ export async function runLocalRecovery(argv, { signal = new AbortController().si
     throw error
   } finally {
     await transport?.close()
+    if (claim !== undefined) fs.closeSync(claim) // Failed continuation keeps its named claim and original operation responsibility.
     if (lockOpen) { lockOpen = false; fs.closeSync(lock) }
   }
   report(JSON.stringify(result)); return 0
