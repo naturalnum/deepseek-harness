@@ -252,19 +252,19 @@ need(api.approvedConfiguration.mcp.runtime.maxIncomingResponseBytes === 4194304
 need(api.rpcEndpoints.some(value => value.endpoint === 'cloudResearch/action' && value.handlerId === 'native:cloudResearch'
   && value.guard === 'account-session'), 'Exact session-authorized research RPC required')
 const rootSchemas = []
-for (const id of ['runtime-root', 'api-root', 'files-root', 'execution-root', 'access-root', 'connection']) {
+for (const id of ['webserver', 'runtime-root', 'api-root', 'files-root', 'execution-root', 'access-root', 'connection']) {
   const value = row(id), namespace = await import(pathToFileURL(require.resolve(value.name)).href)
   const schema = namespace.Config ?? namespace.default?.Config
   need(typeof schema === 'function', 'Actual installed Loader schema required: ' + id)
   schema(value.config); rootSchemas.push(id)
 }
+const accessModule = await import(pathToFileURL(require.resolve(row('access-root').name)).href)
+need(typeof accessModule.parseAuthRootConfig === 'function', 'Matching installed full Root policy parser required')
+accessModule.parseAuthRootConfig(access)
 if (servicePreview !== undefined) {
-  const accessModule = await import(pathToFileURL(require.resolve(row('access-root').name)).href)
-  need(typeof accessModule.parseAuthRootConfig === 'function', 'Matching installed full Root policy parser required for service preview')
-  accessModule.parseAuthRootConfig(access)
   const clientModule = await import(pathToFileURL(require.resolve('@deepseek-ai/dsh-pe-cloud-client/schema')).href)
   clientModule.parseCloudWebManifest(connection.config.web)
-  for (const value of rootEntryRows(rows).filter(value => value.name === '@deepseek-ai/dsh-host-webserver'
+  for (const value of rootEntryRows(rows).filter(value => value.name === '@deepseek-ai/dsh-host-webserver' && value.id !== 'webserver'
     || value.name === '@deepseek-ai/dsh-pe-cloud-access/applications')) {
     const namespace = await import(pathToFileURL(require.resolve(value.name)).href)
     const schema = namespace.Config ?? namespace.default?.Config

@@ -25,3 +25,5 @@
 生成器产物测试要求匹配的已构建工作树和调用者自有的公开夹具。将 `DSH_DEPLOY_TEST_INSTALL_ANCHOR` 设为该工作树的 `package.json`，将 `DSH_DEPLOY_TEST_PUBLIC_INPUTS` 设为明确的公开输入目录，再运行 `node --test deploy/local/second-environment-20261115/producer-inputs.test.mjs`。夹具读取器仅接受具名公开 SDK 源、参数模板和固定 Linux 检索二进制，不读取既有部署或用户凭据；缺少夹具时测试失败。平台检索路径解析在夹具内隔离，以便在 macOS 校验字节，不执行 Linux 程序。
 
 Root 确认原应用实际退出、原分配实际终态释放，保留可变账号文件和凭据，只在原摘要仍匹配时安装精确托管静态 patch。SDK 生成器仅用于新部署；配置更新保留原 API key、token、控制器记录、backend generation 和镜像。激活后通过真实 UI 工作流验证命令、原生检索、文件传输、重登、Python 执行及账号隔离。
+
+所有 Root 生成在写入前都校验原生管理监听器配置和完整认证策略，包括未启用服务预览的情况。
