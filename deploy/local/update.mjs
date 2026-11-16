@@ -409,7 +409,16 @@ async function main(argv) {
       throw new CandidateError('验证接续只接受原operation与原调用线。')
     }
     const { continueNativeVerify } = await import('./native-update.mjs')
-    await continueNativeVerify({ operation: args[0], line, latest })
+    try { await continueNativeVerify({ operation: args[0], line, latest }) }
+    catch (error) {
+      const stages = []
+      for (let cause = error; cause; cause = cause.cause) {
+        if (typeof cause.phase === 'string' && /^[a-z0-9-]{1,100}$/.test(cause.phase)) stages.push(cause.phase)
+        else if (cause instanceof CandidateError) stages.push(cause.message)
+      }
+      console.error('验证接续诊断：%j', stages)
+      throw error
+    }
     console.log('原操作正常验证及部署锁释放完成；账号与SDK责任保持原owner')
     return
   }

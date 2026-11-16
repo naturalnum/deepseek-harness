@@ -2,6 +2,7 @@
 import fs from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { randomUUID, createHash } from 'node:crypto'
+import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isDeepStrictEqual } from 'node:util'
@@ -458,7 +459,17 @@ export function requireOriginalVerifyApplication(current, holder) {
 }
 
 /** Verify only this original operation; deployment release never retires account or SDK resource ownership. */
-export async function continueNativeVerify({ operation, line, latest }) {
+export async function continueNativeVerify(request) {
+  return runNativeVerifyContinuation(await prepareOriginalVerification(request))
+}
+
+/** Inspect only this original verification context; no attempt, smoke, CAS or release is submitted. */
+export async function inspectOriginalVerification(request) {
+  const { directory, pins } = await prepareOriginalVerification(request, true)
+  return { directory, pins }
+}
+
+async function prepareOriginalVerification({ operation, line, latest }, inspectOnly = false) {
   if (operation !== ORIGINAL_VERIFY_OPERATION || line !== '主线' || latest?.operation !== operation
     || latest.format !== PROJECTION || latest.nativePhase !== 'verify-intent') {
     throw new NativeDeliveryUnconfirmed('verify-original-entry')
@@ -499,20 +510,28 @@ export async function continueNativeVerify({ operation, line, latest }) {
     return { current, authority }
   }
   const { current, authority } = await fresh()
+  const prerequisites = async () => {
+    const evidence = await readOriginalVerifyEvidence()
+    await preflight(current, state.manifest)
+    try {
+      await readOptions(state.smokeArgs)
+      const { chromium } = createRequire(new URL('../../apps/web/package.json', import.meta.url))('playwright')
+      fs.accessSync(chromium.executablePath(), fs.constants.X_OK)
+    } catch (_error) { throw new NativeDeliveryUnconfirmed('verify-local-smoke-prerequisites') }
+    return evidence
+  }
+  if (inspectOnly) {
+    await prerequisites()
+    return { directory: STATE, pins: recordPins }
+  }
   const effects = nativeUpdateEffects(state, { observeTuple: () => authority.observeTuple(groups) })
-  return runNativeVerifyContinuation({ directory: STATE, pins: recordPins, authority,
+  return { directory: STATE, pins: recordPins, authority,
     observe: async () => { await fresh(); return authority.observeTuple(groups) },
     verify: async () => {
-      const evidence = await readOriginalVerifyEvidence()
-      await preflight(current, state.manifest)
-      try {
-        await readOptions(state.smokeArgs)
-        const { chromium } = createRequire(new URL('../../apps/web/package.json', import.meta.url))('playwright')
-        fs.accessSync(chromium.executablePath(), fs.constants.X_OK)
-      } catch (_error) { throw new NativeDeliveryUnconfirmed('verify-local-smoke-prerequisites') }
+      const evidence = await prerequisites()
       claimOriginalVerifyAttempt(STATE, { ...evidence, controller: { commit: source.commit, tree: source.tree } })
       await effects.verify()
-    } })
+    } }
 }
 
 function currentNativeContext(snapshot) {
