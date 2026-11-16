@@ -32,6 +32,7 @@ export function createRecoveryTransport({ signal, deadlineAtMs, socketPath, dock
   signal.addEventListener('abort', cancel, { once: true })
   if (signal.aborted) cancel()
   const allowed = (method, route) => method === 'POST' && route === '/containers/' + container + '/exec'
+    || method === 'GET' && ['/containers/' + container + '/json', '/containers/' + container + '/top?ps_args=-eo%20pid%2Ccomm'].includes(route)
     || method === 'POST' && /^\/exec\/[a-f0-9]{64}\/start$/.test(route)
     || method === 'GET' && /^\/exec\/[a-f0-9]{64}\/json$/.test(route)
   const run = start => {
@@ -111,7 +112,7 @@ export function createRecoveryTransport({ signal, deadlineAtMs, socketPath, dock
         return Promise.reject(new RecoveryTransportError(false))
       }
       return run(owner => {
-        const child = spawn(dockerPath, argv, { stdio: ['pipe', 'pipe', 'pipe'] }), chunks = []
+        const child = spawn(dockerPath, ['--host', 'unix://' + socketPath, ...argv], { stdio: ['pipe', 'pipe', 'pipe'] }), chunks = []
         let bytes = 0, stopping = false
         const stop = () => { if (!stopping) { stopping = true; child.kill('SIGTERM') } }
         child.stdout.on('data', chunk => {

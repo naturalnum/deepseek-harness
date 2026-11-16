@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { CandidateError, inspectExec, matchApplicationExec, selectProcessState } from './inspect.mjs'
+import { CandidateError, inspectCandidate, inspectExec, matchApplicationExec, selectProcessState } from './inspect.mjs'
 
 const containerNamespace = 'mnt:[100]'
 const namespaceId = 'mnt:[200]'
@@ -63,4 +63,29 @@ test('normal Docker exec observations retain the existing result fields', async 
 test('Docker failures other than 404 remain failures', async () => {
   const failure = new CandidateError('本机 Docker 请求失败。', 500)
   await assert.rejects(inspectExec('c'.repeat(64), { request: async () => { throw failure } }), error => error === failure)
+})
+
+test('an explicitly handed-over carrier uses the original process, product and namespace checks through its bound operations', async () => {
+  const execution = { execId: 'd'.repeat(64), hostPid: 200, running: true, exitCode: null }
+  const observed = { rows: [{ ...app, gid: 2000, cwd: '/opt/dsh-installed-products', stdoutPath: '/opt/dsh-features/app.log', shutdownTimeoutMs: 120000 }, holder],
+    containerNamespaceId: containerNamespace, productRoot: '/opt/dsh-installed-products', productDevice: '/dev/loop14',
+    productReadOnly: true, productBlockReadOnly: true, productFilesystem: 'ext4', nodePath: '/dsh-tools/node24',
+    appCheckPath: '/opt/dsh-features/feature-namespace-steps.v3.mjs', seccompPath: '/opt/dsh-feature-assets/app-seccomp.bpf', profileHome: '/run/dsh-feature-root' }
+  const calls = [], operations = { container: 'handed-over-runtime', execute: async argv => {
+    calls.push(argv)
+    if (argv[0] === '/bin/ls') return '20 21'
+    if (argv.join(' ') === '/bin/readlink /proc/1/ns/mnt') return containerNamespace
+    if (argv[0] === '/bin/readlink') return namespaceId
+    if (argv[1] === '/proc/20/cmdline') return '/dsh-tools/node24\0/opt/dsh-installed-products/apps/cli/lib/bin.js\0--profile\0cloud\0'
+    if (argv[1] === '/proc/21/cmdline') return '/bin/sleep\0infinity\0'
+    assert.equal(argv[0], '/proc/20/exe'); assert.equal(argv[1], '-e')
+    return JSON.stringify(observed)
+  }, top: async () => [{ pid: 200, comm: 'MainThread' }], execIds: async () => [execution.execId], execution: async () => execution }
+  const ready = await inspectCandidate(operations)
+  assert.equal(ready.container, 'handed-over-runtime'); assert.equal(ready.canStopSafely, true)
+  assert.equal(ready.appExecId, execution.execId); assert.equal(calls.length, 6)
+  observed.productBlockReadOnly = false
+  const refused = await inspectCandidate(operations)
+  assert.equal(refused.canStopSafely, false)
+  assert.equal(refused.issues.some(issue => issue.includes('块设备')), true)
 })

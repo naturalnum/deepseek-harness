@@ -101,7 +101,7 @@ test('a finite executable fixture returns only complete bounded stdout after its
   const f = await fixture(t, (_req, res) => res.end('{}')), executable = join(f.directory, 'complete.mjs')
   const pidFile = join(f.directory, 'complete.pid')
   await writeFile(executable, `#!${process.execPath}\nimport {writeFileSync} from 'node:fs';
-writeFileSync(${JSON.stringify(pidFile)},String(process.pid));
+writeFileSync(${JSON.stringify(pidFile)},JSON.stringify({pid:process.pid,args:process.argv.slice(2)}));
 process.stdin.resume();process.stdin.on('end',()=>process.stdout.write('complete\\n'));\n`)
   await chmod(executable, 0o700)
   const transport = createRecoveryTransport({ signal: f.signal.signal, deadlineAtMs: performance.now() + 10000,
@@ -109,7 +109,9 @@ process.stdin.resume();process.stdin.on('end',()=>process.stdout.write('complete
   t.after(() => transport.close())
   assert.equal(await transport.runDocker(['exec', '--interactive', '--user', '0', container, '/approved/program']), 'complete\n')
   assert.equal(transport.state().pendingCalls, 0); assert.equal(transport.state().unknown, false)
-  await recordExit('normal-client', Number(await readFile(pidFile, 'utf8')), transport.state())
+  const actual = JSON.parse(await readFile(pidFile, 'utf8'))
+  assert.deepEqual(actual.args, ['--host', 'unix://' + f.socketPath, 'exec', '--interactive', '--user', '0', container, '/approved/program'])
+  await recordExit('normal-client', actual.pid, transport.state())
 })
 
 test('an elapsed operation deadline rejects a held response without granting the next call a fresh budget', async t => {

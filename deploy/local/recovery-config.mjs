@@ -14,6 +14,7 @@ const SLOTS = [
   'root.databaseAddress.primary', 'root.databaseAddress.secondary', 'root.publicOrigin',
   'deployment.storagePlanHash', 'deployment.backendAddress',
 ]
+const PORT_SLOTS = ['root.listenPort', 'root.databasePort.primary', 'root.databasePort.secondary']
 const INPUT_ERROR = '恢复配置输入不符合评审说明，未生成任何文件。'
 const READ_ERROR = '私密恢复输入读取失败，未写入任何文件。'
 const WRITE_ERROR = '恢复配置新文件写入未完成，原件未覆盖；请保留现场。'
@@ -77,10 +78,11 @@ function applyReviewedSlots(source, slots, values) {
 }
 
 function approvedPatches(patches) {
-  if (!Array.isArray(patches) || patches.length !== SLOTS.length) fail()
+  if (!Array.isArray(patches) || ![SLOTS.length, SLOTS.length + PORT_SLOTS.length].includes(patches.length)) fail()
+  const required = patches.length === SLOTS.length ? SLOTS : [...SLOTS, ...PORT_SLOTS]
   const seen = new Set()
   for (const patch of patches) {
-    if (!patch || !SLOTS.includes(patch.slot) || seen.has(patch.slot)) fail()
+    if (!patch || !required.includes(patch.slot) || seen.has(patch.slot)) fail()
     seen.add(patch.slot)
     const hashSlot = patch.slot.endsWith('Hash')
     if (!keysExactly(patch, hashSlot ? ['slot', 'offset', 'expected'] : ['slot', 'offset', 'expected', 'value'])) fail()
@@ -88,6 +90,9 @@ function approvedPatches(patches) {
     if (!Number.isSafeInteger(patch.offset) || patch.offset < 0) fail()
     if (hashSlot) {
       if (!/^[a-fA-F0-9]{64}$/.test(patch.expected.toString('utf8'))) fail()
+    } else if (PORT_SLOTS.includes(patch.slot)) {
+      if (typeof patch.value !== 'string' || !/^[1-9]\d{0,4}$/.test(patch.value) || Number(patch.value) > 65535
+        || !/^[1-9]\d{0,4}$/.test(patch.expected.toString('utf8')) || Number(patch.expected.toString('utf8')) > 65535) fail()
     } else {
       // Quotes and layout stay outside the approved address-token byte range.
       if (typeof patch.value !== 'string' || !/^[A-Za-z0-9:/._\[\]-]+$/.test(patch.value)
@@ -116,12 +121,13 @@ function credentialsBytes(authInit) {
 
 /**
  * Rebuild six files using reviewed byte slots and the public credentials-local version 1/refs format.
- * @param {object} input - Exactly rootBytes, deploymentBytes, packageBytes, storagePlanBytes, mutableProfileBytes, authInit, patches and fileMetadata. The original mutable profile Buffer is copied without parsing or normalization, including an empty file. Hash slots span 64 old hexadecimal bytes; address slots span unquoted ASCII tokens. Only declared offsets change, including when the same token occurs elsewhere. Credentials follow packages/credentials/credentials-local/src/index.ts parseCredentialsDocument and include only the two existing references.
+ * @param {object} input - Exactly rootBytes, deploymentBytes, packageBytes, storagePlanBytes, mutableProfileBytes, patches, fileMetadata and either authInit or credentialsBytes. Nonempty original credentialsBytes are copied opaquely; the caller retains the existing credentials-local parser's validation and source ownership. Legacy authInit rebuilds the two original references. The original mutable profile Buffer is copied without normalization, including an empty file. Current JSON mappings include all three separate numeric port slots; legacy nine-slot callers remain supported. Hash slots span 64 old hexadecimal bytes; address slots span unquoted ASCII tokens. Only declared offsets change, including when the same token occurs elsewhere.
  * @returns {{files: object[], hashes: object}} Files with relativePath, secret-bearing bytes Buffer, uid, gid and four-digit mode; hashes are computed from the final plan/deployment bytes. Never log the returned files.
  */
 export function rebuildRecoveryFiles(input) {
   try {
-    if (!keysExactly(input, ['rootBytes', 'deploymentBytes', 'packageBytes', 'authInit', 'storagePlanBytes', 'mutableProfileBytes', 'patches', 'fileMetadata'])) fail()
+    const credentialKey = Object.hasOwn(input ?? {}, 'credentialsBytes') ? 'credentialsBytes' : 'authInit'
+    if (!keysExactly(input, ['rootBytes', 'deploymentBytes', 'packageBytes', credentialKey, 'storagePlanBytes', 'mutableProfileBytes', 'patches', 'fileMetadata'])) fail()
     const { rootBytes, deploymentBytes, packageBytes, authInit, storagePlanBytes, mutableProfileBytes, patches, fileMetadata } = input
     bytes(rootBytes); bytes(deploymentBytes); bytes(packageBytes); bytes(storagePlanBytes); mutableProfile(mutableProfileBytes)
     const plan = decodeJson(storagePlanBytes)
@@ -139,7 +145,7 @@ export function rebuildRecoveryFiles(input) {
     const deploymentHash = sha256(deployment)
     values.set('root.deploymentHash', Buffer.from(deploymentHash))
     const root = applyReviewedSlots(rootBytes, reviewed.filter(row => row.slot.startsWith('root.')), values)
-    const credentials = credentialsBytes(authInit)
+    const credentials = credentialKey === 'credentialsBytes' ? Buffer.from(bytes(input.credentialsBytes)) : credentialsBytes(authInit)
     const contents = [root, deployment, Buffer.from(packageBytes), credentials, Buffer.from(storagePlanBytes), Buffer.from(mutableProfileBytes)]
     return { files: FILES.map((relativePath, index) => ({ relativePath, bytes: contents[index], ...fileMetadata[relativePath] })),
       hashes: { storagePlan: storagePlanHash, deployment: deploymentHash } }
@@ -155,12 +161,13 @@ function absolutePath(value) {
 
 /**
  * Read only explicitly supplied private sources through injected I/O, then run the pure rebuild.
- * @param {object} specification - Exactly patches, fileMetadata and sources mapping root/deployment/package/authInit/storagePlan/mutableProfile to explicit absolute paths; there are no default private paths. Missing profile sources refuse before any private read.
+ * @param {object} specification - Exactly patches, fileMetadata and sources mapping root/deployment/package/storagePlan/mutableProfile and either credentials or legacy authInit to explicit absolute paths; no default private paths. Missing sources refuse before any private read.
  * @param {object} io - readFile(path) returns a Buffer; no write operation is used.
  * @returns {Promise<object>} Prepared secret-bearing buffers, or a fixed diagnostic without input contents or external error text.
  */
 export async function readAndRebuildRecoveryFiles(specification, io = {}) {
-  const names = ['root', 'deployment', 'package', 'authInit', 'storagePlan', 'mutableProfile']
+  const credentialSource = Object.hasOwn(specification?.sources ?? {}, 'credentials') ? 'credentials' : 'authInit'
+  const names = ['root', 'deployment', 'package', credentialSource, 'storagePlan', 'mutableProfile']
   let loaded
   try {
     if (typeof io?.readFile !== 'function' || !keysExactly(specification, ['sources', 'patches', 'fileMetadata']) || !keysExactly(specification.sources, names)
@@ -180,7 +187,8 @@ export async function readAndRebuildRecoveryFiles(specification, io = {}) {
   } catch (_error) { throw new CandidateError(READ_ERROR) }
   return rebuildRecoveryFiles({ patches: specification.patches, fileMetadata: specification.fileMetadata,
     rootBytes: loaded.root, deploymentBytes: loaded.deployment, packageBytes: loaded.package,
-    authInit: loaded.authInit, storagePlanBytes: loaded.storagePlan, mutableProfileBytes: loaded.mutableProfile })
+    [credentialSource === 'credentials' ? 'credentialsBytes' : 'authInit']: loaded[credentialSource],
+    storagePlanBytes: loaded.storagePlan, mutableProfileBytes: loaded.mutableProfile })
 }
 
 function preparedFiles(prepared) {

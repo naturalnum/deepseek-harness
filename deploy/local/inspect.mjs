@@ -138,17 +138,17 @@ const profileHome=present('/run/dsh-feature-root',true)&&present('/run/dsh-featu
 console.log(JSON.stringify({rows,containerNamespaceId:link('/proc/1/ns/mnt'),productRoot:present(productRoot,true)?productRoot:null,productDevice,productReadOnly,productFilesystem,productBlockReadOnly,nodePath:present('/dsh-tools/node24')?'/dsh-tools/node24':null,appCheckPath:present('/opt/dsh-features/feature-namespace-steps.v3.mjs')?'/opt/dsh-features/feature-namespace-steps.v3.mjs':null,seccompPath:present('/opt/dsh-feature-assets/app-seccomp.bpf')?'/opt/dsh-feature-assets/app-seccomp.bpf':null,profileHome}));
 `
 
-async function findProbeAnchor() {
-  const names = (await execInCandidate(['/bin/ls', '/proc'])).split(/\s+/).filter(value => /^\d+$/.test(value))
-  const rootNamespace = (await execInCandidate(['/bin/readlink', '/proc/1/ns/mnt'])).trim()
+async function findProbeAnchor(execute) {
+  const names = (await execute(['/bin/ls', '/proc'])).split(/\s+/).filter(value => /^\d+$/.test(value))
+  const rootNamespace = (await execute(['/bin/readlink', '/proc/1/ns/mnt'])).trim()
   const apps = [], holders = []
   for (const name of names) {
     let argv
-    try { argv = (await execInCandidate(['/bin/cat', '/proc/' + name + '/cmdline'])).split('\0').filter(Boolean) }
+    try { argv = (await execute(['/bin/cat', '/proc/' + name + '/cmdline'])).split('\0').filter(Boolean) }
     catch (_error) { continue /* Short-lived processes can exit between directory and cmdline reads. */ }
     if (argv.includes(CLI_PATH)) apps.push(Number(name))
     else if (argv.length === 2 && argv[0].split('/').at(-1) === 'sleep' && argv[1] === 'infinity') {
-      const namespace = (await execInCandidate(['/bin/readlink', '/proc/' + name + '/ns/mnt'])).trim()
+      const namespace = (await execute(['/bin/readlink', '/proc/' + name + '/ns/mnt'])).trim()
       if (namespace !== rootNamespace) holders.push(Number(name))
     }
   }
@@ -158,21 +158,28 @@ async function findProbeAnchor() {
   return { pid: holders[0], node: '/proc/' + holders[0] + '/root/dsh-tools/node24' }
 }
 
-/** Discover process identities, mount source and launch paths for the fixed local candidate. */
-export async function inspectCandidate() {
-  const anchor = await findProbeAnchor()
+/**
+ * Discover actual process identities and protected launch paths with the original privilege/mount checks.
+ * @param {object} operations Explicit Engine-bound operations for another handed-over carrier; defaults retain
+ * the original local candidate. top returns sanitized pid/comm rows and execIds returns this container's IDs.
+ * @returns {Promise<object>} Actual identity and canStopSafely/canStart flags; missing evidence remains an issue.
+ */
+export async function inspectCandidate({ container = CANDIDATE_CONTAINER, execute = execInCandidate,
+  top = async () => (await docker(['top', container, '-eo', 'pid,comm'])).trim().split('\n').slice(1).map(line => {
+    const fields = line.trim().split(/\s+/); return { pid: Number(fields[0]), comm: fields[1] }
+  }),
+  execIds = async () => JSON.parse(await docker(['inspect', '--format', '{{json .ExecIDs}}', container])) ?? [],
+  execution: inspectExecution = inspectExec,
+} = {}) {
+  const anchor = await findProbeAnchor(execute)
   let observed
-  try { observed = JSON.parse(await execInCandidate([anchor.node, '-e', PROBE, String(anchor.pid)])) }
+  try { observed = JSON.parse(await execute([anchor.node, '-e', PROBE, String(anchor.pid)])) }
   catch (error) { if (error instanceof CandidateError) throw error; throw new CandidateError('无法解析候选运行态。') }
   const selected = selectProcessState(observed.rows, observed.containerNamespaceId)
   const app = selected.app, holder = selected.holder
-  const top = (await docker(['top', CANDIDATE_CONTAINER, '-eo', 'pid,comm'])).trim().split('\n').slice(1).map(line => {
-    const fields = line.trim().split(/\s+/)
-    return { pid: Number(fields[0]), comm: fields[1] }
-  })
-  const execIds = JSON.parse(await docker(['inspect', '--format', '{{json .ExecIDs}}', CANDIDATE_CONTAINER])) ?? []
-  const executions = await Promise.all(execIds.map(inspectExec))
-  const execution = matchApplicationExec(app, top, executions)
+  const topRows = await top(), ids = await execIds()
+  const executions = await Promise.all(ids.map(inspectExecution))
+  const execution = matchApplicationExec(app, topRows, executions)
   const issues = [...selected.issues]
   if (app && !execution) issues.push('无法唯一关联应用的 Docker 启动记录，不能确认正常退出。')
   for (const key of ['productRoot', 'productDevice', 'nodePath', 'appCheckPath', 'seccompPath', 'profileHome']) {
@@ -181,7 +188,7 @@ export async function inspectCandidate() {
   if (observed.productReadOnly !== true || observed.productBlockReadOnly !== true) issues.push('未确认产品挂载与块设备均为只读。')
   if (app && (!app.shutdownTimeoutMs || app.uid !== 2000 || app.gid !== 2000)) issues.push('应用身份或现有关闭预算未确认。')
   return {
-    container: CANDIDATE_CONTAINER, appPid: app?.pid ?? null, currentAppPid: app?.pid ?? null,
+    container, appPid: app?.pid ?? null, currentAppPid: app?.pid ?? null,
     appStartTicks: app?.startTicks ?? null, appUid: app?.uid ?? null, appGid: app?.gid ?? null,
     appExecId: execution?.execId ?? null, shutdownTimeoutMs: app?.shutdownTimeoutMs ?? null,
     namespacePid: selected.namespacePid, namespaceId: selected.namespaceId,

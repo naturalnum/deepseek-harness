@@ -1,11 +1,48 @@
-# 恢复传输
+# 本机冷重建
 
-恢复传输只连接显式提供的本机 Docker Engine socket 和容器。构造时必须提供同一恢复操作的取消信号、基于 `performance.now()` 的截止时间、Docker 可执行文件绝对路径和完整输出字节上限；构造与导入均不执行命令。
+本入口恢复一个已经正常交接、备份并真正重启的原 carrier，不创建环境、格式化磁盘、重新分配域或清空业务记录。真实两次冷重建、启动链与模型/界面验收尚未完成，组件检查不能代替这些证据。
 
-`runDocker` 只接受指定容器的 Root 交互式 exec 参数。Engine 请求只接受该容器创建 exec、启动指定 exec、读取指定 exec 状态这三个接口。stdout、stderr 和 Engine 响应均受上限约束，错误不包含输入、命令输出或底层异常正文。
+## 原件与存储
 
-取消或超时会中止本机请求，并对本机 Docker 客户端发送一次正常 SIGTERM。调用随即报告结果未确认，保留对实际 child、response、request 和 socket 关闭的观察；`close()` 等待这些本地对象的真实关闭。传输一旦未确认，后续调用全部拒绝，不自动重试或重新创建 exec。
+`captureRecoveryRoot` 读取原六文件实际 bytes、UID/GID/mode、稳定文件身份和原 `profiles/cloud/node_modules` 链接或实际缺失。缺文件、读期间变更、普通目录冒链接或旁路目标已有不同链接均拒绝。原凭据由原 credentials-local 来源与解析器管理，不生成空值或复制其他账号秘密；空 mutable profile、BOM、CRLF 和未改字段保留。
 
-## 限制
+`mapRecoveryConfiguration` 从当前 JSON insert 结构定位十二个确切字节范围：三个哈希、监听主机/端口、内部地址、两份数据库主机/端口、公开入口和 SDK lifecycle 地址。重复键、重复条目、缺字段或范围不匹配拒绝。新地址须来自本次拓扑实测；plan 和两层配置哈希来自本次真实测量及新文件，原件不覆盖。
 
-本机 socket 或 Docker 客户端退出不证明容器内 exec 退出。该模块不确认远端动作完成，不终止容器、应用、命名空间或保留进程，也不归还分配或容量；远端未确认责任仍由原恢复操作持有。它不修改原生发布命令、端口发现、更新参数或候选锁。
+`captureRecoveryStorage` 保存原 provisioner 十一 ext4 域的实际 UUID、原 loop、backing inode、文件系统几何、根权限与有效挂载选项。传入实际 installAnchor/app PID 时，还捕获确实依赖的产品只读 loop 和 arena backing 父盘；不存在的支持盘记为空，不按旧实例猜路径。恢复按产品盘、父盘、arena、十个子域排序，仅对缺失步骤接回原号并挂载，已就绪跳过。原号占用、重复 backing、inode/UUID/权限/exec 策略不符或结果未确认均停止。只检查不写任何域。
+
+目前支持盘只接受实际 ext4 全根 loop。另一实例的 Docker image/overlay 或只读 bind 不能冒产品块设备只读；缺对应原资格和正常接件接口时拒绝。SDK 后端、PG 和 typed/physical 收尾继续由原 owner 及正常机制负责。
+
+## Linux 私有阶段
+
+`recovery.mjs` 在原 carrier 的 Linux Root 基础挂载环境运行，输入为 Root 所有、0600 的 `pe-cloud-cold-recovery-input/v1` 文件，参数只带实际文件引用和 SHA256。导入与 `--help` 不做环境 I/O。
+
+```sh
+node deploy/local/recovery.mjs snapshot --input /absolute/private-input.json --sha256 ACTUAL_SHA256
+node deploy/local/recovery.mjs check --input /absolute/private-input.json --sha256 ACTUAL_SHA256
+```
+
+`snapshot` 使用新的 `snapshotDirectory`、原 `storageOwnerPath/launchInputPath` 和实际 `applicationPid`。只接受原 cloud CLI、UID2000 和独立 namespace；保存原六文件、原链接、权限和实际 hashes，并 pin 原 profile 引用的 native helper。私密副本在 `files/`，元数据在 0600 `metadata.json`，持久化文件和目录。这个配置副本不替代正常停机后的 PG dump 和账号数据备份。
+
+`check` 对照原存储、六文件、链接、原进程身份和 mountinfo，结果只能是资源观察与 `smokeStatus:not-run/ready:false`。`prepare/publish` 仅供持原操作锁的宿主恢复入口调用，不是独立发布或资格入口。
+
+`prepare` 还使用新的 `operationDirectory/budgetMs/addresses`；它要求 PID1 startTicks 与 mount namespace 均已改变，且无另一原应用或原 launcher。在公开输入及原资产 pins、私密来源检查通过后，准备独占的输入和 FD3/4/5 文件、接回原存储，并返回原 launcher 的 positional argv；此时未启动应用。`publish` 观察原 Docker exec 的真实 prepared PID/namespace/实测 plan，创建原 HOME 目录，以旁路 writer 保留原六文件/链接，核原 FD4 inode 后只写一次原七字段 ready。原 launcher 自行执行 seal、全部原断言和 UID/caps/NNP/seccomp drop，最终 exec 原 dsh cloud CLI。两阶段通过同一 Linux kernel monotonic deadline 关联，不能续期。
+
+FD4 发布前，`recovery-validation` 从实际 captured installAnchor 解析同组已安装产品，调用原 `parseRootDeploymentInput`、`parseStorageDeploymentPlan`、`parseCredentialsDocument` 和原六个 Loader Config；核三槽 plan、产品 anchor、plan/deployment/profile 哈希、原凭据路径、共享 base、provider/environmentVersion 引用。它不重写 bytes、不重新生成秘密，原 parser/schema 的拒绝只留下固定无秘密诊断并停止 ready。宿主只接受该实际校验完成后返回的 `inputsValidated:true`；此标记不是 Native/SDK 资格或完整恢复成功。
+
+## 宿主恢复入口
+
+```sh
+node deploy/local/recovery-local.mjs --input /absolute/private-local.json --sha256 ACTUAL_SHA256
+```
+
+输入为当前用户所有、0600 的 `pe-cloud-cold-recovery-local/v1` 文件。它包含实际 `dockerPath/socketPath/container/containerId/imageId/resourceId`、carrier 内的 `nodePath/rootEntry/rootInput/rootInputSha256`、本机 `workDirectory/stateDirectory/logDirectory`、总 `budgetMs/url/line`，以及 `smoke.credentialsPath/account/continueSession/continueMarker` 引用。这些身份来自实际原件，不能猜测。`stateDirectory` 是该 workDirectory 的 `local-state`；新交接实例无需伪造旧 latest。原生 latest 若存在，必须原 verified/release 已确认；旧 verify-intent/12、pending 或 operation.lock 均不能绕过。
+
+宿主入口持既有候选 reservation 和独占 `operation.lock`，实际核 Engine 中的原 CID/Image，再调用 Root prepare。它直接创建并启动一次 Engine exec，使原 launcher 最终 dsh 与该 exec 保持同一 PID，随后调用 Root publish、原 inspector 和 lifecycle 独立 keeper。现有产品块设备、进程身份、namespace 和关闭预算检查保留。原 401、宿主 `deploy/smoke/check.mjs` 实际退出0及最终原进程仍一致后才报告 `ready:true`。模型只使用目标原账号经正常产品入口配置的自有模型；无模型 Native 证据与完整 smoke 分列。
+
+若实际 Engine 在一个已运行、自有 backend 内，`via` 明确给该 backend 的 `container/nodePath/relayEntry/socketPath/dockerPath`。薄 relay 复用同一 bounded transport；需正常安装公开控制源码，不创建新 Engine、端口转发或复制秘密。它不解决该目标尚缺的产品/Root/Native 资格。
+
+## 取消、超时与责任
+
+所有宿主步骤共享原截止时间/取消信号；Linux publish 不能重置 prepare 的单调时钟预算。创建出的每个 exec ID 在发 start 前写入私密原操作锁。取消、超时、seal/smoke 失败或未知结果停止依赖步骤，保留原锁、原 exec、新 namespace、原数据及私密日志，不重放、不强杀、不清理或提前释放 SDK 分配。只有实际成功，所有本机 child/socket/transport 真实关闭且原锁 inode 仍匹配，才删除本次锁；不改写 native latest 或发布“verified”回执。
+
+`recovery-transport` 只连接显式本机 socket/container；Docker CLI 也固定到同一 socket。Engine 请求限该容器创建 exec、读取该容器元数据/top、指定 exec start/inspect。完整 stdout/stderr/HTTP 输出受上限约束，错误不含命令、配置、凭据或底层正文。取消对本机客户端只发送一次 SIGTERM，`close()` 等待实际本地关闭；客户端或 socket 关闭始终不证明远端 exec/业务分配已经结束。
