@@ -20,19 +20,25 @@ export function apply(ctx) {
     const result = { status: 'running', accountId: request.accountId, steps: [], usedModel: false }
     const persist = () => fs.writeFileSync(TEST + '/native-results.json', JSON.stringify(result, null, 2) + '\n', { mode: 0o600 })
     fs.writeFileSync(TEST + '/native-results.json', JSON.stringify(result) + '\n', { mode: 0o600, flag: 'wx' })
+    result.stage = 'acquire-account'; persist()
     const use = await ctx.peAccountRuntime.acquireAccount(request.accountId, controller.signal)
     try {
       use.assertCurrent()
       const account = use.context
-      const workspace = await account.workspaceController.create({ path: request.projectPath })
-      const created = await account.sessionController.create({ workspaceId: workspace.workspace.id, agentPreset: 'standard' })
+      result.stage = 'native-workspace-adoption'; persist()
+      const registered = account.workspaceRegistry.list().find(workspace => workspace.path.endsWith('/default-workspace'))
+      if (!registered) throw new Error('The original registered default Workspace is absent')
+      const workspace = await account.workspaceController.create({ path: registered.path })
+      result.stage = 'native-session-create'; persist()
+      const created = await account.sessionController.create({ workspaceId: workspace.workspace.workspaceId, agentPreset: 'standard' })
       const agent = account.agents.get(created.sessionId)
       if (!agent) throw new Error('Original Native Agent absent')
-      result.sessionId = created.sessionId; result.workspaceId = workspace.workspace.id; persist()
+      result.sessionId = created.sessionId; result.workspaceId = workspace.workspace.workspaceId; persist()
       let notifications = 0
       const dispose = account.on('tools/result', () => { notifications++ })
       const call = async (label, name, args, expected) => {
         use.assertCurrent()
+        result.stage = label; persist()
         const outcome = await account.tools.execute({ callId: ToolCallId('sdk-linux-' + label), name, agent,
           signal: controller.signal, arguments: args })
         const item = { label, name, arguments: args, outcome, resultNotifications: notifications }
