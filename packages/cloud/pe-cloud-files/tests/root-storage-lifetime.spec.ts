@@ -88,7 +88,7 @@ it('finishes both installed storage leases during parent Root disposal while nat
       environment: { get: () => undefined, getFrom: () => undefined },
     }
     const lease = await owner.prepareAccount(input)
-    const preparation = lease.bindInstalled(input.binding, () => {}, () => {}, async () => { throw new Error('No project lookup during cleanup') })
+    const preparation = lease.bindInstalled(input.binding, () => {}, () => {}, async () => { throw new Error('No project lookup during cleanup') }, () => {})
     const research = preparation.researchStorage?.()
     expect(research?.binding).toBe(input.binding)
     expect(research?.directory).toBe(home + '/research-suite')

@@ -32,8 +32,9 @@ export interface StaticStorageDriver {
   assertPoolCurrent(): void
   bind(
     binding: AccountBinding, root: FdRootIdentity, current: () => void,
-    privateParent?: FdRootIdentity & { readonly rootMountId: string },
-    revalidation?: readonly SkillRecordRevalidation[],
+    privateParent: FdRootIdentity & { readonly rootMountId: string } | undefined,
+    revalidation: readonly SkillRecordRevalidation[] | undefined,
+    onMutationUnknown: () => void,
   ): PoolReadPort
   joinEpoch(binding: AccountBinding): Promise<void>
   /** Omission conservatively retains every old original; actual root pool supplies this only for its configured native capability. */
@@ -441,7 +442,12 @@ export class RootStorageOwner {
 
 /** Retained exact-generation use of already provisioned domains; it cannot close the shared pool or issue another account. */
 export class StaticAccountStorageLease {
-  private installed?: { binding: AccountBinding; preparation: AccountFilesPreparation; resolveProject: ResolveAccountFileProject }
+  private installed?: {
+    binding: AccountBinding
+    preparation: AccountFilesPreparation
+    resolveProject: ResolveAccountFileProject
+    onMutationUnknown: () => void
+  }
   private closing?: Promise<void>
 
   /**
@@ -498,11 +504,12 @@ export class StaticAccountStorageLease {
    * @param assertCurrent Factory's current check, valid before business publication.
    * @param assertUnpublished Original factory registration window, never a ready flag.
    * @param resolveProject Trusted runtime selection derived asynchronously from the current native caller.
+   * @param onMutationUnknown Original factory notification; it fences this exact graph without releasing any responsibility.
    * @returns Existing M8R inputs over exactly one same-pool projects lane.
    */
   bindInstalled(
     binding: AccountBinding, assertCurrent: (binding: AccountBinding) => void, assertUnpublished: () => void,
-    resolveProject: ResolveAccountFileProject,
+    resolveProject: ResolveAccountFileProject, onMutationUnknown: () => void,
   ): AccountFilesPreparation {
     this.assertLayout()
     const original = this.input.binding
@@ -510,7 +517,8 @@ export class StaticAccountStorageLease {
       || binding.lifetime !== original.lifetime) stale()
     assertCurrent(binding)
     if (this.installed !== undefined) {
-      if (this.installed.binding !== binding || this.installed.resolveProject !== resolveProject) stale()
+      if (this.installed.binding !== binding || this.installed.resolveProject !== resolveProject
+        || this.installed.onMutationUnknown !== onMutationUnknown) stale()
       return this.installed.preparation
     }
     assertUnpublished()
@@ -537,7 +545,7 @@ export class StaticAccountStorageLease {
           },
         })
       }))
-    const port = this.driver.bind(binding, parent, current, privateParent, revalidation)
+    const port = this.driver.bind(binding, parent, current, privateParent, revalidation, onMutationUnknown)
     const bank = accountEnvironmentBank(this.account)
     const preparation: AccountFilesPreparation = Object.freeze<AccountFilesPreparation>({ binding, port,
       assertContentAvailable: () => { port.assertContentAvailable() },
@@ -573,7 +581,7 @@ export class StaticAccountStorageLease {
         assertDeployment: current, assertExclusive: current }),
       assertMountCurrent: (actual: AccountBinding) => { if (actual !== binding) stale(); current() },
       assertUnpublished: () => { current(); assertUnpublished() } })
-    this.installed = { binding, preparation, resolveProject }
+    this.installed = { binding, preparation, resolveProject, onMutationUnknown }
     return preparation
   }
 
