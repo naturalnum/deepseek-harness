@@ -1,5 +1,6 @@
 /** Local validation consumer: real account/session/tool APIs; no model call or replacement transport. */
 import fs from 'node:fs'
+import {symbols} from '@deepseek-ai/cordis'
 import { setTimeout as delay } from 'node:timers/promises'
 import { randomBytes } from 'node:crypto'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
@@ -34,6 +35,14 @@ export function apply(ctx) {
       const agent = account.agents.get(created.sessionId)
       if (!agent) throw new Error('Original Native Agent absent')
       result.sessionId = created.sessionId; result.workspaceId = workspace.workspace.workspaceId; persist()
+      const original = value => value && (Reflect.get(value,symbols.original) ?? value)
+      result.admissionObservation = { agentCurrent: account.agents.get(agent.id) === agent, sessionCurrent: account.sessions.get(agent.id) === agent.session,
+        workspaceAttached: registered.sessionIds.includes(agent.id), cwd: agent.session.header.cwd, workingDirectory: account.workingDirectory.get(agent.session),
+        preset: account.sessionProjections.stateOf(agent.session,'agentPreset'), composedPreset: account.agentPresets.composedPreset(agent.ctx),
+        route: {provider:agent.options.provider,model:agent.options.model}, sameAccountRoot: agent.ctx.root === account.root,
+        sameBinding: agent.ctx.get('peAccount') === use.binding,
+        compositions: account.agentPresets.inspectCompositions(agent.ctx),
+        providerIdentity: Object.fromEntries(['fs','shell','subprocess','shellEnv','sandbox','ptcRuntime','terminals','llm','subagents','workingDirectory'].map(key=>[key,original(account.root.get(key))===original(agent.ctx.get(key))])) }; persist()
       let notifications = 0
       const dispose = account.on('tools/result', () => { notifications++ })
       const call = async (label, name, args, expected) => {
