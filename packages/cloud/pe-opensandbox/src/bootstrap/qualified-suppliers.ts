@@ -39,6 +39,11 @@ export const OFFICE_RESEARCH_GIT_SSH_AMD64_WORKLOAD_IMAGE_DIGEST = 'sha256:4b749
 /** COPY-only original SDK policy variant paired exclusively with that complete AMD64 workload. */
 export const OFFICE_RESEARCH_GIT_SSH_AMD64_SERVER_IMAGE_DIGEST = 'sha256:28e4ebc841f3bc9b09f5cbfce8ce289522d259daa95f2b9ca152786ca8b5de0b'
 
+/** Native AMD64 workload rebuilt from the retained public Node/Python recipe. */
+export const NATIVE_AMD64_REBUILD_20261115_WORKLOAD_IMAGE_DIGEST = 'sha256:32c17c742af43a6d9c89c69441fbc543751af41b0f61bf8294ed00ac3a4df62f'
+/** Exact guarded server rebuilt with only that Native AMD64 workload selected. */
+export const NATIVE_AMD64_REBUILD_20261115_SERVER_IMAGE_DIGEST = 'sha256:e4fc713db05339d41b70215f2ffdbc1c37f8948b92c949eb4cd2c164ce90038a'
+
 /** One reviewed storage schema, workload and server combination; no caller can register another supplier. */
 export interface QualifiedSupplierTuple {
   readonly schema: 'pe-opensandbox-root-deployment-v1' | 'pe-opensandbox-root-deployment-v2'
@@ -84,6 +89,9 @@ export const qualifiedSupplierTuples: readonly QualifiedSupplierTuple[] = Object
   Object.freeze({ schema: 'pe-opensandbox-root-deployment-v2', workloadImageDigest: OFFICE_RESEARCH_GIT_SSH_AMD64_WORKLOAD_IMAGE_DIGEST,
     platform: 'amd64', execdImageDigest: RUNTIME_PROFILES.amd64.execdImageDigest,
     serverImageDigest: OFFICE_RESEARCH_GIT_SSH_AMD64_SERVER_IMAGE_DIGEST, sessionDirectories: true }),
+  Object.freeze({ schema: 'pe-opensandbox-root-deployment-v2', workloadImageDigest: NATIVE_AMD64_REBUILD_20261115_WORKLOAD_IMAGE_DIGEST,
+    platform: 'amd64', execdImageDigest: RUNTIME_PROFILES.amd64.execdImageDigest,
+    serverImageDigest: NATIVE_AMD64_REBUILD_20261115_SERVER_IMAGE_DIGEST, sessionDirectories: true }),
 ])
 
 /**
