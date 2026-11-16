@@ -369,6 +369,22 @@ export class AccountFactory {
     } })
   }
 
+  private fileMutationUnknown(slot: Slot, binding: AccountBinding, lease: StaticAccountStorageLease): void {
+    if (this.slots.get(slot.accountId) !== slot || slot.binding !== binding || slot.storageLease !== lease
+      || slot.state === 'closed') return
+    slot.closeRequested = true
+    slot.state = 'unknown'
+    void this.quarantineOwned(slot).catch((_cause: unknown) => { /* The original slot retains the quarantine result. */ })
+    if (slot.closing !== undefined) return
+    const close = Promise.withResolvers<AccountNativeCloseObservation>()
+    slot.closing = close.promise
+    // Preserve the current error delivery; the original slot owns the deferred actual drain.
+    setImmediate(() => {
+      try { close.resolve(this.drainOwned(slot)) }
+      catch (cause: unknown) { close.resolve(this.unknownClose(slot, cause)) }
+    })
+  }
+
   private retainOwnerMutation<T>(slot: Slot, submit: () => Promise<T>): Promise<T> {
     const previous = slot.ownerMutation
     const actual = Promise.resolve(previous).then(() => {
@@ -988,13 +1004,17 @@ export class AccountFactory {
           if (slot.recipe.native !== undefined) {
             const preparation = slot.recipe.native, lease = slot.storageLease
             slot.nativeRoot = Object.freeze({ preparation, current: preparation.assertRootCurrent })
+            const onMutationUnknown = () => {
+              if (lease !== undefined) this.fileMutationUnknown(slot, binding, lease)
+            }
             slot.integration = new AccountNativeIntegration({ ...preparation,
               borrowAccount: (current: AccountBinding) => this.borrowCurrent(current),
               ...lease === undefined ? {} : {
                 files: (_owner, current, getFileProject) => {
                   if (current !== binding) throw new AccountRuntimeError('cloud/stale-generation', 'Storage bind belongs to another native graph')
                   return lease.bindInstalled(binding,
-                    (installed: AccountBinding) => { this.assertMountCurrent(installed) }, unpublished, getFileProject)
+                    (installed: AccountBinding) => { this.assertMountCurrent(installed) }, unpublished, getFileProject,
+                    onMutationUnknown)
                 },
               },
             }, diagnostic)
