@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
 import { test } from 'node:test'
+import { spawn } from 'node:child_process'
 import { runLocalRecovery } from './recovery-local.mjs'
 
 test('host recovery help imports the original lifecycle and smoke parser without accessing a live target', async () => {
@@ -84,3 +85,64 @@ test('a confirmed normal release reaches only the selected Engine, whose failure
   const lock = await fs.readFile(join(f.state, 'operation.lock'), 'utf8')
   assert.equal(JSON.parse(lock).format, 'pe-cloud-cold-recovery-operation/v1')
 })
+
+for (const mode of ['terminal-prelaunch', 'live-host', 'live-exec', 'launch-evidence']) {
+  test(`explicit failed-preparation disposition retains failure and refuses live or published work (${mode})`, async t => {
+    const directory = await fs.mkdtemp('/tmp/pe-retire-prelaunch-'), state = join(directory, 'local-state')
+    await fs.mkdir(state, { mode: 0o700 })
+    const socket = join(directory, 'engine.sock'), requests = [], sockets = new Set()
+    const server = createServer((request, response) => {
+      requests.push([request.method, request.url]); response.setHeader('content-type', 'application/json')
+      if (request.url === '/containers/owned-fixture/json') response.end(JSON.stringify({
+        Id: 'a'.repeat(64), Image: 'sha256:' + 'b'.repeat(64), Path: 'sleep', Args: ['infinity'],
+        State: { Running: true, Pid: 123 }, ExecIDs: ['e'.repeat(64)],
+      }))
+      else if (request.url === '/exec/' + 'e'.repeat(64) + '/json') response.end(JSON.stringify({
+        ID: 'e'.repeat(64), Running: mode === 'live-exec', ExitCode: mode === 'live-exec' ? null : 1, Pid: mode === 'live-exec' ? 124 : 0,
+      }))
+      else { response.writeHead(400); response.end('{}') }
+    })
+    server.on('connection', socket => { sockets.add(socket); socket.once('close', () => sockets.delete(socket)) })
+    await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socket, resolve) })
+    t.after(async () => {
+      for (const socket of sockets) socket.destroy()
+      await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
+      assert.equal(sockets.size, 0); await fs.rm(directory, { recursive: true })
+    })
+    const child = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' }), ended = child.pid
+    await new Promise((resolve, reject) => { child.once('error', reject); child.once('close', resolve) })
+    const write = (path, value) => fs.writeFile(path, JSON.stringify(value) + '\n', { flag: 'wx', mode: 0o600 })
+    const docker = join(directory, 'docker'), rootHash = 'c'.repeat(64)
+    await fs.writeFile(docker, '#!' + process.execPath + '\n' + (mode === 'launch-evidence' ? 'process.exit(1)' :
+      'console.log(JSON.stringify({stage:"staged-before-launch",inputSha256:"' + rootHash + '"}))'), { mode: 0o700 })
+    const input = join(directory, 'original.json'), spec = { schema: 'pe-cloud-cold-recovery-local/v1',
+      container: 'owned-fixture', containerId: 'a'.repeat(64), imageId: 'sha256:' + 'b'.repeat(64),
+      stateDirectory: state, workDirectory: directory, rootInput: '/private/input.json', rootInputSha256: rootHash,
+      rootEntry: '/private/recovery.mjs', nodePath: '/dsh-tools/node24', dockerPath: docker, socketPath: socket }
+    await write(input, spec)
+    const sha = createHash('sha256').update(await fs.readFile(input)).digest('hex')
+    const operation = '00000000-0000-4000-8000-000000000014', lock = join(state, 'operation.lock')
+    await write(lock, { format: 'pe-cloud-cold-recovery-operation/v1', operation, inputSha256: sha,
+      pid: mode === 'live-host' ? process.pid : ended })
+    const before = await fs.lstat(lock), original = await fs.readFile(lock), request = join(directory, 'retire.json')
+    await write(request, { schema: 'pe-cloud-retire-failed-preparation/v1', originalInput: input, originalInputSha256: sha,
+      operation, lockDevice: String(before.dev), lockInode: String(before.ino), budgetMs: 5000 })
+    const requestSha = createHash('sha256').update(await fs.readFile(request)).digest('hex'), outputs = []
+    const run = () => runLocalRecovery(['retire-prelaunch', '--input', request, '--sha256', requestSha], { report: x => outputs.push(x) })
+    if (mode === 'terminal-prelaunch') {
+      assert.equal(await run(), 0)
+      await assert.rejects(fs.lstat(lock), error => error.code === 'ENOENT')
+      const archive = join(state, 'cold-prelaunch-failed-' + operation + '.jsonl')
+      assert.deepEqual(await fs.readFile(archive), original)
+      assert.equal((await fs.lstat(archive)).ino, before.ino)
+      assert.equal(JSON.parse(await fs.readFile(archive + '.receipt.json')).resourcesReleased, false)
+      assert.equal(JSON.parse(outputs[0]).status, 'failed-preparation-archived')
+    } else {
+      await assert.rejects(run())
+      assert.deepEqual(await fs.readFile(lock), original)
+      if (mode === 'live-host') assert.deepEqual(requests, [])
+      assert.deepEqual(outputs, [])
+    }
+    assert.ok(requests.every(([method]) => method === 'GET'))
+  })
+}

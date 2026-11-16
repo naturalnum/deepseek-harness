@@ -39,6 +39,12 @@ FD4 发布前，`recovery-validation` 从实际 captured installAnchor 解析同
 
 ## 宿主恢复入口
 
+### 明确结束尚未启动的失败准备
+
+`node deploy/local/recovery-local.mjs retire-prelaunch --input 私密处置JSON --sha256 SHA256` 只归档已经终态、尚未创建 launcher 的失败准备锁。输入为 `pe-cloud-retire-failed-preparation/v1`，含原宿主输入路径及 SHA、原 operation、锁的 device/inode、调用线名和不超过 60000ms 的本次观察预算。入口核原宿主 PID 已结束、原精确容器与所有已知 exec 终态；Linux 实测旧 carrier/reference 生命周期结束，只有原初始进程，原目录仍仅有 input 与空 journal/log/measurement/ready 文件。任一来源、进程或发布结果未确认仍保锁。
+
+通过后保留原同 inode 锁的归档和实际观察回件，fsync 并回读，再移除原操作锁名；不改 PG、SDK、数据、原阶段目录或任何 ready/资格状态，不宣称资源已释放。修复后以新独立输入、operationDirectory 和预算发起正常恢复，不能重放原未知请求。
+
 ```sh
 node deploy/local/recovery-local.mjs --input /absolute/private-local.json --sha256 ACTUAL_SHA256
 ```

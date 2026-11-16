@@ -20,6 +20,97 @@ const digest = bytes => createHash('sha256').update(bytes).digest('hex')
 const fail = () => { throw new CandidateError('本机冷重建未确认；保留原操作锁、原exec及私密日志，不重试或释放资源。') }
 const absolute = value => typeof value === 'string' && isAbsolute(value) && resolve(value) === value && !value.includes('\0')
 
+const FAILED_PREPARATION_OBSERVATION = String.raw`
+const fs=require('node:fs'),crypto=require('node:crypto'),expected=JSON.parse(process.argv[1]);
+const read=path=>{
+ const posix=require('node:path').posix;
+ if(!path.startsWith('/')||posix.normalize(path)!==path||path.includes('\0'))throw Error('invalid input path');
+ for(let parent=posix.dirname(path);parent!=='/';parent=posix.dirname(parent)){const s=fs.lstatSync(parent);if(!s.isDirectory()||s.isSymbolicLink()||s.uid!==0||(s.mode&0o022)!==0)throw Error('unprotected parent')}
+ const fd=fs.openSync(path,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW);
+ try{const a=fs.fstatSync(fd);if(!a.isFile()||a.nlink!==1||a.uid!==0||(a.mode&0o077)!==0||a.size<1||a.size>1048576)throw Error('unprotected input');
+ const bytes=fs.readFileSync(fd),b=fs.fstatSync(fd),n=fs.lstatSync(path);if(['dev','ino','size','mtimeMs','ctimeMs'].some(k=>a[k]!==b[k]||b[k]!==n[k]))throw Error('input changed');return bytes;
+ }finally{fs.closeSync(fd)}
+};
+const input=read(expected.input),hash=bytes=>crypto.createHash('sha256').update(bytes).digest('hex');
+if(hash(input)!==expected.sha256)throw Error('input changed');
+const spec=JSON.parse(input),dir=spec.operationDirectory,metadata=JSON.parse(read(spec.snapshotDirectory+'/metadata.json'));
+const identity=pid=>{const s=fs.readFileSync('/proc/'+pid+'/stat','utf8');return {pid,startTicks:s.slice(s.lastIndexOf(')')+2).split(/\s+/)[19],namespace:fs.readlinkSync('/proc/'+pid+'/ns/mnt')}};
+const carrier=identity(1);
+if(carrier.startTicks===metadata.carrier.startTicks)throw Error('carrier not cold');
+for(const previous of metadata.namespaceReferences){try{if(identity(previous.pid).startTicks===previous.startTicks)throw Error('original process live')}catch(e){if(!['ENOENT','ESRCH'].includes(e.code))throw e}}
+const names=fs.readdirSync(dir).sort(),files=['input.json','journal.jsonl','launch.log','measurement.json','ready.json'].sort();
+if(JSON.stringify(names)!==JSON.stringify(files))throw Error('preparation state changed');
+for(const name of files){const p=dir+'/'+name,s=fs.lstatSync(p);if(!s.isFile()||s.isSymbolicLink()||s.nlink!==1||s.uid!==0||(s.mode&0o7777)!==0o600||name!=='input.json'&&s.size!==0)throw Error('launch evidence exists')}
+const processes=[];
+for(const name of fs.readdirSync('/proc').filter(x=>/^[1-9]\d*$/.test(x))){const pid=Number(name);if(pid===process.pid)continue;try{
+ const argv=fs.readFileSync('/proc/'+pid+'/cmdline','utf8').split('\0').filter(Boolean),id=identity(pid);
+ if(id.namespace!==carrier.namespace||pid!==1&&JSON.stringify(argv)!==JSON.stringify(expected.initialCommand))throw Error('other process live');
+ processes.push(id);
+}catch(e){if(!['ENOENT','ESRCH'].includes(e.code))throw e}}
+console.log(JSON.stringify({inputSha256:hash(input),operationDirectory:dir,carrier,processes,stage:'staged-before-launch'}));
+`
+
+async function retireFailedPreparation(argv, { signal, report }) {
+  if (argv.length !== 5 || argv[1] !== '--input' || argv[3] !== '--sha256' || !/^[a-f0-9]{64}$/.test(argv[4])) fail()
+  const bytes = privateInput(argv[2]), request = JSON.parse(bytes)
+  if (digest(bytes) !== argv[4] || request.schema !== 'pe-cloud-retire-failed-preparation/v1'
+    || !absolute(request.originalInput) || !/^[a-f0-9]{64}$/.test(request.originalInputSha256)
+    || !/^[a-f0-9-]{36}$/.test(request.operation) || !Number.isSafeInteger(request.budgetMs)
+    || request.budgetMs < 1000 || request.budgetMs > 60000) fail()
+  const originalBytes = privateInput(request.originalInput), spec = JSON.parse(originalBytes)
+  if (digest(originalBytes) !== request.originalInputSha256 || spec.schema !== 'pe-cloud-cold-recovery-local/v1'
+    || !absolute(spec.stateDirectory) || !absolute(spec.rootInput) || !absolute(spec.rootEntry)) fail()
+  await assertCandidateLock(spec.workDirectory, request.line)
+  const lockPath = join(spec.stateDirectory, 'operation.lock'), originalLock = privateInput(lockPath)
+  const records = originalLock.toString('utf8').trim().split('\n').map(line => JSON.parse(line)), header = records[0]
+  const original = fs.lstatSync(lockPath)
+  const gone = () => { try { process.kill(header.pid, 0); fail() } catch (error) { if (error.code !== 'ESRCH') throw error } }
+  if (records.length !== 1 || header.format !== 'pe-cloud-cold-recovery-operation/v1' || header.operation !== request.operation
+    || header.inputSha256 !== request.originalInputSha256 || !Number.isSafeInteger(header.pid) || header.pid <= 0
+    || String(original.dev) !== request.lockDevice || String(original.ino) !== request.lockInode) fail()
+  gone()
+  const deadlineAtMs = performance.now() + request.budgetMs
+  const transport = createRecoveryEngine({ signal, deadlineAtMs, socketPath: spec.socketPath, dockerPath: spec.dockerPath,
+    container: spec.container, maxOutputBytes: 1048576, via: spec.via })
+  try {
+    const target = await transport.request('GET', '/containers/' + spec.container + '/json')
+    if (target?.Id !== spec.containerId || target.Image !== spec.imageId || target.State?.Running !== true
+      || !Array.isArray(target.Args) || typeof target.Path !== 'string') fail()
+    const originalCommand = [target.Path, ...target.Args]
+    const observation = JSON.parse(await transport.runDocker(['exec', '--interactive', '--user', '0', spec.container,
+      spec.nodePath, '-e', FAILED_PREPARATION_OBSERVATION, JSON.stringify({ input: spec.rootInput,
+        sha256: spec.rootInputSha256, initialCommand: originalCommand })]))
+    if (observation.stage !== 'staged-before-launch' || observation.inputSha256 !== spec.rootInputSha256) fail()
+    const after = await transport.request('GET', '/containers/' + spec.container + '/json')
+    if (after.Id !== target.Id || after.State.Pid !== target.State.Pid || !Array.isArray(after.ExecIDs ?? [])) fail()
+    for (const id of after.ExecIDs ?? []) {
+      const execution = await transport.inspectExec(id)
+      if (execution.running || execution.missing || execution.exitCode === null) fail()
+    }
+    gone(); within(signal, deadlineAtMs)
+    if (!privateInput(lockPath).equals(originalLock)) fail()
+    const current = fs.lstatSync(lockPath)
+    if (current.dev !== original.dev || current.ino !== original.ino) fail()
+    const archive = join(spec.stateDirectory, 'cold-prelaunch-failed-' + header.operation + '.jsonl')
+    const receipt = { operation: header.operation, status: 'failed-preparation-archived', inputSha256: header.inputSha256,
+      originalLockSha256: digest(originalLock), observation, resourcesReleased: false }
+    const receiptFd = fs.openSync(archive + '.receipt.json', 'wx', 0o600)
+    try { fs.writeFileSync(receiptFd, JSON.stringify(receipt) + '\n'); fs.fsyncSync(receiptFd) } finally { fs.closeSync(receiptFd) }
+    fs.linkSync(lockPath, archive)
+    const archived = fs.lstatSync(archive)
+    if (archived.dev !== original.dev || archived.ino !== original.ino || !fs.readFileSync(archive).equals(originalLock)) fail()
+    const parent = fs.openSync(spec.stateDirectory, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY)
+    try {
+      fs.fsyncSync(parent)
+      const named = fs.lstatSync(lockPath)
+      if (named.dev !== original.dev || named.ino !== original.ino || named.nlink !== 2) fail()
+      fs.unlinkSync(lockPath); fs.fsyncSync(parent)
+    } finally { fs.closeSync(parent) }
+    report(JSON.stringify({ status: receipt.status, operation: header.operation, archive, resourcesReleased: false }))
+    return 0
+  } finally { await transport.close() }
+}
+
 function privateInput(path) {
   if (!absolute(path)) fail()
   const fd = fs.openSync(path, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW)
@@ -70,6 +161,7 @@ async function childResult(executable, args, { signal, deadlineAtMs, logFd }) {
  */
 export async function runLocalRecovery(argv, { signal = new AbortController().signal, report = console.log } = {}) {
   const startedAtMs = performance.now()
+  if (argv[0] === 'retire-prelaunch') return retireFailedPreparation(argv, { signal, report })
   if (argv.length === 0 || argv.length === 1 && argv[0] === '--help') { report(HELP); return 0 }
   if (argv.length !== 4 || argv[0] !== '--input' || argv[2] !== '--sha256' || !/^[a-f0-9]{64}$/.test(argv[3])) fail()
   const input = privateInput(argv[1]), spec = JSON.parse(input)
