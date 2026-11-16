@@ -53,6 +53,8 @@ Access 持有 `CloudBootstrap` 及其浏览器安全校验器 `decodeCloudBootst
 
 `PeAuthService` 由 access/root 安装，拥有一个有界 PostgreSQL 池、官方凭据读取、实际 Better Auth 初始化及 schema 检查。`AuthRootConfig` 在浏览器安全访问配置之外，显式设置数据库、池、凭据和启动预算。观察结果只提供有界资源计数及关闭的请求准入。缺失 schema 或初始化失败时保留清理责任；提供者不执行迁移、不注册路由。共享 HTTP/WS 准入仍须通过 runtime 的实际根配方审核并具备账户提供者。
 
+可选[服务应用](../../packages/cloud/pe-cloud-access/README.zh.md#use-this-package)沿用同一 Root 认证拥有者和独立组合的原生 WebServer。私有 POST 交接保留原登录及准确服务分配；每个资源/API 请求仍借用原账户、Peer 和执行能力。[HTTP 请求类型](../../packages/cloud/pe-opensandbox/src/types.ts)支持有界写入正文；凭据记录不授予执行或释放权限。原生 Browser 经既有公开标签页操作渲染隔离内容 origin。
+
 可信 runtime 在准备阶段，以精确账户 binding、根签发配置保存屏障、部署开放上限及独立挂载/业务准入核验安装 `CloudAccountApi`。固定的原生编辑器和凭据构造函数在初始化前安装保存 hook。Controller、AgentLoop 和 LLM 安装沿用既有原生守卫；`/account` 核验这个准备好的服务。安装和入口激活不发布就绪。每次业务操作要求独立的当前 ready 核验，inventory 审核和终止保存结算各自保留生命周期规则。
 
 原生 Session 适配保留原有派发、DTO 和 Session 状态，并在实际副作用前执行守卫。可等待的目录准备在创建 Agent 前使用账户固定 files 能力。账户发布前仍须完成产品路由、项目/Preset/模型核验、实际原生 inventory 及持久存储授权。
@@ -681,6 +683,13 @@ observe(): AuthRootObservation
 inspectRootFetch(): readonly ExactFetchExposure[]
 
 /**
+ * Attach the original dedicated Native content listener to this Root's authentication/ingress owner.
+ * @param scope Original isolated listener Loader fiber in this Root.
+ * @param web Dedicated Native WebServer, distinct from management.
+ */
+attachApplicationListener(scope: Context, web: WebServer): void
+
+/**
  * Delegate one native model-key invocation through the original login registry.
  * @param peer Exact Gateway invocation Peer, never a client identity.
  * @param consume Actual native work using the original retained Use and current checks.
@@ -723,7 +732,7 @@ withConfigurationPeer<T>(peer: PeerScope, consume: ConfigurationPeerOperation<T>
 close(): Promise<void>
 ```
 
-Types: [ConfigurationPeerOperation](cloud.zh.md#approved-plugin-controls)
+Types: [ConfigurationPeerOperation](cloud.zh.md#approved-plugin-controls) · [WebServer](web-server.zh.md)
 
 Source: [`packages/cloud/pe-cloud-access/src/auth-root.ts`](../../packages/cloud/pe-cloud-access/src/auth-root.ts)
 

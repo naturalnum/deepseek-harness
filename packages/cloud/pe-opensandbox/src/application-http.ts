@@ -2,7 +2,7 @@
 import { request as httpRequest, type ClientRequest, type IncomingMessage } from 'node:http'
 import { isIP, Socket, type SocketConstructorOpts } from 'node:net'
 import type { DuplexOptions } from 'node:stream'
-import type { ApplicationReadRequest, ApplicationReadLimits, ApplicationReadResponse, RegisteredApplicationService } from './types.ts'
+import type { ApplicationHttpRequest, ApplicationReadLimits, ApplicationReadResponse, RegisteredApplicationService } from './types.ts'
 
 /** Explicit transport budgets; readable thresholds are combined with a fixed native read buffer. */
 export interface HttpTransportLimits {
@@ -76,7 +76,8 @@ function stopUnconfirmed(error: unknown): boolean {
   const code: unknown = descriptor !== undefined && 'value' in descriptor ? descriptor.value : undefined
   return code === 'cloud/stop-unconfirmed'
 }
-const allowedHeaders = new Set(['accept', 'accept-language', 'if-none-match', 'if-modified-since', 'range'])
+const allowedHeaders = new Set(['accept', 'accept-language', 'if-none-match', 'if-modified-since', 'range', 'content-type'])
+const sdkHttpMethods = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE'])
 
 /**
  * Capture Root's selected server and exact registered target; no returned field reveals URLs, ports or secrets.
@@ -102,10 +103,13 @@ export function createSelectedServerHttp(selection: SelectedServerHttpInput, tar
   need(Number.isFinite(residentDeadlineAtMs))
   const prefix = `${base.pathname}/sandboxes/${encodeURIComponent(sandboxId)}/proxy/${port}`
   return Object.freeze({
-    async withResponse(request: ApplicationReadRequest, responseLimits: ApplicationReadLimits, signal: AbortSignal,
+    async withResponse(request: ApplicationHttpRequest, responseLimits: ApplicationReadLimits, signal: AbortSignal,
       consume: (response: ApplicationReadResponse) => Promise<void>): Promise<void> {
-      // The fixed 1.1.1 route does not register HEAD; never substitute GET or try a second request.
-      need(request.method === 'GET')
+      // The selected SDK does not register HEAD; never substitute GET or try a second request.
+      const method = request.method, body = request.body
+      need(sdkHttpMethods.has(method) && (method !== 'GET' || body === undefined))
+      const bodyBytes = body?.byteLength ?? 0, backingBytes = body?.buffer.byteLength ?? 0
+      need(bodyBytes <= limits.maxWireBytes && backingBytes <= limits.maxWireBytes, 'cloud/capacity')
       const resource = request.resourcePath, parsed = new URL(resource, 'http://application.invalid')
       need(resource.startsWith('/') && !resource.startsWith('//') && !/[\\#\u0000-\u0020\u007f]/u.test(resource)
         && parsed.origin === 'http://application.invalid' && parsed.pathname + parsed.search === resource
@@ -117,12 +121,13 @@ export function createSelectedServerHttp(selection: SelectedServerHttpInput, tar
       need(responseLimits.maxHeaderCount <= 128)
       const headers: Record<string, string> = { host: base.host, connection: 'close', 'OPEN-SANDBOX-API-KEY': key,
         'OpenSandbox-Access-Renew': 'skip' }
+      if (method !== 'GET') headers['content-length'] = String(bodyBytes)
       need(request.headers.length <= responseLimits.maxHeaderCount, 'cloud/capacity')
       for (const [name, value] of request.headers) {
         need(allowedHeaders.has(name) && !Object.hasOwn(headers, name) && /^[\x20-\x7e]*$/.test(value))
         need(value.length <= limits.maxRequestHeaderBytes, 'cloud/capacity'); headers[name] = value
       }
-      const requestBytes = Buffer.byteLength(`GET ${path} HTTP/1.1\r\n`
+      const requestBytes = Buffer.byteLength(`${method} ${path} HTTP/1.1\r\n`
         + Object.entries(headers).map(([name, value]) => `${name}: ${value}\r\n`).join('') + '\r\n')
       need(requestBytes <= limits.maxRequestHeaderBytes, 'cloud/capacity')
       const retainStartedAtMs = performance.now()
@@ -136,8 +141,8 @@ export function createSelectedServerHttp(selection: SelectedServerHttpInput, tar
         retained = owner.retainRequest({ controller, settled: terminal.promise, charge: {
           retainedPayloadBytes: responseLimits.maxBodyBytes + 1 + responseLimits.maxChunkBytes
             + 2 * limits.prefetchBytes + 4 * limits.readBufferBytes
-            + 8 * (limits.maxRequestHeaderBytes + responseLimits.maxHeaderBytes) + 2 * Buffer.poolSize,
-          headerEntries: responseLimits.maxHeaderCount + request.headers.length + 4,
+            + 8 * (limits.maxRequestHeaderBytes + responseLimits.maxHeaderBytes) + 2 * Buffer.poolSize + 2 * backingBytes,
+          headerEntries: responseLimits.maxHeaderCount + request.headers.length + (method === 'GET' ? 4 : 5),
           maxWireBytes: limits.maxWireBytes, timeoutMs,
         } })
       } catch (error) { terminal.resolve(); throw error } // No socket, buffer or request exists yet.
@@ -192,7 +197,7 @@ export function createSelectedServerHttp(selection: SelectedServerHttpInput, tar
         timer = setTimeout(() => { fail(new PreviewHttpError('cloud/account-unavailable')) }, remainingMs)
         current()
         const readBuffer = Buffer.alloc(limits.readBufferBytes)
-        req = httpRequest({ host: base.hostname, port: Number(base.port), method: 'GET', path, headers,
+        req = httpRequest({ host: base.hostname, port: Number(base.port), method, path, headers,
           maxHeaderSize: responseLimits.maxHeaderBytes, insecureHTTPParser: false, joinDuplicateHeaders: false,
           createConnection() {
             const socketOptions: SocketConstructorOpts & DuplexOptions = { readableHighWaterMark: limits.prefetchBytes,
@@ -229,7 +234,7 @@ export function createSelectedServerHttp(selection: SelectedServerHttpInput, tar
         }
         req.once('response', (incoming) => { capture(incoming); ready.resolve(incoming) })
         req.once('upgrade', (incoming, upgraded) => { capture(incoming); fail(new PreviewHttpError('cloud/forbidden')); upgraded.destroy() })
-        current(); need(socket !== undefined); socket.connect({ host: base.hostname, port: Number(base.port) }); req.end()
+        current(); need(socket !== undefined); socket.connect({ host: base.hostname, port: Number(base.port) }); req.end(body)
         const incoming = await ready.promise
         current()
         const responseHeaders: Array<readonly [string, string]> = []

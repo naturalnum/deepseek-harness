@@ -8,6 +8,7 @@ import type { AccessConfig } from './types.ts'
 import type { ApplicationReadLimits } from '@deepseek-ai/dsh-pe-opensandbox/types'
 import type { ForwardLimits } from './forward-types.ts'
 import { OWNER_HOP_HEADER } from './owner-hop.ts'
+import { ServiceApplicationConfigSchema, parseServiceApplicationConfig, type ServiceApplicationConfig } from './application-policy.ts'
 
 /** Fixed deployment entries; PG metadata can select only an exact reviewed HTTPS address. */
 export interface OwnerForwardingConfig {
@@ -61,6 +62,8 @@ export interface AuthIngressConfig {
 
 /** Explicit root resources; SSL enables certificate verification with the system trust store. */
 export interface AuthRootConfig extends AccessConfig {
+  /** Omission preserves inert navigation only; executable service pages require a separate original WebServer listener. */
+  readonly applications?: ServiceApplicationConfig
   /** Omission retains component compatibility; first-trial deployment explicitly disables library sign-up. */
   readonly disableSignUp?: boolean
   readonly accountAdministration?: AccountAdministrationConfig
@@ -111,6 +114,7 @@ const ownerForwarding: z<OwnerForwardingConfig> = z.object({
 export const AuthRootConfigSchema: z<AuthRootConfig> = z.intersect([
   AccessConfigSchema,
   z.object({
+    applications: ServiceApplicationConfigSchema.default(undefined as never),
     disableSignUp: z.boolean(),
     accountAdministration: z.union([z.object({ maxAccounts: positive(), maxPageSize: positive(),
       initialAdministratorIds: z.array(text()).required() }).required()]),
@@ -186,7 +190,9 @@ export function parseAuthRootConfig(input: AuthRootConfig): AuthRootConfig {
       || Object.keys(preview.response).some(name => !['maxBodyBytes', 'maxChunkBytes', 'maxChunks', 'maxHeaderCount', 'maxHeaderBytes'].includes(name))
       || [config.bindingFields.accountQuery, config.bindingFields.generationQuery]
         .some(name => name === 'sessionId' || name === 'serviceHandle'))) throw new TypeError()
-    return config
+    if (config.applications !== undefined && config.ingress === undefined) throw new TypeError()
+    return config.applications === undefined ? config
+      : { ...config, applications: parseServiceApplicationConfig(config.applications, config) }
   } catch (_error) {
     // Schema diagnostics can contain supplied configuration; root exposes only this fixed deployment error.
     throw new TypeError('Cloud authentication root requires explicit valid database, secret references and finite resource limits.')

@@ -33,6 +33,13 @@ import { encodeOwnerHop, readOwnerHop, OWNER_HOP_HEADER, type OwnerHop } from '.
 import type { ForwardTransfer } from './forward-types.ts'
 import type { AccessConfig, AuthenticatedPrincipal, RequestExpectation, IngressObservation } from './types.ts'
 import { cloudFailureSites } from './failure-sites.ts'
+import { ServiceApplicationViews, type ApplicationViewSelection } from './application-views.ts'
+import { ServiceApplicationQueue } from './application-queue.ts'
+import { serviceApplicationOrigin, type ServiceApplicationConfig } from './application-policy.ts'
+import { SERVICE_APPLICATION_LAUNCH_ROUTE, SERVICE_APPLICATION_COOKIE, readApplicationSelection,
+  readServiceApplicationRequest, readServiceApplicationCookie } from './application-request.ts'
+import { readServiceApplicationReply } from './application-response.ts'
+import type { ApplicationServiceSelection, RegisteredApplicationService } from '@deepseek-ai/dsh-pe-opensandbox/types'
 
 type RequestId = Branded<'pe-request-id'>
 type GuardStage = 'run.start' | 'request.url' | 'request.transport' | 'ingress.current'
@@ -89,6 +96,7 @@ interface Dependencies {
   readonly exposure?: ExposureService
   readonly assertAuthenticationCurrent: () => void
   readonly ownerRouting?: OwnerRouting
+  readonly applications?: { readonly config: ServiceApplicationConfig; readonly views: ServiceApplicationViews }
 }
 interface Operation {
   readonly id: RequestId
@@ -114,6 +122,7 @@ interface Operation {
   upgraded: boolean
   configurationUseReleased: boolean
   accountManagement?: boolean
+  application?: boolean
   use: AccountUse | undefined
   releaseFault: boolean
   cleanupUnknown: boolean
@@ -132,6 +141,9 @@ export class CloudIngress {
   private readonly unregister: Array<() => void | Promise<void>> = []
   private readonly registrations = new Set<object>()
   private previewRegistration: object | undefined
+  private applicationRegistration: object | undefined
+  private applicationListener: { readonly ctx: Context; readonly web: WebServer } | undefined
+  private readonly applicationQueue: ServiceApplicationQueue | undefined
   private state: IngressObservation['state'] = 'prepared'
   private accepting = false
   private closing: Promise<void> | undefined
@@ -147,6 +159,9 @@ export class CloudIngress {
     private readonly ctx: Context, private readonly config: AccessConfig, private readonly limits: AuthIngressConfig,
     private readonly auth: BetterAuthAccess, private readonly dependencies: Dependencies,
   ) {
+    const applications = dependencies.applications?.config
+    this.applicationQueue = applications === undefined ? undefined
+      : new ServiceApplicationQueue(applications.maxQueuedRequests, applications.queueTimeoutMs)
     this.generations = new ConnectionGenerations(dependencies.runtime, limits.maxGenerationBindings)
     this.peers = new LoginPeerRegistry({ ...config, sessionRecheckLeadMs: limits.sessionRecheckLeadMs }, auth, {
       streams: limits,
@@ -216,6 +231,11 @@ export class CloudIngress {
           path: SERVICE_PREVIEW_ROUTE.path, handler: (req, res) => this.handleHttp(req, res) }),
         'pe-cloud-access: fixed isolated service preview')
       }
+      if (this.dependencies.applications !== undefined) {
+        this.applicationRegistration = this.register(() => this.dependencies.web.register({ kind: 'exact',
+          path: SERVICE_APPLICATION_LAUNCH_ROUTE.path, handler: (req, res) => this.handleHttp(req, res) }),
+        'pe-cloud-access: authenticated service application launch')
+      }
       this.register(() => this.dependencies.web.registerUpgrade({
         path: REMOTE_STREAM_MUX_PATH, handler: (req, socket, head) => this.handleUpgrade(req, socket, head),
       }), 'pe-cloud-access: shared native upgrade route')
@@ -226,6 +246,30 @@ export class CloudIngress {
       await this.closeActual()
       throw new AuthAccessError('cloud/account-unavailable', this.requestId())
     }
+  }
+
+  /**
+   * Register content only on a separately composed original Native listener in this Root.
+   * @param scope Original Loader dependency fiber owning the isolated WebServer.
+   * @param web Original dedicated Native WebServer, distinct from management.
+   */
+  attachApplicationListener(scope: Context, web: WebServer): void {
+    const applications = this.dependencies.applications
+    const original = (value: object): unknown => Reflect.get(value, symbols.original) ?? value
+    if (applications === undefined || this.applicationListener !== undefined || !this.accepting
+      || scope.root !== this.ctx.root || original(web) === original(this.dependencies.web)
+      || web.protocol !== new URL(applications.config.origin).protocol) {
+      throw new AuthAccessError('cloud/account-unavailable', this.requestId())
+    }
+    this.applicationListener = { ctx: scope, web }
+    this.register(() => web.registerFallback((request, response) => this.handleApplication(request, response)),
+      'pe-cloud-access: isolated service content', scope)
+    scope.effect(() => async () => {
+      for (const operation of this.operations) if (operation.application === true) {
+        operation.observer.abort(); operation.request.destroy(); operation.response?.destroy()
+      }
+      await Promise.all([applications.views.closeActual(), this.applicationQueue?.closeActual()])
+    }, 'pe-cloud-access: retire service content credentials and actual users')
   }
 
   /**
@@ -302,7 +346,9 @@ export class CloudIngress {
    */
   observe(): IngressObservation {
     const web = this.ctx.get('webServer')
-    const expectedRegistrations = 5 + (this.limits.servicePreview === undefined ? 0 : 1) + (this.auth.accountAdministrationEnabled ? 1 : 0)
+    const contentWeb = this.applicationListener?.ctx.get('webServer')
+    const expectedRegistrations = 5 + (this.limits.servicePreview === undefined ? 0 : 1)
+      + (this.auth.accountAdministrationEnabled ? 1 : 0) + (this.dependencies.applications === undefined ? 0 : 2)
     const original = (value: object): object => {
       const target: unknown = Reflect.get(value, symbols.original)
       return target !== null && (typeof target === 'object' || typeof target === 'function') ? target : value
@@ -311,7 +357,10 @@ export class CloudIngress {
       state: this.state,
       current: this.state === 'installed' && this.accepting
         && this.registrations.size === expectedRegistrations
-        && this.ctx.fiber.state === FiberState.ACTIVE && web !== undefined && original(web) === original(this.dependencies.web),
+        && this.ctx.fiber.state === FiberState.ACTIVE && web !== undefined && original(web) === original(this.dependencies.web)
+        && (this.dependencies.applications === undefined || this.applicationListener !== undefined
+          && this.applicationListener.ctx.fiber.state === FiberState.ACTIVE
+          && contentWeb !== undefined && original(contentWeb) === original(this.applicationListener.web)),
       registeredRoutes: this.registrations.size, pendingOperations: this.operations.size,
     })
   }
@@ -322,11 +371,19 @@ export class CloudIngress {
    */
   inspectRootFetch(): readonly ExactFetchExposure[] {
     if (!this.observe().current) throw new AuthAccessError('cloud/account-unavailable', this.requestId())
-    if (this.limits.servicePreview === undefined) return Object.freeze([])
-    if (this.previewRegistration === undefined || !this.registrations.has(this.previewRegistration)) {
+    const rows: ExactFetchExposure[] = []
+    if (this.limits.servicePreview !== undefined
+      && (this.previewRegistration === undefined || !this.registrations.has(this.previewRegistration))) {
       throw new AuthAccessError('cloud/account-unavailable', this.requestId())
     }
-    return Object.freeze([SERVICE_PREVIEW_ROUTE])
+    if (this.limits.servicePreview !== undefined) rows.push(SERVICE_PREVIEW_ROUTE)
+    if (this.dependencies.applications !== undefined) {
+      if (this.applicationRegistration === undefined || !this.registrations.has(this.applicationRegistration)) {
+        throw new AuthAccessError('cloud/account-unavailable', this.requestId())
+      }
+      rows.push(SERVICE_APPLICATION_LAUNCH_ROUTE)
+    }
+    return Object.freeze(rows)
   }
 
   /** Stop admission synchronously, unregister routes and join all actual ingress/Peer work before auth/pool close. */
@@ -344,6 +401,7 @@ export class CloudIngress {
     this.closing = (async () => {
       const results = await Promise.allSettled([
         ...removals, ...[...this.operations].map(operation => operation.actual), this.peers.closeActual(),
+        this.dependencies.applications?.views.closeActual(), this.applicationQueue?.closeActual(),
         ...(this.dependencies.ownerRouting === undefined ? [] : [this.dependencies.ownerRouting.closeActual()]),
       ])
       if (this.state === 'unknown' || this.registrations.size !== 0 || results.some(result => result.status === 'rejected')) {
@@ -368,6 +426,9 @@ export class CloudIngress {
       operation.stage = 'ingress.current'
       this.assertOperation(operation)
       if (preview) { await this.handlePreview(operation, url); return }
+      if (url.pathname === SERVICE_APPLICATION_LAUNCH_ROUTE.path && this.dependencies.applications !== undefined) {
+        await this.launchApplication(operation, url); return
+      }
       if (url.pathname === '/cloud/auth' || url.pathname.startsWith('/cloud/auth/')) {
         operation.stage = 'auth.handler'
         await this.auth.handleNodeRequest(request, response, operation.id, {
@@ -542,6 +603,198 @@ export class CloudIngress {
     })
   }
 
+  private async launchApplication(operation: Operation, url: URL): Promise<void> {
+    const applications = this.dependencies.applications, response = operation.response
+    if (applications === undefined || response === undefined || operation.request.method !== 'POST'
+      || url.search !== '' || operation.request.headers.origin !== this.config.publicOrigin) {
+      throw new AuthAccessError('cloud/forbidden', operation.id)
+    }
+    operation.application = true
+    const principal = this.trackPrincipal(operation, await this.auth.authenticate(operation.request, operation.id))
+    this.assertOperation(operation)
+    const expected = readRequestExpectation(operation.request, url, this.config.bindingFields, 'headers', operation.id)
+    assertExpectedAccount(expected, principal.accountId, operation.id)
+    this.bindAccount(operation, principal.accountId)
+    const body = await this.applicationBody(operation, applications.config.maxRequestBodyBytes)
+    const selection = readApplicationSelection(this.applicationJson(body, operation.id),
+      applications.config.views.maxFieldBytes, operation.id)
+    await this.withApplicationService(operation, principal, expected, selection, async (service, current) => {
+      current()
+      const grant = applications.views.issue(principal, service.scope, expected.connectionGeneration, service.lifetime, operation.id)
+      try {
+        const payload = JSON.stringify({ origin: serviceApplicationOrigin(applications.config, grant.id), proof: grant.proof })
+        if (Buffer.byteLength(payload) > this.limits.maxBootstrapResponseBytes) throw new AuthAccessError('cloud/capacity', operation.id)
+        current()
+        operation.holdNormalFinish = true
+        response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store',
+          'content-length': Buffer.byteLength(payload), 'referrer-policy': 'no-referrer' })
+        response.end(payload)
+        await operation.transferred
+        current()
+      } catch (error) {
+        void applications.views.close(grant.id).catch((_cleanup: unknown) => {
+          this.ctx.logger.error('Cloud service application credential cleanup is unconfirmed.')
+        })
+        throw error
+      }
+    })
+  }
+
+  private handleApplication(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const queue = this.applicationQueue
+    if (queue === undefined) { response.destroy(); request.destroy(); return Promise.resolve() }
+    return queue.run(request, response, () => {
+      let actual: Promise<void> | undefined
+      const observed = this.run(request, response, undefined, async (operation) => {
+        operation.application = true
+        const applications = this.dependencies.applications
+        if (applications === undefined || operation.hop !== undefined) throw new AuthAccessError('cloud/forbidden', operation.id)
+        this.assertOperation(operation)
+        const selected = readServiceApplicationRequest(request, applications.config, this.config, operation.id)
+        const cors = { 'access-control-allow-origin': this.config.publicOrigin,
+          'access-control-allow-credentials': 'true', vary: 'Origin', 'cache-control': 'no-store' }
+        if (request.method === 'OPTIONS') {
+          const method = selected.control === 'authorize' ? 'POST' : 'GET'
+          const requestedHeaders = request.headers['access-control-request-headers']
+          if (selected.control === undefined || request.headers['access-control-request-method'] !== method
+            || requestedHeaders !== undefined && (typeof requestedHeaders !== 'string'
+              || requestedHeaders.toLowerCase() !== 'content-type')) throw new AuthAccessError('cloud/forbidden', operation.id)
+          operation.holdNormalFinish = true
+          response.writeHead(204, { ...cors, 'access-control-allow-methods': method, 'access-control-allow-headers': 'content-type' })
+          response.end(); await operation.transferred; this.assertOperation(operation); return
+        }
+        if (selected.control === 'authorize') {
+          const input = this.applicationJson(await this.applicationBody(operation, applications.config.maxRequestBodyBytes), operation.id)
+          if (input === null || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length !== 1
+            || typeof Reflect.get(input, 'proof') !== 'string') throw new AuthAccessError('cloud/forbidden', operation.id)
+          const proof = Reflect.get(input, 'proof') as string
+          await applications.views.authorize(selected.id, proof, operation.id, async (cookie, seconds, view) => {
+            view.retainActual(operation.actual)
+            this.assertOperation(operation); view.assertCurrent()
+            operation.holdNormalFinish = true
+            response.writeHead(204, { ...cors, 'set-cookie': `${SERVICE_APPLICATION_COOKIE}=${cookie}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${seconds}`
+              + (new URL(selected.origin).protocol === 'https:' ? '; Secure' : '') })
+            response.end(); await operation.transferred
+            this.assertOperation(operation); view.assertCurrent()
+          })
+          return
+        }
+        const cookie = readServiceApplicationCookie(request, operation.id)
+        await applications.views.withCredential(selected.id, cookie, operation.id, async (principal, selection, view) => {
+          view.retainActual(operation.actual)
+          const abort = (): void => {
+            operation.observer.abort(); request.destroy(); response.destroy()
+          }
+          view.signal.addEventListener('abort', abort, { once: true })
+          try {
+            if (view.signal.aborted) abort()
+            view.assertCurrent(); this.assertOperation(operation)
+            this.auth.retainPrincipal(principal, operation.id)
+            this.trackPrincipal(operation, principal)
+            const expected = { accountId: selection.accountId, connectionGeneration: selection.connectionGeneration }
+            assertExpectedAccount(expected, principal.accountId, operation.id)
+            this.bindAccount(operation, principal.accountId)
+            await this.withApplicationService(operation, principal, expected, selection.service, async (service, check) => {
+              const current = (): void => { view.assertCurrent(); check() }
+              current()
+              if (selected.control === 'ready') {
+                operation.holdNormalFinish = true
+                response.writeHead(204, cors); response.end(); await operation.transferred; current(); return
+              }
+              const method = request.method
+              if (method !== 'GET' && method !== 'POST' && method !== 'PUT' && method !== 'PATCH' && method !== 'DELETE') {
+                throw new AuthAccessError('cloud/forbidden', operation.id)
+              }
+              const body = await this.applicationBody(operation, applications.config.maxRequestBodyBytes)
+              if (method === 'GET' && body.byteLength !== 0) throw new AuthAccessError('cloud/forbidden', operation.id)
+              current()
+              await service.withResponse({ method, resourcePath: selected.path, headers: selected.headers,
+                ...method === 'GET' ? {} : { body } }, applications.config.response,
+              operation.observer.signal, async (upstream) => {
+                const reply = await readServiceApplicationReply(upstream, applications.config.response,
+                  selected.origin, this.config.publicOrigin, operation.observer.signal, current)
+                current()
+                operation.holdNormalFinish = true
+                response.writeHead(reply.status, reply.headers); response.end(reply.body)
+                await operation.transferred
+                current()
+              })
+            }, selection)
+          } finally { view.signal.removeEventListener('abort', abort) }
+        })
+      }, undefined, (terminal) => { actual = terminal })
+      return actual ?? observed
+    })
+  }
+
+  private async withApplicationService(operation: Operation, principal: AuthenticatedPrincipal, expected: RequestExpectation,
+    selected: ApplicationServiceSelection, consume: (service: RegisteredApplicationService, current: () => void) => Promise<void>,
+    view?: ApplicationViewSelection): Promise<void> {
+    const exposure = this.dependencies.exposure
+    if (exposure === undefined) throw new AuthAccessError('cloud/account-unavailable', operation.id)
+    await this.withAccount(operation, principal, expected, async (use) => {
+      const peer = await this.peers.acquire(principal, use.binding, operation.deadlineAtMs, operation.observer.signal, operation.id)
+      await this.recheckOperationLogin(operation, principal)
+      this.assertOperation(operation); this.pinGeneration(peer, operation.id)
+      await this.peers.runCarrier(peer, operation.request, operation.id, {
+        authenticate: async () => {
+          await this.recheckOperationLogin(operation, principal)
+          this.auth.retainPrincipal(principal, operation.id)
+          return principal
+        }, actual: operation.actual,
+        destroy: () => { operation.observer.abort(); operation.request.destroy(); operation.response?.destroy() },
+        consume: async () => {
+          const api = this.accountApi(use.context, use.binding), manifest = exposure.policy.manifest
+          const accountCurrent = (): void => {
+            this.assertOperation(operation); this.assertPeer(peer, operation.id); use.assertCurrent()
+            assertExpectedAccount(expected, principal.accountId, operation.id)
+            assertExpectedGeneration(expected, this.generations.current(use.binding, operation.id), operation.id)
+            const currentApi = this.accountApi(use.context, use.binding)
+            if ((Reflect.get(currentApi, symbols.original) ?? currentApi) !== (Reflect.get(api, symbols.original) ?? api)
+              || exposure.policy.manifest !== manifest) throw new AuthAccessError('cloud/account-unavailable', operation.id)
+            const row = api.requireFetch(SERVICE_APPLICATION_LAUNCH_ROUTE.method, SERVICE_APPLICATION_LAUNCH_ROUTE.path)
+            if (row.handlerId !== SERVICE_APPLICATION_LAUNCH_ROUTE.handlerId || row.guard !== 'account-session') {
+              throw new AuthAccessError('cloud/forbidden', operation.id)
+            }
+          }
+          accountCurrent()
+          await withAccountApplicationService(use.context, selected, operation.observer.signal, operation.deadlineAtMs, async (service) => {
+            const current = (): void => {
+              accountCurrent(); service.assertCurrent()
+              if (service.port !== 8000 || view !== undefined && (service.scope.accountId !== view.service.accountId
+                || service.scope.epoch !== view.service.epoch || service.scope.allocationId !== view.service.allocationId
+                || service.scope.sessionId !== view.service.sessionId || service.scope.serviceId !== view.service.serviceId)) {
+                throw new AuthAccessError('cloud/forbidden', operation.id)
+              }
+            }
+            current(); await consume(service, current); current()
+          })
+        },
+      })
+    })
+  }
+
+  private async applicationBody(operation: Operation, maximum: number): Promise<Uint8Array> {
+    const request = operation.request
+    if (request.headers['content-type'] !== undefined
+      && !/^[\x20-\x7e]*$/.test(request.headers['content-type'])) throw new AuthAccessError('cloud/forbidden', operation.id)
+    const buffer = Buffer.alloc(maximum)
+    let bytes = 0
+    for await (const value of request) {
+      this.assertOperation(operation)
+      const chunk: Buffer = Buffer.isBuffer(value) ? value : Buffer.from(value)
+      if (bytes + chunk.byteLength > maximum) throw new AuthAccessError('cloud/capacity', operation.id)
+      buffer.set(chunk, bytes); bytes += chunk.byteLength
+    }
+    this.assertOperation(operation)
+    return buffer.subarray(0, bytes)
+  }
+
+  private applicationJson(body: Uint8Array, id: RequestId): unknown {
+    try { return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(body)) }
+    catch (_invalidJson) { throw new AuthAccessError('cloud/forbidden', id) }
+  }
+
   private async handlePreview(operation: Operation, url: URL): Promise<void> {
     const limits = this.limits.servicePreview, configured = this.config.servicePreview, response = operation.response
     const exposure = this.dependencies.exposure
@@ -697,7 +950,7 @@ export class CloudIngress {
       operation.stage = 'owner.borrow'
       use = await runtime.borrowOwnedAccount(located)
     } else if (located !== undefined && located.ownerInstanceId !== null && located.ownerInstanceId !== localInstanceId) {
-      if (located.phase !== 'ready') throw new AuthAccessError('cloud/account-unavailable', operation.id)
+      if (located.phase !== 'ready' || operation.application === true) throw new AuthAccessError('cloud/account-unavailable', operation.id)
       await this.forwardOwner(operation, principal, located, loginCurrent, recheckLogin)
       return
     } else {
@@ -753,6 +1006,7 @@ export class CloudIngress {
     request: IncomingMessage, response: ServerResponse | undefined, socket: Duplex | undefined,
     consume: (operation: Operation) => Promise<void>,
     head?: Buffer,
+    retainActual?: (actual: Promise<void>) => void,
   ): Promise<void> {
     const id = this.requestId()
     if (!this.accepting || this.operations.size >= this.limits.maxOperations) {
@@ -844,6 +1098,7 @@ export class CloudIngress {
         }
       }
     })
+    retainActual?.(operation.actual)
     return Promise.race([operation.actual, timedOut.promise])
   }
 
@@ -1121,9 +1376,9 @@ export class CloudIngress {
     }
   }
 
-  private register(acquire: () => () => void, label: string): object {
+  private register(acquire: () => () => void, label: string, owner: Context = this.ctx): object {
     const token = {}
-    this.unregister.push(this.ctx.effect(() => {
+    this.unregister.push(owner.effect(() => {
       const remove = acquire()
       this.registrations.add(token)
       return () => {

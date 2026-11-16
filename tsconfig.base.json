@@ -48,6 +48,7 @@
       "@deepseek-ai/dsh-pe-cloud-client/client": ["./packages/cloud/pe-cloud-client/src/client/index.ts"],
       "@deepseek-ai/dsh-pe-cloud-client/schema": ["./packages/cloud/pe-cloud-client/src/schema.ts"],
       "@deepseek-ai/dsh-pe-cloud-client/types": ["./packages/cloud/pe-cloud-client/src/types.ts"],
+      "@deepseek-ai/dsh-pe-cloud-client/web-copy": ["./packages/cloud/pe-cloud-client/src/web-copy.ts"],
       "@deepseek-ai/dsh-pe-cloud-files": ["./packages/cloud/pe-cloud-files/src/index.ts"],
       "@deepseek-ai/dsh-pe-cloud-files/root": ["./packages/cloud/pe-cloud-files/src/root.ts"],
       "@deepseek-ai/dsh-pe-cloud-files/account": ["./packages/cloud/pe-cloud-files/src/account.ts"],

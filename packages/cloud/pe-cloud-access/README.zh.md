@@ -26,7 +26,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-通过浏览器安全的 `/schema` 使用结构 `AccessConfigSchema`、请求预期校验及唯一 `decodeCloudBootstrap` 解码器；C-11 线类型位于 `/types`。完整 Host 配置解析留在认证/root 内部。包入口和 `/root` 导出根 Loader 插件、`PeAuthService` 及 `AuthAccessError`。`BetterAuthAccess` 是同包根装配使用的内部实现，不增加 SDK 子路径。`AuthenticatedPrincipal.accountId` 直接使用 runtime 的 `AccountId` 类型。
+通过浏览器安全的 `/schema` 使用结构 `AccessConfigSchema`、请求预期校验及唯一 `decodeCloudBootstrap` 解码器；C-11 线类型位于 `/types`。完整 Host 配置解析属于认证/root；`/root` 还导出 `parseAuthRootConfig`，供正常部署生成器在不分配资源的情况下核验策略。包入口和 `/root` 导出根 Loader 插件、`PeAuthService` 及 `AuthAccessError`。`BetterAuthAccess` 是同包根装配使用的内部实现，不增加 SDK 子路径。`AuthenticatedPrincipal.accountId` 直接使用 runtime 的 `AccountId` 类型。
 
 ### 配置
 
@@ -51,6 +51,7 @@ kind: "package-reference"
 | `startupTimeoutMs`、`secretResolveTimeoutMs`、`maxSecretOperations`、`maxSecretBytes` | 有限启动/秘密等待和实际读取容量；每个秘密的字节上限至少为 32，并按 UTF-8 计数。 |
 | 可选 `servicePreview` | 固定独立 origin 与共用 DNS `cookieDomain`；协议相同，生产要求 HTTPS，开发可显式选择 localhost 子域。缺省时 Cookie 只属于当前主机。 |
 | 可选 `ingress.servicePreview` | 显式 URL、字段、请求头限额及全部响应限额。只注册 GET `/cloud/service-preview`；缺省时不注册预览入口。 |
+| 可选 `applications` | 独立内容 origin/site 后缀；显式路径、请求头、正文、排队、响应和保留视图限额见 [application-policy.ts](src/application-policy.ts)。要求 ingress，以及带 `/applications` 的隔离原生 WebServer。 |
 | 可选 `disableSignUp` | 委托给固定版本 Better Auth；省略时保持注册兼容，首试用部署须显式设为 `true`。 |
 | 可选 `ingress` | 必填正有限值 `maxOperations`、`maxOperationsPerAccount`、`requestTimeoutMs`、`maxAuthRequestBodyBytes`、`maxRequestBodyBytes`、`maxBootstrapResponseBytes`、`maxGenerationBindings`、`maxFrameBytes`、`maxLogicalStreams`、`maxLogicalStreamsPerAccount`、`maxLogicalStreamsPerPeer`；子级容量不得大于父级。配置存在不授予 ready。 |
 
@@ -84,6 +85,10 @@ Root ingress watcher 在上次成功复查后等待 `sessionRecheckMs - ingress.
 
 可选的固定预览入口沿用原数据库登录、C02 预期和 AccountUse。请求只选择原生 Session 与服务句柄；原执行拥有者补齐五项分配身份，不准备新工作。应用路径固定为 `/`，端口为8000；响应为有界惰性文本，不传递上游 Cookie、重定向或活动内容。正常预览响应完成后，原消费者继续保留到实际结算；取消和错误仍由同一操作持有到实际关闭。`PeAuthService.inspectRootFetch()` 只向可信账户清单报告当前实际注册；配置和此观察均不发布 bootstrap 可用状态。
 
+可执行服务页面还要求精确审计 POST `/cloud/service-application`、handler `cloud:serviceApplication`、guard `account-session`，以及在 `isolate.webServer: true` 的 `cordis:group` 中，将 `/applications` Loader 入口与第二个原生 WebServer 组合。监听器须配置原生请求头、连接数和流限额。内容主机后缀位于认证 Cookie domain 之外，属于同一显式部署站点；生产要求直接 HTTPS。每次启动在有限数量、字节和时限内保留原已验证登录、代际及完整服务身份。一次性证明仅经私有 POST 正文传递；host-only、HttpOnly、SameSite Cookie 认证后续资源请求。两者均不进入 Browser URL、任务元数据或诊断。监听器、登录或服务生命周期终止即撤销访问，原 ingress 操作保留实际清理责任。Root 本地凭据对异地账户拥有者关闭准入；它不提供 owner 转发协议。
+
+内容监听器对每个规范资源/API 请求核验原登录、AccountUse、C02 代际、Peer、已批准启动路由及准确服务分配，再进行原 SDK I/O 和响应传输。有界 FIFO 串行处理内容请求，不扩执行容量。GET、POST、PUT、PATCH、DELETE 只传递有界正文及选中头部；此处不提供所选 SDK 缺少的 HEAD、OPTIONS、WebSocket 或 HMR 应用支持。响应保留状态和 MIME，正文仍由原拥有者有界持有。不转发应用 Cookie、Authorization、Set-Cookie 或跨源策略头。CSP 将脚本、资源、表单和 fetch 限于内容 origin，禁止嵌套 frame/worker 和顶层应用控制，仅允许管理 origin 嵌入。URL 导航仍由原生 Browser 管理；该策略不是浏览器网络过滤器。原惰性文本响应策略保持不变。
+
 ### Bootstrap 元数据
 
 producer 从 API 的 `SESSION_CONTROLLER_ENDPOINTS` 取得已审核的 Session RPC/stream 声明，包含 `session/projections`。API 持有其 handler、guard、模式及安装前提。Bootstrap 仍将选中 manifest 与每个实际账户 API 注册逐项核对；共用元数据不能授权未安装的方法或不同的传输模式。
@@ -100,7 +105,7 @@ producer 只新增允许精确的 `cloudProjects/create` RPC，以及原生 `wor
 
 `sample` 和 `managed` 技能批准模式均在相同的原 Loader、包及 provider 检查通过后，投影 `configuration.skills.manage: true`。Sample 模式要求精确的 `cloudSkills/current` 与 `cloudSkills/publish`；managed 模式还要求同一 namespace 下的 `installed`、`details`、`install`、`update`、`uninstall`、`download` 和 `readFile`。每个选中的技能 RPC 保持 handler `native:cloudSkills` 及 guard `authenticated-account`。可选的原生 `skills/list` 在两种开启模式下均保持 handler `native:sessionSkillCatalog` 及 guard `account-session`。缺失方法、未授权声明及 closed 模式的技能端点均拒绝；bootstrap 不增加权限或修改 owner。
 
-服务能力来自原执行拥有者的 `accountServiceAvailability(ctx)`，包含当前原始 `dev_service` 定义，以及安装和消费位置的原 Tools provider。预览还要求原应用 provider 和经 API 审计、仍有效的 GET `/cloud/service-preview` 注册。producer 允许该精确路由与原生上传并存，重新检查每条选中路由，拒绝重复和变体。这些事实仅表示能力已安装；检查不创建服务进程、分配或请求，也不产生 HTTP 就绪结果。
+服务能力来自原执行拥有者的 `accountServiceAvailability(ctx)`，包含当前原始 `dev_service` 定义，以及安装和消费位置的原 Tools provider。预览还要求原应用 provider，以及经 API 审计、仍有效的惰性 GET 或服务应用 POST 注册。producer 允许这些精确路由与原生传输并存，重新检查每条选中路由，拒绝重复和变体。这些事实仅表示能力已安装；检查不创建服务进程、分配或请求，也不产生 HTTP 就绪结果。
 
 可选的获批 `pluginControl` 策略要求完整且精确的 `cloudPlugins/current`、`cloudPlugins/change` 一元方法组，handler 为 `native:cloudPlugins`，guard 为 `authenticated-account`。producer 在清单读取前后及响应发出前核验两个方法的成员关系和原生当前审计；缺失或越权声明拒绝整个 bootstrap。此校验保留包含确切版本文件读取的完整托管技能方法组、模型 Key 方法组、原账户／图／文件／执行身份、有限预算及关闭的原生配置写入口。它不新增安装／卸载端点、原始 plugin-manager 写入、流或任意后端权限；真实原生就绪仍由原清单和 API owner 确认。
 

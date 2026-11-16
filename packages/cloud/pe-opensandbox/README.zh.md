@@ -37,6 +37,8 @@ Root 可显式配置 `commands.additionalTools`，选择至多三十二个互不
 
 `/types` 入口提供 `ServicePreviewIdentity`，沿用原分配和 Session 的品牌化标识，并声明 `DevelopmentServiceId` 以及有界应用读取和已登记服务的定义。身份不授予权限；访问仍须持有执行拥有者当前签发的能力。访问适配层附加其已审计的 HTTP 暴露项及浏览器响应策略。原生开发服务工具仅将最终有界的任务句柄、操作及进程提交观察投影为展示元数据；基础设施标识和预览 URL 不进入模型结果或元数据。
 
+`ApplicationHttpRequest` 还为所选 SDK 的 GET、POST、PUT、PATCH、DELETE 方法提供有界写入正文。目标、端口、SDK 凭据、取消及请求预留仍属于原登记服务。传输在分配 socket 前计入写入正文的 backing storage，生成 Content-Length，只传递已审核的应用头部，不转发平台或浏览器凭据。HEAD 不转换成 GET；不提供 WebSocket/HMR。授权及独立的可执行页面响应策略属于 Access；原惰性读取保留既有请求类型及策略。
+
 ### 配置与失败
 
 只有 Files 在导出或创建分配之前报告 `FdMutationFailure.outcome: not-published`，且原分配拥有者已完成 `stop`，技能项目准备拒绝才允许再次尝试。此时删除失败的 Session 请求，同一或不同 Session 后续显式调用可以继续。明确容量不足使用 `cloud/capacity`；其他确定拒绝标明 Files 错误码，持久异常须检查关联。结构化拒绝日志只含错误码，不含私有失败消息。不确定写入、非类型化失败、后续准备阶段失败和未确认停止仍保留原账号失败与清理责任，不能转换为可重试容量不足。

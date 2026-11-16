@@ -31,7 +31,7 @@ Cloud 浏览器以自有双语品牌字典提供 PowerEvolve 名称，并以黑�
 
 由于当前 Cloud 组合未开放删除 RPC，准备好的 Cloud 页面在其 root 生命周期内禁用原生工作区删除操作。菜单及已打开的确认框显示本地化原因；该展示限制不替代 Host 鉴权。
 
-`/schema` 导出提供浏览器安全的公共配置校验；`/types` 包含其配置类型。其空运行模块以 `lib/types/types.js` 发布；未打包的浏览器编译产物不参与发布。Host 入口声明浏览器包，并可选地注入公开 Web 部署输入，不提供业务服务或认证路由。
+`/web-copy` 纯 ESM 导出提供 Cordis 启动前的中英文登录及页面退出文案。Web 入口负责 DOM 和样式。`/schema` 导出提供浏览器安全的公共配置校验；`/types` 包含其配置类型。其空运行模块以 `lib/types/types.js` 发布；未打包的浏览器编译产物不参与发布。Host 入口声明浏览器包，并可选地注入公开 Web 部署输入，不提供业务服务或认证路由。
 
 ### 适用场景
 
@@ -41,7 +41,9 @@ Cloud 浏览器以自有双语品牌字典提供 PowerEvolve 名称，并以黑�
 
 受控预览导航还要求显式 `client.servicePreview` policy（管理/预览源、精确 `/cloud/service-preview` 路径及字段/URL 字节上限）、bootstrap 的 `servicePreview: available` 观察，以及 `PreparedCloudPage.prepare` 中由应用拥有的 `previewNavigation` port。缺少输入时不提供可选 `servicePreviewNavigation` 回调，C11 不增加 policy。回调只接受框架 Session 与记录的 service handle，捕获原页面 C02 值并收纳导航/反馈失败；应用 port 提供同步普通 GET 导航和本地化反馈，服务端仍须执行登录、原生 Session 与原注册服务校验。
 
-Cloud Web 应用在准备页面前捕获所属文档的导航函数，以 `noopener,noreferrer` 在独立标签页打开预览，本地拒绝显示在既有本地化页面顶栏中。浏览器插件仅在准备好的回调、能力和页面均有效时贡献原生 `dev_service` 工具行。操作使用有界的已记录任务元数据和框架 Session；历史行及进程提交均不证明授权或 HTTP 就绪。页面撤销或 slot 撤回会使已挂载回调失效。
+原生右侧栏 Browser 已注册时，受控预览通过其公开标签页操作在当前选中的 Session 打开，过期 Session 位置的操作会被拒绝。没有该可选注册时，Cloud Web 使用捕获的文档导航函数，以 `noopener,noreferrer` 在独立标签页打开预览。本地拒绝显示在既有本地化页面顶栏中。浏览器插件仅在准备好的回调、能力和页面均有效时贡献原生 `dev_service` 工具行。操作使用有界的已记录任务元数据和框架 Session；历史行及进程提交均不证明授权或 HTTP 就绪。页面撤销或 slot 撤回会使已挂载回调失效。页面能否在 Browser 内渲染仍取决于服务端响应策略。
+
+完整服务页面选择 `client.serviceApplications`，显式提供管理/内容 origin、请求超时、请求/响应字节限额及选择器字节限额。它沿用原绑定传输的有限 pending 操作及关闭责任，向固定管理启动端点 POST Session/服务选择及捕获的 C02 头部，仅在私有 POST 中将返回证明交给准确内容 origin，确认其 host-only Cookie 后通过原生 Browser 打开干净 URL。证明不进入 query、保存的标签页或任务元数据。交接完成后再次检查当前页面和选中 Session。普通 HTTP/WS 目标仍绑定管理 origin；每个内容资源和后端请求均由 Root 授权。不配置完整服务页面时，仍可使用惰性 `servicePreview` 策略。
 
 Host 可选字段 `web` 通过一个结构化 `__DSH_CLOUD_WEB__` 全局值选择既有 `apps/web` Cloud 入口。省略时保留普通启动。`parseCloudWebManifest` 要求显式提供 `client`、`decodeLimits`、`persistenceLimits`、`fields` 与 `auth`；认证预算为 `requestTimeoutMs`、`maxRequestBytes` 与 `maxResponseBytes`。固定 bootstrap 路径为 `cloud/bootstrap`，绑定字段必须与 access 配置一致。不支持的身份、token 与当前账户字段会被拒绝。
 

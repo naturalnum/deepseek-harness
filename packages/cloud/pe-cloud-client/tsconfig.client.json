@@ -8,7 +8,9 @@
   "files": [
     "src/types.ts",
     "src/config.ts",
+    "src/application-policy.ts",
     "src/schema.ts",
+    "src/web-copy.ts",
     "src/client/index.ts",
     "src/client/branding.tsx",
     "src/client/branding-locales.ts",
@@ -26,6 +28,7 @@
     "src/client/read-response.ts",
     "src/client/bootstrap.ts",
     "src/client/transport.ts",
+    "src/client/application-launch.ts",
     "src/client/persistence.ts",
     "src/client/page-lifetime.ts",
     "src/client/prepared-page.ts",
@@ -98,6 +101,9 @@
     "src/client/mcp/locales.ts"
   ],
   "references": [
+    {
+      "path": "../../client/ui-sidebar-browser/tsconfig.client.json"
+    },
     {
       "path": "../../../vendor/cordis"
     },

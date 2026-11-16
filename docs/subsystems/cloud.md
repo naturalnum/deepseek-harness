@@ -53,6 +53,8 @@ Access owns `CloudBootstrap` and its browser-safe `decodeCloudBootstrap` validat
 
 `PeAuthService`, installed by access/root, owns one finite PostgreSQL pool, official credential reads, actual Better Auth initialization and schema inspection. `AuthRootConfig` adds explicit database, pool, secret and startup budgets to browser-safe access settings. Its observation exposes bounded resource counts and closed request admission. Missing schema or initialization failure retains cleanup; the provider executes no migration and registers no route. Shared HTTP/WS admission still requires runtime's actual root recipe audit and account providers.
 
+Optional [service applications](../../packages/cloud/pe-cloud-access/README.md#use-this-package) use the same Root authentication owner and a separately composed Native WebServer. A private POST handoff retains the original login and exact service allocation, while every resource/API request still borrows the original account, Peer and execution capability. The [HTTP request types](../../packages/cloud/pe-opensandbox/src/types.ts) permit bounded writing bodies; credential records supply no execution or release authority. Native Browser renders the resulting isolated content origin through its existing public tab operation.
+
 Trusted runtime preparation installs `CloudAccountApi` with the exact account binding, root-issued configuration-save barrier, deployment exposure ceiling and separate mount/business admission checks. Its fixed native editor and credential constructors install save hooks before initialization. Controller, AgentLoop and LLM installation reuse existing native guards; `/account` checks this prepared service. Installation and entry activation do not publish readiness. Every business operation requires the separate current-ready check, while inventory auditing and terminal save settlement retain their own lifecycle rules.
 
 The native Session adapter preserves original dispatch, DTOs and Session state while guarding actual effects. Its awaited directory preparation uses the account's fixed files capability before Agent creation. Production routing, project/Preset/model checks, actual native inventory and durable storage authority remain required before account publication.
@@ -681,6 +683,13 @@ observe(): AuthRootObservation
 inspectRootFetch(): readonly ExactFetchExposure[]
 
 /**
+ * Attach the original dedicated Native content listener to this Root's authentication/ingress owner.
+ * @param scope Original isolated listener Loader fiber in this Root.
+ * @param web Dedicated Native WebServer, distinct from management.
+ */
+attachApplicationListener(scope: Context, web: WebServer): void
+
+/**
  * Delegate one native model-key invocation through the original login registry.
  * @param peer Exact Gateway invocation Peer, never a client identity.
  * @param consume Actual native work using the original retained Use and current checks.
@@ -723,7 +732,7 @@ withConfigurationPeer<T>(peer: PeerScope, consume: ConfigurationPeerOperation<T>
 close(): Promise<void>
 ```
 
-Types: [ConfigurationPeerOperation](cloud.md#approved-plugin-controls)
+Types: [ConfigurationPeerOperation](cloud.md#approved-plugin-controls) · [WebServer](web-server.md)
 
 Source: [`packages/cloud/pe-cloud-access/src/auth-root.ts`](../../packages/cloud/pe-cloud-access/src/auth-root.ts)
 

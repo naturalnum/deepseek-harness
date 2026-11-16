@@ -75,7 +75,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       [...new Set([...CLOUD_WEB_CLIENT_PACKAGES,
         ...GENERAL_SETTINGS_CLIENT_PACKAGES,
         ...manifest.client.modelSettingsRequestTimeoutMs === undefined ? [] : MODEL_SETTINGS_CLIENT_PACKAGES,
-        ...manifest.client.servicePreview === undefined ? [] : SERVICE_PREVIEW_CLIENT_PACKAGES,
+        ...manifest.client.servicePreview === undefined && manifest.client.serviceApplications === undefined
+          ? [] : SERVICE_PREVIEW_CLIENT_PACKAGES,
         ...(manifest.client.nativeSessionControls ?? []).flatMap(group => NATIVE_SESSION_CLIENT_PACKAGES[group]),
         ...(manifest.client.nativeManagement ?? []).flatMap(group => NATIVE_MANAGEMENT_CLIENT_PACKAGES[group]),
       ])], baseUrl, { activate: true },

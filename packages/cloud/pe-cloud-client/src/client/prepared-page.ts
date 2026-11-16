@@ -7,6 +7,8 @@ import { createSnapshotStore, type ClientPersistence } from '@deepseek-ai/dsh-cl
 import type { ModelsCredentialEditing, ModelsOperations, ModelsSettingsIntegration, ModelsSettingsReads, PreparedCredentialEdit } from '@deepseek-ai/dsh-client-ui-settings-models/client'
 import type { WebSearchSettingsIntegration } from '@deepseek-ai/dsh-client-ui-settings-web-search/client'
 import type {} from '@deepseek-ai/dsh-client-file-upload/client'
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar-browser/client'
 import type { ClientFileUploadHooks } from '@deepseek-ai/dsh-client-file-upload/types'
 import { decodeCloudBootstrap } from '@deepseek-ai/dsh-pe-cloud-access/schema'
 import type { BindingFieldNames, BootstrapDecodeLimits, CloudBootstrap } from '@deepseek-ai/dsh-pe-cloud-access/types'
@@ -45,9 +47,11 @@ export interface CloudModelSettingsCallbacks extends Omit<ModelsSettingsReads, '
   readonly prepare: (ref: string, signal: AbortSignal) => Promise<(PreparedCredentialEdit & { readonly configured?: boolean }) | null>
 }
 
-/** Native application owner supplies ordinary navigation and localized refusal feedback. */
+/** Native application owner supplies fallback navigation and localized refusal feedback. */
 export interface CloudPreviewNavigationPort {
-  /** @param url Exact bound URL for synchronous ordinary GET navigation; never publish it to model/history or diagnostics. */
+  /**
+   * @param url Exact bound GET URL used when Native Browser is absent; never publish it to model/Session history or diagnostics.
+   */
   open(url: string): void
   /** @param code Safe local refusal; no rejected selector, token, URL or original error is exposed. */
   refused(code: 'closed' | 'target-denied'): void
@@ -152,6 +156,7 @@ export class PreparedCloudPage {
       transport: {
         baseUrl: input.baseUrl, fields: input.fields, fetch: input.fetch,
         ...this.config.servicePreview === undefined ? {} : { servicePreview: this.config.servicePreview },
+        ...this.config.serviceApplications === undefined ? {} : { serviceApplications: this.config.serviceApplications },
         createWebSocket: input.createWebSocket, limits: this.config,
         revalidate: signal => new BootstrapAttempt({
           baseUrl: input.baseUrl, config: this.config,
@@ -213,20 +218,36 @@ export class PreparedCloudPage {
       },
     })
     const navigation = input.previewNavigation
-    if (bootstrap.capabilities.servicePreview.state === 'available' && this.config.servicePreview !== undefined && navigation !== undefined) {
+    if (bootstrap.capabilities.servicePreview.state === 'available'
+      && (this.config.servicePreview !== undefined || this.config.serviceApplications !== undefined) && navigation !== undefined) {
       this.servicePreviewNavigation = (selection) => {
-        try {
+        const current = (): void => {
           if (this.activation === undefined || this.lifetime.transport.signal.aborted
             || this.lifetime.getSnapshot().phase !== 'running') throw new ClientFailure('closed')
           this.assertCurrent(this.activation)
-          navigation.open(this.lifetime.transport.servicePreviewNavigationUrl(selection))
-        } catch (error) {
+          const mounted = this.activation.get('sidebarRight')
+          if (mounted !== undefined && mounted.mounted.getSnapshot() !== selection.sessionId) throw new ClientFailure('target-denied')
+        }
+        const open = (url: string): void => {
+          current()
+          const sidebar = this.activation?.get('sidebarRight')
+          if (sidebar !== undefined && this.activation?.get('sidebarRightTabs')?.get('browser') !== undefined) {
+            if (sidebar.mounted.getSnapshot() !== selection.sessionId) throw new ClientFailure('target-denied')
+            sidebar.openTab('browser', { params: { url } })
+          } else navigation.open(url)
+        }
+        const refuse = (error: unknown): void => {
           const code = error instanceof ClientFailure && error.code === 'closed' ? 'closed' : 'target-denied'
           try { navigation.refused(code) } catch (_feedbackError) {
             try { console.error('Cloud preview navigation feedback unavailable.') }
             catch (_loggerError) { /* The original UI callback must remain contained even when feedback is unavailable. */ }
           }
         }
+        try {
+          current()
+          if (this.config.serviceApplications === undefined) open(this.lifetime.transport.servicePreviewNavigationUrl(selection))
+          else void this.lifetime.transport.serviceApplicationNavigationUrl(selection).then(open).catch(refuse)
+        } catch (error) { refuse(error) }
       }
     }
   }

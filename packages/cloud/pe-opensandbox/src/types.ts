@@ -13,11 +13,18 @@ export interface ServicePreviewIdentity extends Pick<AllocationScope, 'accountId
 /** Task selection within the already admitted account; the original service row supplies its allocation identity. */
 export type ApplicationServiceSelection = Pick<ServicePreviewIdentity, 'sessionId' | 'serviceId'>
 
-/** Application request without platform credentials, destination URLs or caller-selected ports. */
-export interface ApplicationReadRequest {
-  readonly method: 'GET' | 'HEAD'
+/** Bounded application HTTP input; destination, credentials and actual request authority stay with Root. */
+export interface ApplicationHttpRequest {
+  readonly method: 'GET' | 'HEAD' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   readonly resourcePath: string
   readonly headers: readonly (readonly [string, string])[]
+  /** Complete ingress-owned body for a writing method; its backing storage is charged until actual I/O settles. */
+  readonly body?: Uint8Array
+}
+
+/** Read-only input used by the existing inert preview policy. */
+export interface ApplicationReadRequest extends Omit<ApplicationHttpRequest, 'method' | 'body'> {
+  readonly method: 'GET' | 'HEAD'
 }
 
 /** Finite response budgets reserved by the original request and registered-service owners. */
@@ -57,13 +64,13 @@ export interface RegisteredApplicationService {
   /**
    * Keep the original service/request reservation through actual consumption; no retry or redirect is allowed.
    * Late acquisition after cancellation still closes its actual response. Platform credentials never reach the application.
-   * @param request Sanitized read for this capability's fixed application target.
+   * @param request Sanitized HTTP input for this capability's fixed application target; ingress owns method authorization.
    * @param limits Approved budgets reserved before transport allocation.
    * @param signal Original request and service cancellation observer.
    * @param consume Consumer that joins actual response close before returning.
    * @returns Actual acquisition, consumer and transport settlement; rejected cleanup remains owned and unknown.
    */
-  withResponse(request: ApplicationReadRequest, limits: ApplicationReadLimits, signal: AbortSignal,
+  withResponse(request: ApplicationHttpRequest, limits: ApplicationReadLimits, signal: AbortSignal,
     consume: (response: ApplicationReadResponse) => Promise<void>): Promise<void>
 }
 
