@@ -29,7 +29,7 @@ export async function runPreviewValidation(ctx,signal) {
     const call=async(label,name,args)=>{
       use.assertCurrent();result.stage=label;persist()
       const callId=ToolCallId('preview010-'+label),step=++sequence
-      const callEvent=agent.session.append('tool/call',{turn:0,step,callId,name,arguments:args})
+      const callEvent=agent.session.append('tool/call',{turn:0,step,callId,name,arguments:JSON.stringify(args)})
       const outcome=await account.agents.withInitiator(agent,()=>agent.ctx.tools.execute({callId,name,arguments:args,agent,signal}))
       agent.session.append('tool/result',{turn:0,step,message:createToolResultMessage({callId,content:outcome.content,isError:outcome.isError}),
         ...(outcome.error?.info?{error:outcome.error.info}:{}),...(outcome.meta!==undefined?{meta:outcome.meta}:{})},
@@ -40,7 +40,7 @@ export async function runPreviewValidation(ctx,signal) {
     }
     const bytes=fs.readFileSync(fixture)
     if(createHash('sha256').update(bytes).digest('hex')!==fixtureSha)throw Error('Exact public fixture required')
-    await call('fixture-write','write',{file_path:'web_service_010.py',content:bytes.toString('utf8')})
+    if(request.fixtureAlreadyPrepared!==true)await call('fixture-write','write',{file_path:'web_service_010.py',content:bytes.toString('utf8')})
     await call('fixture-hash','bash',{command:'sha256sum web_service_010.py',description:'Read back the exact public fixture hash'})
     result.status='fixture-prepared-awaiting-explicit-start';persist()
     const start=await wait('PREVIEW010-START.json')
