@@ -9,12 +9,14 @@ import { verifyBundle } from '../bundle.mjs'
 import { nativeUpdateEffects, prepareNativeProductUpdate, requireProductOnlyRollback } from './update.mjs'
 import { createNativeAuthority } from './native-authority.mjs'
 import { runNativeDelivery, runNativePublishContinuation, saveNativeInput, withNativeOperationLock,
-  withRetainedNativePublishLock, requireNativeReleaseComplete } from './native-delivery.mjs'
+  withRetainedNativePublishLock, runNativeVerifyContinuation, requireNativeReleaseComplete } from './native-delivery.mjs'
 import { assertCandidateLock } from './candidate-lock.mjs'
 import { inspectCandidate, inspectExec } from './inspect.mjs'
 import { preflight } from './dependencies.mjs'
+import { readOptions } from '../smoke/options.mjs'
 import stateModule from './native-delivery-state.cjs'
 import profileModule from './native-profile.cjs'
+import { ORIGINAL_VERIFY_OPERATION, ORIGINAL_SMOKE_SHA256, readOriginalVerifyEvidence, claimOriginalVerifyAttempt } from './native-verify-evidence.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const STATE = join(dirname(ROOT), 'local-state')
@@ -448,6 +450,71 @@ function requireSuccessorInput(input) {
   }
 }
 
+/** Require the unchanged original app exec, start ticks and retained keeper before read-only verification. */
+export function requireOriginalVerifyApplication(current, holder) {
+  if (current.appPid !== 78672 || current.appStartTicks !== '158001449'
+    || current.appExecId !== 'a0de3a16ee6ee8497f31aa1290f254f8314b1fd147c4544bd8b83114389e744e'
+    || !isDeepStrictEqual(current.holder, holder)) throw new NativeDeliveryUnconfirmed('verify-original-application')
+}
+
+/** Verify only this original operation; deployment release never retires account or SDK resource ownership. */
+export async function continueNativeVerify({ operation, line, latest }) {
+  if (operation !== ORIGINAL_VERIFY_OPERATION || line !== '主线' || latest?.operation !== operation
+    || latest.format !== PROJECTION || latest.nativePhase !== 'verify-intent') {
+    throw new NativeDeliveryUnconfirmed('verify-original-entry')
+  }
+  await assertCandidateLock(dirname(ROOT), line)
+  const candidate = retainedCandidateLine(line), source = controllerSource()
+  const filename = join(STATE, operation + '.native.json'), saved = privateInput(filename, true)
+  const input = saved.value, state = input.state, groups = input.groups
+  const recordPins = { kind: 'successor-js', operation,
+    descriptorSha256: '55c85dff1792c36a30a1804ceee9679dd87503f9c5e5c101bd46a298ee74c18d',
+    originalTupleSha256: '0fb9ef7b4679de52b7f5dd98dfb634752715893b379b6f5e47078554bd34e881',
+    targetTupleSha256: 'dedc9d07598ff18a777d5326bb97d62dc7c2e7cb93bd698711cda86e38dd67cd',
+    compatibleTupleSha256: '279ef8454b4ddd704ace4898f5b103fbd197898f45ae874450e1f24c886e35ab' }
+  if (input.operation !== operation || input.descriptorSha256 !== recordPins.descriptorSha256
+    || state?.operation !== operation || state.manifest?.sourceCommit !== '56b76d0bc878c656d81b91cbfeef76aaa288fcb1'
+    || !isDeepStrictEqual(state.smokeArgs, ['--credentials',
+      '/Users/jingchao/agent_work/main_agent/dsh-cloud-delivery/features-20261107/test-runtime/linux/.private/web-login-final.json', '--account', 'ordinaryUserB'])
+    || digest(fs.readFileSync(join(ROOT, 'deploy/smoke/check.mjs'))) !== ORIGINAL_SMOKE_SHA256) {
+    throw new NativeDeliveryUnconfirmed('verify-original-private-input')
+  }
+  const checkRecord = (record, observed) => {
+    stateModule.requireNativeVerifyIntent(recordPins, record)
+    if (observed !== recordPins.targetTupleSha256) throw new NativeDeliveryUnconfirmed('verify-original-target')
+  }
+  const fresh = async () => {
+    requireNoOtherUpdateCaller()
+    await assertCandidateLock(dirname(ROOT), line)
+    if (!isDeepStrictEqual(privateInput(join(STATE, 'latest.json')), latest)
+      || !isDeepStrictEqual(privateInput(filename, true), saved)
+      || !isDeepStrictEqual(retainedCandidateLine(line), candidate)
+      || !isDeepStrictEqual(controllerSource(), source)) throw new NativeDeliveryUnconfirmed('verify-input-changed')
+    const current = currentNativeContext(await inspectCandidate())
+    requireOriginalVerifyApplication(current, input.context.holder)
+    const execution = await inspectExec(current.appExecId)
+    if (!execution.running || execution.missing) throw new NativeDeliveryUnconfirmed('verify-original-exec')
+    const authority = await createNativeAuthority(current, input.approved)
+    await confirmNativeInstallation({ latest, input, current, authority }, checkRecord)
+    return { current, authority }
+  }
+  const { current, authority } = await fresh()
+  const effects = nativeUpdateEffects(state, { observeTuple: () => authority.observeTuple(groups) })
+  return runNativeVerifyContinuation({ directory: STATE, pins: recordPins, authority,
+    observe: async () => { await fresh(); return authority.observeTuple(groups) },
+    verify: async () => {
+      const evidence = await readOriginalVerifyEvidence()
+      await preflight(current, state.manifest)
+      try {
+        await readOptions(state.smokeArgs)
+        const { chromium } = createRequire(new URL('../../apps/web/package.json', import.meta.url))('playwright')
+        fs.accessSync(chromium.executablePath(), fs.constants.X_OK)
+      } catch (_error) { throw new NativeDeliveryUnconfirmed('verify-local-smoke-prerequisites') }
+      claimOriginalVerifyAttempt(STATE, { ...evidence, controller: { commit: source.commit, tree: source.tree } })
+      await effects.verify()
+    } })
+}
+
 function currentNativeContext(snapshot) {
   return { ...snapshot, holder: { pid: snapshot.namespaceKeeperPid,
     startTicks: snapshot.namespaceKeeperStartTicks, namespaceId: snapshot.namespaceId } }
@@ -459,7 +526,12 @@ function currentNativeContext(snapshot) {
  * sourceRoot omission uses the saved controller repository; an explicit repository supplies source data only.
  * @returns {Promise<object>} Complete verified predecessor and its installed group; mismatch performs no mutation.
  */
-export async function confirmNativePredecessor({ latest, input, current, authority, sourceRoot = ROOT }) {
+export async function confirmNativePredecessor(request) {
+  return confirmNativeInstallation(request, (record, observed) =>
+    stateModule.requireNativeContinuation(record, observed, record.targetTupleSha256))
+}
+
+async function confirmNativeInstallation({ latest, input, current, authority, sourceRoot = ROOT }, requireSelection) {
   requireSavedAssetPlan(input.plan)
   const groups = input.groups
   if (!isDeepStrictEqual(input.approved?.asset, input.plan.asset)
@@ -518,7 +590,7 @@ export async function confirmNativePredecessor({ latest, input, current, authori
     throw new NativeDeliveryUnconfirmed('saved-native-descriptor')
   }
   const observed = await authority.observeTuple(groups)
-  stateModule.requireNativeContinuation(record, observed, record.targetTupleSha256)
+  requireSelection(record, observed)
   const installed = groups.find(group => tupleSha256(group) === record.targetTupleSha256)
   const expectedAsset = { path: '/opt/dsh-feature-assets/fd-skill-store-v1-' + input.approved.asset.sha256 + '.node',
     sha256: input.approved.asset.sha256, bytes: input.approved.asset.bytes, mode: 0o444,

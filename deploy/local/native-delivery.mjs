@@ -170,6 +170,26 @@ export async function withRetainedNativePublishLock(directory, operation, action
   return nativeOperationLock(directory, operation, action, io, true)
 }
 
+/** Retain this verification operation's lock and use the unchanged durable completion release. */
+export async function withRetainedNativeVerifyLock(directory, operation, action, io = fs) {
+  return nativeOperationLock(directory, operation, action, io, true)
+}
+
+/** Run only verification against the selected tuple; account/SDK ownership is never released here. */
+export async function runNativeVerifyContinuation({ directory, pins, authority, verify, observe,
+  writeProjection = value => saveNativeProjection(directory, value),
+  holdOperation = action => withRetainedNativeVerifyLock(directory, pins.operation, action) }) {
+  return holdOperation(async () => {
+    stateModule.requireNativeVerifyIntent(pins, await authority.read())
+    const owner = await NativeDeliveryOwner.acceptVerifyContinuation(pins, authority, writeProjection)
+    const selected = async () => {
+      if (await observe() !== pins.targetTupleSha256) throw new NativeDeliveryUnconfirmed('verify-selected-group')
+    }
+    await selected()
+    return owner.finishVerification(async () => { await verify(); await selected() })
+  })
+}
+
 async function nativeOperationLock(directory, operation, action, io, retained) {
   requireNativeReleaseComplete(directory, io)
   if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(operation)) {

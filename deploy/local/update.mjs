@@ -394,16 +394,25 @@ async function main(argv) {
   const { line, args: lineArgs } = readLineArguments(rawArguments)
   const { inputFile, successorFile, assetSuccessorFile, args } = nativeArguments(mode, lineArgs)
   if (mode === '--help' || !mode || args.includes('--help')) {
-    console.log('用法：deploy/local/update <产品包目录> [--line 线名] [私密账号参数] [已有对话参数]\n      首次原生交付可追加 --native-input <私有固定输入>\n      已确认原生组的后继读者对追加 --native-successor <私有后继输入>\n      更换正式目录资产追加 --native-asset-successor <私有新资产输入>\n      node deploy/local/update.mjs continue-native-publish <原operation> --line <原调用线>\n      deploy/local/rollback [--line 线名] [相同检查参数]\n      deploy/local/start [--line 线名]\n仅操作本机候选环境；正常停止不确认时停止更新，保留进程始终继续运行。')
+    console.log('用法：deploy/local/update <产品包目录> [--line 线名] [私密账号参数] [已有对话参数]\n      首次原生交付可追加 --native-input <私有固定输入>\n      已确认原生组的后继读者对追加 --native-successor <私有后继输入>\n      更换正式目录资产追加 --native-asset-successor <私有新资产输入>\n      node deploy/local/update.mjs continue-native-publish <原operation> --line <原调用线>\n      node deploy/local/update.mjs continue-native-verify <原operation> --line <原调用线>\n      deploy/local/rollback [--line 线名] [相同检查参数]\n      deploy/local/start [--line 线名]\n仅操作本机候选环境；正常停止不确认时停止更新，保留进程始终继续运行。')
     return
   }
   if (mode === 'start' && args.length) throw new CandidateError('start 只接受 --line 线名。')
   await assertCandidateLock(dirname(ROOT), line)
-  if (mode !== 'continue-native-publish') await mkdir(STATE, { recursive: true, mode: 0o700 })
+  if (!['continue-native-publish', 'continue-native-verify'].includes(mode)) await mkdir(STATE, { recursive: true, mode: 0o700 })
   requireNativeReleaseComplete(STATE)
   let latest
   try { latest = JSON.parse(await readFile(LATEST, 'utf8')) }
   catch (error) { if (error.code !== 'ENOENT') throw error }
+  if (mode === 'continue-native-verify') {
+    if (args.length !== 1 || inputFile !== undefined || successorFile !== undefined || assetSuccessorFile !== undefined || !line) {
+      throw new CandidateError('验证接续只接受原operation与原调用线。')
+    }
+    const { continueNativeVerify } = await import('./native-update.mjs')
+    await continueNativeVerify({ operation: args[0], line, latest })
+    console.log('原操作正常验证及部署锁释放完成；账号与SDK责任保持原owner')
+    return
+  }
   if (mode === 'continue-native-publish') {
     if (args.length !== 1 || inputFile !== undefined || successorFile !== undefined || assetSuccessorFile !== undefined || !line) {
       throw new CandidateError('发布接续只接受原operation与原调用线。')

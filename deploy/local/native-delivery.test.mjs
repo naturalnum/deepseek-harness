@@ -857,8 +857,15 @@ test('changed asset source, permissions, prepared bytes or original application 
   for (const change of ['asset-bytes', 'asset-source', 'asset-mode', 'prepared-plan', 'app-start', 'old-caller']) {
     const fixture = await publishContinuationFixture(t), approved = fixture.input.approved
     const asset = '/opt/dsh-feature-assets/fd-skill-store-v1-' + approved.asset.sha256 + '.node'
-    if (change === 'asset-bytes') fs.writeFileSync(fixture.local(asset), 'changed')
-    if (change === 'asset-source') fs.appendFileSync(fixture.local(asset + '.source.json'), 'corrupt')
+    if (change === 'asset-bytes' || change === 'asset-source') {
+      const path = fixture.local(asset + (change === 'asset-source' ? '.source.json' : ''))
+      const mode = fs.statSync(path).mode & 0o777
+      fs.chmodSync(path, mode | 0o200)
+      try {
+        if (change === 'asset-source') fs.appendFileSync(path, 'corrupt')
+        else fs.writeFileSync(path, 'changed')
+      } finally { fs.chmodSync(path, mode) }
+    }
     if (change === 'asset-mode') fs.chmodSync(fixture.local(asset), 0o640)
     if (change === 'prepared-plan') fs.writeFileSync(fixture.local(fixture.journal + '/../rollback/rollback.json'), '{}')
     if (change === 'app-start') fixture.input.binding.originalApp.startTicks = '54321'

@@ -83,6 +83,15 @@ function requireNativePublishIntent(pins, record) {
       .some(key => record[key] !== pins[key])) throw new NativeDeliveryUnconfirmed('continuation-original-intent')
 }
 
+/** Only the original successor verification intent may attach without replaying deployment effects. */
+function requireNativeVerifyIntent(pins, record) {
+  requirePins(pins)
+  requireRecord(record)
+  if (pins.kind !== 'successor-js' || record.phase !== 'verify-intent' || record.sequence !== 12
+    || ['kind', 'operation', 'descriptorSha256', 'originalTupleSha256', 'targetTupleSha256', 'compatibleTupleSha256']
+      .some(key => record[key] !== pins[key])) throw new NativeDeliveryUnconfirmed('verify-original-intent')
+}
+
 /** Block all previously shipped ordinary entry predicates without claiming a stop actually ran. */
 function legacyBarrier(record) {
   requireRecord(record)
@@ -382,6 +391,30 @@ class NativeDeliveryOwner {
     return owner
   }
 
+  /** Attach to a read-back verification intent; no publication, install or application lifecycle effect runs. */
+  static async acceptVerifyContinuation(pins, authority, writeProjection) {
+    const record = await authority.read()
+    requireNativeVerifyIntent(pins, record)
+    const owner = new NativeDeliveryOwner()
+    owner.#authority = authority
+    owner.#record = record
+    owner.#projection = writeProjection
+    return owner
+  }
+
+  /** Run one new verification; only its success advances the original intent through the normal CAS. */
+  async finishVerification(effect) {
+    if (this.#unknown || this.#running || this.#record.kind !== 'successor-js'
+      || this.#record.phase !== 'verify-intent' || this.#record.sequence !== 12) {
+      throw new NativeDeliveryUnconfirmed('verify-original-intent')
+    }
+    this.#running = true
+    try { await effect(); await this.#advance('verified') }
+    catch (error) { this.#unknown = true; throw new NativeDeliveryUnconfirmed(this.#record.phase, error) }
+    finally { this.#running = false }
+    return this.record
+  }
+
   get record() { return structuredClone(this.#record) }
   get unknown() { return this.#unknown }
 
@@ -573,4 +606,4 @@ function requireNativeAssetSuccessor(record, observed, pins, binding) {
 
 module.exports = { FORMAT, PROJECTION, NativeDeliveryOwner, NativeRecordStore, NativeDeliveryUnconfirmed,
   legacyBarrier, requireOrdinaryUpdateState, requireNativeContinuation, requireNativePins: requirePins,
-  requireNativePublishIntent, inspectPublishedFdAsset, publishFdAsset, nativeSuccessorDescriptor, requireNativeSuccessor, nativeAssetDescriptor, requireNativeAssetSuccessor }
+  requireNativePublishIntent, requireNativeVerifyIntent, inspectPublishedFdAsset, publishFdAsset, nativeSuccessorDescriptor, requireNativeSuccessor, nativeAssetDescriptor, requireNativeAssetSuccessor }
