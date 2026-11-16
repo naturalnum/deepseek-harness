@@ -4,8 +4,22 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createHash } from 'node:crypto'
 import { test } from 'node:test'
-import { captureRecoveryRoot, rebuildRecoveryRoot, writeRecoveryRoot } from './recovery-root.mjs'
+import { captureRecoveryRoot, confirmRecoveryCarrierLifecycle, rebuildRecoveryRoot, writeRecoveryRoot } from './recovery-root.mjs'
 import { RECOVERY_ROOT_FILES } from './recovery-config.mjs'
+
+test('carrier admission permits an inode number reused after original lifecycles end, while an app restart or live original holder refuses', () => {
+  const carrier = { pid: 1, startTicks: '10', namespaceId: 'mnt:[100]' }
+  const application = { pid: 20, startTicks: '11', namespaceId: 'mnt:[200]' }
+  const keeper = { pid: 21, startTicks: '12', namespaceId: 'mnt:[200]' }
+  const previous = { carrier, application, namespaceReferences: [application, keeper] }
+  const current = { carrier: { ...carrier, startTicks: '20' }, references: [null, { ...keeper, startTicks: '22' }] }
+  assert.equal(confirmRecoveryCarrierLifecycle(previous, current).namespaceNumberReused, true)
+  assert.equal(confirmRecoveryCarrierLifecycle(previous, current).originalReferenceLifecyclesEnded, 2)
+  assert.throws(() => confirmRecoveryCarrierLifecycle(previous, { ...current, carrier }))
+  assert.throws(() => confirmRecoveryCarrierLifecycle(previous, { ...current, references: [null, keeper] }))
+  assert.throws(() => confirmRecoveryCarrierLifecycle(previous, { ...current, references: [null, { ...keeper, namespaceId: 'mnt:[300]' }] }))
+  assert.throws(() => confirmRecoveryCarrierLifecycle({ ...previous, namespaceReferences: [] }, current))
+})
 
 async function fixture(t) {
   const directory = await fs.mkdtemp(join(tmpdir(), 'recovery-root-'))

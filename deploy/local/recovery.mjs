@@ -7,7 +7,7 @@ import { hostname } from 'node:os'
 import { createHash } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
 import { CandidateError } from './inspect.mjs'
-import { captureRecoveryRoot, rebuildRecoveryRoot, writeRecoveryRoot } from './recovery-root.mjs'
+import { captureRecoveryRoot, confirmRecoveryCarrierLifecycle, rebuildRecoveryRoot, writeRecoveryRoot } from './recovery-root.mjs'
 import { RECOVERY_ROOT_FILES } from './recovery-config.mjs'
 import { captureRecoveryStorage, restoreRecoveryStorage } from './recovery-storage.mjs'
 import { prepareRecoveryNamespace, observeRecoveryNamespace, sealRecoveryNamespace, pinRecoveryAsset } from './recovery-namespace.mjs'
@@ -44,6 +44,21 @@ function sameIdentity(left, right) {
   return left.pid === right.pid && left.startTicks === right.startTicks && left.namespaceId === right.namespaceId
 }
 
+function originalNamespaceReferences(namespaceId) {
+  const references = []
+  for (const name of fs.readdirSync('/proc').filter(value => /^[1-9]\d*$/.test(value))) {
+    try {
+      const before = processIdentity(Number(name)), descriptors = '/proc/' + name + '/fd'
+      const holds = before.namespaceId === namespaceId || fs.readdirSync(descriptors).some(fd => {
+        try { return fs.readlinkSync(descriptors + '/' + fd) === namespaceId }
+        catch (error) { if (['ENOENT', 'ESRCH'].includes(error.code)) return false; throw error }
+      })
+      if (holds && sameIdentity(before, processIdentity(Number(name)))) references.push(before)
+    } catch (error) { if (!['ENOENT', 'ESRCH'].includes(error.code)) throw error }
+  }
+  return references.sort((left, right) => left.pid - right.pid)
+}
+
 function liveApplication(pid, nodePath) {
   const identity = processIdentity(pid), argv = fs.readFileSync('/proc/' + pid + '/cmdline', 'utf8').split('\0').filter(Boolean)
   const uid = fs.readFileSync('/proc/' + pid + '/status', 'utf8').match(/^Uid:\s+(.*)$/m)?.[1].trim().split(/\s+/)
@@ -70,7 +85,9 @@ async function snapshot(specification) {
   if (hash(staticBytes) !== launch.staticInput.sha256) fail()
   const staticInput = JSON.parse(staticBytes)
   if (staticInput.resourceId !== owner.resourceId) fail()
-  const storage = captureRecoveryStorage(owner, undefined, { installAnchor: staticInput.installAnchor, applicationPid })
+  const storage = captureRecoveryStorage(owner, undefined, { installAnchor: staticInput.installAnchor, applicationPid,
+    ...(specification.productManifest === undefined ? {} : { productManifest: specification.productManifest }) })
+  const namespaceReferences = originalNamespaceReferences(application.namespaceId)
   if (!sameIdentity(application, liveApplication(applicationPid, launch.assets.node.path))) fail()
   // A new private side directory is the functional backup; no existing source is renamed or replaced.
   const parent = posix.dirname(snapshotDirectory), parentInfo = fs.lstatSync(parent)
@@ -81,7 +98,7 @@ async function snapshot(specification) {
   const prepared = { files: RECOVERY_ROOT_FILES.map((relativePath, index) => ({ relativePath,
     bytes: Object.values(captured.files)[index], ...captured.fileMetadata[relativePath] })) }
   await writeRecoveryRoot(captured, prepared, targetDirectory, filesystem)
-  const metadata = { schema: 'pe-cloud-cold-recovery-snapshot/v1', hostname: hostname(), application, carrier,
+  const metadata = { schema: 'pe-cloud-cold-recovery-snapshot/v1', hostname: hostname(), application, carrier, namespaceReferences,
     storage, launch, configurationAssets, fileMetadata: captured.fileMetadata, moduleLink: captured.moduleLink,
     fileSha256: Object.fromEntries(Object.entries(captured.files).map(([name, bytes]) => [name, hash(bytes)])) }
   const handle = fs.openSync(snapshotDirectory + '/metadata.json', 'wx', 0o600)
@@ -90,7 +107,8 @@ async function snapshot(specification) {
     const descriptor = fs.openSync(directory, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW)
     try { fs.fsyncSync(descriptor) } finally { fs.closeSync(descriptor) }
   }
-  return { snapshotSaved: true, resources: storage.owner.domains.length, supportResources: storage.support.length, secretValuesLogged: false }
+  return { snapshotSaved: true, resources: storage.owner.domains.length, supportResources: storage.support.length,
+    productMount: storage.support.find(row => row.role === 'products') ?? null, secretValuesLogged: false }
 }
 
 function retained(specification) {
@@ -115,9 +133,12 @@ async function sources(specification, metadata) {
 
 function coldCarrier(metadata) {
   const carrier = processIdentity(1)
-  // Both facts must change; a normal application restart never counts as a cold carrier rebuild.
-  if (carrier.startTicks === metadata.carrier.startTicks || carrier.namespaceId === metadata.carrier.namespaceId) fail()
-  return carrier
+  const references = metadata.namespaceReferences?.map(row => {
+    try { return processIdentity(row.pid) }
+    catch (error) { if (['ENOENT', 'ESRCH'].includes(error.code)) return null; throw error }
+  })
+  const lifecycle = confirmRecoveryCarrierLifecycle(metadata, { carrier, references })
+  return { ...carrier, lifecycle }
 }
 
 function requireVacantCarrier(metadata) {
@@ -156,7 +177,7 @@ async function prepare(specification, signal, startedAtMs) {
     deadlineMonotonicMs: Number(process.hrtime.bigint() / 1000000n) + Math.floor(deadlineAtMs - performance.now()) }
   const fd = fs.openSync(specification.operationDirectory + '/recovery-control.json', 'wx', 0o600)
   try { fs.writeFileSync(fd, JSON.stringify(control) + '\n'); fs.fsyncSync(fd) } finally { fs.closeSync(fd) }
-  return { ...namespace, storageReady: true, ready: false, smokeStatus: 'not-run' }
+  return { ...namespace, storageReady: true, carrierLifecycle: carrier.lifecycle, ready: false, smokeStatus: 'not-run' }
 }
 
 async function publish(specification, signal) {
@@ -186,7 +207,9 @@ async function publish(specification, signal) {
     phase = 'seal'; await sealRecoveryNamespace(handle, verified)
     within(signal, deadlineAtMs)
     if (!sameIdentity(handle, liveApplication(handle.pid, metadata.launch.assets.node.path))) fail()
-    return { ready: false, cliRunning: true, inputsValidated: true, smokeStatus: 'not-run', applicationPid: handle.pid, namespaceId: handle.namespaceId }
+    return { ready: false, cliRunning: true, inputsValidated: true, smokeStatus: 'not-run', applicationPid: handle.pid,
+      namespaceId: handle.namespaceId, appCheckPath: metadata.launch.scripts.steps.path,
+      productMount: metadata.storage.support.find(row => row.role === 'products') ?? null }
   } catch (error) {
     handle ??= error?.recoveryHandle
     handle?.closeReady()

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { Script } from 'node:vm'
 import { CandidateError, inspectCandidate, inspectExec, matchApplicationExec, selectProcessState } from './inspect.mjs'
 
 const containerNamespace = 'mnt:[100]'
@@ -70,8 +71,8 @@ test('an explicitly handed-over carrier uses the original process, product and n
   const observed = { rows: [{ ...app, gid: 2000, cwd: '/opt/dsh-installed-products', stdoutPath: '/opt/dsh-features/app.log', shutdownTimeoutMs: 120000 }, holder],
     containerNamespaceId: containerNamespace, productRoot: '/opt/dsh-installed-products', productDevice: '/dev/loop14',
     productReadOnly: true, productBlockReadOnly: true, productFilesystem: 'ext4', nodePath: '/dsh-tools/node24',
-    appCheckPath: '/opt/dsh-features/feature-namespace-steps.v3.mjs', seccompPath: '/opt/dsh-feature-assets/app-seccomp.bpf', profileHome: '/run/dsh-feature-root' }
-  const calls = [], operations = { container: 'handed-over-runtime', execute: async argv => {
+    appCheckPath: '/opt/dsh-features/arm-native-01/feature-namespace-steps.v3.mjs', seccompPath: '/opt/dsh-feature-assets/app-seccomp.bpf', profileHome: '/run/dsh-feature-root' }
+  const calls = [], operations = { container: 'handed-over-runtime', appCheckPath: observed.appCheckPath, execute: async argv => {
     calls.push(argv)
     if (argv[0] === '/bin/ls') return '20 21'
     if (argv.join(' ') === '/bin/readlink /proc/1/ns/mnt') return containerNamespace
@@ -79,6 +80,8 @@ test('an explicitly handed-over carrier uses the original process, product and n
     if (argv[1] === '/proc/20/cmdline') return '/dsh-tools/node24\0/opt/dsh-installed-products/apps/cli/lib/bin.js\0--profile\0cloud\0'
     if (argv[1] === '/proc/21/cmdline') return '/bin/sleep\0infinity\0'
     assert.equal(argv[0], '/proc/20/exe'); assert.equal(argv[1], '-e')
+    assert.equal(argv[4], operations.appCheckPath)
+    new Script(argv[2]) // Parse the actual remote program without executing any target operation.
     return JSON.stringify(observed)
   }, top: async () => [{ pid: 200, comm: 'MainThread' }], execIds: async () => [execution.execId], execution: async () => execution }
   const ready = await inspectCandidate(operations)
@@ -88,4 +91,25 @@ test('an explicitly handed-over carrier uses the original process, product and n
   const refused = await inspectCandidate(operations)
   assert.equal(refused.canStopSafely, false)
   assert.equal(refused.issues.some(issue => issue.includes('块设备')), true)
+  observed.productBlockReadOnly = true
+  observed.appCheckPath = '/opt/dsh-features/feature-namespace-steps.v3.mjs'
+  const mismatched = await inspectCandidate(operations)
+  assert.equal(mismatched.canStopSafely, false)
+  assert.equal(mismatched.issues.some(issue => issue.includes('检查脚本路径')), true)
+})
+
+test('an invalid original app-check path refuses before any target operation', async () => {
+  for (const appCheckPath of ['/tmp/check.mjs', '/opt/dsh-features/../check.mjs', '/opt/dsh-features/check.mjs\0']) {
+    let called = false
+    await assert.rejects(inspectCandidate({ appCheckPath, execute: async () => { called = true; throw Error('must not execute') } }))
+    assert.equal(called, false)
+  }
+})
+
+test('a caller approval boolean cannot replace captured product mount evidence', async () => {
+  for (const productMount of [true, { allow: true }, { kind: 'allow-bind', verified: true }, { kind: 'bind', verifier: { sha256: '0'.repeat(64) } }]) {
+    let called = false
+    await assert.rejects(inspectCandidate({ productMount, execute: async () => { called = true; throw Error('must not execute') } }))
+    assert.equal(called, false)
+  }
 })

@@ -190,7 +190,8 @@ export async function observeRecoveryNamespace({ operationDirectory, expectedInp
     if (!Number.isSafeInteger(prepared.shellPid) || prepared.shellPid <= 0) fail(handle)
     handle.pid = prepared.shellPid
     const observed = identity(handle)
-    if (observed.uid !== 0 || prepared.mountNamespace !== observed.namespaceId || prepared.outputRoot !== HOME || prepared.readyDescriptor !== 4) fail(handle)
+    if (observed.uid !== 0 || prepared.mountNamespace !== observed.namespaceId || observed.namespaceId === fs.readlinkSync('/proc/1/ns/mnt')
+      || prepared.outputRoot !== HOME || prepared.readyDescriptor !== 4) fail(handle)
     Object.assign(handle, observed)
     const state = JSON.parse(readProtected('/proc/' + handle.pid + '/root' + STATE, 262144, 0o444))
     const storagePlanBytes = readProtected(handle.measurementPath, 262144, 0o600)

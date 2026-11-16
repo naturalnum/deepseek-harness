@@ -2,12 +2,16 @@
 import fs from 'node:fs'
 import { posix } from 'node:path'
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { createRequire } from 'node:module'
+import { fileURLToPath } from 'node:url'
 import { CandidateError } from './inspect.mjs'
 
 const fail = () => { throw new CandidateError('原存储身份或恢复结果未确认；保留现场，不换设备号、不重新分配。') }
 const absolute = value => typeof value === 'string' && /^\/[A-Za-z0-9_./-]+$/.test(value)
   && value !== '/' && posix.normalize(value) === value
 const numeric = value => typeof value === 'string' && /^\d+$/.test(value)
+const digest = bytes => createHash('sha256').update(bytes).digest('hex')
 const options = ['ro', 'rw', 'nodev', 'nosuid', 'noexec', 'relatime', 'noatime']
 
 function domains(owner) {
@@ -41,7 +45,7 @@ function mountRows(text) {
   return text.trim().split('\n').map(line => {
     const [left, right] = line.split(' - '), parts = left.split(' '), tail = right?.split(' ')
     if (parts.length < 6 || !tail || tail.length < 3) fail()
-    return { path: decode(parts[4]), root: decode(parts[3]), options: parts[5].split(','), filesystem: tail[0], source: decode(tail[1]) }
+    return { path: decode(parts[4]), root: decode(parts[3]), device: parts[2], options: parts[5].split(','), filesystem: tail[0], source: decode(tail[1]) }
   })
 }
 
@@ -53,6 +57,19 @@ function linuxIo() {
       const info = stat(parent)
       if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== 0n || (info.mode & 0o022n) !== 0n) fail()
     }
+  }
+  const protectedBytes = (path, maximum = 16777216) => {
+    if (!absolute(path)) fail()
+    protectedParent(path)
+    const fd = fs.openSync(path, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW)
+    try {
+      const before = fs.fstatSync(fd)
+      if (!before.isFile() || before.nlink !== 1 || before.uid !== 0 || (before.mode & 0o022) !== 0
+        || before.size < 1 || before.size > maximum) fail()
+      const bytes = fs.readFileSync(fd), after = fs.fstatSync(fd), named = fs.lstatSync(path)
+      if (['dev', 'ino', 'size', 'mtimeMs', 'ctimeMs'].some(key => before[key] !== after[key] || after[key] !== named[key])) fail()
+      return bytes
+    } finally { fs.closeSync(fd) }
   }
   return {
     platform: () => process.platform === 'linux' && process.getuid() === 0,
@@ -75,6 +92,40 @@ function linuxIo() {
       return { device: String(info.dev), inode: String(info.ino), uid: Number(info.uid), gid: Number(info.gid),
         mode: Number(info.mode & 0o7777n), filesystemBytes: String(geometry.blocks * geometry.bsize), filesystemInodes: String(geometry.files) }
     },
+    productDirectory: path => {
+      if (!absolute(path)) fail()
+      protectedParent(path)
+      const info = stat(path)
+      if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== 0n || info.gid !== 0n || (info.mode & 0o022n) !== 0n) fail()
+      return { device: String(info.dev), inode: String(info.ino), uid: Number(info.uid), gid: Number(info.gid), mode: Number(info.mode & 0o7777n) }
+    },
+    productPins: (reference, installAnchor) => {
+      if (!absolute(reference?.path) || !/^[a-f0-9]{64}$/.test(reference.sha256) || !absolute(installAnchor)) fail()
+      const bytes = protectedBytes(reference.path)
+      if (digest(bytes) !== reference.sha256) fail()
+      const manifest = JSON.parse(bytes), root = posix.dirname(installAnchor)
+      if (manifest.format !== 'pe-cloud-update/v1' || !/^[a-f0-9]{40}$/.test(manifest.sourceCommit)
+        || !Array.isArray(manifest.files) || !manifest.files.length || manifest.files.length > 50000
+        || new Set(manifest.files.map(row => row.path)).size !== manifest.files.length) fail()
+      const modulePath = root + '/deploy/local/product-files.cjs', moduleBytes = protectedBytes(modulePath)
+      const { collectManagedFiles } = createRequire(installAnchor)(modulePath)
+      const actual = collectManagedFiles(root, [], manifest.files), expected = new Map(manifest.files.map(row => [row.path, row]))
+      if (actual.length !== expected.size) fail()
+      for (const row of actual) {
+        const pin = expected.get(row.path), path = root + '/' + row.path
+        if (!pin || ['size', 'mode', 'sha256'].some(key => pin[key] !== row[key])) fail()
+        protectedParent(path)
+        const info = stat(path)
+        if (!info.isFile() || info.isSymbolicLink() || info.uid !== 0n || info.nlink !== 1n || (info.mode & 0o022n) !== 0n) fail()
+      }
+      return { manifestSha256: reference.sha256, sourceCommit: manifest.sourceCommit, files: actual.length,
+        productFilesModuleSha256: digest(moduleBytes), anchorSha256: digest(protectedBytes(installAnchor)),
+        sourcePackageSha256: digest(protectedBytes(root + '/SOURCE-PACKAGE.json')),
+        assemblySha256: digest(protectedBytes(root + '/PRODUCT-ASSEMBLY.json')) }
+    },
+    verifier: () => { const path = fileURLToPath(import.meta.url); return { path, sha256: digest(protectedBytes(path)) } },
+    bindProduct: row => run('mount', ['--bind', row.sourcePath, row.mountPath]),
+    protectProduct: row => run('mount', ['-o', ['remount', 'bind', ...row.mountOptions].join(','), row.mountPath]),
     bind: row => {
       const minor = Number(row.loop.slice(9))
       if (fs.readFileSync('/sys/class/block/loop' + minor + '/dev', 'utf8').trim() !== '7:' + minor) fail()
@@ -124,22 +175,83 @@ function loopReady(row, io) {
   return true
 }
 
+const productMounts = (rows, root) => rows.filter(row => row.path === root || row.path.startsWith(root + '/'))
+const mountIdentity = rows => JSON.stringify(rows.map(row => [row.path, row.root, row.device, row.filesystem, row.source,
+  options.filter(option => row.options.includes(option)).sort()]).sort())
+const mountSource = row => Object.fromEntries(['path', 'root', 'device', 'filesystem', 'source'].map(key => [key, row[key]]))
+const parentMount = (rows, path) => rows.filter(row => row.path !== path && path.startsWith(row.path.replace(/\/$/, '') + '/'))
+  .sort((a, b) => b.path.length - a.path.length)[0]
+
+function validateProductBind(row) {
+  if (row?.kind !== 'bind' || row.role !== 'products' || !absolute(row.installAnchor)
+    || row.mountPath !== posix.dirname(row.installAnchor) || row.sourcePath !== row.mountPath
+    || !numeric(row.device) || !numeric(row.inode) || !row.rootMetadata || row.rootMetadata.uid !== 0 || row.rootMetadata.gid !== 0
+    || !Number.isSafeInteger(row.rootMetadata.mode) || row.rootMetadata.mode < 0 || row.rootMetadata.mode > 0o7777 || (row.rootMetadata.mode & 0o022) !== 0
+    || !Array.isArray(row.mountOptions) || row.mountOptions.some(option => !options.includes(option))
+    || !row.mountOptions.includes('ro') || row.mountOptions.includes('rw') || !row.sourceMount
+    || ![row.sourceMount.path, row.sourceMount.root].every(path => path === '/' || absolute(path))
+    || !/^\d+:\d+$/.test(row.sourceMount.device) || !['filesystem', 'source'].every(key => typeof row.sourceMount[key] === 'string' && row.sourceMount[key])
+    || !absolute(row.productManifest?.path) || !/^[a-f0-9]{64}$/.test(row.productManifest.sha256)
+    || !absolute(row.verifier?.path) || !/^[a-f0-9]{64}$/.test(row.verifier.sha256) || !row.productPins) fail()
+}
+
+function productBindMounted(row, io, applicationPid) {
+  validateProductBind(row)
+  const all = io.mounts(), mounts = productMounts(all, row.mountPath), parent = parentMount(all, row.mountPath)
+  if (!parent || JSON.stringify(mountSource(parent)) !== JSON.stringify(row.sourceMount)
+    || mounts.length > 1 || mounts.some(mount => mount.path !== row.mountPath)) fail()
+  const source = io.productDirectory(row.sourcePath)
+  if (source.device !== row.device || source.inode !== row.inode
+    || ['uid', 'gid', 'mode'].some(key => source[key] !== row.rootMetadata[key])
+    || JSON.stringify(io.productPins(row.productManifest, row.installAnchor)) !== JSON.stringify(row.productPins)
+    || JSON.stringify(io.verifier()) !== JSON.stringify(row.verifier)) fail()
+  if (applicationPid !== undefined && mountIdentity(productMounts(io.mounts(applicationPid), row.mountPath)) !== mountIdentity(mounts)) fail()
+  if (!mounts.length) return false
+  const mount = mounts[0], expectedRoot = posix.join(parent.root, posix.relative(parent.path, row.sourcePath))
+  if (mount.root !== expectedRoot || ['device', 'filesystem', 'source'].some(key => mount[key] !== parent[key])
+    || !mount.options.includes('ro') || mount.options.includes('rw')
+    || JSON.stringify(options.filter(option => mount.options.includes(option)).sort()) !== JSON.stringify([...row.mountOptions].sort())) fail()
+  return true
+}
+
+/**
+ * Recheck one captured V3 product self-bind through actual Linux mounts, protected source and normal product pins.
+ * @param {object} row Actual captured bind metadata, never a caller-supplied qualification boolean.
+ * @param {number} applicationPid Actual application anchor; its product mount must equal the carrier's.
+ * @param {object} io Optional focused-test I/O; the CLI and inspector use actual Linux Root observations.
+ * @returns {object} A verified bind observation only after every original identity and product pin still matches.
+ */
+export function inspectRecoveryProductMount(row, applicationPid, io = linuxIo()) {
+  if (!io.platform() || !Number.isSafeInteger(applicationPid) || applicationPid <= 0 || !productBindMounted(row, io, applicationPid)) fail()
+  return { kind: 'bind', readOnly: true, verified: true }
+}
+
 function captureSupport(owner, scope, io) {
   if (!absolute(scope.installAnchor) || !Number.isSafeInteger(scope.applicationPid) || scope.applicationPid <= 0) fail()
   const productRoot = posix.dirname(scope.installAnchor), mounts = io.mounts()
   const privateProducts = io.mounts(scope.applicationPid).filter(row => row.path === productRoot || row.path.startsWith(productRoot + '/'))
   const baseProducts = mounts.filter(row => row.path === productRoot || row.path.startsWith(productRoot + '/'))
-  const identity = rows => rows.map(row => [row.path, row.root, row.source, row.filesystem, [...row.options].sort().join(',')]).sort().map(row => row.join('\0')).join('\n')
-  if (identity(privateProducts) !== identity(baseProducts)) fail()
+  if (scope.productManifest !== undefined && baseProducts.length !== 1) fail()
+  if (mountIdentity(privateProducts) !== mountIdentity(baseProducts)) fail()
   const arena = domains(owner)[0]
   const ancestor = mounts.filter(row => arena.image.startsWith(row.path.replace(/\/$/, '') + '/')).sort((a, b) => b.path.length - a.path.length)[0]
-  const selected = []
+  const selected = [], products = []
   if (baseProducts.length) {
-    if (baseProducts.length !== 1 || baseProducts[0].root !== '/' || !/^\/dev\/loop\d+$/.test(baseProducts[0].source)) fail()
-    selected.push(['products', baseProducts[0]])
+    if (baseProducts.length !== 1 || baseProducts[0].path !== productRoot) fail()
+    if (baseProducts[0].root === '/' && /^\/dev\/loop\d+$/.test(baseProducts[0].source)) selected.push(['products', baseProducts[0]])
+    else {
+      const mount = baseProducts[0], parent = parentMount(mounts, productRoot), source = io.productDirectory(productRoot)
+      if (!parent) fail()
+      const row = { kind: 'bind', role: 'products', installAnchor: scope.installAnchor, sourcePath: productRoot, mountPath: productRoot,
+        device: source.device, inode: source.inode, rootMetadata: Object.fromEntries(['uid', 'gid', 'mode'].map(key => [key, source[key]])),
+        sourceMount: mountSource(parent), mountOptions: options.filter(option => mount.options.includes(option)),
+        productManifest: scope.productManifest, productPins: io.productPins(scope.productManifest, scope.installAnchor), verifier: io.verifier() }
+      if (!productBindMounted(row, io, scope.applicationPid)) fail()
+      products.push(row)
+    }
   }
   if (ancestor?.source?.startsWith('/dev/loop')) selected.push(['arena-parent', ancestor])
-  return selected.map(([role, mount]) => {
+  return [...products, ...selected.map(([role, mount]) => {
     if (mount.root !== '/' || mount.filesystem !== 'ext4') fail()
     const loops = io.loops().filter(row => row.name === mount.source)
     if (loops.length !== 1 || typeof loops[0]['back-file'] !== 'string') fail()
@@ -147,14 +259,14 @@ function captureSupport(owner, scope, io) {
     const readOnly = [true, 1, '1'].includes(loops[0].ro) ? true : [false, 0, '0'].includes(loops[0].ro) ? false : null
     if (readOnly === null || readOnly !== (role === 'products') || actual.uid !== 0 || actual.gid !== 0 || actual.mode !== 0o755
       || actual.inode !== '2' || role === 'arena-parent' && actual.device !== arena.backingDevice) fail()
-    const row = { role, mountPath: mount.path, loop: mount.source, image, readOnly, device: actual.device, inode: actual.inode,
+    const row = { kind: 'loop', role, mountPath: mount.path, loop: mount.source, image, readOnly, device: actual.device, inode: actual.inode,
       filesystemBytes: actual.filesystemBytes, filesystemInodes: actual.filesystemInodes,
       backingDevice: backing.device, backingInode: backing.inode, backingBytes: backing.bytes,
       rootMetadata: { uid: actual.uid, gid: actual.gid, mode: actual.mode },
       mountOptions: options.filter(option => mount.options.includes(option)), fsUuid: io.uuid(mount.source) }
     if (!/^[a-f0-9-]{36}$/.test(row.fsUuid) || !loopReady(row, io) || !mounted(row, io, true)) fail()
     return row
-  })
+  })]
 }
 
 function supportRows(snapshot) {
@@ -162,6 +274,12 @@ function supportRows(snapshot) {
   if (!Array.isArray(snapshot.support) || snapshot.support.length > 2 || !absolute(snapshot.supportScope?.installAnchor)) fail()
   const arena = domains(snapshot.owner)[0], seen = new Set()
   for (const row of snapshot.support) {
+    if (row?.kind === 'bind') {
+      validateProductBind(row)
+      if (seen.has(row.role) || row.installAnchor !== snapshot.supportScope.installAnchor) fail()
+      seen.add(row.role); continue
+    }
+    if (row?.kind !== undefined && row.kind !== 'loop') fail()
     if (!['products', 'arena-parent'].includes(row?.role) || seen.has(row.role) || !absolute(row.image) || !absolute(row.mountPath)
       || !/^\/dev\/loop(?:0|[1-9]\d*)$/.test(row.loop) || Number(row.loop.slice(9)) > 4095 || row.inode !== '2' || !/^[a-f0-9-]{36}$/.test(row.fsUuid)
       || !['device', 'backingDevice', 'backingInode', 'backingBytes', 'filesystemBytes', 'filesystemInodes'].every(key => numeric(row[key]))
@@ -181,6 +299,8 @@ function supportRows(snapshot) {
  * Capture actual UUIDs, domain ownership and effective flags for the existing provisioner's eleven domains.
  * @param {object} owner - Original complete static v3 owner document; no data, credentials or plan is generated.
  * @param {object} io - Optional Linux I/O for focused tests; the default reads the actual Root filesystem/kernel.
+ * @param {object} supportScope Actual installAnchor/applicationPid and, for a V3 product bind, its protected
+ * normal productManifest path/SHA. Product type comes from the real mount, not an approval flag.
  * @returns {object} Non-secret storage snapshot. The caller privately retains it before stopping its owned runtime.
  */
 export function captureRecoveryStorage(owner, io = linuxIo(), supportScope) {
@@ -208,7 +328,7 @@ export function captureRecoveryStorage(owner, io = linuxIo(), supportScope) {
 }
 
 /**
- * Restore original loops and mounts in dependency order; conflicts and unknown outcomes stop immediately.
+ * Restore the original product self-bind or loops and mounts in dependency order; unknown outcomes stop.
  * @param {object} snapshot - This instance's actual captureRecoveryStorage output, retained outside lost tmpfs.
  * @param {object} settings - check observes without mutation; io defaults to real Linux Root I/O. The caller owns
  * the operation lock and budget and confirms normal application/SDK terminal release before calling restore.
@@ -221,7 +341,8 @@ export function restoreRecoveryStorage(snapshot, { check = false, io = linuxIo()
   try {
     if (snapshot?.schema !== 'pe-cloud-recovery-storage/v1' || !io.platform()) fail()
     const data = domains(snapshot.owner), support = supportRows(snapshot), rows = [...support, ...data]
-    if (new Set(rows.map(row => row.loop)).size !== rows.length || new Set(rows.map(row => row.mountPath)).size !== rows.length) fail()
+    const loopRows = rows.filter(row => row.kind !== 'bind')
+    if (new Set(loopRows.map(row => row.loop)).size !== loopRows.length || new Set(rows.map(row => row.mountPath)).size !== rows.length) fail()
     for (const row of data) {
       if (!/^[a-f0-9-]{36}$/.test(row.fsUuid) || !Array.isArray(row.mountOptions)
         || !['rw', 'nodev', 'nosuid'].every(option => row.mountOptions.includes(option)) || row.mountOptions.includes('ro')
@@ -235,6 +356,21 @@ export function restoreRecoveryStorage(snapshot, { check = false, io = linuxIo()
     for (const row of rows) {
       recoveryDomain = row.role; recoveryPhase = 'observe'
       if (signal?.aborted || deadlineAtMs !== undefined && performance.now() >= deadlineAtMs) fail()
+      if (row.kind === 'bind') {
+        let ready = productBindMounted(row, io), changed = false
+        if (signal?.aborted || deadlineAtMs !== undefined && performance.now() >= deadlineAtMs) fail()
+        if (!check && !ready) {
+          recoveryPhase = 'product-bind'; mutationAttempted = true; io.bindProduct(row); changed = true
+          if (signal?.aborted || deadlineAtMs !== undefined && performance.now() >= deadlineAtMs) fail()
+          recoveryPhase = 'product-readonly'; io.protectProduct(row)
+          ready = productBindMounted(row, io)
+          if (!ready) fail()
+        }
+        if (signal?.aborted || deadlineAtMs !== undefined && performance.now() >= deadlineAtMs) fail()
+        completed.push({ role: row.role, ready, changed })
+        if (!ready) break
+        continue
+      }
       if (!backingMatches(row, io.backing(row.image)) || io.uuid(row.image) !== row.fsUuid) fail()
       let loop = loopReady(row, io), mount = mounted(row, io, true), changed = false
       if (!loop && mount) fail()

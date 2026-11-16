@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { captureRecoveryStorage, restoreRecoveryStorage } from './recovery-storage.mjs'
+import { captureRecoveryStorage, inspectRecoveryProductMount, restoreRecoveryStorage } from './recovery-storage.mjs'
 
 function fixture({ support = false } = {}) {
   const resourceId = '00000000-0000-4000-8000-000000000014', root = '/srv/dsh-features-' + resourceId
@@ -156,4 +156,88 @@ test('cancellation after a confirmed original bind stops the dependent mount and
   })
   assert.deepEqual(f.calls, [['bind', 'arena']])
   assert.equal(f.loops.has(f.rows[0].loop), true)
+})
+
+function productBindFixture() {
+  const f = fixture(), root = '/opt/dsh-installed-products'
+  const source = { device: '99', inode: '333', uid: 0, gid: 0, mode: 0o755 }
+  const parent = { path: '/', root: '/', device: '0:99', filesystem: 'overlay', source: 'overlay', options: ['rw', 'relatime'] }
+  const state = { mounted: true, readOnly: true, mountRoot: root, privateChild: false }
+  const pins = { manifestSha256: 'a'.repeat(64), sourceCommit: 'b'.repeat(40), files: 3, anchorSha256: 'c'.repeat(64) }
+  const scope = { installAnchor: root + '/package.json', applicationPid: 123,
+    productManifest: { path: '/opt/qualified/manifest.json', sha256: 'a'.repeat(64) } }
+  const originalMounts = f.io.mounts
+  f.io.mounts = pid => [...originalMounts(), parent, ...(state.mounted ? [{ ...parent, path: root, root: state.mountRoot,
+    options: [state.readOnly ? 'ro' : 'rw', 'nosuid', 'nodev', 'relatime'] }] : []),
+  ...(pid && state.privateChild ? [{ ...parent, path: root + '/foreign', options: ['ro'] }] : [])]
+  f.io.productDirectory = () => ({ ...source })
+  f.io.productPins = () => ({ ...pins })
+  f.io.verifier = () => ({ path: '/opt/controls/recovery-storage.mjs', sha256: 'd'.repeat(64) })
+  f.io.bindProduct = row => { f.calls.push(['product-bind', row.role]); state.mounted = true; state.readOnly = false }
+  f.io.protectProduct = row => { f.calls.push(['product-readonly', row.role]); state.readOnly = true }
+  return { ...f, source, state, pins, scope }
+}
+
+test('a measured V3 product self-bind is restored and reverified before the original eleven loops', () => {
+  const f = productBindFixture(), snapshot = captureRecoveryStorage(f.owner, f.io, f.scope), product = snapshot.support[0]
+  assert.equal(product.kind, 'bind'); assert.equal(product.sourcePath, '/opt/dsh-installed-products')
+  assert.equal(product.loop, undefined); assert.deepEqual(product.productPins, f.pins)
+  assert.deepEqual(inspectRecoveryProductMount(product, 123, f.io), { kind: 'bind', readOnly: true, verified: true })
+  f.loops.clear(); f.mounts.clear(); f.state.mounted = false
+  assert.deepEqual(restoreRecoveryStorage(snapshot, { io: f.io, check: true }).domains, [{ role: 'products', ready: false, changed: false }])
+  assert.deepEqual(f.calls, [])
+  assert.equal(restoreRecoveryStorage(snapshot, { io: f.io }).ready, true)
+  assert.deepEqual(f.calls.slice(0, 2), [['product-bind', 'products'], ['product-readonly', 'products']])
+  assert.equal(f.state.readOnly, true)
+  assert.deepEqual(f.calls.slice(2), f.rows.flatMap(row => [['bind', row.role], ['mount', row.role]]))
+  f.calls.length = 0
+  assert.equal(restoreRecoveryStorage(snapshot, { io: f.io }).ready, true)
+  assert.deepEqual(f.calls, [])
+})
+
+test('a missing independent bind, writable bind, foreign source or private submount cannot qualify from a normal manifest alone', () => {
+  for (const change of [f => { f.state.mounted = false }, f => { f.state.readOnly = false },
+    f => { f.state.mountRoot = '/foreign-product' }, f => { f.state.privateChild = true }]) {
+    const f = productBindFixture(); change(f)
+    assert.throws(() => captureRecoveryStorage(f.owner, f.io, f.scope))
+    assert.deepEqual(f.calls, [])
+  }
+})
+
+test('changed captured bind identity, product bytes or verifier cannot reach a dependent storage mutation', () => {
+  for (const change of [f => { f.source.inode = '334' }, f => { f.source.mode = 0o777 },
+    f => { f.pins.anchorSha256 = 'e'.repeat(64) }, f => { f.io.verifier = () => ({ path: '/opt/controls/recovery-storage.mjs', sha256: 'e'.repeat(64) }) }]) {
+    const f = productBindFixture(), snapshot = captureRecoveryStorage(f.owner, f.io, f.scope); change(f)
+    assert.throws(() => restoreRecoveryStorage(snapshot, { io: f.io }), error => error.completedDomains.length === 0 && error.mutationAttempted === false)
+    assert.deepEqual(f.calls, [])
+  }
+  const f = productBindFixture(), snapshot = captureRecoveryStorage(f.owner, f.io, f.scope)
+  snapshot.support[0] = { kind: 'bind', role: 'products', allow: true }
+  assert.throws(() => restoreRecoveryStorage(snapshot, { io: f.io }))
+  assert.deepEqual(f.calls, [])
+})
+
+test('cancellation after creating the actual product bind stops its remount and all original data mounts', () => {
+  const f = productBindFixture(), snapshot = captureRecoveryStorage(f.owner, f.io, f.scope), controller = new AbortController()
+  f.state.mounted = false
+  const bind = f.io.bindProduct
+  f.io.bindProduct = row => { bind(row); controller.abort() }
+  assert.throws(() => restoreRecoveryStorage(snapshot, { io: f.io, signal: controller.signal }), error => {
+    assert.equal(error.recoveryDomain, 'products'); assert.equal(error.recoveryOutcome, 'cancelled')
+    assert.equal(error.mutationAttempted, true); assert.deepEqual(error.completedDomains, []); return true
+  })
+  assert.deepEqual(f.calls, [['product-bind', 'products']])
+  assert.equal(f.state.readOnly, false)
+})
+
+test('cancellation during product pin validation stops before creating a missing bind', () => {
+  const f = productBindFixture(), snapshot = captureRecoveryStorage(f.owner, f.io, f.scope), controller = new AbortController()
+  f.state.mounted = false
+  const pins = f.io.productPins
+  f.io.productPins = (...args) => { const value = pins(...args); controller.abort(); return value }
+  assert.throws(() => restoreRecoveryStorage(snapshot, { io: f.io, signal: controller.signal }), error => {
+    assert.equal(error.recoveryOutcome, 'cancelled'); assert.equal(error.mutationAttempted, false)
+    assert.deepEqual(error.completedDomains, []); return true
+  })
+  assert.deepEqual(f.calls, []); assert.equal(f.state.mounted, false)
 })

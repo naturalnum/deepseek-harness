@@ -1,6 +1,9 @@
 /** Discover the existing local candidate without exposing its credentials or environment. */
 import { execFile } from 'node:child_process'
 import http from 'node:http'
+import { posix } from 'node:path'
+import { readFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
 
 export const CANDIDATE_CONTAINER = 'dsh-features-20261107-runtime'
@@ -106,8 +109,10 @@ export function matchApplicationExec(app, topRows, executions) {
 }
 
 const PROBE = String.raw`
+(async () => {
 const fs = require('node:fs'), {execFileSync} = require('node:child_process');
-const anchor = process.argv[1], cli = '/opt/dsh-installed-products/apps/cli/lib/bin.js';
+const anchor = process.argv[1], appCheckPath = process.argv[2], cli = '/opt/dsh-installed-products/apps/cli/lib/bin.js';
+const expectedProduct = JSON.parse(process.argv[3]);
 const root = '/proc/' + anchor + '/root';
 const read = (name) => fs.readFileSync(name, 'utf8');
 const link = (name) => {try{return fs.readlinkSync(name)}catch(error){if(error.code==='ENOENT'||error.code==='ESRCH')return null;throw error}};
@@ -134,8 +139,23 @@ try{
  if(mounts.length===1){const mount=mounts[0];productDevice=typeof mount.source==='string'&&/^\/dev\/[A-Za-z0-9/_-]+$/.test(mount.source)?mount.source:null;productReadOnly=mount.options.split(',').includes('ro');productFilesystem=mount.fstype;
   if(productDevice){const ro=execFileSync('nsenter',['-t',anchor,'-m','--root','--wd=/','blockdev','--getro',productDevice],{encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();productBlockReadOnly=ro==='1'?true:ro==='0'?false:null;}}
 }catch(_error){/* A missing product observation remains null and prevents a safe update. */}
+let productMountKind=productDevice?'loop':null,productMountVerified=productReadOnly===true&&productBlockReadOnly===true;
+if(expectedProduct?.kind==='bind'){
+ const verifier=expectedProduct.verifier,{posix}=require('node:path'),{createHash}=require('node:crypto'),{pathToFileURL}=require('node:url');
+ if(typeof verifier?.path!=='string'||!/^\/[A-Za-z0-9_./-]+$/.test(verifier.path)||posix.normalize(verifier.path)!==verifier.path||!/^[a-f0-9]{64}$/.test(verifier.sha256))throw Error('product verifier reference');
+ for(let p=posix.dirname(verifier.path);p!=='/';p=posix.dirname(p)){const s=fs.lstatSync(p);if(!s.isDirectory()||s.isSymbolicLink()||s.uid!==0||(s.mode&0o022)!==0)throw Error('product verifier parent');}
+ const fd=fs.openSync(verifier.path,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW);
+ try{const before=fs.fstatSync(fd);if(!before.isFile()||before.uid!==0||before.nlink!==1||(before.mode&0o022)!==0||before.size<1||before.size>1048576)throw Error('product verifier file');
+  const sha=createHash('sha256').update(fs.readFileSync(fd)).digest('hex'),after=fs.fstatSync(fd),named=fs.lstatSync(verifier.path);
+  if(sha!==verifier.sha256||['dev','ino','size','mtimeMs','ctimeMs'].some(k=>before[k]!==after[k]||after[k]!==named[k]))throw Error('product verifier changed');
+ }finally{fs.closeSync(fd);}
+ const {inspectRecoveryProductMount}=await import(pathToFileURL(verifier.path).href);
+ const protection=inspectRecoveryProductMount(expectedProduct,Number(anchor));
+ productMountKind=protection.kind;productMountVerified=protection.verified===true&&protection.readOnly===true;
+}
 const profileHome=present('/run/dsh-feature-root',true)&&present('/run/dsh-feature-root/profiles/cloud/cordis.patch.yml')?'/run/dsh-feature-root':null;
-console.log(JSON.stringify({rows,containerNamespaceId:link('/proc/1/ns/mnt'),productRoot:present(productRoot,true)?productRoot:null,productDevice,productReadOnly,productFilesystem,productBlockReadOnly,nodePath:present('/dsh-tools/node24')?'/dsh-tools/node24':null,appCheckPath:present('/opt/dsh-features/feature-namespace-steps.v3.mjs')?'/opt/dsh-features/feature-namespace-steps.v3.mjs':null,seccompPath:present('/opt/dsh-feature-assets/app-seccomp.bpf')?'/opt/dsh-feature-assets/app-seccomp.bpf':null,profileHome}));
+console.log(JSON.stringify({rows,containerNamespaceId:link('/proc/1/ns/mnt'),productRoot:present(productRoot,true)?productRoot:null,productDevice,productReadOnly,productFilesystem,productBlockReadOnly,productMountKind,productMountVerified,nodePath:present('/dsh-tools/node24')?'/dsh-tools/node24':null,appCheckPath:present(appCheckPath)?appCheckPath:null,seccompPath:present('/opt/dsh-feature-assets/app-seccomp.bpf')?'/opt/dsh-feature-assets/app-seccomp.bpf':null,profileHome}));
+})().catch(_error=>{console.error('产品或运行态观察未确认。');process.exitCode=1;});
 `
 
 async function findProbeAnchor(execute) {
@@ -161,19 +181,28 @@ async function findProbeAnchor(execute) {
 /**
  * Discover actual process identities and protected launch paths with the original privilege/mount checks.
  * @param {object} operations Explicit Engine-bound operations for another handed-over carrier; defaults retain
- * the original local candidate. top returns sanitized pid/comm rows and execIds returns this container's IDs.
+ * the original local candidate. appCheckPath names its original pinned launcher step; top returns sanitized
+ * pid/comm rows and execIds returns this container's IDs. productMount is the Root's actual captured bind
+ * evidence; the protected verifier rechecks its source, original product pins and both real mount namespaces.
  * @returns {Promise<object>} Actual identity and canStopSafely/canStart flags; missing evidence remains an issue.
  */
 export async function inspectCandidate({ container = CANDIDATE_CONTAINER, execute = execInCandidate,
+  appCheckPath = '/opt/dsh-features/feature-namespace-steps.v3.mjs',
+  productMount = null,
   top = async () => (await docker(['top', container, '-eo', 'pid,comm'])).trim().split('\n').slice(1).map(line => {
     const fields = line.trim().split(/\s+/); return { pid: Number(fields[0]), comm: fields[1] }
   }),
   execIds = async () => JSON.parse(await docker(['inspect', '--format', '{{json .ExecIDs}}', container])) ?? [],
   execution: inspectExecution = inspectExec,
 } = {}) {
+  if (typeof appCheckPath !== 'string' || !/^\/opt\/dsh-features\/[A-Za-z0-9_./-]+\.mjs$/.test(appCheckPath)
+    || posix.normalize(appCheckPath) !== appCheckPath) throw new CandidateError('原检查脚本路径未确认。')
+  if (productMount !== null && !['loop', 'bind'].includes(productMount?.kind)) throw new CandidateError('产品挂载实测来源未确认。')
+  if (productMount?.kind === 'bind' && productMount.verifier?.sha256 !== createHash('sha256')
+    .update(await readFile(new URL('./recovery-storage.mjs', import.meta.url))).digest('hex')) throw new CandidateError('产品实测校验器与本次控制源码不一致。')
   const anchor = await findProbeAnchor(execute)
   let observed
-  try { observed = JSON.parse(await execute([anchor.node, '-e', PROBE, String(anchor.pid)])) }
+  try { observed = JSON.parse(await execute([anchor.node, '-e', PROBE, String(anchor.pid), appCheckPath, JSON.stringify(productMount)])) }
   catch (error) { if (error instanceof CandidateError) throw error; throw new CandidateError('无法解析候选运行态。') }
   const selected = selectProcessState(observed.rows, observed.containerNamespaceId)
   const app = selected.app, holder = selected.holder
@@ -182,10 +211,13 @@ export async function inspectCandidate({ container = CANDIDATE_CONTAINER, execut
   const execution = matchApplicationExec(app, topRows, executions)
   const issues = [...selected.issues]
   if (app && !execution) issues.push('无法唯一关联应用的 Docker 启动记录，不能确认正常退出。')
-  for (const key of ['productRoot', 'productDevice', 'nodePath', 'appCheckPath', 'seccompPath', 'profileHome']) {
+  for (const key of ['productRoot', 'nodePath', 'appCheckPath', 'seccompPath', 'profileHome']) {
     if (observed[key] === null) issues.push('未确认启动所需路径：' + key)
   }
-  if (observed.productReadOnly !== true || observed.productBlockReadOnly !== true) issues.push('未确认产品挂载与块设备均为只读。')
+  if (observed.appCheckPath !== null && observed.appCheckPath !== appCheckPath) issues.push('原检查脚本路径与实际观察不一致。')
+  if (productMount?.kind === 'bind') {
+    if (observed.productMountKind !== 'bind' || observed.productMountVerified !== true || observed.productReadOnly !== true) issues.push('产品原只读bind来源、身份或正常产品pin未确认。')
+  } else if (observed.productDevice === null || observed.productReadOnly !== true || observed.productBlockReadOnly !== true) issues.push('未确认产品挂载与块设备均为只读。')
   if (app && (!app.shutdownTimeoutMs || app.uid !== 2000 || app.gid !== 2000)) issues.push('应用身份或现有关闭预算未确认。')
   return {
     container, appPid: app?.pid ?? null, currentAppPid: app?.pid ?? null,
@@ -196,6 +228,7 @@ export async function inspectCandidate({ container = CANDIDATE_CONTAINER, execut
     namespaceProcesses: observed.rows.filter(row => row.namespaceId === selected.namespaceId).map(row => ({ pid: row.pid, uid: row.uid, comm: row.comm })),
     productRoot: observed.productRoot, productDevice: observed.productDevice, productReadOnly: observed.productReadOnly,
     productBlockReadOnly: observed.productBlockReadOnly, productFilesystem: observed.productFilesystem,
+    productMountKind: observed.productMountKind ?? null, productMountVerified: observed.productMountVerified ?? false,
     nodePath: observed.nodePath, appCheckPath: observed.appCheckPath, seccompPath: observed.seccompPath,
     logPath: app?.stdoutPath?.startsWith('/') ? app.stdoutPath : null,
     appCwd: app?.cwd ?? null, profileHome: observed.profileHome,

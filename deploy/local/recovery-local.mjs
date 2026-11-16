@@ -102,7 +102,7 @@ export async function runLocalRecovery(argv, { signal = new AbortController().si
   within(signal, deadlineAtMs)
   const operation = randomUUID(), lockPath = join(spec.stateDirectory, 'operation.lock')
   const lock = fs.openSync(lockPath, 'wx', 0o600)
-  let lockOpen = true, transport, execId, result
+  let lockOpen = true, transport, execId, result, appCheckPath, productMount
   const record = value => { fs.writeFileSync(lock, JSON.stringify(value) + '\n'); fs.fsyncSync(lock) }
   try {
     record({ format: 'pe-cloud-cold-recovery-operation/v1', operation, inputSha256: argv[3], pid: process.pid })
@@ -123,7 +123,7 @@ export async function runLocalRecovery(argv, { signal = new AbortController().si
       return value
     }
     const inspect = async () => {
-      return inspectCandidate({ container: spec.container, execute, execution: id => transport.inspectExec(id),
+      return inspectCandidate({ container: spec.container, execute, appCheckPath, productMount, execution: id => transport.inspectExec(id),
         execIds: async () => (await engine('GET', '/containers/' + spec.container + '/json'))?.ExecIDs ?? [],
         top: async () => {
           const observed = await engine('GET', '/containers/' + spec.container + '/top?ps_args=-eo%20pid%2Ccomm')
@@ -143,7 +143,9 @@ export async function runLocalRecovery(argv, { signal = new AbortController().si
     execId = created.Id
     await engine('POST', '/exec/' + execId + '/start', { Detach: true, Tty: false })
     const published = await stage('publish')
-    if (published.ready !== false || published.cliRunning !== true || published.inputsValidated !== true) fail()
+    if (published.ready !== false || published.cliRunning !== true || published.inputsValidated !== true || !absolute(published.appCheckPath)) fail()
+    appCheckPath = published.appCheckPath
+    productMount = published.productMount
     const current = await inspect()
     if (current.appPid !== published.applicationPid || current.namespaceId !== published.namespaceId || current.appExecId !== execId) fail()
     const lifecycle = createLifecycle({ container: spec.container, inspect, execute, engine, execution: id => transport.inspectExec(id) })

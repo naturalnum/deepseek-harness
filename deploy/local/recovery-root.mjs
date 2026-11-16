@@ -10,6 +10,34 @@ const fields = ['rootBytes', 'deploymentBytes', 'packageBytes', 'credentialsByte
 const MODULE_LINK = 'profiles/cloud/node_modules'
 const fail = () => { throw new CandidateError('根配置来源或读取期间的文件身份未确认；原文件未改写。') }
 
+/**
+ * Confirm a changed carrier PID1 lifecycle and termination of every captured original reference holder.
+ * @param {object} previous Actual snapshot carrier/application identities and namespaceReferences.
+ * @param {object} current Actual carrier identity and same-index process readbacks; null means ENOENT/ESRCH.
+ * @returns {object} Lifecycle facts. Namespace inode numbers may be reused; this does not confirm external
+ * holders or replace the new original unshare/FD handshake, scoped stop audit or complete cold acceptance.
+ */
+export function confirmRecoveryCarrierLifecycle(previous, current) {
+  const valid = row => row && Number.isSafeInteger(row.pid) && row.pid > 0 && typeof row.startTicks === 'string' && /^\d+$/.test(row.startTicks)
+    && typeof row.namespaceId === 'string' && /^mnt:\[\d+\]$/.test(row.namespaceId)
+  const before = previous?.carrier, after = current?.carrier, references = previous?.namespaceReferences
+  if (!valid(before) || !valid(after) || before.pid !== 1 || after.pid !== 1 || before.startTicks === after.startTicks
+    || !valid(previous.application) || !Array.isArray(references) || !references.length || references.length > 4096
+    || references.some(row => !valid(row)) || new Set(references.map(row => row.pid)).size !== references.length
+    || !references.some(row => row.pid === previous.application.pid && row.startTicks === previous.application.startTicks
+      && row.namespaceId === previous.application.namespaceId)
+    || !Array.isArray(current.references) || current.references.length !== references.length) {
+    throw new CandidateError('原carrier或原namespace引用生命周期未确认；普通应用重启不能作为cold。')
+  }
+  for (const [index, row] of current.references.entries()) {
+    if (row !== null && (!valid(row) || row.pid !== references[index].pid || row.startTicks === references[index].startTicks)) {
+      throw new CandidateError('原namespace引用进程仍在或身份未知；不开始重建。')
+    }
+  }
+  return { previousCarrier: before, currentCarrier: after, originalReferenceLifecyclesEnded: references.length,
+    namespaceNumberReused: before.namespaceId === after.namespaceId }
+}
+
 async function moduleLink(path, io) {
   let before
   try { before = await io.lstat(path) } catch (error) { if (error.code === 'ENOENT') return { kind: 'absent' }; throw error }
