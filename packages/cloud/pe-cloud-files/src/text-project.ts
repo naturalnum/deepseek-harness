@@ -311,8 +311,12 @@ export function createTextProjectFileSystem(account: AccountTextBackend): Native
     override async resolve(path: string, opts?: { cwd?: string; signal?: AbortSignal }): Promise<FsTarget> {
       this.current(opts?.signal)
       let preparation: DirectoryPreparationState | undefined
+      let workspaceId: Workspace['id'] | null = null
+      let stage: 'project-selection' | 'project-backend' | 'reader-resolve' | 'canonical-target' | 'canonical-parent' = 'project-selection'
       try {
         const { scope, backend } = await this.selectedProject(opts?.signal, (selected) => {
+          workspaceId = selected.workspace.id
+          stage = 'project-backend'
           const identity = selected.directoryPreparation
           if (identity === undefined) return
           const prior = this.preparations.get(identity)
@@ -334,13 +338,16 @@ export function createTextProjectFileSystem(account: AccountTextBackend): Native
           }
         }
         check()
+        stage = 'reader-resolve'
         const target = await backend.reader.resolve(path, opts)
         check()
         const relative = this.relative(backend, backend.reader.processPath(target))
         if (preparation !== undefined && relative !== '.') throw this.preparationDenied(preparation)
         let canonical: string
+        stage = 'canonical-target'
         try { canonical = await backend.canonicalPath(relative, opts?.signal) } catch (error) {
           if (!(error instanceof DirectoryMetadataFailure) || error.reason !== 'missing' || relative === '.') throw error
+          stage = 'canonical-parent'
           canonical = posix.join(await backend.canonicalPath(posix.dirname(relative), opts?.signal), posix.basename(relative))
         }
         this.selection(scope, opts?.signal)
@@ -356,6 +363,33 @@ export function createTextProjectFileSystem(account: AccountTextBackend): Native
         }
         return issued
       } catch (error) {
+        if (error instanceof DirectoryMetadataFailure) {
+          try {
+            const cause: unknown = Object.getOwnPropertyDescriptor(error, 'cause')?.value
+            const code: unknown = cause !== null && typeof cause === 'object'
+              ? Object.getOwnPropertyDescriptor(cause, 'code')?.value : undefined
+            const causeCode = typeof code === 'string' && ['cloud/capacity', 'cloud/stale-generation',
+              'cloud/account-unavailable', 'cloud/stop-unconfirmed', 'files/deadline', 'files/aborted',
+              'files/prerequisite-missing', 'FS_IO_ERROR', 'FS_PERMISSION_DENIED', 'FS_NOT_FOUND',
+              'FS_NOT_DIRECTORY', 'FS_TOO_LARGE', 'FS_ABORTED'].includes(code) ? code : null
+            const syscallCode = error.syscallCode !== undefined && ['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM',
+              'EXDEV', 'ELOOP', 'ESTALE', 'EINVAL', 'ENOMEM', 'EIO', 'EBADF', 'ENAMETOOLONG', 'EAGAIN',
+              'ECANCELED', 'ETIMEDOUT', 'EMFILE', 'ENFILE', 'ENOSYS', 'EOPNOTSUPP', 'EROFS', 'EOVERFLOW']
+              .includes(error.syscallCode) ? error.syscallCode : null
+            const identifier = (value: string | null): string | null =>
+              value !== null && /^[A-Za-z0-9_.:-]{1,128}$/.test(value) ? value : null
+            const row = { event: 'files-directory-metadata-failed', operation: 'fs.resolve',
+              at: new Date().toISOString(), pid: process.pid, accountId: identifier(account.binding.accountId),
+              epoch: identifier(account.binding.epoch), workspaceId: identifier(workspaceId), stage,
+              directoryPreparation: preparation !== undefined, reason: error.reason, phase: error.phase,
+              syscallCode, causeCode, callerAborted: opts?.signal?.aborted === true,
+              bindingAborted: account.binding.lifetime.aborted }
+            if (Buffer.byteLength(JSON.stringify(row)) <= 1024) console.warn('Cloud directory metadata failed: %j', row)
+          } catch (_diagnosticFailure) {
+            try { console.error('Cloud directory metadata diagnostics unavailable.') }
+            catch (_fallbackFailure) { /* Diagnostics cannot change the original metadata failure. */ }
+          }
+        }
         if (preparation !== undefined) preparation.phase = 'failed'
         if (error instanceof DirectoryMetadataFailure && error.phase === 'target' && error.reason === 'missing') {
           throw new FsError('File path was not found.', 'FS_NOT_FOUND', { cause: error })

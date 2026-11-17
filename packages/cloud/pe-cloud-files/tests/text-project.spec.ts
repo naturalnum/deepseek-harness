@@ -24,6 +24,7 @@ import * as Office from '../../../skill/skill-office/src/index.ts'
 import { LinuxFilesPool } from '../src/worker-pool.ts'
 import type { AccountFileSelection } from '../src/text-project.ts'
 import type { FdContentLimits, FdWorkerInput } from '../src/worker-protocol.ts'
+import { DirectoryMetadataFailure } from '../src/directory-error.ts'
 
 const contentLimits: FdContentLimits = Object.freeze({ maxEntries: 8, maxNameBytes: 64, maxReplyBytes: 8192, operationTimeoutMs: 3000 })
 const pagingLimits = Object.freeze({ idleTimeoutMs: 3000, totalTimeoutMs: 10000, maxPages: 64 })
@@ -484,6 +485,69 @@ it('awaits the trusted resolver before interpreting a path', async () => {
   const error = new Error('cold header unavailable')
   test.failResolver(error)
   await expect(test.fs.resolve('../outside')).rejects.toBe(error)
+})
+
+it.each(['target', 'parent'] as const)('records the final %s directory probe failure without exposing paths', async (target) => {
+  const test = await fixture(), outside = join(test.project, '..', '..', 'private-directory-secret')
+  mkdirSync(outside)
+  writeFileSync(join(outside, 'exists'), 'private-content-secret')
+  symlinkSync(outside, join(test.project, 'private-link-secret'))
+  const log = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  onTestFinished(() => { log.mockRestore() })
+  await expect(test.fs.resolve(`private-link-secret/${target === 'target' ? 'exists' : 'missing'}`))
+    .rejects.toMatchObject({ reason: 'unavailable', phase: 'target', syscallCode: 'EACCES' })
+  expect(log).toHaveBeenCalledExactlyOnceWith('Cloud directory metadata failed: %j', expect.objectContaining({
+    event: 'files-directory-metadata-failed', operation: 'fs.resolve', accountId: test.binding.accountId,
+    epoch: test.binding.epoch, workspaceId: test.workspace.id,
+    stage: target === 'target' ? 'canonical-target' : 'canonical-parent', directoryPreparation: false,
+    reason: 'unavailable', phase: 'target', syscallCode: 'EACCES', causeCode: 'FS_PERMISSION_DENIED',
+    callerAborted: false, bindingAborted: false,
+  }))
+  const captured = JSON.stringify(log.mock.calls)
+  expect(Buffer.byteLength(captured)).toBeLessThan(1024)
+  expect(captured).not.toContain('secret')
+  expect(captured).not.toContain(test.project)
+})
+
+it('does not report the expected target ENOENT when parent resolution succeeds', async () => {
+  const test = await fixture(), log = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  onTestFinished(() => { log.mockRestore() })
+  const target = await test.fs.resolve('new-file')
+  expect(test.fs.processPath(target)).toBe(join(test.project, 'new-file'))
+  expect(log).not.toHaveBeenCalled()
+})
+
+it('preserves the original metadata failure when both diagnostic sinks throw and omits unknown codes', async () => {
+  const test = await fixture()
+  const cause = Object.assign(new Error('/private/path-secret credential-secret'), { code: 'UNKNOWN_SECRET' })
+  const failure = new DirectoryMetadataFailure('unavailable', 'admission', { cause, syscallCode: 'PRIVATE_SECRET' })
+  test.failResolver(failure)
+  const log = vi.spyOn(console, 'warn').mockImplementation(() => { throw new Error('logger-secret') })
+  const fallback = vi.spyOn(console, 'error').mockImplementation(() => { throw new Error('fallback-secret') })
+  onTestFinished(() => { log.mockRestore(); fallback.mockRestore() })
+  await expect(test.fs.resolve('filename-secret')).rejects.toBe(failure)
+  expect(log).toHaveBeenCalledExactlyOnceWith('Cloud directory metadata failed: %j', expect.objectContaining({
+    accountId: test.binding.accountId, epoch: test.binding.epoch, workspaceId: null,
+    stage: 'project-selection', reason: 'unavailable', phase: 'admission', syscallCode: null, causeCode: null,
+  }))
+  expect(fallback).toHaveBeenCalledExactlyOnceWith('Cloud directory metadata diagnostics unavailable.')
+  expect(JSON.stringify([log.mock.calls, fallback.mock.calls])).not.toContain('secret')
+})
+
+it('records the selected Workspace when its original project admission rejects metadata', async () => {
+  const test = await fixture(), workspace = await test.anotherProject()
+  const failure = new DirectoryMetadataFailure('unavailable', 'admission', {
+    cause: Object.assign(new Error('private-message-secret'), { code: 'cloud/stale-generation' }),
+  })
+  const scope = { workspace, assertCurrent: () => { throw failure } }
+  const log = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  onTestFinished(() => { log.mockRestore() })
+  await expect(test.selected(scope, () => test.fs.resolve('file'))).rejects.toBe(failure)
+  expect(log).toHaveBeenCalledExactlyOnceWith('Cloud directory metadata failed: %j', expect.objectContaining({
+    accountId: test.binding.accountId, epoch: test.binding.epoch, workspaceId: workspace.id,
+    stage: 'project-backend', phase: 'admission', syscallCode: null, causeCode: 'cloud/stale-generation',
+  }))
+  expect(JSON.stringify(log.mock.calls)).not.toContain('secret')
 })
 
 it('rejects a captured scope that expires while the trusted resolver awaits cold metadata', async () => {
