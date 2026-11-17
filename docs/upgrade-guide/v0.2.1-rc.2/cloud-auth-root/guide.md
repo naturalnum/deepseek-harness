@@ -11,6 +11,8 @@ English | [中文](guide.zh.md)
 
 `@deepseek-ai/dsh-pe-cloud-access` and `/root` now require Host `AuthRootConfig`, extending the former browser-safe access configuration with mandatory database, pool, secret and startup budgets. Root installs `PeAuthService` and inspects the deployed Better Auth schema. Root ingress requires an explicit positive `ingress.sessionRecheckLeadMs` smaller than `sessionRecheckMs`; missing or invalid values fail before authentication resources initialize. Browser `/schema` and bootstrap wire types are unchanged. Authentication initialization keeps request admission closed pending the root recipe audit and account routing.
 
+Root rejects unknown nested fields and reports safe field paths. Invalid configuration or activation now fails the native application startup regardless of entry id. Remove obsolete or misspelled keys and confirm a rejected deployment exits nonzero without readiness before enabling traffic.
+
 ## Migration
 
 1. Install the official root `credentials` provider before access/root. Set `authSecretRef` and `database.passwordRef` to its references; keep secret values out of Loader configuration.

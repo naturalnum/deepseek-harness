@@ -11,6 +11,8 @@ description: "Cloud access Root 除浏览器访问设置之外，还要求显式
 
 `@deepseek-ai/dsh-pe-cloud-access` 及 `/root` 现在要求 Host `AuthRootConfig`，在原浏览器安全访问配置之外增加必填的数据库、池、凭据和启动预算。Root 安装 `PeAuthService` 并检查已部署的 Better Auth schema。Root ingress 必须显式填写正值 `ingress.sessionRecheckLeadMs`，且小于 `sessionRecheckMs`；缺失或非法值会在认证资源初始化前拒绝。浏览器 `/schema` 和 bootstrap 线类型保持原样。认证初始化后，请求准入仍保持关闭，等待根配方审核及账户选路。
 
+Root 拒绝嵌套未知字段并报告安全字段路径。配置或激活失败会阻止原生应用启动，不依赖入口 ID。移除废弃或拼错的键，并确认错误部署以非零状态退出且不报告就绪，再开放流量。
+
 ## 迁移
 
 1. 在 access/root 之前安装官方根 `credentials` 提供者。将 `authSecretRef` 和 `database.passwordRef` 设为该提供者的引用；不要将秘密值放进 Loader 配置。
