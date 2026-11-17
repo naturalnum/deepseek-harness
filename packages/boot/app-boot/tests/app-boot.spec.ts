@@ -607,6 +607,14 @@ describe('auditStartupEntries', () => {
     expect(warn).not.toHaveBeenCalled()
   })
 
+  it('requires a plugin-declared startup dependency regardless of its entry id', async () => {
+    const warn = vi.fn()
+    const entries = [{ fiber: fiber(3, new Error('invalid deployment')), options: { id: 'deployment-root', name: './root.mjs' },
+      parent: { tree: { import: async () => ({ startupRequired: true }) } } }]
+    await expect(auditStartupEntries(ctxWith(entries), NAME, warn)).rejects.toThrow('1 required plugin did not activate')
+    expect(warn).not.toHaveBeenCalled()
+  })
+
   it('warns once for optional import, apply, and dependency failures', async () => {
     const warn = vi.fn()
     const original = new Error('todo apply failure')

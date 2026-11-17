@@ -25,6 +25,7 @@ const READY = 'Cloud runtime observation: %o'
 const contexts: Context[] = []
 
 const fixed = [
+  ['Single-instance exclusion cannot be restored; stopping the application with failure status; inspect retained cleanup evidence before restart', [], 'Single-instance exclusion cannot be restored; stopping the application with failure status; inspect retained cleanup evidence before restart'],
   [SHUTDOWN, [], SHUTDOWN],
   [DRAIN, [], DRAIN],
   [CONTROL, [], CONTROL],

@@ -97,7 +97,7 @@ describe('access deployment inputs', () => {
 
   it('rejects component-only configuration without allocating root resources', async () => {
     const ctx = new Context()
-    await expect(apply(ctx, config() as Config)).rejects.toThrow('explicit valid database')
+    await expect(apply(ctx, config() as Config)).rejects.toThrow('$.database: required valid object')
     expect(ctx.get('peAuth')).toBeUndefined()
     await ctx.fiber.dispose()
   })

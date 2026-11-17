@@ -46,6 +46,22 @@ it('requires explicit root budgets and a formal reference without accepting a pa
   expect(() => z.resolve({ ...config, accountPolicy: undefined }, RuntimeRootConfigSchema, {})).toThrow()
 })
 
+it('rejects deployment typos, wrong types, ranges and contradictory budgets without echoing values', () => {
+  const config = rootConfig(directory())
+  expect(() => z.resolve({ ...config, singleInstnace: true }, RuntimeRootConfigSchema, {})).toThrow('$.singleInstnace: unknown')
+  expect(() => z.resolve({ ...config, constructor: 'PRIVATE' }, RuntimeRootConfigSchema, {})).toThrow('$.constructor: unknown')
+  expect(() => z.resolve({ ...config, database: { ...config.database, password: 'PRIVATE-database-secret' } }, RuntimeRootConfigSchema, {}))
+    .toThrow('$.database.password: unknown')
+  expect(() => z.resolve({ ...config, database: { ...config.database, port: 'PRIVATE' } }, RuntimeRootConfigSchema, {}))
+    .toThrow('$.database.port: required valid number')
+  expect(() => RuntimeRootConfigSchema({ ...config, database: { ...config.database, port: 65536 } }))
+    .toThrow('range 1..65535')
+  expect(() => RuntimeRootConfigSchema({ ...config, pg: { ...config.pg, lockTimeoutMs: config.pg.statementTimeoutMs + 1 } }))
+    .toThrow('$.pg.lockTimeoutMs: must not exceed')
+  expect(() => RuntimeRootConfigSchema({ ...config, factory: { ...config.factory, maxBorrowsPerAccount: config.factory.maxBorrows + 1 } }))
+    .toThrow('$.factory: per-account')
+})
+
 it('cannot borrow a graph through a component-only or closed root and never reserves a mount for that request', async () => {
   const ctx = new Context()
   contexts.push(ctx)

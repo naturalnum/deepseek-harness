@@ -779,7 +779,12 @@ export class LoginPeerRegistry {
     entry.timer = undefined
     const requestId = this.requestId()
     const recheck = this.auth.recheckLogin(entry.principal, requestId).then(() => {
-      this.schedule(entry)
+      // Durable library sessions remain valid; a native Peer needs an actual carrier or unsettled work.
+      if (entry.carrierCount === 0 && entry.tasks.size === 0 && entry.waiters.size === 0 && !entry.preparing) {
+        void this.startClose(entry, requestId)
+      } else {
+        this.schedule(entry)
+      }
     }, (error: unknown) => {
       // Full cleanup joins carrier tasks, which may be awaiting this result. Its owner joins cleanup separately.
       void this.startClose(entry, requestId)

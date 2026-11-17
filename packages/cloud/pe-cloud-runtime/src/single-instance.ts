@@ -121,7 +121,8 @@ export class SingleInstanceControl {
     this.reconnecting = actual
     void actual.then(() => {
       this.reconnecting = undefined
-      if (!this.closing) this.observe({ event: 'single-instance-lock-reacquired' })
+      if (this.active) this.observe({ event: 'single-instance-lock-reacquired' })
+      else if (!this.closing && this.client !== undefined) this.disconnected(this.client)
     }, (cause: unknown) => {
       this.reconnecting = undefined
       if (!this.closing) this.failure(cause)

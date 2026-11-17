@@ -16,6 +16,8 @@ interface Template {
 }
 
 const templates: readonly Template[] = [
+  { input: 'Single-instance exclusion cannot be restored; stopping the application with failure status; inspect retained cleanup evidence before restart', arity: 1,
+    output: 'Single-instance exclusion cannot be restored; stopping the application with failure status; inspect retained cleanup evidence before restart' },
   { input: 'Runtime root shutdown observation expired; actual work and owner responsibility remain retained', arity: 1,
     output: 'Runtime root shutdown observation expired; actual work and owner responsibility remain retained' },
   { input: 'Actual account drain remains unresolved; original Root control resources and ownership remain retained', arity: 1,
