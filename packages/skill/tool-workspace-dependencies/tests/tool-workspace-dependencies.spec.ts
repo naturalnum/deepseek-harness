@@ -492,3 +492,9 @@ it('returns image-bound guest paths from a foreign-platform manifest without Hos
     await expect(ctx.plugin(workspaceDependencies, { source: '/opt/dsh/runtime', executionManifest: source, root: '/tmp/host-install' })).rejects.toThrow()
   } finally { await ctx.fiber.dispose() }
 })
+
+it('normalizes the deployed OCI amd64 spelling without changing other metadata', async () => {
+  const { manifest } = await fixture()
+  expect(parsePrimaryRuntime({ ...manifest, arch: 'amd64' })).toEqual({ ...manifest, arch: 'x64' })
+  expect(() => parsePrimaryRuntime({ ...manifest, arch: 'riscv64' })).toThrow('invalid metadata')
+})

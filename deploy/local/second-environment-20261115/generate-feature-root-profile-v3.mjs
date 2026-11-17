@@ -6,6 +6,7 @@ import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
 import { declarationHash, renderAccountBase } from './profile-composition.mjs'
 import { applyServicePreview, rootEntryRows } from './service-preview-profile.mjs'
+import { prepareOfficeRuntime, stageOfficeRuntime, officeRuntimeTargets } from '../office-runtime.mjs'
 
 const need = (value, message) => { if (!value) throw new Error(message) }
 const hash = bytes => createHash('sha256').update(bytes).digest('hex')
@@ -212,6 +213,9 @@ const { composeEntries } = await import(pathToFileURL(require.resolve('@deepseek
 const { parseStorageDeploymentPlan } = await import(pathToFileURL(require.resolve('@deepseek-ai/dsh-pe-cloud-files/root')).href)
 const { parseRootDeploymentInput } = await import(pathToFileURL(require.resolve('@deepseek-ai/dsh-pe-opensandbox')).href)
 const protectedDeployment = parseRootDeploymentInput(JSON.parse(deploymentBytes))
+const officeRuntime = input.officeRuntime === undefined ? undefined
+  : await prepareOfficeRuntime(input.officeRuntime, protectedDeployment.lifecycle, input.installAnchor)
+const officeTargets = new Set()
 need(protectedDeployment.schema === 'pe-opensandbox-root-deployment-v2'
   && protectedDeployment.storage.plan.path === input.storage.planPath
   && protectedDeployment.storage.plan.sha256 === input.storage.planSha256, 'Files and SDK must pin the exact same final namespace plan')
@@ -234,6 +238,7 @@ for (const slot of measured.slots) {
   need(provider?.config !== undefined, 'Original account model provider patch required')
   provider.config = { ...provider.config, baseURL: input.model.baseURL, apiKeyEnv: input.model.apiKeyRef, models: [{ id: input.model.model }] }
   const effective = composeEntries([[{ insert: sharedBase }], accountPatch], warning => { throw new Error('Native account composition warning: ' + warning) })
+  for (const target of officeRuntimeTargets(effective, officeRuntime)) officeTargets.add(target)
   need(new Set(effective.map(value => value.id)).size === effective.length, 'Duplicate account native entry')
   for (const selected of runtime.accountPolicy.presets) {
     const actual = effective.find(value => value.id === selected.entryId)
@@ -281,6 +286,11 @@ function write(name, bytes, mode = 0o444, uid = 0, gid = 0) { const fd = fs.open
   try { fs.writeFileSync(fd, bytes); fs.fchownSync(fd, uid, gid); fs.fchmodSync(fd, mode); fs.fsyncSync(fd) } finally { fs.closeSync(fd) } }
 directory(output); directory(output + '/profiles'); directory(output + '/profiles/cloud'); directory(output + '/account-slots')
 write(output + '/account-base.native.json', sharedBaseBytes)
+if (officeRuntime !== undefined) {
+  stageOfficeRuntime(officeRuntime, output + '/office-runtime')
+  write(output + '/OFFICE-INSTALLATION.json', JSON.stringify({ ...officeRuntime.receipt,
+    source: output + '/office-runtime/runtime.json', targets: [...officeTargets], installed: false }, null, 2) + '\n')
+}
 write(output + '/storage-plan.json', planBytes); write(output + '/rootDeployment.json', deploymentBytes, 0o440, 0, 2000)
 for (const slot of slotPatches) {
   directory(output + '/account-slots/' + slot.slotId)

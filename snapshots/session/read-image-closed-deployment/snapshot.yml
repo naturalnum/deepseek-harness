@@ -1,0 +1,8 @@
+version: 1
+scenario: read-image-closed-deployment
+profile: headless
+composition: image-closed-deployment
+recording: authored
+header:
+  class: image-closed-deployment
+  pin: true

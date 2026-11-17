@@ -10,7 +10,7 @@ it.skipIf(process.platform === 'win32')('sets overridable compute concurrency de
 import subprocess, sys
 sys.path.insert(0, sys.argv[1])
 import launcher, paths
-for key in ['OPENBLAS_NUM_THREADS', 'MAX_CONCURRENCY']:
+for key in ['OPENBLAS_NUM_THREADS', 'MAX_CONCURRENCY', 'MALLOC_ARENA_MAX']:
     assert paths.ENV[key] == '1'
     argv = launcher.world_argv('/srv/project')
     i = argv.index(key)

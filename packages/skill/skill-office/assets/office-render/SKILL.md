@@ -7,7 +7,7 @@ description: Render requested document images or inspect visual layout with Libr
 
 Use the installed LibreOffice Kit CLI through the shell with the absolute Node and CLI paths supplied below. In Bash, invoke `"<node>" "<cli>"`; in PowerShell, invoke `& "<node>" "<cli>"`. Prefer bundled LibreOffice unless the user requests another installation. If the Office sidecar is missing, follow [sidecar setup](../office/references/sidecar.md): ask whether the user wants to download it and install only after they agree. Do not invoke system soffice, use npx, install a replacement renderer, or build an alternative rendering pipeline to work around a failed render with an installed sidecar.
 
-Before generating images only for inspection, establish that the current model accepts images. Otherwise finish the applicable content and structure checks and report the requested visual check as unavailable. Do not generate unreadable previews, retry image reads, or choose a second model. Requested image exports can still be delivered.
+Before generating images only for inspection, verify that the session exposes an image-reading tool and the current model accepts images. If the tool is unavailable or the deployment rejects the image format, finish applicable content and structure checks, report visual inspection as unavailable, and do not retry with another image format. Do not generate unreadable previews, retry image reads, or choose a second model. Requested image exports can still be delivered.
 
 ## Render the saved deliverable
 

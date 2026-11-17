@@ -44,6 +44,7 @@ def world_argv(project, mode='workspace-write'):
         '--setenv', 'TMPDIR', ENV['TMPDIR'], '--setenv', 'LANG', ENV['LANG'],
         '--setenv', 'OPENBLAS_NUM_THREADS', ENV['OPENBLAS_NUM_THREADS'],
         '--setenv', 'MAX_CONCURRENCY', ENV['MAX_CONCURRENCY'],
+        '--setenv', 'MALLOC_ARENA_MAX', ENV['MALLOC_ARENA_MAX'],
         '--ro-bind', '/', '/', '--proc', '/proc',
         '--dev', '/dev', '--remount-ro', '/dev',
         '--dev-bind', '/dev/null', '/dev/null', '--ro-bind', '/sys', '/sys',

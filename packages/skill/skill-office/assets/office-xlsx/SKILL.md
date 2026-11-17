@@ -9,6 +9,8 @@ Follow an explicit user or applicable AGENTS.md requirement for an environment o
 
 Keep scripts, working files, and outputs in the task workspace. The runtime and skill directory are shared read-only resources. Save to a new workbook unless the user requests an in-place edit.
 
+Save long Python scripts with the session's file-writing tool and run the returned Python executable with the script filename; do not embed the entire script in a shell command.
+
 Name Python scripts for their task, such as `edit_xlsx.py`; avoid module names such as `inspect.py`, `openpyxl.py`, or `pandas.py` that shadow imported libraries.
 
 ## Read and modify

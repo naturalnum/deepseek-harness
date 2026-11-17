@@ -27,3 +27,7 @@
 Root 确认原应用实际退出、原分配实际终态释放，保留可变账号文件和凭据，只在原摘要仍匹配时安装精确托管静态 patch。SDK 生成器仅用于新部署；配置更新保留原 API key、token、控制器记录、backend generation 和镜像。激活后通过真实 UI 工作流验证命令、原生检索、文件传输、重登、Python 执行及账号隔离。
 
 所有 Root 生成在写入前都校验原生管理监听器配置和完整认证策略，包括未启用服务预览的情况。
+
+## Office 依赖清单
+
+组合包含绑定执行镜像的 `load_workspace_dependencies` 工具时，Root 输入必须提供 `officeRuntime: { path, sha256, workloadImageDigest }`。从精确选定的不可变工作负载镜像提取 `runtime.json`。生成器通过匹配的已发布原生解析器检查清单、所选镜像和平台，将原字节暂存至 `office-runtime/`，并在 `OFFICE-INSTALLATION.json` 中列出所有配置的 Host 目标。启动候选前，将原字节和镜像回执安装到对应只读资产挂载；工具有配置但缺少清单时，生成过程拒绝继续。应用 Host 不安装解释器载荷。完成匹配的产物构建后运行 `node --test deploy/local/office-runtime.test.mjs`。

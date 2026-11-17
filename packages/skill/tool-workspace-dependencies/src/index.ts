@@ -90,11 +90,13 @@ export function parsePrimaryRuntime(value: unknown): PrimaryRuntimeManifest {
     throw new Error('primary runtime: invalid metadata')
   }
   const { desktopVersion, platform, arch, payloadDigest } = value
+  // Earlier Linux x86 image builders recorded the OCI spelling; paths use Node's canonical spelling.
+  const runtimeArch = arch === 'amd64' ? 'x64' : arch
   const { python, node, pnpm } = versions
   const pythonPackages = value.pythonPackages === undefined && legacy ? {} : value.pythonPackages
   if (typeof desktopVersion !== 'string' || desktopVersion.length === 0
     || typeof platform !== 'string' || !PLATFORMS.includes(platform)
-    || typeof arch !== 'string' || !['x64', 'arm64'].includes(arch)
+    || typeof runtimeArch !== 'string' || !['x64', 'arm64'].includes(runtimeArch)
     || !isVersion(python)
     || (node !== undefined && !isVersion(node))
     || (pnpm !== undefined && (!isVersion(pnpm) || node === undefined))
@@ -116,7 +118,7 @@ export function parsePrimaryRuntime(value: unknown): PrimaryRuntimeManifest {
     }
   }
   return {
-    desktopVersion, platform, arch,
+    desktopVersion, platform, arch: runtimeArch,
     ...(payloadDigest === undefined ? {} : { payloadDigest }),
     python,
     ...(node === undefined ? {} : { node }),

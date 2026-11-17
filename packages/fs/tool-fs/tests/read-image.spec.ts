@@ -782,6 +782,28 @@ describe('registration surface', () => {
     expect((await readImage(ctx, { file_path: 'red.png' }, agentOn('vision-model'))).isError).toBe(true)
   })
 
+  it('omits image reads for a closed deployment and restores them with an accepting store', async () => {
+    class ClosedImageStore extends LocalAttachmentStore {
+      declare readonly imageLimits: LocalAttachmentStore['imageLimits']
+
+      constructor(...args: ConstructorParameters<typeof LocalAttachmentStore>) {
+        super(...args)
+        this.imageLimits = Object.freeze({ ...this.imageLimits, mediaTypes: Object.freeze([]) })
+      }
+    }
+    const ctx = await setup({ attachments: false })
+    const closed = await ctx.plugin(ClosedImageStore, { dshHome: home })
+    expect(ctx.tools.schemas().map(tool => tool.name).sort()).toEqual(['edit', 'read', 'write'])
+    expect(text(await readImage(ctx, { file_path: 'red.png' }, agentOn('vision-model')))).toContain('unknown tool "read_image"')
+    await closed.dispose()
+    const accepting = await ctx.plugin(LocalAttachmentStore, { dshHome: home })
+    expect(ctx.tools.schemas().map(tool => tool.name)).toContain('read_image')
+    await writeFile(join(dir, 'red.png'), PNG_1X1)
+    expect((await readImage(ctx, { file_path: 'red.png' }, agentOn('vision-model'))).isError).toBe(false)
+    await accepting.dispose()
+    expect(ctx.tools.schemas().map(tool => tool.name)).not.toContain('read_image')
+  })
+
   it('withdraws and restores image-only registration with the attachment store', async () => {
     const ctx = new Context()
     try {

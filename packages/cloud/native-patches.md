@@ -40,7 +40,7 @@ The native file tree accepts a prepared `workspaceFileManagement` face; selectio
 
 The optional `conversation.hero.header` position preserves the native blank-session welcome by default; Cloud fills it with an empty occupant. Workspace selection, draft identity and the resident composer remain native.
 
-The native composer checks the attachment provider's projected accepted image types before starting a selected file batch. An empty list keeps inline image intake closed and shows localized feedback; the Cloud attachment provider publishes that empty list to match its existing prompt and command policy. Native providers retain their accepted types and file intake.
+The native composer checks the attachment provider's projected accepted image types before starting a selected file batch. An empty list keeps inline image intake closed and shows localized feedback; the Cloud attachment provider publishes that empty list to match its existing prompt and command policy. Native providers retain their accepted types and file intake. Native ToolFS omits `read_image` when that accepted set is empty, while direct image execution retains the deployment and exact model-route checks.
 
 Cloud account composition reuses the public Native Cordis inspection registry and first-party Host providers through its fixed private runtime builtin. It does not activate the dynamic plugin runner. Standard delegation consumes the original Native model-selection settings service with its disabled defaults; these dependencies do not change the four Native preset declarations.
 

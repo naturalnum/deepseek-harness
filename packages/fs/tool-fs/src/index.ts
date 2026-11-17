@@ -63,7 +63,7 @@ function assertPositiveInteger(name: string, value: number): void {
   }
 }
 
-/** Register the selected filesystem tools; `read_image` additionally requires a mounted attachment store. */
+/** Register the selected filesystem tools; `read_image` additionally requires an image-accepting attachment store. */
 export function apply(ctx: Context, config: Config): void {
   // schemastery (Config) has already filled every defaulted field.
   const resolved = config as ResolvedConfig
@@ -84,7 +84,7 @@ export function apply(ctx: Context, config: Config): void {
   // registers; the execute body keeps a defensive re-check for direct callers.
   if (resolved.readImage) {
     ctx.inject(['attachments'], (imageCtx) => {
-      applyReadImageTool(imageCtx)
+      if (imageCtx.attachments.imageLimits.mediaTypes.length > 0) applyReadImageTool(imageCtx)
     })
   }
   // One escalation API shared by both mutating tools: advertisement gating,

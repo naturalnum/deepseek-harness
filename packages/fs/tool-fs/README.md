@@ -31,7 +31,7 @@ Mount the tools after a `ctx.fs` backend and, for read-before-write/edit behavio
 
 ### Minimal composition
 
-A backend, the policy plugin, then the tools; the attachment store is optional and enables `read_image`.
+A backend, the policy plugin, then the tools; the attachment store is optional and enables `read_image` when it accepts image formats.
 
 ```yaml
 - name: '@deepseek-ai/dsh-fs-local'
@@ -39,7 +39,7 @@ A backend, the policy plugin, then the tools; the attachment store is optional a
 - name: '@deepseek-ai/dsh-tool-fs'
 ```
 
-The policy plugin is optional: without it the tools run against the bare provider (unconditional write, overwrite, and edit with no observed-state). A deployment that loads these tools is expected to also load it, so the behavior is read-before-write/edit. `read_image` registers only while a durable `ctx.attachments` service is mounted; execution additionally refuses on a route whose exact model does not declare image input, so a text route's durable history stays free of image blocks.
+The policy plugin is optional: without it the tools run against the bare provider (unconditional write, overwrite, and edit with no observed-state). A deployment that loads these tools is expected to also load it, so the behavior is read-before-write/edit. `read_image` registers only while a durable `ctx.attachments` service accepts at least one image format; execution additionally refuses on a route whose exact model does not declare image input, so a text route's durable history stays free of image blocks.
 
 ### The tools
 
@@ -54,12 +54,12 @@ Field names are snake_case to match Claude Code and existing harness tool schema
 
 ### Configuration
 
-All keys are optional. The `read`, `readImage`, `write`, and `edit` switches default to `true`; set a switch to `false` to omit that tool and its guidance. All four may be disabled. `edit` is also omitted when the mounted filesystem declares `supportsTextEdit` as `false`, even if configured on; write remains subject to its normal policy. Enabling `readImage` still requires an attachment store and an image-capable model. Read caps remain validated when `read` is disabled.
+All keys are optional. The `read`, `readImage`, `write`, and `edit` switches default to `true`; set a switch to `false` to omit that tool and its guidance. All four may be disabled. `edit` is also omitted when the mounted filesystem declares `supportsTextEdit` as `false`, even if configured on; write remains subject to its normal policy. Enabling `readImage` still requires an image-accepting attachment store and an image-capable model. Read caps remain validated when `read` is disabled.
 
 | Key | Default | Meaning |
 |---|---|---|
 | `read` | `true` | Register `read` and its guidance |
-| `readImage` | `true` | Register `read_image` while an attachment store is mounted |
+| `readImage` | `true` | Register `read_image` while an attachment store accepts images |
 | `write` | `true` | Register `write` and its guidance |
 | `edit` | `true` | Register `edit` and its guidance |
 | `readLimit` | `2000` | Default and maximum lines returned by one `read` call |
@@ -174,7 +174,7 @@ Prefix-stable while the visible tool set, plugin scope, and guidance text are un
 
 #### What the model sees
 
-The model sees the generated [`read`, `read_image`, `write`, and `edit` schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-fs), with snake_case arguments. The image tool appears only while a durable attachment store is mounted; its schema is route-independent, and the strict gate refuses at execution. Scoped tool restrictions can remove any definition for one agent.
+The model sees the generated [`read`, `read_image`, `write`, and `edit` schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-fs), with snake_case arguments. The image tool appears only while a durable attachment store accepts at least one image format; its schema is route-independent, and the strict gate refuses at execution. Scoped tool restrictions can remove any definition for one agent.
 
 #### Token effect
 

@@ -42,7 +42,7 @@ kind: "package-reference"
 
 ### payload 布局
 
-`runtime.json` 记录 `desktopVersion`、`platform`（`win32`、`darwin` 或 `linux`）、`arch`、可选的 `payloadDigest`、顶层 `python` 与可选的 `node`/`pnpm` 版本，以及完整的 `pythonPackages` 分发包版本表。声明 pnpm 时必须同时声明 Node.js。numpy、pandas 等 Python 库只出现在 `pythonPackages` 中。条目位于 `dependencies/`：`python/bin/python3`（Windows 为 `python/python.exe`）及其下的 `site-packages`；声明了才有的 `node/bin/node`、`node/node_modules` 与 `pnpm/bin/pnpm.mjs`。平台或架构与当前进程不符的清单被拒绝。
+`runtime.json` 记录 `desktopVersion`、`platform`（`win32`、`darwin` 或 `linux`）、`arch`、可选的 `payloadDigest`、顶层 `python` 与可选的 `node`/`pnpm` 版本，以及完整的 `pythonPackages` 分发包版本表。声明 pnpm 时必须同时声明 Node.js。numpy、pandas 等 Python 库只出现在 `pythonPackages` 中。条目位于 `dependencies/`：`python/bin/python3`（Windows 为 `python/python.exe`）及其下的 `site-packages`；声明了才有的 `node/bin/node`、`node/node_modules` 与 `pnpm/bin/pnpm.mjs`。旧清单中的 OCI 架构名 `amd64` 在读取时规范化为 `x64`，不改写镜像原文件；新构建器使用 `x64` 或 `arm64`。平台或规范化后的架构与当前进程不符的清单被拒绝。
 
 在 macOS 和 Linux 上，构建器将 `python` 和 `python3` 保留为指向同目录版本化解释器（例如 `python3.12`）的相对链接。安装时保留这两个别名，其他链接展开为实际文件。别名校验要求目标名称与同目录解释器文件名完全一致，且目标为普通文件；Python wheel 等无法保留链接的载体使用普通命令文件，同样受支持。Windows 保留普通的 `python.exe` 文件。
 

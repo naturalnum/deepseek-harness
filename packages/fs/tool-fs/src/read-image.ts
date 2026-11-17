@@ -201,7 +201,7 @@ function imageReadContent(value: ImageReadValue): ContentBlock[] {
  * Register the `read_image` tool into the given context. The composing plugin
  * owns the attachments gate: `src/index.ts` calls this inside
  * `ctx.inject(['attachments'], …)` so the tool exists only while a durable
- * store is mounted. Execution still re-checks `ctx.get('attachments')` for
+ * store accepts at least one image media type. Execution still re-checks `ctx.get('attachments')` for
  * direct callers and gates on the calling route's declared image input.
  * @param ctx - the registration scope; execution uses its `fs` service plus
  *   the optional `attachments`/`llm` services.
