@@ -9,7 +9,7 @@ import { policyFixture } from './account-policy-fixture.ts'
 
 it('returns selected guest paths without installing a Host interpreter in a real Cloud account', async () => {
   const carrier = mkdtempSync(join(tmpdir(), 'cloud-office-manifest-'))
-  onTestFinished(() => rmSync(carrier, { recursive: true, force: true }))
+  onTestFinished(() => { rmSync(carrier, { recursive: true, force: true }) })
   writeFileSync(join(carrier, 'runtime.json'), JSON.stringify({ desktopVersion: 'cloud-image-fixture', platform: 'linux',
     arch: 'amd64', python: '3.12.13', node: '22.23.2', pythonPackages: { openpyxl: '3.1.5', pandas: '2.3.3' } }))
   const owner = policyFixture([], undefined, 'office-dependencies', undefined, undefined, undefined, undefined,
