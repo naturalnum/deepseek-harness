@@ -700,7 +700,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-access/src/root-config.ts",
-      "line": 4,
+      "line": 5,
       "module": "@deepseek-ai/dsh-credentials",
       "names": [
         "credentialRef"
@@ -7689,7 +7689,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/root-config.ts",
-      "line": 3,
+      "line": 4,
       "module": "@deepseek-ai/dsh-brand",
       "names": [
         "brandString"
@@ -9685,6 +9685,7 @@
         "verifyRecovery",
         "recoveryCapability",
         "assertStarting",
+        "singleInstanceFailure",
         "controlFailure",
         "logControlFailure",
         "assertOpen"
@@ -12906,7 +12907,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/root.ts",
-      "line": 941,
+      "line": 944,
       "plugin": "pe-cloud-runtime",
       "categories": [
         "proxy-original"
@@ -12916,7 +12917,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/root.ts",
-      "line": 951,
+      "line": 954,
       "plugin": "pe-cloud-runtime",
       "categories": [
         "proxy-original"
@@ -12926,7 +12927,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/root.ts",
-      "line": 962,
+      "line": 965,
       "plugin": "pe-cloud-runtime",
       "categories": [
         "proxy-original"
@@ -12936,7 +12937,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/root.ts",
-      "line": 1028,
+      "line": 1031,
       "plugin": "pe-cloud-runtime",
       "categories": [
         "proxy-original"
@@ -12946,7 +12947,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/root.ts",
-      "line": 1037,
+      "line": 1040,
       "plugin": "pe-cloud-runtime",
       "categories": [
         "proxy-original"
@@ -12956,7 +12957,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/root.ts",
-      "line": 1038,
+      "line": 1041,
       "plugin": "pe-cloud-runtime",
       "categories": [
         "proxy-original"
@@ -12966,7 +12967,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/root.ts",
-      "line": 1060,
+      "line": 1063,
       "plugin": "pe-cloud-runtime",
       "categories": [
         "proxy-original"
@@ -12976,7 +12977,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/root.ts",
-      "line": 1061,
+      "line": 1064,
       "plugin": "pe-cloud-runtime",
       "categories": [
         "proxy-original"
@@ -12986,7 +12987,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/root.ts",
-      "line": 1068,
+      "line": 1071,
       "plugin": "pe-cloud-runtime",
       "categories": [
         "proxy-original"
@@ -12996,7 +12997,7 @@
     },
     {
       "path": "packages/cloud/pe-cloud-runtime/src/root.ts",
-      "line": 1069,
+      "line": 1072,
       "plugin": "pe-cloud-runtime",
       "categories": [
         "proxy-original"

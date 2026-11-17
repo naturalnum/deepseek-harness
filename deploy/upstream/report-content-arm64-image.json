@@ -93,6 +93,33 @@
   "selectorCheck": {
     "output": "Actual selector positive/negative, historical audit and original guarded module imports passed\n"
   },
-  "businessAcceptance": "pending-exact-normal-product-boot",
-  "evidenceDirectory": "/Users/jingchao/agent_work/main_agent/pe-cloud-work/products/content-migration-20261117/candidate-01"
+  "businessAcceptance": "accepted-exact-normal-product-boot-and-browser-linux-report",
+  "evidenceDirectory": "/Users/jingchao/agent_work/main_agent/pe-cloud-work/products/content-migration-20261117/candidate-01",
+  "acceptedProduct": {
+    "sourceCommit": "5475be51bba4241291c28045245811b4b480e0f6",
+    "managedFiles": 19046,
+    "archiveSha256": "b8a3c7cba6ef46f60d90ca736cf6e9feb306b3053b99b5b2eae34a17c669d3e2",
+    "manifestSha256": "608a94972173a9ccd169dab916aa1381853d26844f45376636b5f07851b15a74",
+    "nodeVersion": "24.19.0"
+  },
+  "acceptance": {
+    "independentArm64Cloud": true,
+    "twoAuthenticatedBrowserAccounts": true,
+    "completeReportArchivesDownloaded": 6,
+    "nativeToolStepsCompleted": 10,
+    "linuxDocxAndPdfGenerated": true,
+    "reportsDownloadedThroughAuthenticatedWorkspaceEndpoint": true,
+    "pdfPagesVisuallyChecked": 2,
+    "skillInstallUpdateAndStaleVersionRejection": true,
+    "modelKeyEditRemoveAndRestore": true,
+    "refreshWarmRestartAndRelogin": true,
+    "pluginAccountIsolation": true,
+    "foreignSkillWorkspaceReportAndForgedAccountRejected": true,
+    "externalModelApiCalled": false,
+    "fixtureDriver": "Original native ctx.agents/ctx.tools; deterministic tools, no model request",
+    "storageArenaBytes": 4294967296,
+    "parentReserveBytes": 3221225472,
+    "guardianCommandBytes": 4096,
+    "existingDeploymentsOrOwnershipRecordsRewritten": false
+  }
 }
