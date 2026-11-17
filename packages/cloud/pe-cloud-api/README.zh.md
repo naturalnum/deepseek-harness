@@ -128,7 +128,7 @@ Root 配置还可提供 `approvedConfiguration`：显式 recipe/catalog 版本�
 
 Runtime 创建并持有一个[配置协调器](src/config-saves.ts)，显式限制全局/账户在途、排队、跟踪条目、嵌套工作和观察者数量。准入在调用原生 callback 前同步登记责任。同一账户的保存串行执行；必需嵌套写入归入当前操作，不排在自己后面等待。必需应用仍属于同一结果。
 
-Pause 关闭顶层准入，但允许已登记工作完成；只有静止、无未解决失败的 pause 才能在 runtime 重新审核图后恢复。Stop 是终态。 Runtime 拥有的 coordinator 可在销毁图前，向其精确、已停止、空且无失败的 barrier 提交一次最终配置；嵌套原生 hook 复用既有有界 turn，普通准入和 resume 始终关闭。观察者取消或 deadline 到期返回 unknown，不释放实际工作或容量。失败和结果未知保留脱敏证据及跟踪容量；本包不自动清除失败。
+Pause 关闭顶层准入，但允许已登记工作完成；只有静止、无未解决失败的 pause 才能在 runtime 重新审核图后恢复。只有仍在执行的保存操作会阻止自身异步上下文中的生命周期 pause/stop；继承已结算保存上下文的回调可以观察生命周期状态，但晚到的保存提交仍被拒绝。Stop 是终态。 Runtime 拥有的 coordinator 可在销毁图前，向其精确、已停止、空且无失败的 barrier 提交一次最终配置；嵌套原生 hook 复用既有有界 turn，普通准入和 resume 始终关闭。观察者取消或 deadline 到期返回 unknown，不释放实际工作或容量。失败和结果未知保留脱敏证据及跟踪容量；本包不自动清除失败。
 
 [原生适配](src/native-save-hook.ts) 通过账户装配及同包测试使用的内部辅助函数，将公开原生 hook 接到同一屏障。`installNativeConfigSaveHook` 准入默认模型保存、Settings 写入及 legacy rename、直接 ConfigEditor 编辑；其他顶层 writer 标识被拒绝。旧的 `installNativeDefaultModelSaveHook` 保留较窄范围；每个编辑器只安装一种 hook。`installNativeCredentialSaveHook` 观察本地 provider 的 set、unset、modify-record 和 delete-record 操作，不留存地址或密钥值。原生返回值、失败、队列、必需发布及选模响应时序均保留。
 

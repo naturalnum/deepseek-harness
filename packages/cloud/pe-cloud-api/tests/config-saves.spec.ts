@@ -8,7 +8,7 @@ import { ConfigSaveCoordinator, ConfigSaveOutcomeUnknown } from '../src/config-s
 import { CloudApiError } from '../src/errors.ts'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { installNativeDefaultModelSaveHook } from '../src/native-save-hook.ts'
-import type { ConfigSaveLimits } from '../src/save-hooks.ts'
+import type { ConfigSaveLimits, ConfigSaveReceipt } from '../src/save-hooks.ts'
 
 const limits: ConfigSaveLimits = {
   maxAccounts: 3, maxRunning: 2, maxQueued: 3, maxQueuedPerAccount: 2,
@@ -346,6 +346,7 @@ describe('actual configuration submission responsibility', () => {
     const b = root.createAccount(binding('b'))
     const neverSubmit = vi.fn(async () => {})
     await a.admit('default-model', async () => {
+      await new Promise<void>((resolve) => { setImmediate(resolve) })
       expect(() => a.pauseAccountChanges(nowDeadline())).toThrow('own submission turn')
       expect(() => a.stopConfigSaves(nowDeadline())).toThrow('own submission turn')
       expect(a.snapshot().admission).toBe('open')
@@ -353,6 +354,52 @@ describe('actual configuration submission responsibility', () => {
     })
     expect(neverSubmit).not.toHaveBeenCalled()
     expect(a.snapshot().failures).toHaveLength(0)
+  })
+
+  it.each(['pause', 'stop'] as const)('allows %s after the save that created an asynchronous callback has settled', async (action) => {
+    const root = new ConfigSaveCoordinator(limits), a = root.createAccount(binding())
+    const observed = Promise.withResolvers<ConfigSaveReceipt>()
+    try {
+      await a.admit('settings', async () => {
+        setImmediate(() => {
+          try {
+            observed.resolve(action === 'pause'
+              ? a.pauseAccountChanges(nowDeadline()) : a.stopConfigSaves(nowDeadline()))
+          } catch (cause) { observed.reject(cause) }
+        })
+      })
+      expect(a.snapshot()).toMatchObject({ admission: 'open', pending: [], failures: [] })
+      await expect(observed.promise).resolves.toMatchObject({
+        status: 'confirmed', admission: action === 'pause' ? 'paused' : 'stopped',
+        pendingOperationIds: [], failures: [],
+      })
+      expect(root.snapshot()).toMatchObject({ running: 0, queued: 0, tracked: 0 })
+    } finally {
+      await a.stopConfigSaves(nowDeadline())
+      root.releaseAccount(a)
+      root.close()
+    }
+  })
+
+  it('rejects a late native write from the settled save context before invoking its callback', async () => {
+    const root = new ConfigSaveCoordinator(limits), a = root.createAccount(binding())
+    const observed = Promise.withResolvers<undefined>(), write = vi.fn(async () => undefined)
+    try {
+      await a.admit('settings', async () => {
+        setImmediate(() => {
+          try { observed.resolve(a.admit('config-editor', write)) }
+          catch (cause) { observed.reject(cause) }
+        })
+      })
+      await expect(observed.promise).rejects.toMatchObject({ code: 'cloud/stale-generation' })
+      expect(write).not.toHaveBeenCalled()
+      expect(a.snapshot()).toMatchObject({ admission: 'open', pending: [], failures: [] })
+      expect(root.snapshot()).toMatchObject({ running: 0, queued: 0, tracked: 0 })
+    } finally {
+      await a.stopConfigSaves(nowDeadline())
+      root.releaseAccount(a)
+      root.close()
+    }
   })
 
   it('bounds nested enrollment and records a refused required continuation against its admitted parent', async () => {

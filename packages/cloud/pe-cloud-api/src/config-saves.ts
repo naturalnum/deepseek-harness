@@ -228,7 +228,7 @@ export class ConfigSaveCoordinator {
   }
 
   private assertOutsideSave(): void {
-    if (this.current() !== undefined) {
+    if (this.current()?.active === true) {
       throw new CloudApiError('cloud/config-busy', 'A configuration save cannot wait for its own submission turn.')
     }
   }
