@@ -126,7 +126,7 @@ Models 页面包含 **DeepSeek 账号**（`deepseek-account`，英文为 **DeepS
 
 可在本插件激活前提供可选 `modelsSettingsIntegration`。其只读回调向原 `ModelsSettingsStore` 提供真实原生 provider、namespace/schema 与凭据视图；读取被拒绝时不选择未受限原生 API。Settings 可写性保留 Host 原值。原页面拥有稳定的编辑 observable，初始及撤销后为 `null`，既有 renderer 将其绑定给 Models 注册。后台元数据刷新不替换已打开编辑及其捕获版本。此手动 Models 输入要求 `onboarding: false`，跳过 Welcome 与凭据 onboarding 两项注册及 Welcome controller，包括编辑尚未准入及撤销后的状态。省略整个集成时保留原生注册与读取，包括自动选项为 false 时仍可显式打开的原生凭据步骤。
 
-`settings.models.credentials.actions` 插槽接收产品自有密钥操作，保留原生提供方行及编辑器 Factory。可选的不可用提示和布局输入只包含展示策略；凭据权限与版本检查仍由 Host 操作负责。
+`settings.models.provider.credentials` 插槽接收产品自有密钥操作，保留原生提供方行及编辑器 Factory。可选的不可用提示和布局输入只包含展示策略；凭据权限与版本检查仍由 Host 操作负责。
 
 <a id="model-experience"></a>
 
