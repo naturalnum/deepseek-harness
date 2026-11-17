@@ -123,6 +123,7 @@ interface Fixture {
   readonly b: AuthenticatedPrincipal
   readonly cookieA: string
   readonly cookieB: string
+  readonly emailA: string
   readonly bindingA: AccountBinding
   readonly bindingB: AccountBinding
   readonly lifetimeA: AbortController
@@ -152,17 +153,20 @@ async function setup(
   })
   await (await auth.planMigrations(requestId)).runMigrations()
   const library = Reflect.get(auth, 'auth') as Auth
-  async function signup(): Promise<{ cookie: string; principal: AuthenticatedPrincipal }> {
+  async function signup(): Promise<{ cookie: string; principal: AuthenticatedPrincipal; email: string }> {
+    const email = `peer-${randomUUID()}@access.example.test`
     const response = await library.handler(new Request(`${settings.publicOrigin}/cloud/auth/sign-up/email`, {
       method: 'POST', headers: { 'content-type': 'application/json', origin: settings.publicOrigin },
-      body: JSON.stringify({ email: `peer-${randomUUID()}@access.example.test`, password: 'Probe-password-12345!', name: 'Peer test' }),
+      body: JSON.stringify({ email, password: 'Probe-password-12345!', name: 'Peer test' }),
     }))
     expect(response.status).toBe(200)
     const cookie = response.headers.getSetCookie().map(value => value.split(';')[0]).join('; ')
-    return { cookie, principal: await auth.authenticate(authRequest(cookie, settings.publicOrigin), requestId) }
+    return { cookie, email, principal: await auth.authenticate(authRequest(cookie, settings.publicOrigin), requestId) }
   }
   const a = await signup()
   const b = await signup()
+  // Account B's real password hashing can outlast a deliberately short login freshness budget.
+  await auth.recheckLogin(a.principal, requestId)
   const lifetimeA = new AbortController()
   const lifetimeB = new AbortController()
   const bindingA: AccountBinding = { accountId: a.principal.accountId, epoch: '91001' as OwnerEpoch, recipeVersion: 'fixture', lifetime: lifetimeA.signal }
@@ -217,7 +221,7 @@ async function setup(
     for (const directory of directories) await rm(directory, { recursive: true, force: true })
   })
   return { auth, registry, a: a.principal, b: b.principal, cookieA: a.cookie, cookieB: b.cookie,
-    bindingA, bindingB, lifetimeA, contexts, borrows, releases, failures, invalidations, borrow: ports.borrow,
+    emailA: a.email, bindingA, bindingB, lifetimeA, contexts, borrows, releases, failures, invalidations, borrow: ports.borrow,
     closeDatabase: () => pool.end(),
     expireA: async () => {
       await pool.query('UPDATE "session" SET "expiresAt" = $1 WHERE "id" = $2', [new Date(Date.now() - 1000), a.principal.authSessionId])
@@ -257,7 +261,7 @@ function memoryHttp(
 
 /** Minimal RFC6455 test client, independent of the native server's parsing implementation. */
 async function memoryWebsocket(
-  fixture: Fixture, handle: LoginPeer, origins: readonly string[] = [config().publicOrigin],
+  fixture: Fixture, handle: LoginPeer, origins: readonly string[] = [config().publicOrigin], cookie = fixture.cookieA,
 ): Promise<{ socket: MemorySocket; frames: unknown[] }> {
   const server = createServer()
   server.on('upgrade', (req, socket, head) => {
@@ -295,7 +299,7 @@ async function memoryWebsocket(
   })
   server.emit('connection', incoming)
   const originFields = origins.map(origin => `Origin: ${origin}\r\n`).join('')
-  client.write(`GET /api/remote.mux HTTP/1.1\r\nHost: 127.0.0.1:4100\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n${originFields}Cookie: ${fixture.cookieA}\r\n\r\n`)
+  client.write(`GET /api/remote.mux HTTP/1.1\r\nHost: 127.0.0.1:4100\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n${originFields}Cookie: ${cookie}\r\n\r\n`)
   await handshake.promise
   return { socket: client, frames }
 }
@@ -415,6 +419,38 @@ describe.skipIf(configPath === undefined)('internal login Peer with real PG/nati
     const next = await fixture.auth.authenticate(authRequest(fixture.cookieA), requestId)
     fixture.auth.assertLoginCurrent(next, requestId)
     fixture.auth.releasePrincipal(next)
+  })
+
+  it('reclaims disconnected login slots through native close while another account stays connected', async () => {
+    const fixture = await setup({ sessionRecheckMs: 250, maxTrackedLogins: 2, maxTrackedLoginsPerAccount: 1 })
+    const active = await acquire(fixture, fixture.b, fixture.bindingB)
+    const other = await memoryWebsocket(fixture, active, undefined, fixture.cookieB)
+    fixture.auth.releasePrincipal(fixture.b)
+    let principal = fixture.a
+    let cookie = fixture.cookieA
+    const library = Reflect.get(fixture.auth, 'auth') as Auth
+    for (let attempt = 0; attempt < 6; attempt++) {
+      await fixture.auth.recheckLogin(principal, requestId)
+      const handle = await acquire(fixture, principal)
+      fixture.auth.releasePrincipal(principal)
+      const socket = await memoryWebsocket(fixture, handle, undefined, cookie)
+      const response = await library.handler(new Request(`${config().publicOrigin}/cloud/auth/sign-in/email`, {
+        method: 'POST', headers: { 'content-type': 'application/json', origin: config().publicOrigin },
+        body: JSON.stringify({ email: fixture.emailA, password: 'Probe-password-12345!' }),
+      }))
+      expect(response.status).toBe(200)
+      cookie = response.headers.getSetCookie().map(value => value.split(';')[0]).join('; ')
+      await expect(fixture.auth.authenticate(authRequest(cookie), requestId)).rejects.toMatchObject({ code: 'cloud/capacity', status: 429 })
+      socket.socket.destroy() // No logout; the library session remains valid.
+      await vi.waitFor(() => { expect(handle.peer.signal.aborted).toBe(true) }, { timeout: 2000 })
+      await vi.waitFor(() => { expect(fixture.registry.reservedPeers).toBe(1) })
+      await vi.waitFor(() => { fixture.registry.assertCurrent(active, requestId) })
+      principal = await fixture.auth.authenticate(authRequest(cookie), requestId)
+    }
+    fixture.auth.releasePrincipal(principal)
+    expect(other.socket.destroyed).toBe(false)
+    expect(fixture.releases.get(fixture.a.accountId)).toBe(6)
+    expect(fixture.failures).toEqual([])
   })
 
   it('merges creation and reuses one Peer across real native HTTP and WS, without tying it to a socket', async () => {
@@ -564,6 +600,7 @@ describe.skipIf(configPath === undefined)('internal login Peer with real PG/nati
   it('joins a due original-login DB recheck and refuses dispatch until freshness is confirmed', async () => {
     const fixture = await setup({ sessionRecheckMs: 300 })
     const handle = await acquire(fixture)
+    await memoryWebsocket(fixture, handle)
     const started = Promise.withResolvers<undefined>()
     const gate = Promise.withResolvers<undefined>()
     const realRecheck = fixture.auth.recheckLogin.bind(fixture.auth)
