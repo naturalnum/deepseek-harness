@@ -6,6 +6,9 @@ export { AuthAccessError } from './auth-error.ts'
 export { PeAuthService } from './auth-root.ts'
 export { parseAuthRootConfig } from './root-config.ts'
 
+/** Configuration and activation failures prevent the native launcher from committing startup. */
+export const startupRequired = true
+
 /** Stable root plugin name. */
 export const name = 'pe-cloud-access/root'
 

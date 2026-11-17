@@ -751,7 +751,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
           catch (_observationFailure) { /* Logging does not change lock ownership or account admission. */ }
           this.logObservation(row, 'info')
         },
-        cause => this.controlFailure(cause)) : undefined
+        cause => this.singleInstanceFailure(cause)) : undefined
     const control: RootControl = {
       ...singleInstance === undefined ? {} : { singleInstance },
       config, executor, database, instance, owners, factory, saves, requests: new Map(), secrets,
@@ -783,6 +783,9 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
       this.logObservation({ event: 'instance-registered', pid: process.pid,
         instanceId: instance.identity.instanceId, recipeVersion: config.recipeVersion })
       factory.logObservation()
+      if (singleInstance !== undefined && !singleInstance.active) {
+        throw new AccountRuntimeError('cloud/account-unavailable', 'Single-instance lock was lost before Root startup completed')
+      }
       control.phase = 'active'
       this.scheduleHeartbeat(control)
     })()
@@ -1200,6 +1203,17 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     }
   }
 
+  private singleInstanceFailure(cause: unknown): void {
+    if (this.closed) return
+    this.controlFailure(cause)
+    this.ctx.logger.error('Single-instance exclusion cannot be restored; stopping the application with failure status; inspect retained cleanup evidence before restart')
+    // The native launcher joins the same registered Root close before disposing the tree.
+    void this.close().catch((_failure: unknown) => {
+      // close() retains the failed outcome for appShutdown and reports unresolved responsibility.
+    })
+    this.ctx.root.get('appExit')?.(1)
+  }
+
   private controlFailure(cause: unknown): void {
     const control = this.control
     if (control === undefined) return
@@ -1233,18 +1247,21 @@ function isUnsubmittedHeartbeat(cause: unknown): cause is InstanceControlError {
 
 function validateRootLocations(config: RuntimeRootConfig): void {
   const { maxPathBytes } = config.paths
-  const paths = [config.paths.sharedAccountsRoot, config.paths.localCacheRoot, config.native.configPath, config.native.installAnchor]
-  for (const path of paths) {
+  const paths = { 'paths.sharedAccountsRoot': config.paths.sharedAccountsRoot, 'paths.localCacheRoot': config.paths.localCacheRoot,
+    'native.configPath': config.native.configPath, 'native.installAnchor': config.native.installAnchor }
+  for (const [field, path] of Object.entries(paths)) {
     if (!posix.isAbsolute(path) || posix.normalize(path) !== path || path.includes('\0') || path.includes('\\')
       || path.length > maxPathBytes || Buffer.byteLength(path) > maxPathBytes) {
-      throw new AccountRuntimeError('cloud/invalid-config', 'Runtime deployment locations must be normalized bounded absolute POSIX paths')
+      throw new AccountRuntimeError('cloud/invalid-config', `$.${field}: requires a normalized absolute POSIX path within paths.maxPathBytes`)
     }
   }
-  const base = new URL(config.native.bareModuleBaseUrl)
+  let base: URL
+  try { base = new URL(config.native.bareModuleBaseUrl) }
+  catch (_invalidUrl) { throw new AccountRuntimeError('cloud/invalid-config', '$.native.bareModuleBaseUrl: requires an absolute file URL') }
   if (base.protocol !== 'file:' || base.search !== '' || base.hash !== ''
     || config.native.requiredEntryIds.length === 0 || config.native.requiredEntryIds.length > config.native.maxEntries
     || new Set(config.native.requiredEntryIds).size !== config.native.requiredEntryIds.length) {
-    throw new AccountRuntimeError('cloud/invalid-config', 'Runtime native recipe locations or required entries are invalid')
+    throw new AccountRuntimeError('cloud/invalid-config', '$.native: requires a file base URL without query/fragment and nonempty distinct requiredEntryIds within maxEntries')
   }
 }
 
@@ -1255,6 +1272,9 @@ function observe<T>(actual: Promise<T>, timeoutMs: number, message: string): Pro
   })
   return Promise.race([actual, timeout]).finally(() => { clearTimeout(timer) })
 }
+
+/** Configuration and activation failures prevent the native launcher from committing startup. */
+export const startupRequired = true
 
 /** Actual root Loader identity. */
 export const name = 'pe-cloud-runtime/root'

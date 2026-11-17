@@ -2211,6 +2211,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'scope', description: 'Original isolated listener Loader fiber in this Root.' }, { name: 'web', description: 'Dedicated Native WebServer, distinct from management.' }],
       },
       {
+        signature: 'inspectApplicationListener(): Readonly<{ ctx: Context; web: WebServer }> | undefined',
+        description: 'Inspect the original private registration for the Root recipe audit.',
+        parameters: [],
+        returns: 'Detached registration objects, or undefined when authentication is unavailable; never readiness.',
+      },
+      {
         signature: 'withModelKeyPeerUse<T>(peer: PeerScope, consume: (use: AccountUse, assertCurrent: () => void) => Promise<T>): Promise<T>',
         description: 'Delegate one native model-key invocation through the original login registry.',
         parameters: [{ name: 'peer', description: 'Exact Gateway invocation Peer, never a client identity.' }, { name: 'consume', description: 'Actual native work using the original retained Use and current checks.' }],
