@@ -69,4 +69,11 @@ test('the deployment mount contains the base, module link and exact referenced m
   const forbidden = path.join(f.directory, 'forbidden')
   assert.throws(() => stageOfficeFeatureAssets(prepared, { ...input, directory: forbidden, targets: ['/outside/runtime.json'] }), /feature mount/)
   assert.equal(fs.existsSync(forbidden), false)
+  const productRoot = path.join(f.directory, 'products')
+  fs.mkdirSync(path.join(productRoot, 'node_modules'), { recursive: true })
+  const reserved = path.join(f.directory, 'reserved')
+  assert.throws(() => stageOfficeFeatureAssets(prepared, { ...input, directory: reserved, productRoot,
+    targets: ['/opt/dsh-features/node_modules/public/runtime.json'] }), /feature mount/)
+  assert.equal(fs.existsSync(reserved), false)
+  assert.deepEqual(fs.readdirSync(path.join(productRoot, 'node_modules')), [])
 })

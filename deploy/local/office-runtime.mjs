@@ -76,8 +76,11 @@ export function officeRuntimeTargets(entries, prepared) {
 export function stageOfficeFeatureAssets(prepared, input) {
   const relativeTargets = input.targets.map(target => {
     const relative = path.relative(path.dirname(input.nativeConfigPath), target)
+    const first = relative.split(path.sep)[0]
     need(relative !== '' && relative !== '..' && !relative.startsWith('../') && !path.isAbsolute(relative),
       'Office manifest target must remain inside the feature mount')
+    need(first !== 'node_modules' && first !== path.basename(input.nativeConfigPath),
+      'Office manifest target must remain outside reserved feature mount entries')
     return relative
   })
   fs.mkdirSync(input.directory, { mode: 0o755 })
