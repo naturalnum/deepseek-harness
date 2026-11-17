@@ -69,7 +69,7 @@ packages/client/ui-chat/src/client/chat/ChatFlow.tsx	扩展点	仅把原framewor
 packages/client/ui-chat/src/client/chat/ChatView.module.css	云端定制	删除鲸尾动画样式（品牌，改了上游默认外观）	还原则保留上游鲸尾；要换图标需上游给“运行状态图标”插槽	必须携带	没动
 packages/client/ui-chat/src/client/chat/ChatView.tsx	通用修复	分支会话失败时弹出说明	向上游提交	必须携带	没动
 packages/client/ui-chat/src/client/chat/RunningStatus.tsx	云端定制	运行状态图标由鲸尾换成 LightningMark（品牌）	同 ChatView.module.css	必须携带	没动
-packages/client/ui-chat/src/client/chat/RunningWhaleTail.tsx	云端定制	删除鲸尾组件（品牌）	同上	必须携带	没动
+packages/client/ui-chat/src/client/chat/RunningWhaleTail.tsx	云端定制	原生鲸鱼组件已恢复为当前原生基线的原始字节；Cloud 品牌经插槽提供	同上	撤掉	已撤
 packages/client/ui-chat/src/client/contract/slots.ts	通用修复	分支回调签名带上失败信息	随 apply.ts	必须携带	没动
 packages/client/ui-chat/src/client/locale.ts	云端定制	“深度求索中”改为“处理中”（品牌，改了上游默认文案）；兼新增分支失败文案（通用修复）	上游文案注册不允许同名空间重复登记，无法从外部覆盖；需上游给文案覆盖方式，或还原品牌部分	必须携带	没动
 packages/client/ui-chat/tsdown.config.ts	云端定制	去掉鲸图资源的构建插件（品牌）	同 ChatView.module.css	必须携带	没动
@@ -253,3 +253,4 @@ packages/client/ui-plugin-manager/src/client/integration.ts	扩展点	原生插�
 packages/client/ui-sidebar-files/src/client/management.ts	扩展点	原生文件树的可选账户 HTTP 操作，继续复用原生选择与目录生命周期	原生等价上传下载和建目录扩展覆盖账户操作后可撤	留作口子	没动
 packages/session/session-persistence-jsonl/src/read-cleanup.ts	通用修复	保留实际 JSONL 读资源关闭失败与并发取消时的原始 I/O 错误	上游等价保留读取和清理失败且相同取消检查通过后撤	必须携带	没动
 scripts/verify-package-readme-model-experience.ts	扩展点	从 deploy/upstream/registrations.ts 读取静态 Cloud 库的无模型影响分类；原生正文格式检查保持完整	原生支持包自声明无模型影响分类且检查等价通过后撤销接入	留作口子	没动
+apps/web/src/cloud-web.ts	扩展点	仅重新导出自有 pe-cloud-web 静态入口；登录结构、样式与生命周期实现不再归原生应用	应用骨架提供等价通用静态入口注册且调用与构建验证通过后撤销此薄导出	留作口子	没动

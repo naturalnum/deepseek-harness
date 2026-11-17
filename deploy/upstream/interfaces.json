@@ -13779,10 +13779,10 @@
     {
       "路径": "packages/client/ui-chat/src/client/chat/RunningWhaleTail.tsx",
       "类别": "云端定制",
-      "原因": "删除鲸尾组件（品牌）",
+      "原因": "原生鲸鱼组件已恢复为当前原生基线的原始字节；Cloud 品牌经插槽提供",
       "撤销条件": "同上",
-      "处置": "必须携带",
-      "这一程的状态": "没动",
+      "处置": "撤掉",
+      "这一程的状态": "已撤",
       "changed": false,
       "added": false
     },
@@ -15615,9 +15615,17 @@
       "这一程的状态": "没动",
       "changed": true,
       "added": false
+    },
+    {
+      "路径": "apps/web/src/cloud-web.ts",
+      "类别": "扩展点",
+      "原因": "仅重新导出自有 pe-cloud-web 静态入口；登录结构、样式与生命周期实现不再归原生应用",
+      "撤销条件": "应用骨架提供等价通用静态入口注册且调用与构建验证通过后撤销此薄导出",
+      "处置": "留作口子",
+      "这一程的状态": "没动",
+      "changed": false,
+      "added": true
     }
   ],
-  "unlisted_native_sources": [
-    "apps/web/src/cloud-web.ts"
-  ]
+  "unlisted_native_sources": []
 }
