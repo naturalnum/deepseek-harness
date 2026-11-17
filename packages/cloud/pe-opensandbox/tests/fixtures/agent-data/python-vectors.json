@@ -110,6 +110,9 @@
         "--setenv",
         "MAX_CONCURRENCY",
         "1",
+        "--setenv",
+        "MALLOC_ARENA_MAX",
+        "1",
         "--ro-bind",
         "/",
         "/",
@@ -149,7 +152,7 @@
         "--chdir",
         "/srv/project"
       ],
-      "sha256": "7b236c2d24b5e24c8596860c796f167f65c9d84aa03763f9687091e1ce9facd3"
+      "sha256": "097a726a7354f1177a9d664f6b776c5751c8a843d3db499e3c75859be12a08ec"
     },
     {
       "project": "/srv/\u6848\u4f8b/project",
@@ -187,6 +190,9 @@
         "1",
         "--setenv",
         "MAX_CONCURRENCY",
+        "1",
+        "--setenv",
+        "MALLOC_ARENA_MAX",
         "1",
         "--ro-bind",
         "/",
@@ -227,7 +233,7 @@
         "--chdir",
         "/srv/\u6848\u4f8b/project"
       ],
-      "sha256": "bf1cf8a0bc1c64d87cb27ff65c3d0018a99de6d7d6c81d28d9eabedd693de801"
+      "sha256": "298b7f274325873863071bb0f5f05be6511a592f58185fc77cc0fbd601d0ebc1"
     }
   ]
 }

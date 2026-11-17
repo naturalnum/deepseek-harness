@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
 import { makePrepared, digest } from '../src/agent-data/canonical.ts'
 import { createForegroundIssuer } from '../src/agent-data/root-role-issuer.ts'
+import { worldArgv } from '../src/agent-data/validate.ts'
 
 it('binds the real Python parser/hash to Root policy and chooses read-only mounts for all user-writable roots', () => {
   const directory = fileURLToPath(new URL('../runtime/agent', import.meta.url))
@@ -44,6 +45,7 @@ from paths import ENV as env
 scope={'project_path':lambda path:path,'ENV':env,'ENV_ROOT':'/opt/session-env'}
 exec(compile(ast.Module(body=[function],type_ignores=[]),str(root/'launcher.py'),'exec'),scope)
 ro=scope['world_argv']('/srv/project','read-only');rw=scope['world_argv']('/srv/project','workspace-write')
+assert rw==items['world'], 'Root and the actual Python launcher must pin identical default world arguments'
 assert '--bind' not in ro
 assert rw.count('--bind')==3
 full=scope['world_argv']('/srv/project','danger-full-access')
@@ -93,7 +95,7 @@ for mode,flag in [('read-only',1),('workspace-write',0),('danger-full-access',0)
 print(json.dumps({'hash':value['ref']['specHash'],'readonlyArgv':ro,'writableArgv':rw,'tamperDenied':True,'skillReadonly':True,'syntheticMountMismatchDenied':True,'kernelExecuted':False}))
 `
   const raw = execFileSync('python3', ['-I', '-S', '-B', '-c', program, directory], {
-    input: JSON.stringify({ readonly: request, full: fullRequest }), encoding: 'utf8', timeout: 10000,
+    input: JSON.stringify({ readonly: request, full: fullRequest, world: worldArgv('/srv/project') }), encoding: 'utf8', timeout: 10000,
   })
   const result = JSON.parse(raw) as {
     hash: string
