@@ -4,7 +4,7 @@
 
 本运维参考说明可信 Cloud 账户配方，不涉及个人技能安装。[示例覆盖配置](../../apps/cli/config/examples/cloud-builtin-skills.cordis.yml)通过原生提供方注册七项 Office 技能和六项报告技能。原生优先级允许用户安装的同名技能覆盖内置项；管理页面保留两行，并为不可修改的内置项提供详情、文件及完整技能包下载。
 
-在租户可写存储之外准备带版本的发布目录，将 `packages/skill/skill-office/assets` 和 `packages/skill/skill-office/assets/reports` 复制到其中，保留同级目录结构及生成的技能包载荷。运行 `python3 scripts/package-builtin-skills.py --check`。保留报告资源的权限及[来源说明](../../packages/skill/skill-office/assets/reports/SOURCES.json)；内部集成不代表获得额外的再分发许可。
+在租户可写存储之外准备带版本的发布目录，将 `packages/skill/skill-office/assets` 和 `packages/cloud/pe-opensandbox/assets/reports` 复制到其中，保留同级目录结构及生成的技能包载荷。运行 `python3 deploy/upstream/package-builtin-skills.py --check`。保留报告资源的权限及[来源说明](../../packages/cloud/pe-opensandbox/assets/reports/SOURCES.json)；内部集成不代表获得额外的再分发许可。
 
 使用 [Office 依赖 Dockerfile](../../packages/cloud/pe-opensandbox/runtime/office/Dockerfile)构建 guest，并选择已批准的精确基础镜像。原生 LibreOffice（包括显示 Word 公式所需的 Math 组件）和 Poppler 在不改变默认执行限额的情况下提供操作能力。镜像显式安装 `poppler-data`：它属于被 `--no-install-recommends` 跳过的推荐依赖，其 CMap 数据是读取所附中文 PDF 样例所必需的。字体准备会提取完整简体中文字体面并验证字形和 Unicode 映射保持一致；镜像保留原始字体许可。将该镜像的 `/opt/dsh/runtime/runtime.json` 导出到受保护的 Host 载荷目录，将其摘要绑定到同一发布和镜像。在把覆盖配置应用到账户配方并执行正常封存、审计之前，将 `DSH_BUNDLED_OFFICE_SKILLS`、`DSH_BUNDLED_REPORT_SKILLS` 和 `DSH_EXECUTION_RUNTIME_MANIFEST` 设置为这些 Host 绝对目录。覆盖配置中的 guest 路径保持为 guest 路径，不能替换成 Host 解释器路径。
 

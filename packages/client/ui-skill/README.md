@@ -77,7 +77,10 @@ These pages cover the input machinery, the tool row host, and the host-side skil
 
 -----
 
+The optional `uiSkillCatalog` service exposes cache invalidation to the application. The native plugin retains its session and local registry invalidation; Cloud subscribes to its own forwarded catalog event outside this package.
+
 <a id="model-experience"></a>
+
 ## Model Experience
 
 ### User-explicit skill invocation

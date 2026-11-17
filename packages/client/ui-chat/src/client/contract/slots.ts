@@ -340,7 +340,7 @@ export interface ChatFlowOwnerProps extends Pick<ChatNodeOwnerProps,
 /** Full props of the Chat-owned flow renderer. */
 export type ChatFlowSlotProps =
   PropsRuntime<'conversation.chat.flow'>
-  & PropsRenderSlots<'conversation.chat.node'>
+  & PropsRenderSlots<'conversation.chat.node' | 'conversation.chat.running.mark' | 'conversation.chat.running.copy'>
   & PropsRenderFactories
   & PropsStore<ChatStore>
   & InjectFace<ChatFlowDataInjected>
@@ -386,6 +386,20 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 
   interface SlotMap {
+    /** Decorative running mark; the owner retains its original whale as the fallback. */
+    'conversation.chat.running.mark': { kind: 'chain'; scope: 'root'; inline: true }
+    /** Running copy over the original formatted duration; the owner retains its original locale fallback. */
+    'conversation.chat.running.copy': {
+      kind: 'chain'
+      scope: 'root'
+      inline: true
+      owner: {
+        readonly duration: string | undefined
+        readonly announcement: boolean
+        readonly active: boolean
+        readonly className: string | undefined
+      }
+    }
     /** Ordered Chat rows and local echoes with viewport-bound visibility hooks. */
     'conversation.chat.flow': {
       kind: 'single'

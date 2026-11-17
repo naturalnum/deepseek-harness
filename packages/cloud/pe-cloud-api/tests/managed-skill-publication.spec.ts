@@ -56,7 +56,7 @@ async function fixture(configuredLimits = apiLimits, builtins = false, archiveLi
       executionRoot: '/opt/dsh/skills/office', packagedBundles: true,
       executionRuntime: { node: '/opt/dsh/runtime/dependencies/node/bin/node', cli: '/opt/dsh/runtime/dependencies/node/node_modules/@deepseek-ai/libreoffice-kit/lib/cli.js' } } },
     { id: 'reports', name: 'cordis:reports', config: { includeDefaultRoots: false, watch: false, providerName: 'dsh-reports',
-      bundledSkillDir: fileURLToPath(new URL('../../../skill/skill-office/assets/reports', import.meta.url)),
+      bundledSkillDir: fileURLToPath(new URL('../../pe-opensandbox/assets/reports', import.meta.url)),
       bundledExecutionRoot: '/opt/dsh/skills/reports', packagedBundles: true } },
   ]]))
   const ctx = await boot('managed-api-test', config, [], (owner) => {
@@ -895,7 +895,7 @@ it('sends all thirteen original release archives over real HTTP while unchanged 
     if (!entry.actions.download) await expect(f.manager.download(entry, f.check, f.signal)).rejects.toMatchObject({ code: 'cloud/capacity' })
   }
   await http.join()
-  expect(total).toBe(1276983)
+  expect(total).toBe(1277219)
   expect(http.finishHeld).toHaveLength(26); expect(http.finishHeld.every(Boolean)).toBe(true)
   expect(http.settlements.every(value => value.cleanup === 'confirmed' && value.outcome === 'completed')).toBe(true)
   expect(http.budget.snapshot()).toEqual({ active: 0, residentBytes: 0, cleanupUnknown: 0 })

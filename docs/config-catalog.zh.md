@@ -2459,6 +2459,8 @@ export interface CloudClientConfig {
   nativeSubagentSettingsNamespace?: string
   /** Omission keeps preview navigation closed, independently of descriptive bootstrap availability. */
   servicePreview?: Readonly<CloudServicePreviewPolicy>
+  /** Complete service pages use this private handoff instead of the inert preview URL. */
+  serviceApplications?: Readonly<CloudServiceApplicationPolicy>
 }
 
 /** Explicit finite UTF-8 budgets; total includes the physical key and serialized envelope. */
@@ -2501,6 +2503,22 @@ export interface CloudServicePreviewPolicy {
   readonly maxFieldBytes: number
   /** Maximum UTF-8 bytes in the complete serialized preview URL, including query fields. */
   readonly maxUrlBytes: number
+}
+
+/** Public inputs for a private POST handoff to one dedicated content origin; supplies no service authority. */
+export interface CloudServiceApplicationPolicy {
+  /** Exact public origin for authenticated management requests. */
+  readonly managementOrigin: string
+  /** Exact public origin for selected content requests. */
+  readonly contentOrigin: string
+  /** Finite deadline of each management request in milliseconds. */
+  readonly requestTimeoutMs: number
+  /** Maximum encoded management request body bytes. */
+  readonly maxRequestBytes: number
+  /** Maximum management response body bytes. */
+  readonly maxResponseBytes: number
+  /** Maximum encoded bytes of one public field. */
+  readonly maxFieldBytes: number
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-pe-cloud-client -->
@@ -4986,6 +5004,7 @@ export interface Config {
 | `@deepseek-ai/dsh-pe-cloud-api` | — | [`packages/cloud/pe-cloud-api/src/index.ts`](../packages/cloud/pe-cloud-api/src/index.ts) |
 | `@deepseek-ai/dsh-pe-cloud-files` | — | [`packages/cloud/pe-cloud-files/src/index.ts`](../packages/cloud/pe-cloud-files/src/index.ts) |
 | `@deepseek-ai/dsh-pe-cloud-runtime` | — | [`packages/cloud/pe-cloud-runtime/src/index.ts`](../packages/cloud/pe-cloud-runtime/src/index.ts) |
+| `@deepseek-ai/dsh-pe-cloud-web` | — | [`packages/cloud/pe-cloud-web/src/index.ts`](../packages/cloud/pe-cloud-web/src/index.ts) |
 | `@deepseek-ai/dsh-pe-opensandbox` | — | [`packages/cloud/pe-opensandbox/src/index.ts`](../packages/cloud/pe-opensandbox/src/index.ts) |
 | `@deepseek-ai/dsh-plugin-market-index` | — | [`packages/util/plugin-market-index/src/index.ts`](../packages/util/plugin-market-index/src/index.ts) |
 | `@deepseek-ai/dsh-remote-mock` | — | [`packages/test-support/remote-mock/src/index.ts`](../packages/test-support/remote-mock/src/index.ts) |

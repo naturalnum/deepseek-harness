@@ -208,7 +208,10 @@ Workspace 与 Session 悬浮卡片会复制对应行被截断的值：激活 Wor
 
 -----
 
+可选 `workspaceDeleteDisabledReason.message` 回调向现有菜单和确认框提供本地化部署限制。它不授予删除权限，当前操作在提交前仍复核原有限制。
+
 <a id="model-experience"></a>
+
 ## 模型体验
 
 无。该包是浏览器端 UI 插件层，不注册任何面向模型的内容。

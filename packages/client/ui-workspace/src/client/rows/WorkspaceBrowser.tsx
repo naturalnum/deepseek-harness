@@ -559,7 +559,7 @@ function SessionTree({
           group={group}
           containsCurrentDescendant={currentAncestors.has(group.key)}
           home={home}
-          deleteDisabledReason={workspaceDeleteDisabledReason === undefined ? undefined : t('delete.unavailable')}
+          deleteDisabledReason={workspaceDeleteDisabledReason === undefined ? undefined : workspaceDeleteDisabledReason.message()}
           t={t}
           onToggle={() => {
             if (group.expanded) dropWatermarks(key => withinGroup(key, group.key))
@@ -1540,7 +1540,7 @@ export function WorkspaceBrowser({
         )}
       >
         {deleting && <div className={css.deleteStatus} role="status">{t('delete.pending')}</div>}
-        {workspaceDeleteDisabledReason !== undefined && <div role="status">{t('delete.unavailable')}</div>}
+        {workspaceDeleteDisabledReason !== undefined && <div role="status">{workspaceDeleteDisabledReason.message()}</div>}
         {deleteError !== null && <div className={css.renameError} role="alert">{deleteError}</div>}
       </Modal>
     </div>

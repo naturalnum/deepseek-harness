@@ -33,6 +33,7 @@
     "lib/*.js",
     "runtime/agent/*.py",
     "runtime/bootstrap/*.py",
+    "assets",
     "lib/types/**/*.d.ts"
   ],
   "peerDependencies": {

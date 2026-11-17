@@ -174,7 +174,10 @@ Chat 会在历史前插与 renderer 重新挂载时恢复语义锚点，并且�
 
 -----
 
+可选链式插槽 `conversation.chat.running.mark` 和 `conversation.chat.running.copy` 允许产品提供运行图标及带时长的本地化文案。原生计时器、无障碍播报时机和默认鲸鱼图标仍由本包负责；撤回贡献后恢复默认显示。
+
 <a id="model-experience"></a>
+
 ## 模型体验
 
 无，因为本包在浏览器中渲染已记录的对话状态，不注册任何面向模型的内容。

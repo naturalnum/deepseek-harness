@@ -77,7 +77,10 @@ source 不实现任何裁决钩子，也没有引用 codec：pick 落下字面�
 
 -----
 
+可选 `uiSkillCatalog` 服务向应用提供缓存失效入口。原生插件保留会话及本地注册表失效处理；Cloud 在自有包订阅其转发的目录事件。
+
 <a id="model-experience"></a>
+
 ## 模型体验
 
 ### 用户显式 skill 调用

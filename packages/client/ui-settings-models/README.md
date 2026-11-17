@@ -126,7 +126,10 @@ The `settings.models.sign-in` slot lets account login offer a choice before the 
 
 An optional `modelsSettingsIntegration` is provided before this plugin activates. Its readonly callbacks feed the original `ModelsSettingsStore` with actual native provider, namespace/schema and credential views; a refused read never selects unrestricted native APIs. Settings writability stays as reported by the Host. The original page owns a stable observable editing source, initially or after revocation `null`; the existing renderer binds it into the Models registration. Background metadata refreshes do not replace an open edit or its captured version. This manual Models input requires `onboarding: false` and omits both Welcome and credential onboarding registrations and the Welcome controller, including before editing admission or after revocation. Omitting the entire integration keeps the original native registrations and reads, including explicit credential onboarding when its automatic option is false.
 
+The `settings.models.credentials.actions` slot accepts product-owned credential actions while retaining native provider rows and the original editor Factory. Optional unavailable-copy and layout inputs contain display policy only; credential authorization and version checks remain with the Host operation.
+
 <a id="model-experience"></a>
+
 ## Model Experience
 
 None, as the package is a browser-side UI plugin layer that registers nothing model-facing.

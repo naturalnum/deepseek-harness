@@ -1,3 +1,5 @@
+import { workspaceDeletionCopy } from '../src/client/workspace-restriction.ts'
+import type { WorkspaceDeleteDisabledReason } from '@deepseek-ai/dsh-client-ui-workspace/client'
 // @vitest-environment jsdom
 /** Canonical preparation consumed by real Loader entries before native cache/Connection use. */
 import { InputTriggerService } from '@deepseek-ai/dsh-client-ui-input-trigger/src/client/service.ts'
@@ -123,6 +125,12 @@ function native(page: PreparedCloudPage, options: { bind?: boolean; config?: clo
   return { ctx, entry, events }
 }
 
+/** A retained restriction remains usable even after its Cloud Loader entry stops. */
+function expectRestriction(value: unknown): void {
+  expect(typeof (value as WorkspaceDeleteDisabledReason).message).toBe('function')
+  expect(Object.values(workspaceDeletionCopy)).toContain((value as WorkspaceDeleteDisabledReason).message())
+}
+
 it('uses canonical bootstrap then the real Cloud Loader entry before native cache, HTTP and WS access', async () => {
   const f = fixture(), preparation = PreparedCloudPage.prepare(f.input, new AbortController().signal)
   onTestFinished(() => preparation.dispose())
@@ -150,12 +158,12 @@ it('retains the Workspace delete restriction through slot replacement and retrac
   const first = graph.ctx.plugin(SlotRegistry)
   await first.await()
   const original = Reflect.get(graph.ctx.slots, '_rootSource') as { getSnapshot(): { props: Record<string, unknown> } }
-  expect(original.getSnapshot().props.workspaceDeleteDisabledReason).toBe('unavailable')
+  expectRestriction(original.getSnapshot().props.workspaceDeleteDisabledReason)
   await first.dispose()
   const second = graph.ctx.plugin(SlotRegistry)
   await second.await()
   const replacement = Reflect.get(graph.ctx.slots, '_rootSource') as { getSnapshot(): { props: Record<string, unknown> } }
-  expect(replacement.getSnapshot().props.workspaceDeleteDisabledReason).toBe('unavailable')
+  expectRestriction(replacement.getSnapshot().props.workspaceDeleteDisabledReason)
   await preparation.dispose()
   expect(original.getSnapshot().props.workspaceDeleteDisabledReason).toBeUndefined()
   expect(replacement.getSnapshot().props.workspaceDeleteDisabledReason).toBeUndefined()
@@ -167,7 +175,7 @@ it('installs the Workspace delete restriction when native slots started before t
   const page = await preparation.ready, graph = native(page, { slotsFirst: true })
   await page.start(graph.entry)
   const source = Reflect.get(graph.ctx.slots, '_rootSource') as { getSnapshot(): { props: Record<string, unknown> } }
-  expect(source.getSnapshot().props.workspaceDeleteDisabledReason).toBe('unavailable')
+  expectRestriction(source.getSnapshot().props.workspaceDeleteDisabledReason)
   await preparation.dispose()
   expect(source.getSnapshot().props.workspaceDeleteDisabledReason).toBeUndefined()
 })
@@ -181,12 +189,12 @@ it('keeps deletion disabled after Cloud entry withdrawal until the native page r
   await page.start(graph.entry)
   await graph.ctx.plugin(SlotRegistry).await()
   const source = Reflect.get(graph.ctx.slots, '_rootSource') as { getSnapshot(): { props: Record<string, unknown> } }
-  expect(source.getSnapshot().props.workspaceDeleteDisabledReason).toBe('unavailable')
+  expectRestriction(source.getSnapshot().props.workspaceDeleteDisabledReason)
   const cloudEntry = [...graph.ctx.loader.entries()].find(entry => entry.options.name === 'cordis:cloud')
   if (cloudEntry?.fiber === undefined) throw new Error('Original Cloud Loader entry absent')
   await cloudEntry.fiber.dispose()
   await disposing.promise
-  expect(source.getSnapshot().props.workspaceDeleteDisabledReason).toBe('unavailable')
+  expectRestriction(source.getSnapshot().props.workspaceDeleteDisabledReason)
   release.resolve(undefined)
   await preparation.dispose()
   expect(source.getSnapshot().props.workspaceDeleteDisabledReason).toBeUndefined()
@@ -466,7 +474,7 @@ it('installs and withdraws the Workspace restriction on the actual AppWebEntry r
   if (root === undefined) throw new Error('Original AppWebEntry root absent')
   await root.plugin(SlotRegistry).await()
   const source = Reflect.get(root.slots, '_rootSource') as { getSnapshot(): { props: Record<string, unknown> } }
-  expect(source.getSnapshot().props.workspaceDeleteDisabledReason).toBe('unavailable')
+  expectRestriction(source.getSnapshot().props.workspaceDeleteDisabledReason)
   await preparation.dispose()
   expect(source.getSnapshot().props.workspaceDeleteDisabledReason).toBeUndefined()
 })

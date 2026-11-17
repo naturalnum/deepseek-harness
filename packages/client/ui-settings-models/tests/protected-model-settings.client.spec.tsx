@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { CREDENTIAL_COPY, credentialPresentation } from './credential-presentation.client.ts'
 /** Existing Models page reuses its original provider editor with a scoped settings writer. */
 import Schema from '@deepseek-ai/schemastery'
 import { Context } from '@deepseek-ai/cordis'
@@ -36,11 +37,11 @@ async function mount(write: ModelsOperations['writeSettings'], isCurrent: () => 
       configurableProviders: [{ provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: view.ns, settingsPath: [] }],
       settings: { writable: true, hasDocument: false, namespaces: [view] } }),
     credentials: async () => ({ DEEPSEEK_API_KEY: { configured: true, writable: true } }) },
-    unavailable: () => en.keyEditUnavailable })
+    unavailable: () => CREDENTIAL_COPY.keyEditUnavailable })
   await controller.load()
   const operations: ModelsOperations = { storeCredential: denied, removeCredential: denied, discoverModels: denied, writeSettings: write }
   render(<ModelsSection controller={controller} operations={operations} schema={settingsSchema} t={t}
-    useSnapshot={bindSnapshotSelector(controller.store)} credentialEditing={{ scope: 'account-page', isCurrent, prepare: async () => null }} renderSlot={() => null} />)
+    useSnapshot={bindSnapshotSelector(controller.store)} credentialEditing={{ ...credentialPresentation, scope: 'account-page', isCurrent, prepare: async () => null }} renderSlot={() => null} />)
   fireEvent.click(screen.getByRole('button', { name: /Edit DeepSeek \(deepseek-official\)/ }))
   fireEvent.click(screen.getByText(en.customized))
   fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'updated' } })
@@ -71,7 +72,7 @@ it('blocks a repeated write if the page is revoked before the result is observed
   const write = vi.fn<ModelsOperations['writeSettings']>(async () => { throw new Error('revoked') })
   await mount(write)
   fireEvent.click(screen.getByRole('button', { name: en.apply }))
-  await screen.findByText(en.keyEditUnavailable)
+  await screen.findByText(CREDENTIAL_COPY.keyEditUnavailable)
   expect(screen.getByRole('button', { name: en.apply })).toHaveProperty('disabled', true)
   expect(write).toHaveBeenCalledOnce()
 })
@@ -91,6 +92,6 @@ it('does not dispatch an old draft after its captured page binding is revoked', 
   await mount(write, () => current)
   current = false
   fireEvent.click(screen.getByRole('button', { name: en.apply }))
-  await screen.findByText(en.keyEditUnavailable)
+  await screen.findByText(CREDENTIAL_COPY.keyEditUnavailable)
   expect(write).not.toHaveBeenCalled()
 })

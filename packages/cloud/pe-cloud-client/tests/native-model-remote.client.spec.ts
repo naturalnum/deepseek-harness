@@ -15,6 +15,7 @@ import { expect, it, onTestFinished, vi } from 'vitest'
 import * as cloud from '../src/client/index.ts'
 import { PreparedCloudPage } from '../src/client/prepared-page.ts'
 import { modelSettingsDictionaries } from '../src/client/model-settings-locales.ts'
+import { modelCredentialCopy, modelCredentialCopyFor } from '../src/client/model-credential-locales.ts'
 
 type Remote = TypertClientRemote['cloudModelKey']
 type Metadata = Extract<Awaited<ReturnType<Remote['metadata']>>, { ok:true }>['value']
@@ -94,6 +95,21 @@ it('uses the single real generated namespace for metadata, captured edits and ke
   expect(saved.kind).toBe('written')
   const editing=page.modelsSettingsIntegration.editing.getSnapshot()
   if(editing===null)throw new Error('Actual model namespace was not attached')
+  const requestsBeforePresentation = records.length
+  for (const language of ['ja', 'es', 'fr', 'de', 'ru', 'pt']) {
+    root.effect(() => root.locale.addLanguage({ id: language, label: language, fallback: 'en' }))
+  }
+  for (const [language, copy] of Object.entries(modelCredentialCopy)) {
+    root.locale.setLocale(language)
+    expect(modelCredentialCopyFor(root)).toEqual(copy)
+    expect(editing.unavailable?.()).toBe(copy.keyEditUnavailable)
+    expect(page.modelsSettingsIntegration.unavailable?.()).toBe(copy.keyEditUnavailable)
+  }
+  expect(editing.layoutFor?.('deepseek-official')).toBe('deepseek')
+  expect(editing.layoutFor?.('another-native-provider')).toBeUndefined()
+  expect(records).toHaveLength(requestsBeforePresentation)
+  root.locale.setLocale('en')
+
   const edit=await editing.prepare('DEEPSEEK_API_KEY',new AbortController().signal)
   if(edit===null)throw new Error('Actual original edit did not prepare')
   token='background-token'

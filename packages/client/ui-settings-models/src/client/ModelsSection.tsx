@@ -32,7 +32,6 @@ import { CustomProviderCard } from './CustomProviderCard.tsx'
 import { deriveKeyRef, protocolChoices, providerUsable, reasoningLevelChoices } from './store.ts'
 import type { ModelsSettingsStore, ProviderRow } from './store.ts'
 import type { ModelsOperations, ModelsCredentialEditing } from './operations.ts'
-import { CredentialKeyActions } from './CredentialKeyActions.tsx'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
 import { ProviderEditor, type ProviderEditorProps } from './ProviderEditor.tsx'
 import type { en } from './locales.ts'
@@ -66,7 +65,7 @@ export interface ModelsSectionInjected {
 type AddMode = 'catalog' | 'custom'
 
 /** The child slots this section declares and dispatches (see ./slot-contract.ts). */
-type ModelsChildSlots = 'settings.models.provider-card' | 'settings.models.footer'
+type ModelsChildSlots = 'settings.models.provider-card' | 'settings.models.footer' | 'settings.models.provider.credentials'
 
 /** The child-slot dispatch function the renderer binds for the section. */
 type ModelsRenderSlot = PropsRenderSlots<ModelsChildSlots>['renderSlot']
@@ -121,7 +120,7 @@ interface CatalogDraft {
 /** Values that vary around the shared provider-editor rendering. */
 interface ProviderEditorRenderProps extends Pick<
   ProviderEditorProps,
-  'namespace' | 'schema' | 'operations' | 't' | 'readOnly' | 'onClose' | 'modelCatalogOnly'
+  'namespace' | 'schema' | 'operations' | 't' | 'readOnly' | 'onClose' | 'modelCatalogOnly' | 'layoutOverride' | 'credentialUnavailable'
 > {
   target: EditorTarget
   row: ProviderRow
@@ -257,9 +256,9 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
   const { controller, schema, t, credentialEditing } = injected
   const operations = credentialEditing == null ? injected.operations : { ...injected.operations,
     writeSettings: async (...args: Parameters<ModelsOperations['writeSettings']>) => {
-      if (!credentialEditing.isCurrent()) return { kind: 'unknown' as const, message: t('keyEditUnavailable') }
+      if (!credentialEditing.isCurrent()) return { kind: 'unknown' as const, message: credentialEditing.unavailable?.() ?? t('loadFailed') }
       const result = await injected.operations.writeSettings(...args)
-      return credentialEditing.isCurrent() ? result : { kind: 'unknown' as const, message: t('keyEditUnavailable') }
+      return credentialEditing.isCurrent() ? result : { kind: 'unknown' as const, message: credentialEditing.unavailable?.() ?? t('loadFailed') }
     },
   }
   const protectedKeys = credentialEditing !== undefined
@@ -570,11 +569,13 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
               )}
               {credentialEditing !== undefined && credentialEditing !== null
                 && credentialEditing.scope !== null && row.apiKeyEnv !== undefined
-                ? <CredentialKeyActions key={credentialEditing.scope + ':' + row.apiKeyEnv}
-                  provider={row.entry.provider} displayName={row.entry.displayName} namespace={namespace} schema={schema}
-                  settingsPath={row.entry.settingsPath} operations={operations} t={t} reference={row.apiKeyEnv}
-                  configured={row.credential?.configured === true} editing={credentialEditing}
-                  onSaved={() => { announceSaved(target) }} />
+                ? renderSlot('settings.models.provider.credentials', {
+                  provider: row.entry.provider, displayName: row.entry.displayName, namespace,
+                  settingsPath: row.entry.settingsPath, reference: row.apiKeyEnv,
+                  configured: row.credential?.configured === true, scope: credentialEditing.scope,
+                  isCurrent: credentialEditing.isCurrent, prepare: credentialEditing.prepare,
+                  onSaved: () => { announceSaved(target) },
+                })
                 : null}
               {open && (!protectedKeys || protectedSettings)
                 ? renderProviderEditor({
@@ -585,7 +586,9 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                   operations,
                   t,
                   readOnly: !state.writable,
-                  ...(protectedKeys ? { modelCatalogOnly: true } : {}),
+                  ...(protectedKeys ? { modelCatalogOnly: true,
+                    layoutOverride: credentialEditing.layoutFor?.(row.entry.provider),
+                    credentialUnavailable: credentialEditing.unavailable } : {}),
                   onClose: (changed) => { closeEditor(changed, target) },
                 })
                 : null}

@@ -18,7 +18,7 @@ RUN test -x /opt/dsh-native/node && mkdir -p /opt/dsh/runtime/dependencies/node/
 COPY packages/cloud/pe-opensandbox/runtime/office/prepare-fonts.py /tmp/prepare-fonts.py
 RUN /opt/dsh/runtime/dependencies/python/bin/python3 /tmp/prepare-fonts.py && rm /tmp/prepare-fonts.py
 COPY packages/skill/skill-office/assets /opt/dsh/skills/office
-COPY packages/skill/skill-office/assets/reports /opt/dsh/skills/reports
+COPY packages/cloud/pe-opensandbox/assets/reports /opt/dsh/skills/reports
 COPY packages/cloud/pe-opensandbox/runtime/office/word_catalog.py packages/cloud/pe-opensandbox/runtime/office/refresh_word.py /opt/dsh/runtime/office/
 RUN chmod 0555 /opt/dsh/runtime/office/refresh_word.py
 COPY packages/cloud/pe-opensandbox/runtime/office/runtime-manifest.py /tmp/runtime-manifest.py

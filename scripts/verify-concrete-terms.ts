@@ -6,12 +6,12 @@ import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { historicalSchemaRegion } from './historical-schema-region.ts'
 import { trackedRepositoryFiles } from './tracked-repository-files.ts'
-import { isUnchangedImportedResearchContent } from './imported-research-content.ts'
+import { isUnchangedImportedResearchContent } from '../deploy/upstream/imported-research-content.ts'
 
 const root = resolve(import.meta.dirname, '..')
 const blockedTerm = 'prove' + 'nance'
 const excludedPrefixes = ['vendor/', '.agents/notes/archived/'] as const
-const originalReport = 'packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/'
+const originalReport = 'packages/cloud/pe-opensandbox/assets/reports/power-grid-technical-report-writer/'
 // Complete imported report packages retain original wording; any edited bytes lose the exemption.
 const originalReportHashes: ReadonlyMap<string, string> = new Map([
   [originalReport + 'references/rule-migration-manifest-v3.6.0.json',
@@ -49,7 +49,7 @@ function containsBlockedTerm(value: string): boolean {
 export function findConcreteTermViolations(file: string, source: string): ConcreteTermViolation[] {
   if (isExcluded(file)) return []
   // This generated path/digest catalog has no prose; its strict schema is checked by the shared reader.
-  if (file === 'scripts/imported-research-content.json' || isUnchangedImportedResearchContent(file, source)) return []
+  if (file === 'deploy/upstream/imported-research-content.json' || isUnchangedImportedResearchContent(file, source)) return []
   const originalHash = originalReportHashes.get(file)
   if (originalHash !== undefined && createHash('sha256').update(source).digest('hex') === originalHash) return []
   const violations: ConcreteTermViolation[] = []

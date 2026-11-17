@@ -188,6 +188,8 @@ Root shares the existing readiness-observation count between lifecycle status an
 
 The Root sandbox accepts the same protected v1/v2 or v3 deployment plan as Files. In v3 it receives the original Root-owned account resolver and its currentness assertion; no browser selects a slot, root path or quota. The shared layout and exported storage domains use Files' exact retained assignment. A revoked or replaced resolver rejects new export admission. Physical Linux quota and process-isolation acceptance remains necessary; synthetic plan tests do not establish it.
 
+The complete internally integrated report resources live in `assets/reports`, including original templates, scripts, images, source notices and package carriers. Native skill providers consume this release tree without a second report engine. Report resources retain their supplied source and license terms; the package code license grants no additional redistribution rights.
+
 ## Model Experience
 
 ### Execution admission

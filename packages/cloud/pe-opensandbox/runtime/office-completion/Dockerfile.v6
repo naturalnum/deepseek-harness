@@ -10,5 +10,6 @@ RUN python3 /opt/office-build/install.py apt-tex
 
 FROM office-apt AS office-complete
 COPY packages/skill/skill-office/assets /opt/dsh/skills/office
+COPY packages/cloud/pe-opensandbox/assets/reports /opt/dsh/skills/office/reports
 RUN chmod 0555 /opt/dsh/skills/office && python3 /opt/office-build/install.py payload && rm -rf /opt/office-build
 ENV FONTCONFIG_FILE=/opt/dsh/fonts/fonts.conf

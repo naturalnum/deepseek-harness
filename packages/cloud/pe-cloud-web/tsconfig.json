@@ -1,0 +1,21 @@
+{
+  "extends": "../../../tsconfig.base.client.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../client/web"
+    },
+    {
+      "path": "../../client/modules"
+    },
+    {
+      "path": "../pe-cloud-client/tsconfig.client.json"
+    }
+  ]
+}

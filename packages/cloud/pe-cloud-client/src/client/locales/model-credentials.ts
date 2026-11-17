@@ -1,0 +1,101 @@
+/** The original eight-language display strings, owned by Cloud. */
+export const modelCredentialCopy = {
+  'en': {
+    'editKey': 'Edit API key',
+    'removeKey': 'Remove API key',
+    'removeKeyTitle': 'Remove this API key?',
+    'removeKeyDescription': 'Only the stored API key is removed. Provider and model settings are kept.',
+    'removingKey': 'Removing API key…',
+    'keyPreparing': 'Preparing API key editor…',
+    'keyEditUnavailable': 'This editing page is unavailable. Close it and reopen to check the current state.',
+  },
+  'zh': {
+    'editKey': '编辑 API Key',
+    'removeKey': '移除 API Key',
+    'removeKeyTitle': '移除此 API Key？',
+    'removeKeyDescription': '只移除已保存的 API Key，保留提供商与模型配置。',
+    'removingKey': '正在移除 API Key…',
+    'keyPreparing': '正在准备 API Key 编辑器…',
+    'keyEditUnavailable': '此编辑页面已失效。请关闭并重新打开，查看当前状态。',
+  },
+  'ja': {
+    'editKey': 'API キーを編集',
+    'removeKey': 'API キーを削除',
+    'removeKeyTitle': 'この API キーを削除しますか？',
+    'removeKeyDescription': '保存済みの API キーのみが削除されます。プロバイダーとモデルの設定は保持されます。',
+    'removingKey': 'API キーを削除中…',
+    'keyPreparing': 'API キーエディターを準備中…',
+    'keyEditUnavailable': 'この編集画面は利用できません。閉じてから開き直し、現在の状態を確認してください。',
+  },
+  'es': {
+    'editKey': 'Editar clave de API',
+    'removeKey': 'Eliminar clave de API',
+    'removeKeyTitle': '¿Eliminar esta clave de API?',
+    'removeKeyDescription': 'Solo se elimina la clave de API guardada. Se conservan los ajustes del proveedor y del modelo.',
+    'removingKey': 'Eliminando clave de API…',
+    'keyPreparing': 'Preparando el editor de claves de API…',
+    'keyEditUnavailable': 'Esta página de edición no está disponible. Ciérrala y ábrela de nuevo para comprobar el estado actual.',
+  },
+  'fr': {
+    'editKey': 'Modifier la clé API',
+    'removeKey': 'Supprimer la clé API',
+    'removeKeyTitle': 'Supprimer cette clé API ?',
+    'removeKeyDescription': 'Seule la clé API enregistrée est supprimée. Les paramètres du fournisseur et des modèles sont conservés.',
+    'removingKey': 'Suppression de la clé API…',
+    'keyPreparing': 'Préparation de l’éditeur de clé API…',
+    'keyEditUnavailable': 'Cette page d’édition est indisponible. Fermez-la et rouvrez-la pour vérifier l’état actuel.',
+  },
+  'de': {
+    'editKey': 'API-Schlüssel bearbeiten',
+    'removeKey': 'API-Schlüssel entfernen',
+    'removeKeyTitle': 'Diesen API-Schlüssel entfernen?',
+    'removeKeyDescription': 'Nur der gespeicherte API-Schlüssel wird entfernt. Anbieter- und Modelleinstellungen bleiben erhalten.',
+    'removingKey': 'API-Schlüssel wird entfernt…',
+    'keyPreparing': 'API-Schlüsseleditor wird vorbereitet…',
+    'keyEditUnavailable': 'Diese Bearbeitungsseite ist nicht verfügbar. Schließe sie und öffne sie erneut, um den aktuellen Status zu prüfen.',
+  },
+  'ru': {
+    'editKey': 'Изменить ключ API',
+    'removeKey': 'Удалить ключ API',
+    'removeKeyTitle': 'Удалить этот ключ API?',
+    'removeKeyDescription': 'Будет удалён только сохранённый ключ API. Настройки провайдера и моделей сохранятся.',
+    'removingKey': 'Удаление ключа API…',
+    'keyPreparing': 'Подготовка редактора ключа API…',
+    'keyEditUnavailable': 'Эта страница редактирования недоступна. Закройте и откройте её заново, чтобы проверить текущее состояние.',
+  },
+  'pt': {
+    'editKey': 'Editar chave de API',
+    'removeKey': 'Remover chave de API',
+    'removeKeyTitle': 'Remover esta chave de API?',
+    'removeKeyDescription': 'Apenas a chave de API guardada é removida. As definições do fornecedor e dos modelos são mantidas.',
+    'removingKey': 'A remover chave de API…',
+    'keyPreparing': 'A preparar o editor de chaves de API…',
+    'keyEditUnavailable': 'Esta página de edição não está disponível. Feche-a e volte a abri-la para verificar o estado atual.',
+  },
+} as const
+
+
+/** Complete key-action dictionaries, including the original Native common action copy. */
+export const modelKeyActionDictionaries = {
+  en: { ...modelCredentialCopy.en, cancel: 'Cancel', close: 'Close' },
+  zh: { ...modelCredentialCopy.zh, cancel: '取消', close: '关闭' },
+  ja: { ...modelCredentialCopy.ja, cancel: 'キャンセル', close: '閉じる' },
+  es: { ...modelCredentialCopy.es, cancel: 'Cancelar', close: 'Cerrar' },
+  fr: { ...modelCredentialCopy.fr, cancel: 'Annuler', close: 'Fermer' },
+  de: { ...modelCredentialCopy.de, cancel: 'Abbrechen', close: 'Schließen' },
+  ru: { ...modelCredentialCopy.ru, cancel: 'Отмена', close: 'Закрыть' },
+  pt: { ...modelCredentialCopy.pt, cancel: 'Cancelar', close: 'Fechar' },
+} as const
+
+
+/** Cloud key-control locale namespace; Native editor copy stays in its original namespace. */
+export const MODEL_CREDENTIAL_NAMESPACE = 'cloud-model-credentials'
+/** Display keys owned by this Cloud contribution. */
+export type ModelCredentialKey = keyof typeof modelKeyActionDictionaries.en
+
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface LocaleNamespaceMap {
+    /** Cloud-owned key actions and confirmations. */
+    'cloud-model-credentials': ModelCredentialKey
+  }
+}

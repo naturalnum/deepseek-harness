@@ -2422,7 +2422,7 @@ describe('WorkspaceBrowser', () => {
     const deleteWorkspace = vi.fn(async () => {})
     mount({
       useWorkspaces: hook(workspaceState([workspace('alpha', [], 'Alpha')])),
-      workspaceDeleteDisabledReason: 'unavailable', deleteWorkspace,
+      workspaceDeleteDisabledReason: { message: () => '此部署暂不支持删除工作区' }, deleteWorkspace,
     })
     fireEvent.click(screen.getByRole('button', { name: '工作区“Alpha”的操作' }))
     const disabled = screen.getByRole<HTMLButtonElement>('menuitem', { name: '删除工作区 — 此部署暂不支持删除工作区' })
@@ -2445,7 +2445,7 @@ describe('WorkspaceBrowser', () => {
     fireEvent.click(screen.getByRole('button', { name: '工作区“Alpha”的操作' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '删除工作区' }))
     expect(screen.getByRole<HTMLButtonElement>('button', { name: '删除工作区' }).disabled).toBe(false)
-    rerender(browser, { workspaceDeleteDisabledReason: 'unavailable' })
+    rerender(browser, { workspaceDeleteDisabledReason: { message: () => '此部署暂不支持删除工作区' } })
     const confirm = screen.getByRole<HTMLButtonElement>('button', { name: '删除工作区' })
     expect(confirm.disabled).toBe(true)
     expect(screen.getByRole('status').textContent).toBe('此部署暂不支持删除工作区')
@@ -2460,7 +2460,7 @@ describe('WorkspaceBrowser', () => {
     const deleteWorkspace = vi.fn(async () => {})
     mount({
       useWorkspaces: hook(workspaceState([workspace('alpha', [], 'Alpha')])),
-      workspaceDeleteDisabledReason: 'unavailable', deleteWorkspace, t: makeTranslate(en, commonZh),
+      workspaceDeleteDisabledReason: { message: () => 'Workspace deletion is unavailable in this deployment' }, deleteWorkspace, t: makeTranslate(en, commonZh),
     })
     fireEvent.click(screen.getByRole('button', { name: 'Workspace actions for Alpha' }))
     const disabled = screen.getByRole<HTMLButtonElement>('menuitem', {

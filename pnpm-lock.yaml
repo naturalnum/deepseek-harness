@@ -936,6 +936,9 @@ importers:
       '@deepseek-ai/dsh-pe-cloud-client':
         specifier: workspace:*
         version: link:../../packages/cloud/pe-cloud-client
+      '@deepseek-ai/dsh-pe-cloud-web':
+        specifier: workspace:*
+        version: link:../../packages/cloud/pe-cloud-web
       '@deepseek-ai/dsh-pwsh-local':
         specifier: workspace:*
         version: link:../../packages/shell/pwsh-local
@@ -7242,6 +7245,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-sidebar-right':
         specifier: workspace:*
         version: link:../../client/ui-sidebar-right
+      '@deepseek-ai/dsh-client-ui-skill':
+        specifier: workspace:*
+        version: link:../../client/ui-skill
       '@deepseek-ai/dsh-client-ui-slots':
         specifier: workspace:*
         version: link:../../client/ui-slots
@@ -7625,6 +7631,21 @@ importers:
       pg:
         specifier: 8.16.3
         version: 8.16.3
+
+  packages/cloud/pe-cloud-web:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-client-modules':
+        specifier: workspace:*
+        version: link:../../client/modules
+      '@deepseek-ai/dsh-client-web':
+        specifier: workspace:*
+        version: link:../../client/web
+      '@deepseek-ai/dsh-pe-cloud-client':
+        specifier: workspace:*
+        version: link:../pe-cloud-client
 
   packages/cloud/pe-opensandbox:
     dependencies:

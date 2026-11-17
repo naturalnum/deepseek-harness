@@ -98,7 +98,14 @@
     "src/client/remote-servers/locales.ts",
     "src/client/mcp/index.ts",
     "src/client/mcp/McpConnectionsSection.tsx",
-    "src/client/mcp/locales.ts"
+    "src/client/mcp/locales.ts",
+    "src/client/skill-catalog-refresh.ts",
+    "src/client/model-key-actions.tsx",
+    "src/client/model-credential-locales.ts",
+    "src/client/workspace-restriction.ts",
+    "src/client/management/plugins/managed-terminal-locales.ts",
+    "src/client/locales/model-credentials.ts",
+    "src/client/PowerEvolveMark.tsx"
   ],
   "references": [
     {
@@ -187,6 +194,9 @@
     },
     {
       "path": "../../client/ui-sidebar-files"
+    },
+    {
+      "path": "../../client/ui-skill"
     }
   ]
 }

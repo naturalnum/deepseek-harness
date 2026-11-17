@@ -174,7 +174,10 @@ Active-Turn highlighting is approximate: `readVisibleTurn` binary-searches the f
 
 -----
 
+Optional `conversation.chat.running.mark` and `conversation.chat.running.copy` chain slots let a product supply its running mark and localized duration copy. The native clock, live-region timing and default whale remain owned here; removing the contribution restores those defaults.
+
 <a id="model-experience"></a>
+
 ## Model Experience
 
 None, as this package renders logged conversation state in the browser and registers nothing model-facing.

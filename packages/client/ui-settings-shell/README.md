@@ -51,7 +51,10 @@ The Host half is an empty `apply`, present only so the package holds a Loader ro
 
 -----
 
+Managed terminal labels are optional display inputs to the original shell card. Its controller and fields retain their normal lifecycle; the embedding product owns deployment-specific limit and output explanations.
+
 <a id="model-experience"></a>
+
 ## Model Experience
 
 None, as the package is a browser-side settings surface that registers no model surface.

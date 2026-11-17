@@ -13,6 +13,7 @@ from install_v6 import parse_apt_simulation, phase_maps, map_sha256
 
 PREFIX = 'packages/cloud/pe-opensandbox/runtime/office-completion/'
 ASSETS = 'packages/skill/skill-office/assets/'
+REPORT_ASSETS = 'packages/cloud/pe-opensandbox/assets/reports/'
 WHEEL_MANIFEST_SHA256 = '8887b49702c033acb126ab16bfc455ab1febd654e8e1b48bb5a46608b9040993'
 STAGE1_PLAN_SHA256 = 'e5a58884652af1dc840d0f37fedabd8da09edb85901ff4e3001052eb75e7d816'
 APT_FIRST = sorted('libreoffice-writer libreoffice-calc libreoffice-impress libreoffice-math poppler-utils poppler-data pandoc fonts-noto-cjk fonts-liberation fonts-texgyre fontconfig ca-certificates'.split())
@@ -172,12 +173,12 @@ def archive_bytes(members):
         for name in sorted(parents, key=lambda name: (name.count('/'), name)):
             info = tarfile.TarInfo(name + '/')
             info.type = tarfile.DIRTYPE
-            info.mode = 0o555 if name.startswith(ASSETS.rstrip('/')) else 0o755
+            info.mode = 0o555 if name.startswith((ASSETS.rstrip('/'), REPORT_ASSETS.rstrip('/'))) else 0o755
             archive.addfile(info)
         for name, data, mode in sorted(members):
             info = tarfile.TarInfo(name)
             info.size = len(data)
-            info.mode = 0o444 if name.startswith(ASSETS) else mode
+            info.mode = 0o444 if name.startswith((ASSETS, REPORT_ASSETS)) else mode
             archive.addfile(info, io.BytesIO(data))
     return result.getvalue()
 
@@ -190,6 +191,9 @@ def materialize(context, manifest, wheelhouse, wheel_manifest, output, observati
         raise ValueError('Approved complete wheel-manifest digest differs')
     members = verify_context(context, manifest.read_bytes())
     original = {name: sha256(data) for name, data, _ in members}
+    # The immutable input receipt retains its historical names; emitted build inputs use current ownership.
+    members = [(REPORT_ASSETS + name[len(ASSETS + 'reports/'):] if name.startswith(ASSETS + 'reports/') else name, data, mode)
+               for name, data, mode in members]
     here = Path(__file__).parent
     members += [(PREFIX + 'Dockerfile.v6', (here / 'Dockerfile.v6').read_bytes(), 0o444),
                 (PREFIX + 'v6-build/install.py', (here / 'install_v6.py').read_bytes(), 0o444)]

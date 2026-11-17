@@ -546,7 +546,7 @@ it.each(['en', 'zh'] as const)('keeps a native restricted report download disabl
 
 it.each(['en', 'zh'] as const)('shows the complete18428-byte immutable root in the %s file view and revokes it on observed version replacement', async (locale) => {
   const f = page(), native = remoteFixture(), copy = skillsManagementDictionaries[locale]
-  const markdown = readFileSync(resolve(import.meta.dirname, '../../../skill/skill-office/assets/reports/tech-report-writer/SKILL.md'), 'utf8')
+  const markdown = readFileSync(resolve(import.meta.dirname, '../../pe-opensandbox/assets/reports/tech-report-writer/SKILL.md'), 'utf8')
   const entry = { ...native.entry, name: 'tech-report-writer', source: 'bundled', mutable: false,
     actions: { update: false, uninstall: false, download: false } }
   const state = { ...native.state, entries: [entry], limits: { ...native.state.limits, maxFileBytes: 8192 } }

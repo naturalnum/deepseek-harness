@@ -10,7 +10,7 @@ import { managedSkillCallbacks } from '../src/client/managed-skill-remote.ts'
 import { remoteFixture, directoryVersion } from './fixtures/managed-remote.client.ts'
 import { managedFixture } from './fixtures/managed-skills.client.ts'
 
-const original = readFileSync(resolve(import.meta.dirname, '../../../skill/skill-office/assets/reports/tech-report-writer/SKILL.md'), 'utf8')
+const original = readFileSync(resolve(import.meta.dirname, '../../pe-opensandbox/assets/reports/tech-report-writer/SKILL.md'), 'utf8')
 const signal = (): AbortSignal => new AbortController().signal
 const metadata = (relativePath: string, text: string) => ({ relativePath, bytes: Buffer.byteLength(text),
   sha256: createHash('sha256').update(text).digest('hex') })

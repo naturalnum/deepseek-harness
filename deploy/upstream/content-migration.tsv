@@ -1,0 +1,13 @@
+项目	迁移前	自有归属	复用原生能力	保留接入及理由	验证状态
+registrations	scripts 内服务/类型/工具/关系图/分类/依赖/翻译登记	deploy/upstream/registrations.ts	原生生成器、完整约束与陈旧/重复检查	各生成器只导入登记数据	生成/约束检查
+reports	packages/skill/skill-office/assets/reports	packages/cloud/pe-opensandbox/assets/reports	原生 skills/skill-filesystem/tool-skill 发现、加载、版本与调用	bundledSkillDir、packagedBundles、bundledExecutionRoot	214文件字节一致；完整产品资源选择；实际生成待验收
+report-packaging	scripts/package-builtin-skills.py	deploy/upstream/package-builtin-skills.py	原生 readSkillPackage 完整性检查	载荷格式不变；Docker宿主源改为自有根	确定性载荷与HTTP交付
+brand	原生运行图标和处理提示替换	pe-cloud-client/src/client/branding*	原生计时器、无障碍状态、品牌与运行插槽	conversation.chat.running.mark/copy；原生默认图标和文案恢复	组件与卸载检查
+new-session	已在 pe-cloud-client 的项目/新会话策略	pe-cloud-client/src/client/project-*	原生会话、工作区、输入框、布局与生命周期	现有页面准备与会话控制接口	新建/继续/刷新/重登待候选验收
+plugins	已在 pe-cloud-client 管理页；原生内残留托管终端文案	pe-cloud-client/src/client/management/plugins	原生插件清单、真实状态、开关、终端设置卡	原生组件接收本地化 display 文本	组件、权限与操作检查
+skills	已在 pe-cloud-client 管理页；原生内残留Cloud目录事件策略	pe-cloud-client/src/client/skill-catalog-refresh.ts	原生目录缓存、技能菜单、技能引擎	可选 uiSkillCatalog.invalidate；Cloud 选择 skills/change	刷新、下载与安装检查
+model-keys	原生密钥动作与Cloud布局判断	pe-cloud-client/src/client/model-key-actions.tsx 与本地化字典	原生模型设置页、凭据编辑器、schema、Factory	settings.models.credentials.actions 插槽；可选展示字段	编辑/删除/过期页面检查
+search-keys	已在 pe-cloud-client/src/client/management/search	原有自有管理入口	原生搜索设置组件与服务端权限	现有 webSearchSettingsIntegration	两账号密钥隔离待候选验收
+account-sidebar	已在 pe-cloud-client 的账号侧栏	原有 CloudAccountMenu 与生命周期所有者	原生sidebar插槽与locale服务	页面捕获的账户与退出回调	刷新/退出/重登待候选验收
+workspace-restriction	原生工作区删除限制文案	pe-cloud-client/src/client/workspace-restriction.ts	原生工作区菜单与确认框	根作用域可选 message 回调；服务端拒绝仍有效	语言/确认框/后续撤回检查
+login	apps/web/src/cloud-web.ts 与CSS	packages/cloud/pe-cloud-web	原生 AppWebEntry、静态链接构建、模块加载	apps/web仅保留可选Cloud入口导出；普通入口保持原生	入口生命周期与构建通过；浏览器待验收

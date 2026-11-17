@@ -518,7 +518,7 @@ const workspaceSetups: Record<string, (cwd: string) => Promise<void>> = {
   },
   async 'builtin-report-skills'(cwd) {
     await workspaceSetups['office-skills']!(cwd)
-    await cp(join(repoRoot, 'packages/skill/skill-office/assets/reports'), join(cwd, 'report-skills'), { recursive: true })
+    await cp(join(repoRoot, 'packages/cloud/pe-opensandbox/assets/reports'), join(cwd, 'report-skills'), { recursive: true })
   },
   async 'office-retired-ptc'(cwd) {
     await workspaceSetups['office-skills']!(cwd)

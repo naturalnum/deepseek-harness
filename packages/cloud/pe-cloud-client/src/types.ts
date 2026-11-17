@@ -17,11 +17,17 @@ export interface CloudServicePreviewPolicy {
 
 /** Public inputs for a private POST handoff to one dedicated content origin; supplies no service authority. */
 export interface CloudServiceApplicationPolicy {
+  /** Exact public origin for authenticated management requests. */
   readonly managementOrigin: string
+  /** Exact public origin for selected content requests. */
   readonly contentOrigin: string
+  /** Finite deadline of each management request in milliseconds. */
   readonly requestTimeoutMs: number
+  /** Maximum encoded management request body bytes. */
   readonly maxRequestBytes: number
+  /** Maximum management response body bytes. */
   readonly maxResponseBytes: number
+  /** Maximum encoded bytes of one public field. */
   readonly maxFieldBytes: number
 }
 

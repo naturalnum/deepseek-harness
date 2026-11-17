@@ -1,3 +1,4 @@
+import { UPSTREAM_PACKAGE_LIBRARIES } from '../deploy/upstream/registrations.ts'
 /**
  * Quick comprehensive documentation-standard tests: the reference example
  * stays valid, the consolidated `dsh-doc` skill carries no stale copied
@@ -55,6 +56,7 @@ const KIND_TEMPLATES: Readonly<Record<string, string>> = {
  * library; the check re-derives the entry shape so a stale entry fails loud.
  */
 const PACKAGE_LIBRARIES: Readonly<Record<string, string>> = {
+  ...UPSTREAM_PACKAGE_LIBRARIES,
   'packages/community/remote-server': 'Account-scoped derivative primitives with no Loader entry or bundle.',
   'packages/experimental/cua': 'Shared CUA objects and installer consumed by platform providers; no plugin entry.',
   'packages/experimental/browser-use-runtime': 'Provider-owned browser resource management and MCP integration helpers; no plugin entry.',

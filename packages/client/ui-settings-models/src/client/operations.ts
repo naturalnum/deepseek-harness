@@ -32,6 +32,9 @@ export type ModelDiscoveryOutcome =
   /** The interrogation was refused, with the Host's own diagnostic. */
   | { readonly kind: 'refused'; readonly message: string }
 
+/** Explicit editor layout data; omission retains the Native namespace layout. */
+export type ModelsProviderEditorLayout = 'deepseek' | 'pi-ai' | 'unknown'
+
 /** Per-editor callbacks prepared before the user starts editing; values and opaque versions stay in the caller's closure. */
 export interface PreparedCredentialEdit {
   /** Exact reference captured by the editor owner. */
@@ -51,6 +54,10 @@ export interface PreparedCredentialEdit {
 
 /** Optional public page input for versioned key editing; scope is UI identity, never a new login or configuration revision. */
 export interface ModelsCredentialEditing {
+  /** Current localized display refusal; caller still owns actual settlement. */
+  readonly unavailable?: () => string
+  /** Explicit embedding layout data for one original provider row. */
+  readonly layoutFor?: (provider: string) => ModelsProviderEditorLayout | undefined
   /** Original page/graph lifetime identity; null closes protected key UI. */
   readonly scope: string | null
   /**

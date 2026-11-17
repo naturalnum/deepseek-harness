@@ -45,7 +45,7 @@ async function setup(mode: 'native' | 'ptc', names: string[], reportRuntime = fa
   await ctx.plugin(SkillOffice, reportRuntime ? { systemTools: { soffice: '/usr/bin/soffice',
     pdftoppm: '/usr/bin/pdftoppm', wordRefresh: '/opt/dsh/runtime/office/refresh_word.py' } } : {})
   if (reportRuntime) await ctx.plugin(SkillFileSystem, { includeDefaultRoots: false, watch: false,
-    bundledSkillDir: fileURLToPath(new URL('../assets/reports/', import.meta.url)),
+    bundledSkillDir: fileURLToPath(new URL('../../../cloud/pe-opensandbox/assets/reports/', import.meta.url)),
     bundledInstructions: 'Linux report runtime: use /opt/dsh/runtime/office/refresh_word.py for C/F/T catalogs.' })
   if (mode === 'ptc') await ctx.plugin(SkillProgram)
   const adapter = new MockAdapter([

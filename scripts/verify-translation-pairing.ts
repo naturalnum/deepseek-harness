@@ -13,7 +13,7 @@
 import { existsSync, globSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { basename, join, resolve, sep } from 'node:path'
 import { gitIndexPaths, readGitIndexBlob } from './translation-pairing-git.ts'
-import { isUnchangedImportedResearchContent } from './imported-research-content.ts'
+import { isUnchangedImportedResearchContent } from '../deploy/upstream/imported-research-content.ts'
 import {
   computeTranslationPairingRecord,
   parseTranslationPairingRecord,

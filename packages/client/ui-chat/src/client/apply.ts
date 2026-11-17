@@ -216,6 +216,8 @@ export function apply(ctx: Context): void {
     name: 'conversation.chat.flow', locale: NS, store: chatStore,
     children: {
       'conversation.chat.node': { kind: 'keyed', scope: 'session', inject: CHAT_NODE_INJECT },
+      'conversation.chat.running.mark': { kind: 'chain', scope: 'root', inline: true },
+      'conversation.chat.running.copy': { kind: 'chain', scope: 'root', inline: true },
     },
     inject: (sessionId: SessionId): ChatFlowDataInjected => {
       const binding = ctx.sessions.binding(sessionId)

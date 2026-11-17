@@ -1,0 +1,26 @@
+/* Original key-action appearance, now owned by the optional Cloud contribution. */
+.rowActions { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
+.secondaryButton, .dangerButton {
+  box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;
+  height: 36px; padding: 0 14px; border: none; border-radius: var(--dsw-radius-md);
+  background: transparent; font: inherit; font-size: 14px; line-height: 22px; cursor: pointer;
+}
+.secondaryButton { gap: 4px; border: 0.5px solid var(--dsw-alias-border-l3); color: var(--dsw-alias-label-primary); }
+.dangerButton { color: var(--dsw-alias-state-error-primary); }
+@media (hover: hover) {
+  .secondaryButton:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover-solid); }
+  .dangerButton:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover-danger); }
+}
+.rowActions .secondaryButton, .rowActions .dangerButton {
+  height: 28px; padding: 0 10px; border-radius: var(--dsw-radius-sm); font-size: 12px; line-height: 18px;
+}
+.secondaryButton:disabled, .dangerButton:disabled { opacity: 0.4; cursor: default; }
+.secondaryButton:focus-visible, .dangerButton:focus-visible {
+  outline: none; box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+}
+.error {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-error-primary);
+}

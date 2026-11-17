@@ -11,7 +11,7 @@ describe('concrete terminology policy', () => {
     'references/rule-migration-manifest-v3.6.0.json',
     'scripts/validate_rule_restructure.py',
   ])('preserves only the unchanged original report resource %s', (suffix) => {
-    const file = 'packages/skill/skill-office/assets/reports/power-grid-technical-report-writer/' + suffix
+    const file = 'packages/cloud/pe-opensandbox/assets/reports/power-grid-technical-report-writer/' + suffix
     const source = readFileSync(resolve(import.meta.dirname, '..', file), 'utf8')
     expect(findConcreteTermViolations(file, source)).toEqual([])
     expect(findConcreteTermViolations(file, source + '\n' + blockedTerm)).not.toEqual([])

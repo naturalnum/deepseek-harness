@@ -1,3 +1,4 @@
+import { modelCredentialCopyFor, cloudModelEditorLayout } from './model-credential-locales.ts'
 /** Canonical bootstrap preparation and the page owner consumed by the real Cloud Loader entry. */
 import { prepareWorkspaceManagement } from './workspace-management.ts'
 import { symbols, type Context } from '@deepseek-ai/cordis'
@@ -24,7 +25,7 @@ import type { SkillManagementView } from './management/skills/types.ts'
 import { attachManagedSkillEditing, type ManagedSkillEditingInput } from './managed-skill-editing.ts'
 import { attachSkillVersionEditing } from './skill-version-editing.ts'
 import type { CloudPersistenceLimits, CloudPersistenceStorage } from './persistence.ts'
-import type { WorkspaceDeleteDisabledReason } from '@deepseek-ai/dsh-client-ui-workspace/client'
+import { createWorkspaceDeleteRestriction } from './workspace-restriction.ts'
 
 /** Fixed page inputs supplied by the pre-Cordis application owner, never by bootstrap JSON. */
 export interface CloudPagePreparationInput {
@@ -183,6 +184,7 @@ export class PreparedCloudPage {
       return value
     }
     this.modelsSettingsIntegration = Object.freeze({ onboarding: false, editing: this.modelsEditing,
+      unavailable: () => modelCredentialCopyFor(this.activation?.root).keyEditUnavailable,
       reads: Object.freeze({
         isCurrent: () => this.modelSettingsBinding !== undefined && this.modelsCurrent(this.modelSettingsBinding),
         metadata: () => read(callbacks => callbacks.metadata()),
@@ -338,7 +340,7 @@ export class PreparedCloudPage {
       if (this.workspaceRestrictionSlots.has(identity)) return
       // The page root retains the restriction until the native graph ends,
       // even if this Cloud Loader entry is withdrawn first.
-      slots.provideRoot({ props: { workspaceDeleteDisabledReason: 'unavailable' satisfies WorkspaceDeleteDisabledReason } })
+      slots.provideRoot({ props: { workspaceDeleteDisabledReason: createWorkspaceDeleteRestriction(scope.root) } })
       this.workspaceRestrictionSlots.add(identity)
     })
     ctx.effect(() => () => {
@@ -401,6 +403,8 @@ export class PreparedCloudPage {
     this.modelSettingsBinding = binding
     const isCurrent = (): boolean => this.modelsCurrent(binding)
     this.modelsEditing.set(Object.freeze({ scope: this.bootstrap.connectionGeneration + ':' + String(owner.fiber.uid) + ':' + String(++this.modelSettingsGeneration), isCurrent,
+      unavailable: () => modelCredentialCopyFor(owner.root).keyEditUnavailable,
+      layoutFor: cloudModelEditorLayout,
       prepare: async (ref: string, signal: AbortSignal) => {
         const current = (): boolean => isCurrent() && !signal.aborted
         if (!current()) return null

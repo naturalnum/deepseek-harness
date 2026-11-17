@@ -21,7 +21,7 @@ const assets = fileURLToPath(new URL('../../../skill/skill-office/assets/', impo
 const ordinaryOffice = { assetRoot: assets, packagedBundles: true, cli: false,
   invocation: { modelInvocable: false, userInvocable: false } }
 const ordinaryReports = { providerName: 'dsh-reports', includeDefaultRoots: false, watch: false,
-  bundledSkillDir: assets + 'reports', packagedBundles: true,
+  bundledSkillDir: fileURLToPath(new URL('../../pe-opensandbox/assets/reports', import.meta.url)), packagedBundles: true,
   bundledInvocation: { modelInvocable: false, userInvocable: false }, bundledInstructions: 'Not qualified.' }
 const { cli: _cli, ...retainedOffice } = ordinaryOffice
 const office = { ...retainedOffice, invocation: { modelInvocable: true, userInvocable: true },

@@ -9,7 +9,7 @@ import unittest
 
 PACKAGE = Path(__file__).resolve().parents[1]
 ROOT = PACKAGE.parents[2]
-SCRIPTS = ROOT / 'packages/skill/skill-office/assets/reports/tech-report-writer/scripts'
+SCRIPTS = ROOT / 'packages/cloud/pe-opensandbox/assets/reports/tech-report-writer/scripts'
 RECIPE = PACKAGE / 'runtime/office-completion/heading-numbering'
 spec = importlib.util.spec_from_file_location('heading_recipe', RECIPE / 'prepare_context.py')
 recipe = importlib.util.module_from_spec(spec)

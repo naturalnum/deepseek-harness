@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { isUnchangedImportedResearchContent } from './imported-research-content.ts'
+import { isUnchangedImportedResearchContent } from '../deploy/upstream/imported-research-content.ts'
 import { findConcreteTermViolations } from './verify-concrete-terms.ts'
 
 describe('unchanged imported research content', () => {

@@ -1,3 +1,5 @@
+import { UPSTREAM_PACKAGE_FILES } from '../deploy/upstream/registrations.ts'
+import { UPSTREAM_LOADER_ENTRIES } from '../deploy/upstream/registrations.ts'
 /**
  * Workspace package invariant checks for package-manager-independent quality
  * gates.
@@ -119,13 +121,7 @@ export interface WorkspaceManifest {
 
 /** Loader scopes admitted by the explicit cloud deployment composition. */
 const cloudLoaderEntries: Readonly<Record<string, readonly string[]>> = {
-  '@deepseek-ai/dsh-pe-cloud-access': ['root', 'frontend'],
-  '@deepseek-ai/dsh-pe-cloud-runtime': ['root', 'account'],
-  '@deepseek-ai/dsh-pe-cloud-api': ['root', 'account'],
-  '@deepseek-ai/dsh-pe-cloud-files': ['root', 'account'],
-  '@deepseek-ai/dsh-pe-opensandbox': ['root', 'account'],
-  '@deepseek-ai/dsh-pe-account-instructions': ['session'],
-  '@deepseek-ai/dsh-pe-cloud-client': ['client'],
+  ...UPSTREAM_LOADER_ENTRIES,
 }
 
 /**
@@ -221,6 +217,7 @@ export function readWorkspaceManifests(repositoryRoot: string): WorkspaceManifes
 }
 
 const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
+  ...UPSTREAM_PACKAGE_FILES,
   // CUA publishes its client API and attributed native source for local macOS builds.
   '@deepseek-ai/dsh-cua': ['lib/api.js', 'lib/bridge.js', 'lib/native-client.js', 'lib/protocol.js'],
   '@deepseek-ai/dsh-experimental-cua-macos': ['native/bin', 'native/Package.swift', 'native/Sources', 'native/tests/swift', 'native/tests/test_swift.py', 'native/LICENSE.cua-driver', 'native/upstream.json', 'native/README.md', 'native/README.zh.md', 'native/protocol.schema.json'],
@@ -242,8 +239,6 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-client-shortcuts': ['lib/protocol.js'],
   // The CPython side ships as source .py files, published as-is rather than built.
   '@deepseek-ai/dsh-experimental-ptc-runtime-python': ['py/**/*.py'],
-  // The SDK factory loads its pinned Python payload beside the published lib modules.
-  '@deepseek-ai/dsh-pe-opensandbox': ['runtime/agent/*.py', 'runtime/bootstrap/*.py'],
   '@deepseek-ai/dsh-experimental-speech-to-text-sensevoice': ['runtime/assets.json'],
   // Node execution modes each launch a separately bundled bootstrap.
   '@deepseek-ai/dsh-ptc-runtime-node': ['lib/process.js', 'lib/persistent-process.js'],

@@ -208,7 +208,10 @@ These pages cover the sidebar host, the hero surface, and the picking backends.
 
 -----
 
+An optional `workspaceDeleteDisabledReason.message` callback supplies localized deployment restrictions to the existing menu and confirmation. It does not grant deletion authority; the current operation still checks its original restriction before submitting.
+
 <a id="model-experience"></a>
+
 ## Model Experience
 
 None, as the package is a browser-side UI plugin layer that registers nothing model-facing.

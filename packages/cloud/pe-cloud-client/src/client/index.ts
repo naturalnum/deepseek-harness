@@ -1,3 +1,4 @@
+import { installCloudModelKeyActions } from './model-key-actions.tsx'
 import { installCloudBrand } from './branding.tsx'
 import { installCloudMcpConnections } from './mcp/index.ts'
 import { installCloudAccountManagement } from './account-management.tsx'
@@ -10,6 +11,7 @@ import { installCloudProjects } from './projects.ts'
 import { installCloudFileDownloads } from './downloads.ts'
 import { installCloudModelSettings } from './model-settings.ts'
 import { installCloudSkillSettings } from './skill-settings.ts'
+import { installCloudSkillCatalogRefresh } from './skill-catalog-refresh.ts'
 import { installCloudManagement } from './management/register.tsx'
 import { installCloudServicePreviews } from './service-previews.ts'
 import { installCloudSidebarAccount } from './sidebar-account.ts'
@@ -43,7 +45,9 @@ export function apply(ctx: Context, config: Config): void {
   installCloudFileDownloads(ctx, owner)
   installCloudServicePreviews(ctx, owner)
   installCloudModelSettings(ctx, owner)
+  if (owner.modelSettingsRequestTimeoutMs !== undefined) installCloudModelKeyActions(ctx, owner.lifetime.transport.signal)
   installCloudSkillSettings(ctx, owner)
+  installCloudSkillCatalogRefresh(ctx)
   installCloudManagement(ctx, owner)
   installCloudAccountManagement(ctx, owner)
   installCloudApprovedSettings(ctx, owner)
