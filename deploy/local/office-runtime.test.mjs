@@ -6,7 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createHash } from 'node:crypto'
-import { prepareOfficeRuntime, stageOfficeRuntime, officeRuntimeTargets } from './office-runtime.mjs'
+import { prepareOfficeRuntime, stageOfficeRuntime, officeRuntimeTargets, stageOfficeFeatureAssets } from './office-runtime.mjs'
 
 const anchor = process.env.DSH_DEPLOY_TEST_INSTALL_ANCHOR ?? fileURLToPath(new URL('../../package.json', import.meta.url))
 const imageDigest = 'sha256:' + 'a'.repeat(64), selection = { imageDigest, platform: 'amd64' }
@@ -54,4 +54,19 @@ test('image, payload hash and platform mismatches refuse before staging', async 
   await assert.rejects(prepareOfficeRuntime(f.reference, { ...selection, imageDigest: 'sha256:' + 'b'.repeat(64) }, anchor), /selected workload/)
   await assert.rejects(prepareOfficeRuntime({ ...f.reference, sha256: '0'.repeat(64) }, selection, anchor), /changed/)
   await assert.rejects(prepareOfficeRuntime(f.reference, { ...selection, platform: 'arm64' }, anchor), /platform differs/)
+})
+
+test('the deployment mount contains the base, module link and exact referenced manifest', async t => {
+  const f = fixture(t), prepared = await prepareOfficeRuntime(f.reference, selection, anchor)
+  const directory = path.join(f.directory, 'feature-assets'), accountBaseBytes = Buffer.from(JSON.stringify([entry]))
+  const input = { directory, accountBaseBytes, targets: officeRuntimeTargets([entry], prepared),
+    nativeConfigPath: '/opt/dsh-features/account-base.yml', productRoot: '/opt/dsh-installed-products' }
+  assert.equal(stageOfficeFeatureAssets(prepared, input), directory)
+  assert.deepEqual(fs.readFileSync(path.join(directory, 'account-base.yml')), accountBaseBytes)
+  assert.equal(fs.readlinkSync(path.join(directory, 'node_modules')), '/opt/dsh-installed-products/node_modules')
+  assert.deepEqual(fs.readFileSync(path.join(directory, 'office-dependencies-v1/public/runtime.json')), f.bytes)
+  assert.throws(() => stageOfficeFeatureAssets(prepared, input), /EEXIST/)
+  const forbidden = path.join(f.directory, 'forbidden')
+  assert.throws(() => stageOfficeFeatureAssets(prepared, { ...input, directory: forbidden, targets: ['/outside/runtime.json'] }), /feature mount/)
+  assert.equal(fs.existsSync(forbidden), false)
 })

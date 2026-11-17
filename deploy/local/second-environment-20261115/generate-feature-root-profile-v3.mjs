@@ -6,7 +6,7 @@ import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
 import { declarationHash, renderAccountBase } from './profile-composition.mjs'
 import { applyServicePreview, rootEntryRows } from './service-preview-profile.mjs'
-import { prepareOfficeRuntime, stageOfficeRuntime, officeRuntimeTargets } from '../office-runtime.mjs'
+import { prepareOfficeRuntime, stageOfficeRuntime, officeRuntimeTargets, stageOfficeFeatureAssets } from '../office-runtime.mjs'
 
 const need = (value, message) => { if (!value) throw new Error(message) }
 const hash = bytes => createHash('sha256').update(bytes).digest('hex')
@@ -288,8 +288,13 @@ directory(output); directory(output + '/profiles'); directory(output + '/profile
 write(output + '/account-base.native.json', sharedBaseBytes)
 if (officeRuntime !== undefined) {
   stageOfficeRuntime(officeRuntime, output + '/office-runtime')
+  const featureAssetsDirectory = stageOfficeFeatureAssets(officeRuntime, {
+    directory: output + '/feature-assets', accountBaseBytes: sharedBaseBytes, targets: [...officeTargets],
+    nativeConfigPath: input.paths.nativeConfigPath, productRoot: path.dirname(input.installAnchor),
+  })
   write(output + '/OFFICE-INSTALLATION.json', JSON.stringify({ ...officeRuntime.receipt,
-    source: output + '/office-runtime/runtime.json', targets: [...officeTargets], installed: false }, null, 2) + '\n')
+    source: output + '/office-runtime/runtime.json', featureAssetsDirectory,
+    mountTarget: path.dirname(input.paths.nativeConfigPath), targets: [...officeTargets], installed: false }, null, 2) + '\n')
 }
 write(output + '/storage-plan.json', planBytes); write(output + '/rootDeployment.json', deploymentBytes, 0o440, 0, 2000)
 for (const slot of slotPatches) {

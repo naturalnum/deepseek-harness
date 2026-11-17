@@ -14,7 +14,7 @@ const need = (condition, message) => { if (!condition) throw new Error(message) 
  * @param reference Root-supplied path, sha256 and workloadImageDigest from image extraction.
  * @param selection Exact image digest and OCI platform from the protected Root deployment.
  * @param installAnchor Matching product package.json used to resolve the published parser.
- * @returns Immutable manifest bytes, normalized metadata and the image/file receipt.
+ * @returns Original manifest bytes, normalized metadata and the image/file receipt.
  */
 export async function prepareOfficeRuntime(reference, selection, installAnchor) {
   const selectedImage = selection.imageDigest
@@ -65,4 +65,29 @@ export function officeRuntimeTargets(entries, prepared) {
     targets.push(path.join(config.executionManifest, 'runtime.json'))
   }
   return [...new Set(targets)]
+}
+
+/**
+ * Produce a complete fresh feature mount instead of copying only account-base.yml and node_modules.
+ * @param prepared Validated manifest for the selected workload.
+ * @param input Original account bytes, final guest targets, product location and fresh output directory.
+ * @returns The directory to mount read-only at the existing guest feature root.
+ */
+export function stageOfficeFeatureAssets(prepared, input) {
+  const relativeTargets = input.targets.map(target => {
+    const relative = path.relative(path.dirname(input.nativeConfigPath), target)
+    need(relative !== '' && relative !== '..' && !relative.startsWith('../') && !path.isAbsolute(relative),
+      'Office manifest target must remain inside the feature mount')
+    return relative
+  })
+  fs.mkdirSync(input.directory, { mode: 0o755 })
+  fs.writeFileSync(path.join(input.directory, path.basename(input.nativeConfigPath)), input.accountBaseBytes,
+    { flag: 'wx', mode: 0o444 })
+  fs.symlinkSync(path.join(input.productRoot, 'node_modules'), path.join(input.directory, 'node_modules'), 'dir')
+  for (const relative of relativeTargets) {
+    const directory = path.join(input.directory, path.dirname(relative))
+    fs.mkdirSync(path.dirname(directory), { recursive: true, mode: 0o755 })
+    stageOfficeRuntime(prepared, directory)
+  }
+  return input.directory
 }
