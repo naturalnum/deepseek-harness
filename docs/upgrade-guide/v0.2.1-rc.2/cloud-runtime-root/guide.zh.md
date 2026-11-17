@@ -22,3 +22,4 @@ description: "Cloud runtime Loader 入口要求完整根配置，并且不再默
 5. 验证实际 Loader 启动后在 PostgreSQL 登记进程，且根销毁后关闭该记录。files、execution、保存、曝露及所有写入者配额前提通过之前，账户准入保持关闭；根启动成功本身不能满足这些前提。
 6. 自定义 `AccountNativeGuards` 实现必须为既有原生 job 清理提供 `assertRetainedExecutionOwner`。不能用它替换普通 active scope 检查。
 7. 启用原生 PTC 与持久终端时，使用匹配的流协议、源码 pins、经验证的 guest/server 镜像、显式 `commands.pipes` 预算、原生 PTC 的 8 KiB 消息上限与一个待处理 binding 调用，以及原账户作用域下的原生 `ptc-runtime-node` 与终端登记器。原生 runtime launch 配置显式选择 guest Node `/opt/dsh-native/node` 和 bootstrap `/opt/dsh-native/process.js`。server 必须显式启用其精确审核的 Native bwrap 配置；默认 Docker 命名空间和 proc 限制不能支持此路径。保留既有限额与数据，正常等待旧拥有者结清，并在真实 Web 客户端验证统一版本后再声明模式验收。
+8. [检查生命周期迁移要求](../cloud-root-lifecycle/guide.zh.md)。

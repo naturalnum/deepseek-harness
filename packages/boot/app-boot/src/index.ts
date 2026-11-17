@@ -1179,14 +1179,29 @@ export async function auditStartupEntries(
   warn: (line: string) => void = line => void process.stderr.write(line),
 ): Promise<void> {
   const failures = await inactiveEntries(ctx)
-  const required = new Set(failures.filter(({ entry }) => entry === bootstrapIncludes.get(ctx)
-    || requiredStartupEntryIds.has(entry.options.id)).map(({ entry }) => entry))
+  const required = new Set<Entry>()
+  for (const { entry } of failures) {
+    if (entry === bootstrapIncludes.get(ctx) || requiredStartupEntryIds.has(entry.options.id)
+      || await declaresStartupRequired(entry)) required.add(entry)
+  }
   if (required.size > 0) {
     throw new StartupError(startupDiagnostic(binName, failures, required), failures.map(({ entry, outcome }) => ({
       id: entry.options.id, module: entry.options.name, required: required.has(entry), fiberState: entry.fiber?.state, outcome,
     })))
   }
   if (failures.length > 0) warn(activationDiagnostic(binName, failures))
+}
+
+/** A plugin can require successful startup independently of deployment-selected entry ids. */
+async function declaresStartupRequired(entry: Entry): Promise<boolean> {
+  try {
+    const plugin: unknown = await entry.parent.tree.import(entry.options.name)
+    return plugin !== null && (typeof plugin === 'object' || typeof plugin === 'function')
+      && Reflect.get(plugin, 'startupRequired') === true
+  } catch (_importFailure) {
+    // The original import diagnostic remains authoritative; absent metadata preserves optional behavior.
+    return false
+  }
 }
 
 /**

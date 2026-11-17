@@ -12,3 +12,5 @@ export const RuntimeConfigSchema: z<RuntimeConfig> = z.object({
 })
 
 export { RuntimeRootConfigSchema, AccountPolicyConfigSchema } from './root-config.ts'
+
+export { deploymentConfig, DeploymentConfigError } from './deployment-config.ts'

@@ -1,6 +1,7 @@
 /** Host-only authentication database and secret budgets; browser configuration stays separate. */
 import type { AccountAdministrationConfig } from './account-administration.ts'
 import z from '@deepseek-ai/schemastery'
+import { deploymentConfig, DeploymentConfigError } from '@deepseek-ai/dsh-pe-cloud-runtime/schema'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { AccessConfigSchema } from './config-schema.ts'
 import { parseAccessConfig } from './config.ts'
@@ -111,7 +112,7 @@ const ownerForwarding: z<OwnerForwardingConfig> = z.object({
 })
 
 /** Root Loader inputs have no connection, secret or timeout defaults. */
-export const AuthRootConfigSchema: z<AuthRootConfig> = z.intersect([
+export const AuthRootConfigSchema: z<AuthRootConfig> = deploymentConfig<AuthRootConfig>(z.intersect([
   AccessConfigSchema,
   z.object({
     applications: ServiceApplicationConfigSchema.default(undefined as never),
@@ -151,7 +152,7 @@ export const AuthRootConfigSchema: z<AuthRootConfig> = z.intersect([
       maxLogicalStreamsPerAccount: positive(), maxLogicalStreamsPerPeer: positive(),
     }).default(undefined as never),
   }),
-])
+]))
 
 /**
  * Validate Host deployment inputs before allocating resources.
@@ -164,36 +165,40 @@ export function parseAuthRootConfig(input: AuthRootConfig): AuthRootConfig {
     const config = structuredClone(AuthRootConfigSchema(input))
     parseAccessConfig(config)
     if ([config.bindingFields.accountHeader, config.bindingFields.generationHeader]
-      .some(name => name.toLowerCase() === OWNER_HOP_HEADER)) throw new TypeError()
-    credentialRef(config.authSecretRef)
-    credentialRef(config.database.passwordRef)
+      .some(name => name.toLowerCase() === OWNER_HOP_HEADER)) throw new DeploymentConfigError('$.bindingFields: cannot use the reserved owner-hop header')
+    try { credentialRef(config.authSecretRef) }
+    catch (_invalidReference) { throw new DeploymentConfigError('$.authSecretRef: requires a formal credential reference') }
+    try { credentialRef(config.database.passwordRef) }
+    catch (_invalidReference) { throw new DeploymentConfigError('$.database.passwordRef: requires a formal credential reference') }
     if (config.accountAdministration !== undefined && (config.disableSignUp !== true || config.pool.maxConnections < 2
       || config.accountAdministration.maxPageSize > config.accountAdministration.maxAccounts
       || config.accountAdministration.initialAdministratorIds.length > config.accountAdministration.maxAccounts
       || new Set(config.accountAdministration.initialAdministratorIds).size
-        !== config.accountAdministration.initialAdministratorIds.length)) throw new TypeError()
-    if (config.maxSecretBytes < 32 || config.pool.lockTimeoutMs > config.pool.statementTimeoutMs) throw new TypeError()
+        !== config.accountAdministration.initialAdministratorIds.length)) throw new DeploymentConfigError('$.accountAdministration: requires disabled sign-up, at least two pool connections and distinct administrator ids within account limits')
+    if (config.maxSecretBytes < 32) throw new DeploymentConfigError('$.maxSecretBytes: must be at least 32')
+    if (config.pool.lockTimeoutMs > config.pool.statementTimeoutMs) throw new DeploymentConfigError('$.pool.lockTimeoutMs: must not exceed pool.statementTimeoutMs')
     if (config.ingress !== undefined && (config.ingress.sessionRecheckLeadMs >= config.sessionRecheckMs
-      || config.ingress.maxOperationsPerAccount > config.ingress.maxOperations)) throw new TypeError()
+      || config.ingress.maxOperationsPerAccount > config.ingress.maxOperations)) throw new DeploymentConfigError('$.ingress: recheck lead must be below sessionRecheckMs and per-account operations must not exceed total operations')
     if (config.ingress !== undefined && (config.ingress.maxLogicalStreamsPerAccount > config.ingress.maxLogicalStreams
-      || config.ingress.maxLogicalStreamsPerPeer > config.ingress.maxLogicalStreamsPerAccount)) throw new TypeError()
+      || config.ingress.maxLogicalStreamsPerPeer > config.ingress.maxLogicalStreamsPerAccount)) throw new DeploymentConfigError('$.ingress: per-Peer and per-account stream limits must not exceed their parent limits')
     const preview = config.ingress?.servicePreview
     const forwarding = config.ingress?.ownerForwarding
     if (forwarding !== undefined && (forwarding.identities.length === 0 || forwarding.identities.length > forwarding.maxIdentities
       || forwarding.targets.length === 0 || forwarding.targets.length > forwarding.limits.maxTargets
       || forwarding.peerCertificateSha256.length === 0 || forwarding.peerCertificateSha256.length > forwarding.maxPeerPins
       || new Set(forwarding.peerCertificateSha256).size !== forwarding.peerCertificateSha256.length
-      || forwarding.maxHopBytes > forwarding.limits.maxHeaderBytes)) throw new TypeError()
+      || forwarding.maxHopBytes > forwarding.limits.maxHeaderBytes)) throw new DeploymentConfigError('$.ingress.ownerForwarding: requires nonempty bounded identities, targets and distinct peer pins; hop bytes must fit header limits')
     if (preview !== undefined && (config.servicePreview === undefined
       || preview.response.maxChunkBytes > preview.response.maxBodyBytes + 1
       || Object.keys(preview).some(name => !['maxUrlBytes', 'maxFieldBytes', 'maxRequestHeaderCount', 'maxRequestHeaderBytes', 'response'].includes(name))
       || Object.keys(preview.response).some(name => !['maxBodyBytes', 'maxChunkBytes', 'maxChunks', 'maxHeaderCount', 'maxHeaderBytes'].includes(name))
       || [config.bindingFields.accountQuery, config.bindingFields.generationQuery]
-        .some(name => name === 'sessionId' || name === 'serviceHandle'))) throw new TypeError()
-    if (config.applications !== undefined && config.ingress === undefined) throw new TypeError()
+        .some(name => name === 'sessionId' || name === 'serviceHandle'))) throw new DeploymentConfigError('$.ingress.servicePreview: requires servicePreview origins, bounded response chunks and unreserved binding fields')
+    if (config.applications !== undefined && config.ingress === undefined) throw new DeploymentConfigError('$.applications: requires ingress')
     return config.applications === undefined ? config
       : { ...config, applications: parseServiceApplicationConfig(config.applications, config) }
   } catch (_error) {
+    if (_error instanceof DeploymentConfigError) throw _error
     // Schema diagnostics can contain supplied configuration; root exposes only this fixed deployment error.
     throw new TypeError('Cloud authentication root requires explicit valid database, secret references and finite resource limits.')
   }

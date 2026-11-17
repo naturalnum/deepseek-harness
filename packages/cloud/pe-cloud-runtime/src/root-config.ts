@@ -1,5 +1,6 @@
 /** Complete Host-only deployment inputs; account identity/types never depend on this composition. */
 import z from '@deepseek-ai/schemastery'
+import { deploymentConfig } from './deployment-config.ts'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { ReleaseSkillBinaryLimits } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { ConfigSaveLimits } from '@deepseek-ai/dsh-pe-cloud-api/types'
@@ -89,7 +90,7 @@ const accountPolicyFields: z<AccountPolicyConfig> = z.object({
 
 /** Explicit finite model routes and exact native-preset expectations; no field certifies account readiness. */
 export const AccountPolicyConfigSchema: z<AccountPolicyConfig> = z.transform(accountPolicyFields, (config) => {
-  const invalid = (): never => { throw new AccountRuntimeError('cloud/invalid-config', 'Account policy exceeds its finite limits or repeats a route') }
+  const invalid = (): never => { throw new AccountRuntimeError('cloud/invalid-config', '$.accountPolicy: exceeds its finite limits or repeats a route') }
   if (config.models.length === 0 || config.models.length > config.maxModelRoutes
     || config.presets.length === 0 || !config.presets.some(row => row.id === config.defaultPresetId && row.selectable)) invalid()
   if (config.legacyDefaultPresetId !== undefined && (config.legacyDefaultPresetId === config.defaultPresetId
@@ -188,11 +189,17 @@ const rootFields: z<RuntimeRootConfig> = z.object({
 })
 
 /** Actual root deployment schema; no component configuration or absent field enables production. */
-export const RuntimeRootConfigSchema: z<RuntimeRootConfig> = z.transform(rootFields, (config) => {
+export const RuntimeRootConfigSchema: z<RuntimeRootConfig> = z.transform(deploymentConfig(rootFields), (config) => {
+  if (config.pg.lockTimeoutMs > config.pg.statementTimeoutMs) {
+    throw new AccountRuntimeError('cloud/invalid-config', '$.pg.lockTimeoutMs: must not exceed pg.statementTimeoutMs')
+  }
+  if (config.factory.maxBorrowsPerAccount > config.factory.maxBorrows || config.factory.maxWaitersPerAccount > config.factory.maxWaiters) {
+    throw new AccountRuntimeError('cloud/invalid-config', '$.factory: per-account limits must not exceed total limits')
+  }
   if (config.officeCanary !== undefined && config.officeOrdinary !== undefined
     || config.officeOrdinary !== undefined && (Object.keys(config.officeOrdinary).length !== 2
       || [config.officeOrdinary.office, config.officeOrdinary.reports].some(row => Object.keys(row).length !== 2))) {
-    throw new AccountRuntimeError('cloud/invalid-config', 'Choose only one Root Office policy with its exact two declarations.')
+    throw new AccountRuntimeError('cloud/invalid-config', '$.officeOrdinary: choose only one Root Office policy with its exact two declarations.')
   }
   return config
 })

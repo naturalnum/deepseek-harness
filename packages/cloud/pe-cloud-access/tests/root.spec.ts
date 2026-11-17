@@ -268,6 +268,14 @@ describe('root authentication resources remain closed on incomplete or failed in
     expect(parsed).not.toBe(config())
   })
 
+  it('names unknown and mistyped Root fields without echoing their values', () => {
+    expect(() => z.resolve({ ...config(), maxTrackedLogin: 'PRIVATE' }, AuthRootConfigSchema, {})).toThrow('$.maxTrackedLogin: unknown')
+    expect(() => z.resolve({ ...config(), database: { ...config().database, passwrod: 'PRIVATE' } }, AuthRootConfigSchema, {}))
+      .toThrow('$.database.passwrod: unknown')
+    expect(() => AuthRootConfigSchema({ ...config(), database: { ...config().database, port: 65536 } }))
+      .toThrow('$.database.port: required valid number in range 1..65535')
+  })
+
   it('rejects invalid references, unbounded budgets and incompatible secret/SQL limits without echoing configuration', () => {
     const invalid = [
       { ...config(), authSecretRef: 'embedded/private-secret' },
@@ -280,7 +288,7 @@ describe('root authentication resources remain closed on incomplete or failed in
       { ...config(), database: { ...config().database, ssl: undefined } },
     ]
     for (const input of invalid) {
-      expect(() => parseAuthRootConfig(input as AuthRootConfig)).toThrow('Cloud authentication root requires explicit valid database')
+      expect(() => parseAuthRootConfig(input as AuthRootConfig)).toThrow()
       try { parseAuthRootConfig(input as AuthRootConfig) } catch (error) { expect(String(error)).not.toContain('embedded/private-secret') }
     }
   })
