@@ -2,7 +2,7 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import { posix } from 'node:path'
 import type { SubprocessHandle, SubprocessOutcome, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { CollectedOutputMirror } from './collected-output.ts'
+import { CollectedOutputFailure, CollectedOutputMirror } from './collected-output.ts'
 import { PrivateSemanticAudit, type SemanticFacts } from './semantic-audit.ts'
 import type { NativeFilePolicy } from './agent-data/file-policy.ts'
 import type { AgentDataStream, OperationSpec } from './agent-data/types.ts'
@@ -85,6 +85,8 @@ interface RangeWaiter { settle(empty: boolean, failure?: { readonly cause: unkno
  * A synchronous native subprocess handle backed by one preparation/commit/poll loop.
  * Root installs the operation and reserves its complete storage before begin(). Public scope
  * revocation requests stop but retains output and cleanup until actual range/I/O settlement.
+ * A collected byte-limit refusal retains its error and joins the original stop without accepting further output.
+ * Stop or protocol uncertainty still notifies the original physical cleanup owner.
  */
 export class ManagedCommandOperation {
   private readonly audit = new PrivateSemanticAudit()
@@ -95,6 +97,7 @@ export class ManagedCommandOperation {
   private readonly allocationWait = new AbortController()
   private readonly waiters = new Set<RangeWaiter>()
   private readonly output: { stdout: CollectedOutputMirror; stderr: CollectedOutputMirror } | undefined
+  private readonly refusedOutput: Partial<Record<'stdout' | 'stderr', number>> = {}
   private readonly streams: CommandStreams | undefined
   private readonly streamFailure: ReturnType<typeof Promise.withResolvers<never>> | undefined
   private stream: AgentDataStream | undefined
@@ -440,6 +443,17 @@ export class ManagedCommandOperation {
         this.eof[name] = stream.eof
         continue
       }
+      const refused = this.refusedOutput[name]
+      if (refused !== undefined) {
+        // Discard refused bytes while the original stop joins; stream coordinates and EOF still cannot regress.
+        if (!Number.isSafeInteger(stream.observedBytes) || stream.observedBytes < refused
+          || this.eof[name] && (!stream.eof || stream.observedBytes !== refused)) {
+          throw new Error('The refused remote output coordinate or EOF changed.')
+        }
+        this.refusedOutput[name] = stream.observedBytes
+        this.eof[name] = stream.eof
+        continue
+      }
       if (this.eof[name]) {
         const previous = output.snapshot()
         const retained = stream.bytes.subarray(Math.max(0, stream.bytes.byteLength - previous.bytes.byteLength))
@@ -447,7 +461,15 @@ export class ManagedCommandOperation {
           throw new Error('A closed remote output stream changed.')
         }
       } else {
-        output.replaceTail(stream.bytes, stream.observedBytes)
+        try { output.replaceTail(stream.bytes, stream.observedBytes) }
+        catch (cause) {
+          if (!(cause instanceof CollectedOutputFailure) || cause.reason !== 'observed-byte-limit') throw cause
+          this.refusedOutput[name] = stream.observedBytes
+          this.eof[name] = stream.eof
+          this.fail(this.stopRequest()?.reason ?? cause)
+          this.requestStop(cause)
+          continue
+        }
         if (stream.eof) { this.eof[name] = true; output.seal() }
       }
     }

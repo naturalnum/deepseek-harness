@@ -24,6 +24,8 @@ The optional [Office guest payload](../../../docs/user/cloud-builtin-skills.md) 
 
 Collected subprocess handles implement `releaseCollected()` through their original managed operation. A native tool can copy one command’s output and end its ownership before starting the next command in the same scope. Resident capacity returns only after actual range and I/O settlement; early release requests the existing stop procedure, while unknown work remains retained. Native tools that omit release preserve final-projection ownership.
 
+A collected observed-byte refusal retains its original error and joins the existing stop without accepting further output. Actual range, EOF and I/O confirmation permits cleanup; stop failure, contradictory stream coordinates, provider failure or local cleanup failure still retains unknown responsibility. No output or execution limit is widened.
+
 -----
 
 <a id="use-this-package"></a>

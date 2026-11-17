@@ -154,6 +154,85 @@ it('keeps a smaller native tail through repeated remote EOF snapshots while desc
   expect(f.authority.unknown).not.toHaveBeenCalled()
 })
 
+function overflowingOutput(empty = false): CommandSnapshot {
+  return { ...initial(), submitted: true, rangeEmpty: empty, ioClosed: empty,
+    stdout: { bytes: Buffer.alloc(4096, 120), observedBytes: 65537, eof: empty },
+    stderr: { bytes: Buffer.alloc(0), observedBytes: 0, eof: empty } }
+}
+
+it('keeps an output-capacity refusal local while joining the original confirmed stop', async () => {
+  const f = fixture(), stopped = Promise.withResolvers<CommandSnapshot>(), done = f.op.handle.done
+  f.channel.commit.mockResolvedValue(overflowingOutput())
+  f.channel.stop.mockImplementation(() => stopped.promise)
+  f.op.publish(); f.op.begin()
+  await expect(done).rejects.toMatchObject({ code: 'cloud/capacity', reason: 'observed-byte-limit' })
+  await vi.waitFor(() => { expect(f.channel.stop).toHaveBeenCalledTimes(1) })
+  let empty = false
+  void f.op.whenEmpty.then(() => { empty = true })
+  expect(empty).toBe(false)
+  expect(f.authority.unknown).not.toHaveBeenCalled()
+  expect(() => f.op.handle.collected.stdout!.readFrom(0)).toThrow('observed-byte budget')
+  stopped.resolve(overflowingOutput(true)); await f.op.whenEmpty
+  expect(f.authority.unknown).not.toHaveBeenCalled()
+  await expect(done).rejects.toMatchObject({ code: 'cloud/capacity' })
+  expect(f.authority.retired).not.toHaveBeenCalled()
+  f.op.release(); expect(f.authority.retired).toHaveBeenCalledTimes(1)
+})
+
+it('retains a capacity refusal without declaring unknown when the same snapshot confirms actual termination', async () => {
+  const f = fixture(), done = f.op.handle.done
+  f.channel.commit.mockResolvedValue(overflowingOutput(true))
+  f.op.publish(); f.op.begin()
+  await expect(done).rejects.toMatchObject({ code: 'cloud/capacity', reason: 'observed-byte-limit' })
+  expect(f.authority.unknown).not.toHaveBeenCalled()
+  await f.op.whenEmpty
+  expect(f.channel.stop).not.toHaveBeenCalled()
+  expect(f.authority.unknown).not.toHaveBeenCalled()
+})
+
+it('preserves the original caller stop when output exceeds its budget during cancellation', async () => {
+  const f = fixture(), done = f.op.handle.done, reason = new Error('original caller stop')
+  f.channel.commit.mockResolvedValue({ ...initial(), submitted: true })
+  f.channel.stop.mockResolvedValue(overflowingOutput(true))
+  f.op.publish(); f.op.begin()
+  await vi.waitFor(() => { expect(f.channel.poll).toHaveBeenCalledTimes(1) })
+  f.caller.abort(reason); f.poll.resolve(overflowingOutput())
+  await expect(done).rejects.toBe(reason)
+  await vi.waitFor(() => { expect(f.channel.stop).toHaveBeenCalledTimes(1) })
+  await f.op.whenEmpty
+  expect(f.channel.stop).toHaveBeenCalledTimes(1)
+  expect(f.authority.unknown).not.toHaveBeenCalled()
+})
+
+it.each(['provider-failure', 'physical-stop-required', 'stop-rejected', 'counter-regressed',
+  'closed-output-changed', 'eof-regressed', 'stop-timeout'] as const)(
+  'keeps unknown cleanup after output overflow when %s', async (failure) => {
+    const f = fixture(), done = f.op.handle.done, transport = new Error('original stop unconfirmed')
+    const initialOutput = overflowingOutput()
+    const first = { ...initialOutput, stdout: { ...initialOutput.stdout,
+      eof: failure === 'closed-output-changed' || failure === 'eof-regressed' } }
+    f.channel.commit.mockResolvedValue(first)
+    const stopped = overflowingOutput(true)
+    const unconfirmed = failure === 'provider-failure' || failure === 'physical-stop-required' || failure === 'stop-timeout'
+    const terminal = { ...stopped, rangeEmpty: !unconfirmed, ioClosed: !unconfirmed,
+      providerFailure: failure === 'provider-failure', physicalStopRequired: failure === 'physical-stop-required',
+      stdout: { ...stopped.stdout, eof: failure !== 'eof-regressed' && failure !== 'stop-timeout',
+        observedBytes: failure === 'counter-regressed' ? 65536 : failure === 'closed-output-changed' ? 65538 : 65537 },
+    }
+    if (failure === 'stop-timeout') f.channel.poll.mockResolvedValue(terminal)
+    if (failure === 'stop-rejected') f.channel.stop.mockRejectedValue(transport)
+    else f.channel.stop.mockResolvedValue(terminal)
+    f.op.publish(); f.op.begin()
+    await expect(done).rejects.toMatchObject({ code: 'cloud/capacity' })
+    await vi.waitFor(() => { expect(f.authority.unknown).toHaveBeenCalledTimes(1) })
+    let empty = false
+    void f.op.whenEmpty.then(() => { empty = true })
+    expect(empty).toBe(false)
+    if (failure === 'stop-rejected') expect(f.authority.unknown).toHaveBeenCalledWith(transport)
+    f.op.acknowledgePhysicalStop(); await f.op.whenEmpty
+  },
+)
+
 it('keeps final output-owner revocation attached after normal range completion', async () => {
   const f = fixture()
   f.op.publish(); f.op.begin(); f.poll.resolve(complete()); await f.op.whenEmpty
