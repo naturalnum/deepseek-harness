@@ -1,0 +1,98 @@
+{
+  "schema": "pe-report-content-arm64-image-binding/v1",
+  "sourceCommit": "ea34e8a134af60a8b7f7cff4223b65c9704c672d",
+  "roles": {
+    "images": {
+      "base": "sha256:3061b56e8e543ebb51a1c13bcfec7db9d1371e309edbbb6d7662762f52dd02a7",
+      "execd": "sha256:b6dc1290091b2d4c5b51e0776e718d275069224110ae07a07dad14d249447b4e",
+      "workload": "sha256:3ec6ba073f482c4c39d2ad0e03fde8f841373a0bd30c53a2660e9cbd10b2f202",
+      "server": "sha256:2c0389e8aaf9430c6a07d2ba796a2ae0b578a1d02839f7be9f02f6c164c1c74e"
+    },
+    "completionSourceSha256": "9b9c4c8aec96b5afa67fd2fd7e696db5cac58b686d32cdeda4fa1d19a578ed34",
+    "sourceCommit": "ea34e8a134af60a8b7f7cff4223b65c9704c672d",
+    "runtimeHeadingExceptionSha256": "fddc0649c281974356b6183bf2b70f74426ba9ed81659061627bb8526088ed9a"
+  },
+  "workload": {
+    "digest": "sha256:3ec6ba073f482c4c39d2ad0e03fde8f841373a0bd30c53a2660e9cbd10b2f202",
+    "tag": "pe-content-validation/workload:pe-content-f4bdcc24",
+    "parent": "sha256:214323fe18dce90360b499cf069412efb8adf889ad02c94cef43fb87b8f42b9e",
+    "layerBytes": 17179,
+    "rootfs": {
+      "Layers": [
+        "sha256:0f0c47d76d9eb2be2ad0e5d15813906c7c4d32fa5a098b4a456208142516bab4",
+        "sha256:81a9194237d91601c077d71384084fd27d0cc2ce5200b2c3f475f52ce5502f58",
+        "sha256:be0e2fd03eaf15caf5e544b43cb51705be634830f8ddb8976a9264dcbdd08ba8",
+        "sha256:72261cf79308d9f35de9f392c3a8cae0fdbb6d68d5decaf2022db5a8a2e18a6c",
+        "sha256:999ad937ea3196f6c8131acfd378a4ed64b0f78d311a124e1a543ba8cf9afc8a",
+        "sha256:c5b3164053e64fdc693e9178815eb5d680e3cc68b98bcfbe917f18bf17efb95d",
+        "sha256:b15dbc6a2e2158470585114d7bc9b667ebe21c2b5f79e54dfafe385e66c10b81",
+        "sha256:df3e6c022359d1e0f6b52d65ecfc99067e3566fb11973782fdba59b9cd8a8594",
+        "sha256:deaa028517ef87dc378ed68f54748637c21b767202182bfcc8215d2a28b04826",
+        "sha256:56a6892480bf35cf479ea5b9d67f19d68711cbc4f665072672950e0aeb67acbf",
+        "sha256:ebdc5cdc46085f5b9a6f546b4069de9c942d25a312e48064d4ec2a1e9d3baf27",
+        "sha256:a6eb06243f33e1e774a3d2b55532319e2a3662bf5cc0a7e9ed5c892a6b675265",
+        "sha256:5409ccb3d6c029349abba6f37450436dc3ab9b5bf392f8c92b6ff5fe75caed0f",
+        "sha256:5a7eb331cd9c621642278e75f8d285d735cc4dc4f86cb7bf55d6372fe78498a7",
+        "sha256:0d4b9a34ec4760a477cd813bc1474eb7f9c04d9b5b32e1f7a6997ed37e0b5e2a",
+        "sha256:affceb5877c8508427e751fc84d232bcc5f05bd7a9c219d87876f108840eb484",
+        "sha256:d4db54e35ee5ecd62077a9a88da40b0d78c2efd9c17ec2277113cd96aca13962",
+        "sha256:4caf6065386ce0e308f3e8de2a2d7f0905f89ac37cf2dfff2ecdd1b3a1017267",
+        "sha256:177f04300af20a5c403a005269c41ef04b07ad61c8debfeb619d92266c00e63f",
+        "sha256:ed090a2e06a6cbd9b9e3a591ff36719e8f8c76cddaafd21550fff2ce3a4fa630",
+        "sha256:b92c2499b5dbd3dfb169e6858066b4dc348edb3ef258619f294eebf07da2c29d",
+        "sha256:26f557395b3407c4f4e7c3b4098f4e1cd2cbe10ea915a82d9aeb10aaf39ca9dd",
+        "sha256:30d2b201eb6b00f1e865eb6bbc09affdbcfd708b2816ed019c6d21c66c618cb6"
+      ],
+      "Type": "layers"
+    },
+    "platform": "linux/arm64",
+    "builder": "425357412e2fe95f7ac77b5cd7b2cf52b827828ee344d31393a029dec1470d0a",
+    "builderStopped": true
+  },
+  "server": {
+    "digest": "sha256:2c0389e8aaf9430c6a07d2ba796a2ae0b578a1d02839f7be9f02f6c164c1c74e",
+    "tag": "pe-content-validation/server:pe-content-f4bdcc24",
+    "parent": "sha256:a8b6fcac0077db9073389583162d85cb78c4aa6da1846a2cdca30f72985100f0",
+    "layerBytes": 8262,
+    "rootfs": {
+      "Layers": [
+        "sha256:0f0c47d76d9eb2be2ad0e5d15813906c7c4d32fa5a098b4a456208142516bab4",
+        "sha256:81a9194237d91601c077d71384084fd27d0cc2ce5200b2c3f475f52ce5502f58",
+        "sha256:be0e2fd03eaf15caf5e544b43cb51705be634830f8ddb8976a9264dcbdd08ba8",
+        "sha256:72261cf79308d9f35de9f392c3a8cae0fdbb6d68d5decaf2022db5a8a2e18a6c",
+        "sha256:69fccb3a9af22972d2522ca9cdd09d3e7ff9ca736cad595a6b86287f2f7abce1",
+        "sha256:cd55b23f6d799d62f7243e4ef47cc6c37a36bfee457806d2ac49da7ded79acc5",
+        "sha256:a05693853867d3b75b97b90821a0e7a114c418dc5e56ca1c63e6a11fe4ad125c",
+        "sha256:a03edbe41f48cd15456e9390e5e6e6cbd32038f6d0ca90af35d53b03250e5f57",
+        "sha256:ecc74eafa5dc3f5a6adfbdfa59928acf6c50e2aa2081277c5a173f6e46c477ca",
+        "sha256:4901ed1c8e28e60705db1be7e65f0826bea17abda6a157c8678b0cceb34411a0",
+        "sha256:2af8aadaebac87e663d3aae64eb451d08c12977bfbafea16fa8fa10c170dca0a",
+        "sha256:57fe46bc825d338fbbfbb46349cbf3e7100932a9773a850f183f53ed382a19f8",
+        "sha256:f047a88d988abcc2c68cf7427fd602b23c12285ba2d0726b1129b30c5b465cf4",
+        "sha256:beb9e0773f6f728242a82e8d375e40231368db46e7f4ee5ef466d2d0b6c5e130",
+        "sha256:97b30c967cb2b9063e795523bcd91bd63f250328d0a618f60de155bc4b63f3b7",
+        "sha256:7abe4a6395799265d049d5e304214b667fa51c054e28868e754fa86dd8cb560b",
+        "sha256:f430be16d647ec49a04f7cc468c8ae7285fe2dd4d6d05081b5bf0189482152e7",
+        "sha256:511575db835ebcd98950de8694d2048356d6533b9cb5d2230c72d860736e9fbc",
+        "sha256:bfcba54638e188665d907d35d5f434b3ff6d29d5675a533fcba600f24643c6b5",
+        "sha256:20d13eea1a9592b77c06da974d1cf6b3bc9f420195cc97096586a53663cd20ce",
+        "sha256:a26be5a9722821b559e67e651def921b8f1f5d0a74b2ef28749d09b91b41aeb4",
+        "sha256:e59a0e6e74eed41b2b62f45cdc4274248f4535b4f367aea4b8403f1029d80a9f",
+        "sha256:0954e9f7730e258390a3b7cfe624969219f6f421dbdf3505d4d1bffe289e3a4c"
+      ],
+      "Type": "layers"
+    },
+    "platform": "linux/arm64",
+    "builder": "c685839996d0324e1088c916b21e0e51a9bb408f3fa96498a3fc1f19432352f1",
+    "builderStopped": true
+  },
+  "assetCheck": {
+    "allAssetHashesChecked": 248,
+    "runtimeHeadingExceptionRetained": true
+  },
+  "selectorCheck": {
+    "output": "Actual selector positive/negative, historical audit and original guarded module imports passed\n"
+  },
+  "businessAcceptance": "pending-exact-normal-product-boot",
+  "evidenceDirectory": "/Users/jingchao/agent_work/main_agent/pe-cloud-work/products/content-migration-20261117/candidate-01"
+}
