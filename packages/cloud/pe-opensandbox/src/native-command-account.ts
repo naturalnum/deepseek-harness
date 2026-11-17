@@ -201,13 +201,14 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
   }
 
   /**
-   * Confirm that only this never-submitted foreground acquisition is active in the Session.
-   * @param scope Original current foreground scope whose acquire callback has not returned a channel.
+   * Confirm that only this never-submitted command or service acquisition is active in the Session.
+   * @param scope Original current command or service scope whose acquire callback has not returned a channel.
    */
   assertContinuation(scope: ExecutionScope<Workspace>): void {
     this.calls.assertCurrent(scope)
-    const current = this.active.get(scope.sessionId)?.[scope.consumerId === 'run_code' ? 'program' : 'foreground']
-    if (!this.state.open || scope.purpose !== 'command' || current?.scope !== scope
+    const current = this.active.get(scope.sessionId)?.[scope.purpose === 'service' ? 'service'
+      : scope.consumerId === 'run_code' ? 'program' : 'foreground']
+    if (!this.state.open || (scope.purpose !== 'command' && scope.purpose !== 'service') || current?.scope !== scope
       || current.operation === undefined || !current.operation.isAwaitingChannel() || current.unknownReported) throw this.failure()
     for (const row of this.records.values()) {
       if (row === current || row.scope.sessionId !== scope.sessionId) continue
@@ -223,6 +224,7 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
    * @throws When current admission, another invocation or a retained command prevents retirement.
    */
   assertReopenedSessionRetirement(scope: ExecutionScope<Workspace>): void {
+    if (scope.purpose !== 'command') throw this.failure()
     this.assertContinuation(scope)
     if (this.calls.hasOtherSessionCall(scope.sessionId, scope)) throw this.failure()
     const current = this.active.get(scope.sessionId)?.[scope.consumerId === 'run_code' ? 'program' : 'foreground']
@@ -233,11 +235,12 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
 
   /**
    * Revoke completed old handles after original physical stop, terminal metadata and mount release.
-   * @param scope The same original foreground acquisition that has not yet obtained its new channel.
+   * @param scope The same original command or service acquisition that has not yet obtained its new channel.
    */
   retireCompletedSession(scope: ExecutionScope<Workspace>): void {
     this.assertContinuation(scope)
-    const current = this.active.get(scope.sessionId)?.[scope.consumerId === 'run_code' ? 'program' : 'foreground']
+    const current = this.active.get(scope.sessionId)?.[scope.purpose === 'service' ? 'service'
+      : scope.consumerId === 'run_code' ? 'program' : 'foreground']
     for (const row of [...this.records.values()]) {
       if (row === current || row.scope.sessionId !== scope.sessionId) continue
       if (row.operation !== undefined) row.operation.release()

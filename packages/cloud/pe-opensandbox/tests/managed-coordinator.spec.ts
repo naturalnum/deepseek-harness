@@ -583,6 +583,7 @@ async function applicationFixture(options: {
     for (const channel of channels) if (channel.sessionId === request.sessionId) channel.empty()
   })
   // Scripted preparation does not register a real runtime or project-copy capability.
+  vi.spyOn(f.deployment.runtimes, 'needsContinuation').mockReturnValue(false)
   vi.spyOn(f.deployment.runtimes, 'skillProject').mockReturnValue(undefined)
   const service = vi.spyOn(f.deployment.runtimes, 'service').mockImplementation((prepared, registration) => {
     registration.bindAllocation(brandString<Parameters<typeof registration.bindAllocation>[0]>(prepared.sandboxId))
@@ -1734,6 +1735,67 @@ it('continues the fifth and ninth never-submitted native operation on new comput
   expect(f.prepare).toHaveBeenCalledTimes(11)
   expect(new Set(f.prepare.mock.calls.map(([request]) => request.sessionId)).size).toBe(1)
   expect(f.a.lifetime.signal.aborted).toBe(false)
+})
+
+it('starts a never-submitted native service on fresh compute after the original lifetime boundary', async () => {
+  const f = await continuationFixture()
+  for (let i = 0; i < 4; i++) expect((await f.run()).isError).toBe(false)
+  const work = await f.a.start()
+  expect(f.stop).toHaveBeenCalledTimes(1); expect(f.retire).toHaveBeenCalledTimes(1)
+  expect(f.service).toHaveBeenCalledTimes(1)
+  expect(f.service.mock.calls[0]?.[0].sandboxId).toBe('compute-1')
+  expect(f.service.mock.calls[0]?.[1].registrationId).toBe(work.handle)
+  expect(f.stop.mock.invocationCallOrder[0]).toBeLessThan(f.retire.mock.invocationCallOrder[0]!)
+  expect(f.retire.mock.invocationCallOrder[0]).toBeLessThan(f.service.mock.invocationCallOrder[0]!)
+  expect(new Set(f.prepare.mock.calls.map(([request]) => request.sessionId)).size).toBe(1)
+  f.emptyChannels()
+  await work.stop(new AbortController().signal)
+})
+
+it('keeps a failed original service continuation stopped without admitting a replacement service or command', async () => {
+  const f = await continuationFixture()
+  f.due.mockReturnValue(true)
+  f.stop.mockRejectedValueOnce(new Error('Original physical or terminal stop remains unknown'))
+  await expect(f.a.start()).rejects.toThrow()
+  expect(f.stop).toHaveBeenCalledTimes(1); expect(f.retire).not.toHaveBeenCalled()
+  expect(f.service).not.toHaveBeenCalled()
+  expect((await f.run()).isError).toBe(true)
+  expect(f.command).not.toHaveBeenCalled()
+})
+
+it('does not replace service compute while an independent original foreground range remains active', async () => {
+  const f = await continuationFixture(), submitted = Promise.withResolvers<undefined>()
+  const commit = Promise.withResolvers<CommandSnapshot>()
+  const original = f.command.getMockImplementation()!
+  let complete: Promise<CommandSnapshot> | undefined
+  f.command.mockImplementationOnce((prepared) => {
+    const channel = original(prepared)
+    complete = channel.commit()
+    return { ...channel, commit: () => { submitted.resolve(undefined); return commit.promise } }
+  })
+  const running = f.run()
+  onTestFinished(async () => { commit.resolve(await complete!); await running })
+  await submitted.promise
+  f.due.mockReturnValue(true)
+  await expect(f.a.start()).rejects.toThrow()
+  expect(f.stop).not.toHaveBeenCalled(); expect(f.retire).not.toHaveBeenCalled()
+  expect(f.service).not.toHaveBeenCalled()
+  commit.resolve(await complete!); await running
+})
+
+it('does not replace service compute while the original completed range still owns application I/O', async () => {
+  const f = await continuationFixture(), work = await f.a.start()
+  const pending = trackApplication(f.a.borrow(work))
+  await vi.waitFor(() => { expect(f.attempts).toHaveLength(1) })
+  f.emptyChannels()
+  expect(f.owner).toMatchObject({ state: { active: 1 } })
+  f.due.mockReturnValue(true)
+  await expect(f.a.start()).rejects.toThrow()
+  expect(f.stop).not.toHaveBeenCalled(); expect(f.retire).not.toHaveBeenCalled()
+  expect(f.service).toHaveBeenCalledTimes(1)
+  expect(pending.state.settled).toBe(false)
+  f.attempts[0]!.terminal.resolve(undefined); await pending.joined
+  await work.stop(new AbortController().signal)
 })
 
 it('retains the old compute when original physical/terminal stop refuses and never opens a replacement channel', async () => {

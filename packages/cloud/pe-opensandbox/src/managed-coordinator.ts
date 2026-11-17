@@ -491,12 +491,12 @@ export class ManagedCoordinator extends SandboxCoordinator {
         let stage: PreparationFailureStage = 'allocation-prepare'
         let failedRetirement: { cause: unknown } | undefined
         try {
-          if (registered === undefined && work.retiredCommands?.has(scope.agent.session)) {
+          if (work.retiredCommands?.has(scope.agent.session)) {
             commands.retireCompletedSession(scope)
             work.retiredCommands.delete(scope.agent.session)
           }
           let prepared = await this.allocations.prepare(request, signal)
-          if (registered === undefined && this.deployment.runtimes.needsContinuation(prepared)) {
+          if (this.deployment.runtimes.needsContinuation(prepared)) {
             stage = 'continuation'
             commands.assertContinuation(scope)
             // stop synchronously fences the old allocation; its original promise joins physical and SQL settlement.
