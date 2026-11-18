@@ -108,7 +108,9 @@ function deploymentSourcePins(file: string, source: string): { value: string; li
     'update-owned-arm-ingress-diagnostic-product.mjs', 'update-owned-arm-post-completion-product.mjs',
     'update-owned-arm-product-bind.mjs',
   ].map(name => owned + name)])
-  const imageRecord = file === 'deploy/upstream/report-content-arm64-image.json'
+  const reportImageRecord = file === 'deploy/upstream/report-content-arm64-image.json'
+  const nativeSdkImageRecord = file === 'packages/cloud/pe-opensandbox/runtime/server/native-amd64-destroy-filter-20261118.json'
+  const imageRecord = reportImageRecord || nativeSdkImageRecord
   if (!controllers.has(file) && !imageRecord) return []
   const parsed = imageRecord ? ts.parseJsonText(file, source)
     : ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
@@ -123,8 +125,10 @@ function deploymentSourcePins(file: string, source: string): { value: string; li
     const first = parsed.statements[0]
     if (first === undefined || !ts.isExpressionStatement(first) || !ts.isObjectLiteralExpression(first.expression)) return []
     const object = first.expression, schema = property(object, 'schema')
-    if (schema === undefined || !ts.isStringLiteralLike(schema) || schema.text !== 'pe-report-content-arm64-image-binding/v1') return []
-    const objects = [object, ...['roles', 'acceptedProduct'].flatMap((key) => {
+    const expectedSchema = reportImageRecord ? 'pe-report-content-arm64-image-binding/v1' : 'native-amd64-destroy-filter-overlay/v1'
+    if (schema === undefined || !ts.isStringLiteralLike(schema) || schema.text !== expectedSchema) return []
+    const nestedPins = reportImageRecord ? ['roles', 'acceptedProduct'] : []
+    const objects = [object, ...nestedPins.flatMap((key) => {
       const value = property(object, key)
       return value !== undefined && ts.isObjectLiteralExpression(value) ? [value] : []
     })]
