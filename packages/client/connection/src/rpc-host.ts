@@ -1,5 +1,6 @@
 /** Host registry and HTTP adapter for generic Connection RPC channels. */
 
+import { randomUUID } from 'node:crypto'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
@@ -406,15 +407,27 @@ function fullResponse(rpcId: RpcIdType, result: Awaited<ReturnType<ConnectionRpc
   const { attachments, ...success } = result
   const body: ConnectionServerResponse = { type: 'server-response', rpcId, result: success }
   if (attachments === undefined || attachments.length === 0) return Response.json(body)
-  const parts = new FormData()
+  // The parts are complete before the response is sent. Give the carrier a
+  // Blob so cancelling a refused response does not race Node's FormData encoder.
+  const boundary = 'dsh-' + randomUUID()
+  const parts: BlobPart[] = []
   const attachmentMetadata = attachments.map((attachment, index) => {
     const part = `bytes-${index}`
-    // FileSystem bytes may have SharedArrayBuffer backing, which BlobPart excludes.
-    parts.set(part, new Blob([new Uint8Array(attachment.bytes)]))
+    parts.push(
+      `--${boundary}\r\nContent-Disposition: form-data; name="${part}"; filename="blob"\r\n`
+        + 'Content-Type: application/octet-stream\r\n\r\n',
+      // FileSystem bytes may have SharedArrayBuffer backing, which BlobPart excludes.
+      new Uint8Array(attachment.bytes),
+      '\r\n',
+    )
     return { path: [...attachment.path], codec: 'bytes' as const, part }
   })
-  parts.set('metadata', JSON.stringify({ ...body, attachments: attachmentMetadata }))
-  return new Response(parts)
+  parts.push(
+    `--${boundary}\r\nContent-Disposition: form-data; name="metadata"\r\n\r\n`,
+    JSON.stringify({ ...body, attachments: attachmentMetadata }),
+    `\r\n--${boundary}--`,
+  )
+  return new Response(new Blob(parts, { type: `multipart/form-data; boundary=${boundary}` }))
 }
 
 function assertChannel(channel: string): void {
