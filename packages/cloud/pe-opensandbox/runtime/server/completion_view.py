@@ -280,17 +280,29 @@ class OriginalDockerView:
         return any(x['sandboxId'] == record['sid'] for x in self.policy['historical'])
 
     def _fresh_actual_history(self, record):
+        """Read exact destroy evidence, preserving an older pinned raw stream on retry."""
+        until_seconds, until_nanos = divmod(time.time_ns(), 1_000_000_000)
+        until = f'{until_seconds}.{until_nanos:09d}'
+        deadline = time.monotonic() + 6
+        raw = self._read_actual_history(record, until, deadline, destroy_only=True)
+        pinned = record['history']
+        if pinned is None or hashlib.sha256(raw).hexdigest() == pinned:
+            return raw
+        legacy = self._read_actual_history(record, until, deadline, destroy_only=False)
+        require(hashlib.sha256(legacy).hexdigest() == pinned, 'history-changed')
+        return legacy
+
+    def _read_actual_history(self, record, until, deadline, *, destroy_only):
         self.assert_original(record)
         api = self.service.docker_client.api
-        # Same existing Unix adapter and public Engine GET/events API. Unlike
-        # docker-py events(timeout=None), this read has explicit finite I/O,
-        # an immutable past 'until', byte/item bounds and actual response close.
-        until_seconds, until_nanos = divmod(time.time_ns(), 1_000_000_000)
-        params = {'since': record['since'],
-                  'until': f'{until_seconds}.{until_nanos:09d}',
-                  'filters': json.dumps({'type': ['container'], 'container': [record['cid']]})}
-        deadline = time.monotonic() + 6
-        response = api.get(api._url('/events'), params=params, stream=True, timeout=(1, 2),
+        filters = {'type': ['container'], 'container': [record['cid']]}
+        if destroy_only:
+            filters['event'] = ['destroy']
+        params = {'since': record['since'], 'until': until, 'filters': json.dumps(filters)}
+        remaining = deadline - time.monotonic()
+        require(remaining > 0, 'history-time-bound')
+        response = api.get(api._url('/events'), params=params, stream=True,
+                           timeout=(min(1, remaining), min(2, remaining)),
                            allow_redirects=False)
         chunks = []; count = 0
         try:

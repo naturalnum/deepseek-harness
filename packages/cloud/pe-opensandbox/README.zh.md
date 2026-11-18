@@ -77,6 +77,8 @@ Office 镜像清单构建器记录实际运行的解释器，将内核或 OCI �
 
 封闭的[供应商清单](src/bootstrap/qualified-suppliers.ts) 固定每一组完整的存储 schema、工作负载与服务端组合。受保护选择、SDK bootstrap 和共享挂载的 Session 目录检查从同一清单派生；调用方不能注册供应商，也不能组合各自获准但未配对的镜像。原有五种组合保持精确原值，仍须由 Root 显式选择。Office [离线上下文生成器](runtime/server/prepare_office_context.py) 要求原 SSH 服务端策略源码的精确字节，并生成[仅 COPY 的覆盖层](runtime/server/Dockerfile.office)。其 Native 创建策略只接受 Office 工作负载；关闭创建准入时，仍保留原工作负载的精确摘要用于只读历史验证。原系统调用过滤、capabilities、资源限额及删除责任拥有者保持不变。摘要声明不代表 CLI 行为合格，不会启用 Office provider 或发布账户就绪。
 
+[删除证据读取器](runtime/server/completion_view.py) 对新记录使用完整原容器 ID 从 Docker 查询 `destroy` 事件。带既有证据摘要的重试要求原字节完全一致，过滤查询所得摘要不符时使用原查询。历史导入仍须验证摘要固定的 `create`、`start`、`die` 和 `destroy` 完整事件链。证据缺失或不匹配时，完成状态仍待确认。部署需要包含该读取器并通过资格验证的服务端镜像。
+
 当前 Office 供应者保留 UTF-8 目录文本及 Markdown 显式二、三级标题编号。其配对服务端仅接受该工作负载的新建请求；此前 Office 及原始工作负载的摘要仅供关闭创建准入后的只读审计。原始发布归档、模板及内容版本保持不变。
 
 [候选供应商上下文生成器](runtime/server/prepare_supplier_context.py) 接受精确的 Office 服务端公开源码、一个显式不可变候选工作负载摘要和独占输出目录。它生成基于固定 Office 服务端的确定性双文件、仅 COPY 上下文，并记录源码、文件及上下文指纹。仅 `selected_images` 发生变化：创建仅选择候选镜像，关闭准入后的审计保留全部精确前驱及候选镜像。生成上下文不会构建镜像、注册供应商或修改 Root 选择。执行所有者须另行构建并验证实际不可变配对，再将其记入封闭清单；业务依赖仍由各自所属包维护。
