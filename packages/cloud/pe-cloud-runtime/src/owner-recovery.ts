@@ -69,7 +69,10 @@ export function readRecoveryProof(
       evidenceRefs: references(item.evidenceRefs, limits) })
   })
   if (new Set(allocations.map(item => item.allocationId)).size !== allocations.length) refuse()
+  const operatorRef = Object.hasOwn(row, 'operatorRef') ? text(row.operatorRef, Math.min(64, limits.maxReferenceBytes)) : undefined
+  if (operatorRef !== undefined && !/^[a-zA-Z0-9_.:-]{1,64}$/.test(operatorRef)) refuse()
   const proof: OwnerRecoveryProof = Object.freeze({ ...expected, verifierId: authority.verifierId, verifiedAt, writersVerifiedAt,
+    ...(operatorRef === undefined ? {} : { operatorRef }),
     databaseRole: text(row.databaseRole, limits.maxReferenceBytes),
     oldProcessEvidenceRef: text(row.oldProcessEvidenceRef, limits.maxReferenceBytes),
     writerLossEvidenceRef: text(row.writerLossEvidenceRef, limits.maxReferenceBytes),

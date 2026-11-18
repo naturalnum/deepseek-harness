@@ -175,6 +175,8 @@ Verifier 必须证明旧进程真实死亡、writer 失效、全部分配销毁�
 
 成功审计引用的重复调用先只读检查，不再调用 verifier，也不重放 SQL/provider 动作。历史审计的后镜像若已不再匹配当前 owner，只作为历史结果。提交/解码未知时保留原有有界 owner-write 责任；`inspectRecovery()` 只读精确审计和当前后镜像，不重试、不自动清除此责任。Root 负责后续责任解除、实际 allocation 对账、启动/入口集成及另行限定范围的旧实例关闭。heartbeat 或单账户 proof 均不授予整实例关闭权限。
 
+受保护的单账户维护证明可带不透明的 `operatorRef`。Owner store 校验该引用，并将其保存在同一次提交的证明及历史审计中。
+
 `closeRecoveredInstance()` 是另一个私有 CAS，锚定同一精确账户审计、旧 instance 和 epoch。它再次核验选定 proof，锁住全部 owner 写入，要求审计账户在该 epoch 仍为 unowned，且不存在任何指向旧实例的 owner。旧注册行的地址、recipe、registered 阶段必须精确匹配；已匹配 closed 后镜像时幂等返回。`inspectRecoveredInstance()` 提供精确只读对账；关闭结果未知时保留同一有界账户/epoch 责任。Root 必须保持普通准入关闭，直到两步恢复及维护 CLI 关闭均已结束。
 
 现有 Root 入口仅在维护装配中接受显式 `recovery` 配置，关闭 acquire、borrow、mount 与业务准入，并只通过原执行 drain participant 登记选定 verifier。恢复复用原 owner store 及其保留的未知写入责任；普通 Root 不提供恢复 port。维护进程必须等待实际对账完成并关闭，之后才能恢复普通启动。

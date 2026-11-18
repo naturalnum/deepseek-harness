@@ -79,8 +79,10 @@ class MaintenanceRecoveryCoordinator extends SandboxCoordinator {
   }
 
   private expected(account: RecoveryAccountWitness): OwnerRecoveryExpectation {
-    const facts = this.witness.facts
-    const digest = createHash('sha256').update(JSON.stringify([facts.auditRef, facts.oldInstanceId, account.accountId, account.epoch])).digest('hex')
+    const facts = this.witness.facts, target = this.reference.target
+    const identity = [facts.auditRef, facts.oldInstanceId, account.accountId, account.epoch]
+    if (target !== undefined) identity.push('target', target.operatorRef)
+    const digest = createHash('sha256').update(JSON.stringify(identity)).digest('hex')
     return Object.freeze({ accountId: account.accountId, epoch: account.epoch,
       oldInstanceId: brandString<InstanceId>(facts.oldInstanceId), auditRef: brandString<RecoveryAuditRef>('recovery:' + digest) })
   }
@@ -107,7 +109,9 @@ class MaintenanceRecoveryCoordinator extends SandboxCoordinator {
     if (original.auditRef !== expected.auditRef || original.oldInstanceId !== expected.oldInstanceId) unavailable()
     await this.proveRows(account, true)
     const publication = 'sha256:' + this.reference.publication.sha256
+    const target = this.reference.target
     return Object.freeze({ ...original, verifierId: facts.verifierId, verifiedAt: facts.verifiedAt,
+      ...(target === undefined ? {} : { operatorRef: target.operatorRef }),
       databaseRole: facts.databaseRole, writersVerifiedAt: facts.writersVerifiedAt,
       oldProcessEvidenceRef: facts.processEvidenceRef, writerLossEvidenceRef: facts.writersEvidenceRef,
       lateCreateFenceEvidenceRef: publication, lateSpawnFenceEvidenceRef: publication,
@@ -116,9 +120,34 @@ class MaintenanceRecoveryCoordinator extends SandboxCoordinator {
         evidenceRefs: Object.freeze([...new Set(recoveryWitnessEvidenceRefs(item))]) }))) })
   }
 
+  private async recoverTarget(target: NonNullable<RootRecoveryReference['target']>): Promise<void> {
+    const facts = this.witness.facts, account = facts.accounts[0]
+    if (facts.accounts.length !== 1 || account === undefined || account.accountId !== target.accountId
+      || account.epoch !== target.epoch || facts.oldInstanceId !== target.oldInstanceId) unavailable()
+    await this.store.migrate()
+    await this.recovery.migrate(this)
+    const expected = this.expected(account)
+    const owner = await this.runtime.locateAccount(account.accountId)
+    if (owner?.accountId !== account.accountId || owner.epoch !== account.epoch) unavailable()
+    // The one-account mode only consumes already-terminal allocations. The original CAS checks exhaustive coverage and writer loss.
+    await this.proveRows(account, true)
+    if (owner.phase === 'quarantined' && owner.ownerInstanceId === facts.oldInstanceId) {
+      this.attempted.set(account.accountId, expected)
+      await this.recovery.recoverAccount(this, expected)
+    } else if (owner.phase !== 'unowned' || owner.ownerInstanceId !== null) unavailable()
+    const observed = await this.recovery.inspectAccount(this, expected)
+    if (observed.audit?.proof.operatorRef !== target.operatorRef
+      || !observed.matchesPostimage || observed.responsibilityRetained) unavailable()
+    this.witness.assertCurrent()
+    this.ctx.logger.info('Single-account maintenance recovery completed; ordinary account admission remains closed')
+  }
+
   private async run(): Promise<void> {
-    this.resources.selection = openRootRecoveryReference(this.reference, { maxAccounts: this.config.maxBoundAccounts,
+    const target = this.reference.target
+    this.resources.selection = openRootRecoveryReference(this.reference, {
+      maxAccounts: target === undefined ? this.config.maxBoundAccounts : 1,
       maxAllocations: this.config.store.maxRows, maxFieldBytes: this.config.store.maxFieldBytes })
+    if (target !== undefined) return this.recoverTarget(target)
     const witness = this.witness, facts = witness.facts, snapshots = new Map<AccountId, AllocationRecoverySnapshot>()
     await this.store.migrate()
     await this.recovery.migrate(this)
@@ -194,7 +223,7 @@ class MaintenanceRecoveryCoordinator extends SandboxCoordinator {
  * @param runtime Original maintenance runtime; ordinary runtime configuration cannot provide recovery.
  * @param config Existing finite metadata/observation budgets; no SDK or mounts are constructed here.
  * @param reference Explicit protected verifier publication input.
- * @returns Actual reconciliation and old-instance closure; no ordinary execution or account graph opens.
+ * @returns Actual maintenance settlement for the selected scope; ordinary account admission stays closed.
  */
 export async function mountRootRecovery(ctx: Context, runtime: AccountRuntimeService,
   config: ManagedCoordinatorConfig, reference: unknown): Promise<void> {

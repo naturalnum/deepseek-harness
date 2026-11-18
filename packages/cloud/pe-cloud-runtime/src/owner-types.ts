@@ -71,6 +71,8 @@ export interface OwnerRecoveryExpectation extends OwnerExpectation {
 export interface OwnerRecoveryProof extends OwnerRecoveryExpectation {
   readonly verifierId: RecoveryVerifierId
   readonly verifiedAt: string
+  /** Principal reference recorded by the protected single-account maintenance invocation. */
+  readonly operatorRef?: string
   /** Exact dedicated PostgreSQL role whose old client backends must all have ended. */
   readonly databaseRole: string
   /** Root verifies this cutoff after actual old-process death, before signing verifiedAt. */

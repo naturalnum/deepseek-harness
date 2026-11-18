@@ -15,3 +15,14 @@ it('requires an exact protected publication selection and explicit finite mainte
     expect(() => parseRootRecoveryReference(invalid)).toThrow(/explicit protected reference/)
   }
 })
+
+it('admits one exact maintenance target and a bounded operator reference', () => {
+  const target = { accountId: 'target-account', oldInstanceId: 'old-instance', epoch: '9223372036854775807', operatorRef: 'admin:42' }
+  const parsed = parseRootRecoveryReference({ ...input(), target })
+  expect(parsed.target).toEqual(target)
+  expect(Object.isFrozen(parsed.target)).toBe(true)
+  for (const invalid of [null, [], { ...target, accountIds: [target.accountId] }, { ...target, epoch: 21 },
+    { ...target, epoch: '9223372036854775808' }, { ...target, operatorRef: '' }, { ...target, operatorRef: 'untrusted operator' }]) {
+    expect(() => parseRootRecoveryReference({ ...input(), target: invalid })).toThrow(/explicit protected reference/)
+  }
+})

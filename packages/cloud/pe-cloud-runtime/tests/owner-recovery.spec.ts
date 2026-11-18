@@ -87,6 +87,7 @@ it('requires a selected instance-owned allowed verifier and explicit audit migra
 it('preserves the old epoch, skips successful duplicate verification/writes and increments only on ordinary next claim', async () => {
   const f = await fixture()
   const first = await f.store.recoverReleased(expected)
+  expect(first.proof).not.toHaveProperty('operatorRef')
   expect(first.postimage).toMatchObject({ accountId: account, epoch: '1', phase: 'unowned', ownerInstanceId: null })
   expect(await f.store.recoverReleased(expected)).toEqual(first)
   expect(f.calls()).toBe(1); expect(f.writes()).toBe(1)
@@ -101,6 +102,14 @@ it('preserves the old epoch, skips successful duplicate verification/writes and 
   expect(f.calls()).toBe(1); expect(f.writes()).toBe(1)
 })
 
+it('preserves the selected maintenance operator in the submitted proof and historical audit', async () => {
+  const operatorRef = 'admin:42'
+  const f = await fixture(value => ({ ...value, operatorRef }))
+  const audit = await f.store.recoverReleased(expected)
+  expect(audit.proof.operatorRef).toBe(operatorRef)
+  await expect(f.store.inspectRecovery(expected)).resolves.toMatchObject({ audit: { proof: { operatorRef } } })
+})
+
 const invalid: readonly [string, (value: OwnerRecoveryProof) => unknown][] = [
   ['missing proof', () => undefined], ['browser booleans', () => ({ oldProcessDead: true, allocationsStopped: true })],
   ['wrong account', value => ({ ...value, accountId: 'other' })], ['wrong old instance', value => ({ ...value, oldInstanceId: replacement })],
@@ -109,6 +118,8 @@ const invalid: readonly [string, (value: OwnerRecoveryProof) => unknown][] = [
   ['stale verification', value => ({ ...value, verifiedAt: '2020-01-01T00:00:00.000Z', writersVerifiedAt: '2020-01-01T00:00:00.000Z' })],
   ['future writer cutoff', value => ({ ...value, writersVerifiedAt: new Date(Date.now() + 60_000).toISOString() })],
   ['missing writer proof', value => ({ ...value, writerLossEvidenceRef: '' })],
+  ['malformed maintenance operator', value => ({ ...value, operatorRef: 'invalid operator' })],
+  ['oversized maintenance operator', value => ({ ...value, operatorRef: 'a'.repeat(65) })],
   ['missing database role', value => ({ ...value, databaseRole: '' })],
   ['missing late create fence', value => ({ ...value, lateCreateFenceEvidenceRef: false })],
   ['missing late spawn fence', value => ({ ...value, lateSpawnFenceEvidenceRef: '' })],
