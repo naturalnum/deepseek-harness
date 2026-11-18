@@ -47,15 +47,16 @@ function command() {
   let current = prepared
   const polls: ReturnType<typeof Promise.withResolvers<CommandSnapshot>>[] = []
   const advance = (): void => { for (const poll of polls.splice(0)) poll.resolve(current) }
+  const stop = vi.fn(async () => { current = { ...current, commitClosed: true }; return current })
   const value: CommandChannel = { prepare: async () => prepared,
     commit: async () => { current = { ...prepared, submitted: true }; return current },
     poll: () => {
       if (current.rangeEmpty) return Promise.resolve(current)
       const poll = Promise.withResolvers<CommandSnapshot>(); polls.push(poll); return poll.promise
     },
-    stop: async () => { current = { ...current, commitClosed: true }; return current },
+    stop,
   }
-  return { value, empty() {
+  return { value, advance, stop, empty() {
     current = { ...current, rangeEmpty: true, ioClosed: true, commitClosed: true,
       stdout: { ...current.stdout, eof: true }, stderr: { ...current.stderr, eof: true } }; advance()
   } }
@@ -258,7 +259,9 @@ async function fixture(name: string, handler: (request: IncomingMessage, respons
   const assertPeerClosed = async (): Promise<void> => {
     await vi.waitFor(() => { expect(serverSockets.size).toBe(0) }, { timeout: 1000, interval: 5 })
   }
-  return { work, owner, operation, entries, caller, stopCaller, controller, reserve, transport,
+  const stop = () => ctx.tools.execute({ callId: ToolCallId('worker6-loopback-stop'), name: 'dev_service',
+    arguments: { action: 'stop', serviceHandle: work.handle }, agent, signal: stopCaller.signal })
+  return { work, owner, operation, entries, caller, stopCaller, controller, reserve, transport, started, stop,
     processReservation, unknown, physical, events, releaseProof,
     gate, borrow, localClosed: localClosed.promise, assertPeerClosed,
     state: () => ({ count, chargedBytes, terminalState, clientRequests, requestCount, connections, reqClosed,
@@ -266,8 +269,9 @@ async function fixture(name: string, handler: (request: IncomingMessage, respons
     onReserve(value: () => void) { reserveHook = value } }
 }
 
-it('releases one finite GET only after actual client close and consumer completion', async () => {
+it('serves a finite GET, releases after actual close and consumer completion, and refuses new HTTP after explicit stop', async () => {
   const f = await fixture('finite-get', (_req, res) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{"hello":true}') })
+  expect(f.started.meta).toEqual({ kind: 'cloud-dev-service-v1', action: 'start', serviceHandle: f.work.handle, processSubmitted: true })
   const bodyRead = f.gate(), consumerMayFinish = f.gate()
   const read = f.borrow(async (response) => {
     let text = ''
@@ -288,6 +292,20 @@ it('releases one finite GET only after actual client close and consumer completi
   expect(f.releaseProof).toHaveLength(1); expect(f.unknown.mock.calls.length).toBe(0)
   expect(f.events.indexOf('root:release')).toBeGreaterThan(f.events.indexOf('client:socket:close'))
   expect(f.events.indexOf('root:release')).toBeGreaterThan(f.events.indexOf('consumer:finished'))
+  const stopped = f.stop(), service = f.entries[0]!.command
+  await vi.waitFor(() => { service.advance(); expect(service.stop).toHaveBeenCalledOnce() })
+  expect(f.processReservation.active).not.toHaveBeenCalled()
+  service.empty()
+  await expect(stopped).resolves.toMatchObject({ isError: false, value: {
+    action: 'stop', serviceHandle: f.work.handle, observation: { confirmed: true },
+  }, meta: null })
+  f.events.push('service:stop:confirmed')
+  const rejected = f.borrow(async () => { throw new Error('Stopped service must not open a new response.') })
+  await rejected.joined
+  expect(rejected.state.cause).toMatchObject({ code: 'cloud/execution-unavailable' })
+  expect(f.state()).toMatchObject({ requestCount: 1, connections: 1, clientRequests: 1 })
+  f.events.push('service:post-stop:refused-before-wire')
+  expect(f.processReservation.active).toHaveBeenCalledOnce(); expect(f.processReservation.resident).not.toHaveBeenCalled()
 })
 
 it.each(['headers-blocked', 'pending-read'] as const)('service stop joins real close and the %s consumer before confirming or releasing', async (mode) => {

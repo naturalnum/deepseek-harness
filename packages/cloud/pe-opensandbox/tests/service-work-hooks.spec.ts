@@ -156,6 +156,23 @@ it('same commit snapshot direct exit/EOF is consumed before submitted observatio
   expect(JSON.stringify(value)).not.toContain('running')
 })
 
+it('suppresses start and status preview after a confirmed direct exit while descendants still hold the original range', async () => {
+  const f = await fixture(() => {
+    const entry = channel(); entry.advance(exited(false)); return entry
+  })
+  const started = await f.call({ action: 'start' }), { serviceHandle, observation } = reply(started)
+  expect(observation).toMatchObject({ direct: 'exited', exitCode: 0, range: 'pending', httpReady: false })
+  expect(started.meta).toBeNull()
+  const status = await f.call({ action: 'status', serviceHandle })
+  expect(reply(status).observation).toMatchObject({ direct: 'exited', range: 'pending', exitCode: 0 })
+  expect(status.meta).toBeNull()
+  expect(f.reservations[0]!.active).not.toHaveBeenCalled()
+  expect(f.reservations[0]!.resident).not.toHaveBeenCalled()
+  f.entries[0]!.entry.advance(exited(true))
+  await vi.waitFor(() => { expect(f.reservations[0]!.active).toHaveBeenCalledOnce() })
+  expect(f.reservations[0]!.resident).not.toHaveBeenCalled()
+})
+
 it('projects only final bounded task fields into native metadata while canonical value has no infrastructure identity', async () => {
   const f = await fixture(), result = await f.call({ action: 'start' })
   const value = reply(result)

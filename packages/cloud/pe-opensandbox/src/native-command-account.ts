@@ -502,7 +502,7 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
         record.operation = operation
         this.records.delete(record.service.lease); this.records.set(operation, record)
         record.service.projection = projectServiceRange(operation.handle,
-          { whenEmpty: record.service.empty.promise, requestStop: () => {
+          { whenEmpty: record.service.empty.promise, directStatus: () => operation.directStatus(), requestStop: () => {
             this.closeApplicationRequests(record, this.failure()); operation.requestStop(new Error('Service stop requested.'))
           } },
           { maxLogReadBytes: record.service.profile.maxLogReadBytes, assertCurrent: () => { this.assertRegistered(record) } })

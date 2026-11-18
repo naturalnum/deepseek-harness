@@ -105,6 +105,10 @@ export interface CommandOperationAuthority {
 
 interface RangeWaiter { settle(empty: boolean, failure?: { readonly cause: unknown }): void }
 
+/** The original direct result after output EOF, independent of range and I/O settlement. */
+export type CommandDirectStatus = { readonly direct: 'pending' | 'failed' }
+  | ({ readonly direct: 'exited' } & SubprocessOutcome)
+
 /**
  * A synchronous native subprocess handle backed by one preparation/commit/poll loop.
  * Root installs the operation and reserves its complete storage before begin(). Public scope
@@ -139,6 +143,7 @@ export class ManagedCommandOperation {
   private publicationApproved = false
   private preparationSettled = false
   private direct: SubprocessOutcome | undefined
+  private completedDirect: SubprocessOutcome | undefined
   private eof = { stdout: false, stderr: false }
   private requestedStop: { readonly reason: unknown; readonly aborted: boolean } | undefined
   private failed: { readonly cause: unknown } | undefined
@@ -301,6 +306,14 @@ export class ManagedCommandOperation {
     if (this.requestedStop !== undefined) throw this.requestedStop.reason
     this.publicationApproved = true
     this.publication.resolve()
+  }
+
+  /** Read the original direct outcome without waiting for the public promise’s observers.
+   * @returns The process outcome after both EOFs, an observed failure, or pending.
+   */
+  directStatus(): CommandDirectStatus {
+    if (this.completedDirect !== undefined) return { direct: 'exited', ...this.completedDirect }
+    return { direct: this.failed === undefined ? 'pending' : 'failed' }
   }
 
   /**
@@ -550,7 +563,10 @@ export class ManagedCommandOperation {
   private completeDirect(): void {
     if (this.direct !== undefined && this.eof.stdout && this.eof.stderr && (this.streams === undefined || this.outputEnded)) {
       if (this.grace !== undefined) { clearTimeout(this.grace); this.grace = undefined }
-      this.completion.resolve(this.direct)
+      if (this.failed === undefined && this.completedDirect === undefined) {
+        this.completedDirect = this.direct
+        this.completion.resolve(this.completedDirect)
+      }
     } else if (this.direct !== undefined && this.grace === undefined) {
       this.drainDeadlineAtMs = performance.now() + this.graceMs
       this.grace = setTimeout(() => { this.requestStop(new Error('Collected command pipes exceeded the native drain grace.')) }, this.graceMs)

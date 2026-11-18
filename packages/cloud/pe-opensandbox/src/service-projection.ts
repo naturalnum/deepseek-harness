@@ -1,10 +1,12 @@
 /** Bounded views over one original operation; no allocation, process set or cleanup ownership. */
-import type { SubprocessHandle, SubprocessOutcome, SubprocessOutputRead } from '@deepseek-ai/dsh-subprocess'
+import type { SubprocessHandle, SubprocessOutputRead } from '@deepseek-ai/dsh-subprocess'
+import type { CommandDirectStatus } from './command-operation.ts'
 import { ExecutionStateError } from './errors.ts'
 
 /** Root's same operation provides private cleanup even after its public handle is revoked. */
 export interface ServiceRangeOwner {
   readonly whenEmpty: Promise<void>
+  directStatus(): CommandDirectStatus
   requestStop(): void
 }
 
@@ -31,10 +33,7 @@ async function observe(actual: Promise<void>, signal: AbortSignal): Promise<bool
  * @returns Observation views only; direct failure and confirmed physical range exit remain independent facts.
  */
 export function projectServiceRange(process: SubprocessHandle, owner: ServiceRangeOwner, policy: ServiceProjectionPolicy): Readonly<{
-  status(): { direct: 'pending' | 'exited' | 'failed'
-    range: 'pending' | 'empty'
-    exitCode?: SubprocessOutcome['exitCode']
-    signal?: SubprocessOutcome['signal'] }
+  status(): CommandDirectStatus & { range: 'pending' | 'empty' }
   log(stream: 'stdout' | 'stderr', fromByte: number): SubprocessOutputRead
   stop(signal: AbortSignal): Promise<boolean>
 }> {
@@ -44,14 +43,12 @@ export function projectServiceRange(process: SubprocessHandle, owner: ServiceRan
   }
   const stdout = process.collected.stdout, stderr = process.collected.stderr
   if (stdout === undefined || stderr === undefined) throw new ExecutionStateError('cloud/execution-unavailable', 'Service logs are unavailable.')
-  let direct: 'pending' | 'exited' | 'failed' = 'pending', range: 'pending' | 'empty' = 'pending'
-  let outcome: SubprocessOutcome | undefined
-  void process.done.then((value) => { direct = 'exited'; outcome = value }, () => { direct = 'failed' })
+  let range: 'pending' | 'empty' = 'pending'
   void owner.whenEmpty.then(() => { range = 'empty' })
   return Object.freeze({
     status() {
       policy.assertCurrent()
-      return { direct, range, ...(outcome === undefined ? {} : { exitCode: outcome.exitCode, signal: outcome.signal }) }
+      return { ...owner.directStatus(), range }
     },
     log(stream: 'stdout' | 'stderr', fromByte: number): SubprocessOutputRead {
       policy.assertCurrent()
