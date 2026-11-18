@@ -179,9 +179,11 @@ class Decoder {
       'projects', 'filePreview', 'shell', 'developmentServices', 'servicePreview', 'sandboxScope',
       'backgroundJobs', 'localDesktop', 'arbitraryBackendPlugins', 'subprocess', 'configuration',
       ...object(input) && Object.hasOwn(input, 'accountAdministration') ? ['accountAdministration'] : [],
+      ...object(input) && Object.hasOwn(input, 'allocationDiagnostics') ? ['allocationDiagnostics'] : [],
     ])
     return Object.freeze({
       ...Object.hasOwn(value, 'accountAdministration') ? { accountAdministration: this.capability(value['accountAdministration']) } : {},
+      ...Object.hasOwn(value, 'allocationDiagnostics') ? { allocationDiagnostics: this.capability(value['allocationDiagnostics']) } : {},
       projects: this.capability(value['projects']), filePreview: this.capability(value['filePreview']),
       shell: this.capability(value['shell']), developmentServices: this.capability(value['developmentServices']),
       servicePreview: this.capability(value['servicePreview']), sandboxScope: this.literal(value['sandboxScope'], 'session'),

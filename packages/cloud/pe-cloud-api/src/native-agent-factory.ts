@@ -1,6 +1,7 @@
 /** Private graph-bound admission around the public native AgentLoop factory transaction. */
 import { symbols, type Context } from '@deepseek-ai/cordis'
 import type { AgentDisposalObserver, AgentDisposalStatus, AgentHandle } from '@deepseek-ai/dsh-agent'
+import type { Session } from '@deepseek-ai/dsh-session'
 import { delegationDepthOf } from '@deepseek-ai/dsh-subagent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import type { SubagentCapacityReservation, AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
@@ -14,6 +15,8 @@ type Setup = NonNullable<CreateOptions['setup']>
 
 /** Shared provider checks; these callbacks issue neither identities nor cached approval. */
 export interface NativeAgentFactoryGuards {
+  /** Optional Root receipt for a fresh published Native Session. Resume never issues this receipt. */
+  readonly recordFreshSession?: (session: Session, flush: () => Promise<void>, signal: AbortSignal) => Promise<void>
   /**
    * Verify the actual project, model and Preset before persistence creation.
    * Child approval also requires the exact live parent and original graph; return its actual depth.
@@ -247,6 +250,7 @@ class AccountAgentLoop extends AgentLoop {
     ctx: Context,
     config: ConstructorParameters<typeof AgentLoop>[1],
     private readonly admission: FactoryAdmission,
+    private readonly recordFreshSession: NativeAgentFactoryGuards['recordFreshSession'],
   ) {
     // The native constructor's configured restore/resume path bypasses public factory methods.
     if (config.agents.length !== 0) {
@@ -272,6 +276,11 @@ class AccountAgentLoop extends AgentLoop {
       catch (_cleanup) { /* The native owner and disposal observer retain cleanup failure; preserve the admission failure. */ }
       throw error
     }
+  }
+
+  protected override async onFreshSessionPublished(session: Session, flush: () => Promise<void>, signal?: AbortSignal): Promise<void> {
+    try { await this.recordFreshSession?.(session, flush, this.admission.signal(signal)) }
+    catch (_unavailable) { this.ctx.logger.warn('Cloud Native diagnostics ownership receipt unavailable.') }
   }
 
   private async withReservation<T>(
@@ -347,5 +356,5 @@ export function createNativeAgentLoop(
 ): AgentLoop {
   const admission = new FactoryAdmission(ctx, binding, assertCurrent, guards, reserveSubagent)
   admission.installed(ctx)
-  return new AccountAgentLoop(ctx, config, admission)
+  return new AccountAgentLoop(ctx, config, admission, guards.recordFreshSession)
 }

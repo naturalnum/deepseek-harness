@@ -220,7 +220,11 @@ Root 显式配置 `accountAdministration: { maxAccounts, maxPageSize, initialAdm
 
 本地管理队列仅在队首占用 PostgreSQL 咨询锁连接，因此并发管理请求仍可使用最少两个连接的池。启动时将认证数据库的空闲事务超时与实际运行时账号等待、有限槽位分配查询及认证尾部调用预算比较；配置不足会在开放管理路由前拒绝启动。定向 PostgreSQL 测试使用固定版本真实认证库和两个连接的池；资源生命周期回复夹具不证明真实 Linux 账号准备或浏览器验收。运行时绑定测试另行验证持久化的唯一槽位分配及重启加载。
 
-目标账号的资源清理使用 `cloud/account-stop-unconfirmed`，共享入口保持可用。共享 HTTP 或 Peer 清理继续使用 `cloud/stop-unconfirmed`，并保留原有准入关闭行为。已安装路由数量包括每一项显式选中的账号管理和服务预览注册。
+目标账号的资源清理使用 `cloud/account-stop-unconfirmed`，共享入口保持可用。共享 HTTP 或 Peer 清理继续使用 `cloud/stop-unconfirmed`，并保留原有准入关闭行为。已安装路由数量包括每一项显式选中的账号管理、分配诊断和服务预览注册。
+
+Root 启用受管执行并配置 `allocationDiagnostics: { grantPath, maxGrantBytes }` 后，可注册同源 POST `/cloud/admin/allocation-diagnostics`。启用前先完成 Better Auth 迁移，再应用[归属凭据迁移](migrations/diagnostic-session-birth.sql)。Access 启动时验证表结构。授权文件是精确三元组 `[管理员 AccountId, 目标 AccountId, SessionId]` 的 JSON 数组。文件使用绝对保护路径，由 root 或服务 UID 持有，最多允许属主读写及属组读。上级目录禁属组与其他用户写入。授权变更通过原子替换文件发布。
+
+Access 绑定原 Cookie 和操作者账号头，复查当前管理员角色，并在原 Root PostgreSQL 有界查询前后验证精确授权与 Session 持久归属。Native 新建普通 Session 时，Root 持久记录实际已落盘文件的身份及有界原始前缀。冷读从当前 Files owner 确认目标存储，再复核账号、凭据和原文件。直接导入及缺少凭据的早期 Session 不可读。响应带 `Cache-Control: no-store`，查询无需挂载目标图或打开 Session handle。可信 Root 组合也可显式提供 `AllocationDiagnosticsAuthority`。
 
 ## 模型体验
 

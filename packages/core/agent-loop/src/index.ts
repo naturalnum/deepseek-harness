@@ -844,7 +844,7 @@ export class AgentLoop extends Service implements AgentFactory {
         preparation[Symbol.dispose]()
         throw error
       }
-      return this.setupAndPublish(
+      const published = this.setupAndPublish(
         ownerCtx,
         options.sessionId,
         preparation,
@@ -856,10 +856,31 @@ export class AgentLoop extends Service implements AgentFactory {
         options.parentAgent,
         options.observeDisposal,
       )
+      const notify = this.onFreshSessionPublished
+      if (notify === undefined || stored === undefined || options.parentAgent !== undefined) return published
+      return published.then(async (handle) => {
+        try {
+          await notify.call(this, handle.agent.session, () => stored.handle.flush(), options.signal)
+          return handle
+        } catch (error) {
+          try { await handle.dispose() }
+          catch (_cleanup) { /* Native ownership retains the disposal failure. */ }
+          throw error
+        }
+      })
     })()
     this.ownership.trackWrapper(published)
     return published
   }
+
+  /**
+   * Optional host observation of a freshly published ordinary Session with actual Native write ownership.
+   * @param session Original published Session.
+   * @param flush Durability barrier for this exact Native handle.
+   * @param signal Original create cancellation, when supplied.
+   * @throws A rejected observer disposes the published handle through the original Native owner.
+   */
+  protected onFreshSessionPublished?(session: Session, flush: () => Promise<void>, signal?: AbortSignal): Promise<void>
 
   /** Prepare one Agent around an acquired Session, run setup, and publish it. */
   private async setupAndPublish(

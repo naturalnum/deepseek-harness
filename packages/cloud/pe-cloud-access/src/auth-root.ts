@@ -10,6 +10,8 @@ import { BetterAuthAccess } from './auth.ts'
 import { AuthAccessError } from './auth-error.ts'
 import { parseAuthRootConfig, type AuthRootConfig } from './root-config.ts'
 import { CloudIngress } from './ingress.ts'
+import type { AllocationDiagnosticsAuthority, AllocationDiagnosticsPort } from './allocation-diagnostics.ts'
+import { DiagnosticOwnership } from './diagnostic-ownership.ts'
 import { OwnerRouting } from './owner-routing.ts'
 import type { IngressObservation } from './types.ts'
 import type { AccountBinding, AccountUse, AccountId } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
@@ -20,6 +22,7 @@ import type { ConfigurationPeerOperation } from './peers.ts'
 import { assertAuthSchemaCurrent } from './auth-schema.ts'
 import { ServiceApplicationViews } from './application-views.ts'
 import type { WebServer } from '@deepseek-ai/dsh-host-webserver'
+import { SandboxCoordinator } from '@deepseek-ai/dsh-pe-opensandbox'
 
 function startupFailure(value: unknown) {
   let code: string | undefined
@@ -66,8 +69,13 @@ export class PeAuthService extends Service {
   private ingressFinal: IngressObservation | undefined
   private ownerRouting: OwnerRouting | undefined
   private applicationViews: ServiceApplicationViews | undefined
+  private diagnosticOwnership: DiagnosticOwnership | undefined
+  private readonly diagnosticPublications = new Set<Promise<void>>()
 
-  private constructor(ctx: Context, private readonly config: AuthRootConfig, private readonly credentials: CredentialProvider) {
+  private constructor(
+    ctx: Context, private readonly config: AuthRootConfig, private readonly credentials: CredentialProvider,
+    private readonly allocationDiagnostics: AllocationDiagnosticsAuthority | undefined,
+  ) {
     super(ctx, 'peAuth')
     const rootClose = ctx.root.effect(() => () => this.close(), 'pe-cloud-access: retain actual authentication resources')
     ctx.effect(() => async () => {
@@ -86,15 +94,21 @@ export class PeAuthService extends Service {
    * Startup diagnostics retain project error messages and one cause; external messages and stacks are omitted.
    * @param ctx - Root Loader scope with the official credentials service.
    * @param config - Explicit Host database and operation budgets.
+   * @param allocationDiagnostics - Optional original Root-held grant and Session ownership authority.
    * @returns The installed resource provider after a gap-free library schema inspection.
    * @throws AuthAccessError on missing credentials, timeout, schema gaps or DB/library failure. Cleanup remains retained.
    */
-  static async mountRoot(ctx: Context, config: AuthRootConfig): Promise<PeAuthService> {
+  static async mountRoot(
+    ctx: Context, config: AuthRootConfig, allocationDiagnostics?: AllocationDiagnosticsAuthority,
+  ): Promise<PeAuthService> {
     const resolved = parseAuthRootConfig(config)
     const credentials = ctx.get('credentials')
     const requestId = randomUUID() as Branded<'pe-request-id'>
-    if (credentials === undefined || ctx.get('peAuth') !== undefined) throw new AuthAccessError('cloud/account-unavailable', requestId)
-    const service = new PeAuthService(ctx, resolved, credentials)
+    if (credentials === undefined || ctx.get('peAuth') !== undefined || (allocationDiagnostics !== undefined && resolved.allocationDiagnostics !== undefined)
+      || (allocationDiagnostics !== undefined && (resolved.ingress === undefined || resolved.accountAdministration === undefined))) {
+      throw new AuthAccessError('cloud/account-unavailable', requestId)
+    }
+    const service = new PeAuthService(ctx, resolved, credentials, allocationDiagnostics)
     service.starting = service.start()
     try {
       await service.wait(service.starting, resolved.startupTimeoutMs)
@@ -113,6 +127,25 @@ export class PeAuthService extends Service {
       void service.close().catch(() => { ctx.logger.error('Cloud authentication cleanup is unconfirmed; admission remains closed.') })
       throw new AuthAccessError('cloud/account-unavailable', service.requestId)
     }
+  }
+
+  /** Whether this Root is publishing actual Native Session creation receipts.
+   * @returns True only for initialized, explicitly configured diagnostics.
+   */
+  get diagnosticBirthsEnabled(): boolean { return this.phase === 'initialized' && this.diagnosticOwnership !== undefined }
+
+  /** Record the durable original Native artifact through the Root-only creation bridge.
+   * @param binding Original account generation issued by Runtime.
+   * @param sessionId Exact original Session id from Native creation.
+   * @param path Current original JSONL artifact under that account's trusted storage.
+   * @returns Actual write settlement. Root retains it through pool teardown.
+   */
+  async recordDiagnosticBirth(binding: AccountBinding, sessionId: string, path: string): Promise<void> {
+    const ownership = this.diagnosticOwnership
+    if (this.phase !== 'initialized' || ownership === undefined) throw new AuthAccessError('cloud/account-unavailable', this.requestId)
+    const actual = ownership.publish(binding, sessionId, path)
+    this.diagnosticPublications.add(actual)
+    try { await actual } finally { this.diagnosticPublications.delete(actual) }
   }
 
   /**
@@ -279,12 +312,29 @@ export class PeAuthService extends Service {
       if (this.config.applications !== undefined) {
         this.applicationViews = new ServiceApplicationViews(this.auth, this.config.applications.views)
       }
+      if (this.config.allocationDiagnostics !== undefined) {
+        const resolve = runtime.diagnosticSessionsRoot
+        if (resolve === undefined) throw new AuthAccessError('cloud/account-unavailable', this.requestId)
+        this.diagnosticOwnership = new DiagnosticOwnership(this.pool, this.config.allocationDiagnostics, resolve.bind(runtime))
+        await this.diagnosticOwnership.verifySchema()
+        this.assertStarting()
+      }
+      const authority = this.diagnosticOwnership ?? this.allocationDiagnostics
+      let diagnostics: AllocationDiagnosticsPort | undefined
+      if (authority !== undefined) {
+        const execution = this.ctx.root.get('peSandboxCoordinator')
+        if (!(execution instanceof SandboxCoordinator) || execution.readAllocationHistory === undefined) {
+          throw new AuthAccessError('cloud/account-unavailable', this.requestId)
+        }
+        diagnostics = { allows: authority.allows.bind(authority), read: execution.readAllocationHistory.bind(execution) }
+      }
       this.ingress = new CloudIngress(this.ctx, this.config, this.config.ingress, this.auth, {
         web, runtime, exposure, recipeVersion: exposure.policy.manifest.recipeVersion,
         assertAuthenticationCurrent: () => {
           if (this.phase !== 'initialized') throw new AuthAccessError('cloud/account-unavailable', this.requestId)
         },
         ...(this.ownerRouting === undefined ? {} : { ownerRouting: this.ownerRouting }),
+        ...(diagnostics === undefined ? {} : { allocationDiagnostics: diagnostics }),
         ...this.applicationViews === undefined || this.config.applications === undefined ? {} : {
           applications: { config: this.config.applications, views: this.applicationViews },
         },
@@ -326,6 +376,7 @@ export class PeAuthService extends Service {
     this.ingressFinal = this.ingress?.observe()
     await this.auth?.close()
     await Promise.allSettled([...this.secrets])
+    await Promise.allSettled(this.diagnosticPublications)
     await this.pool?.end()
     this.pool = undefined
     this.auth = undefined

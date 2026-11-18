@@ -181,6 +181,30 @@ function retainedAllocation(): SandboxAllocation {
   }
 }
 
+it('fences and joins an actual in-flight allocation history statement on Root close', async () => {
+  const f = fixture()
+  await f.owner.start()
+  const pending = Promise.withResolvers<Rows>()
+  onTestFinished(() => pending.resolve({ rows: [] }))
+  f.query.mockClear().mockReturnValueOnce(pending.promise)
+  const selection = { accountId: 'account-1', sessionId: 'session-1', fromMs: 1000, toMs: 2000, limit: 1 }
+  const read = f.owner.readAllocationHistory(selection)
+  const refused = expect(read).rejects.toMatchObject({ code: 'cloud/execution-unavailable' })
+  expect(f.query).toHaveBeenCalledOnce()
+  expect(f.query.mock.calls[0]?.[0]).toMatch(/^SELECT /)
+  const settled = vi.fn()
+  const close = f.owner.closeRoot().then(settled)
+  f.transportClose.resolve(undefined)
+  await f.transportCloseEntered.promise
+  await expect(f.owner.readAllocationHistory(selection)).rejects.toMatchObject({ code: 'cloud/execution-unavailable' })
+  expect(settled).not.toHaveBeenCalled()
+  expect(f.query).toHaveBeenCalledOnce()
+  pending.resolve({ rows: [] })
+  await Promise.all([refused, close])
+  expect(settled).toHaveBeenCalledOnce()
+  expect(f.create).not.toHaveBeenCalled()
+})
+
 it('single-instance startup admits service after closing an expired unnumbered allocation', async () => {
   const retained = retainedAllocation(), f = fixture({ retained, singleInstanceActive: true })
   const fail = vi.spyOn(PostgresAllocationStore.prototype, 'failNotCreated').mockResolvedValue({

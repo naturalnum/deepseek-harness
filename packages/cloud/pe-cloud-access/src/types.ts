@@ -125,6 +125,7 @@ export interface BootstrapConfiguration {
 /** C-11 metadata from the server's actual recipe and providers; decoding does not verify those facts. */
 export interface BootstrapCapabilities {
   readonly accountAdministration?: BootstrapCapability
+  readonly allocationDiagnostics?: BootstrapCapability
   readonly projects: BootstrapCapability
   readonly filePreview: BootstrapCapability
   readonly shell: BootstrapCapability

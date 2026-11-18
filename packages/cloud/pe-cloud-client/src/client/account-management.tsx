@@ -9,6 +9,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { PreparedCloudPage } from './prepared-page.ts'
 import { ClientFailure } from './errors.ts'
 import { readResponse } from './read-response.ts'
+import { AccountDiagnostics, readDiagnosis, type Diagnosis, type DiagnosticQuery } from './account-diagnostics.tsx'
 import { ACCOUNT_MANAGEMENT_NS, accountManagementDictionaries } from './account-management-locales.ts'
 import css from './account-management.module.css'
 
@@ -37,13 +38,15 @@ export interface AccountState {
 }
 /** Original account-bound actions and the observable projected view. */
 export interface AccountFace {
-  readonly hooks: { readonly accountManagement: ObservableSnapshot<AccountState> }
+  readonly hooks: { readonly accountManagement: ObservableSnapshot<AccountState>; readonly diagnosis: ObservableSnapshot<Diagnosis> }
   submit(value: object): void
+  queryAllocations?(value: DiagnosticQuery): void
 }
 type Props = PropsRuntime<'settings.section'> & PropsLocale<'cloud-account-management'> & InjectFace<AccountFace>
 function text(data: FormData, key: string): string { const value = data.get(key); return typeof value === 'string' ? value : '' }
 function AccountManagement(props: Props) {
   const state = props.useAccountManagement(value => value), { t } = props
+  const diagnosis = props.useDiagnosis(value => value)
   const canCreate = state.templates.some(row => row.available > 0)
   const roles = <><option value="user">{t('user')}</option><option value="admin">{t('admin')}</option></>
   return <section className={css.section} aria-label={t('title')}>
@@ -54,6 +57,7 @@ function AccountManagement(props: Props) {
     </form>
     {state.failed && <p role="alert" className={css.error}>{t('failed')}</p>}
     {state.created && <p role="status">{t('created')}</p>}{state.pending && <p role="status">{t('pending')}</p>}
+    {props.queryAllocations !== undefined && <AccountDiagnostics t={t} diagnosis={diagnosis} query={props.queryAllocations}/>}
     <form className={css.card} onSubmit={(event) => { event.preventDefault(); const form = event.currentTarget, data = new FormData(form)
       props.submit({ op: 'create', email: text(data, 'email'), displayName: text(data, 'displayName'), password: text(data, 'password'), role: text(data, 'role'), templateId: text(data, 'templateId') }); form.reset() }}>
       <h2>{t('create')}</h2>
@@ -132,11 +136,38 @@ export function installCloudAccountManagement(ctx: Context, page: PreparedCloudP
   if (fetch === undefined || signal.aborted) return
   const dependency = ctx.inject(['slots', 'locale'], (owner) => {
     const retired = new AbortController(), signal = AbortSignal.any([page.lifetime.transport.signal, retired.signal])
-    let actual: Promise<void> | undefined, cleanupFailure: unknown
-    owner.effect(() => async () => { retired.abort(); await actual; if (cleanupFailure !== undefined) throw cleanupFailure })
+    let actual: Promise<void> | undefined, diagnosisActual: Promise<void> | undefined, cleanupFailure: unknown
+    owner.effect(() => async () => {
+      retired.abort(); await Promise.all([actual, diagnosisActual]); if (cleanupFailure !== undefined) throw cleanupFailure
+    })
     const current = (): void => { page.assertAccountManagementCurrent(owner); signal.throwIfAborted() }
     const state = createSnapshotStore<AccountState>({ listingRevision: 0, rows: [], templates: [], search: '', offset: 0, pageSize: 0, total: 0,
       pending: false, failed: false, created: false })
+    const diagnosis = createSnapshotStore<Diagnosis>({ phase: 'idle' })
+    const queryAllocations = (input: DiagnosticQuery): void => {
+      try { current() } catch (_retired) { return }
+      if (diagnosis.getSnapshot().phase === 'pending') return
+      const safe = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/
+      if (!safe.test(input.accountId) || !safe.test(input.sessionId) || !Number.isSafeInteger(input.fromMs)
+        || !Number.isSafeInteger(input.toMs) || input.fromMs < 0 || input.fromMs >= input.toMs
+        || input.toMs - input.fromMs > 86400000) { diagnosis.set({ phase: 'invalid' }); return }
+      diagnosis.set({ phase: 'pending' })
+      diagnosisActual = (async () => {
+        try {
+          const response = await fetch('cloud/admin/allocation-diagnostics', {
+            method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input), signal,
+          })
+          const bytes = await readResponse(response, page.accountAdministrationMaxResponseBytes, signal)
+          current()
+          if (response.status === 403) { diagnosis.set({ phase: 'denied' }); return }
+          if (!response.ok) { diagnosis.set({ phase: 'failed' }); return }
+          diagnosis.set(readDiagnosis(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)), input))
+        } catch (error) {
+          if (error instanceof ClientFailure && error.code === 'close-unconfirmed') cleanupFailure = error
+          if (!signal.aborted) diagnosis.set({ phase: 'failed' })
+        }
+      })()
+    }
     const send = async (value: object): Promise<unknown> => {
       current()
       const response = await fetch('cloud/admin/accounts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(value), signal })
@@ -145,45 +176,47 @@ export function installCloudAccountManagement(ctx: Context, page: PreparedCloudP
       if (!response.ok) throw new Error('Account administration refused')
       return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
     }
-    const face: AccountFace = { hooks: { accountManagement: state }, submit(value) {
-      current(); if (state.getSnapshot().pending) return
-      if (Reflect.get(value, 'op') === 'create' || Reflect.get(value, 'op') === 'prepare') value = { ...value, requestId: randomUUID() }
-      state.set({ ...state.getSnapshot(), pending: true, failed: false, created: false })
-      actual = (async () => {
-        try {
-          let result: unknown, operationFailed = false
-          try { result = await send(value) }
-          catch (error) {
+    const face: AccountFace = { hooks: { accountManagement: state, diagnosis },
+      ...page.bootstrap.capabilities.allocationDiagnostics?.state === 'available' ? { queryAllocations } : {},
+      submit(value) {
+        current(); if (state.getSnapshot().pending) return
+        if (Reflect.get(value, 'op') === 'create' || Reflect.get(value, 'op') === 'prepare') value = { ...value, requestId: randomUUID() }
+        state.set({ ...state.getSnapshot(), pending: true, failed: false, created: false })
+        actual = (async () => {
+          try {
+            let result: unknown, operationFailed = false
+            try { result = await send(value) }
+            catch (error) {
+              if (error instanceof ClientFailure && error.code === 'close-unconfirmed') cleanupFailure = error
+              if (Reflect.get(value, 'op') === 'list') throw error
+              operationFailed = true
+              result = await send({ op: 'list', search: state.getSnapshot().search, offset: state.getSnapshot().offset })
+            }
+            const listing = rows(result)
+            const response = listing === undefined ? await send({ op: 'list', search: state.getSnapshot().search, offset: state.getSnapshot().offset }) : result
+            const refreshed = listing ?? rows(response)
+            if (response === null || typeof response !== 'object' || refreshed === undefined) throw new TypeError('Invalid account listing')
+            const rawTemplates: unknown = Reflect.get(response, 'templates'), offset: unknown = Reflect.get(response, 'offset')
+            const pageSize: unknown = Reflect.get(response, 'limit'), total: unknown = Reflect.get(response, 'total')
+            if (!Array.isArray(rawTemplates) || typeof offset !== 'number' || typeof pageSize !== 'number' || typeof total !== 'number') throw new TypeError('Invalid account listing')
+            const templates: ResourceTemplate[] = rawTemplates.map((row: unknown) => {
+              if (row === null || typeof row !== 'object') throw new TypeError('Invalid resource template')
+              const id: unknown = Reflect.get(row, 'id'), available: unknown = Reflect.get(row, 'available')
+              if (typeof id !== 'string' || typeof available !== 'number') throw new TypeError('Invalid resource template')
+              return { id, available }
+            })
+            const resourceState: unknown = result !== null && typeof result === 'object' ? Reflect.get(result, 'resourceState') : undefined
+            const resourceFailed = operationFailed || Reflect.get(value, 'op') === 'create' && resourceState !== 'ready'
+            current(); state.set({ rows: refreshed, templates, offset, pageSize, total,
+              listingRevision: state.getSnapshot().listingRevision + 1,
+              search: Reflect.get(value, 'op') === 'list' && typeof Reflect.get(value, 'search') === 'string' ? String(Reflect.get(value, 'search')) : state.getSnapshot().search,
+              pending: false, failed: resourceFailed, created: Reflect.get(value, 'op') === 'create' && !resourceFailed })
+          } catch (error) {
             if (error instanceof ClientFailure && error.code === 'close-unconfirmed') cleanupFailure = error
-            if (Reflect.get(value, 'op') === 'list') throw error
-            operationFailed = true
-            result = await send({ op: 'list', search: state.getSnapshot().search, offset: state.getSnapshot().offset })
+            if (!signal.aborted) state.set({ ...state.getSnapshot(), rows: [], templates: [], total: 0, pending: false, failed: true })
           }
-          const listing = rows(result)
-          const response = listing === undefined ? await send({ op: 'list', search: state.getSnapshot().search, offset: state.getSnapshot().offset }) : result
-          const refreshed = listing ?? rows(response)
-          if (response === null || typeof response !== 'object' || refreshed === undefined) throw new TypeError('Invalid account listing')
-          const rawTemplates: unknown = Reflect.get(response, 'templates'), offset: unknown = Reflect.get(response, 'offset')
-          const pageSize: unknown = Reflect.get(response, 'limit'), total: unknown = Reflect.get(response, 'total')
-          if (!Array.isArray(rawTemplates) || typeof offset !== 'number' || typeof pageSize !== 'number' || typeof total !== 'number') throw new TypeError('Invalid account listing')
-          const templates: ResourceTemplate[] = rawTemplates.map((row: unknown) => {
-            if (row === null || typeof row !== 'object') throw new TypeError('Invalid resource template')
-            const id: unknown = Reflect.get(row, 'id'), available: unknown = Reflect.get(row, 'available')
-            if (typeof id !== 'string' || typeof available !== 'number') throw new TypeError('Invalid resource template')
-            return { id, available }
-          })
-          const resourceState: unknown = result !== null && typeof result === 'object' ? Reflect.get(result, 'resourceState') : undefined
-          const resourceFailed = operationFailed || Reflect.get(value, 'op') === 'create' && resourceState !== 'ready'
-          current(); state.set({ rows: refreshed, templates, offset, pageSize, total,
-            listingRevision: state.getSnapshot().listingRevision + 1,
-            search: Reflect.get(value, 'op') === 'list' && typeof Reflect.get(value, 'search') === 'string' ? String(Reflect.get(value, 'search')) : state.getSnapshot().search,
-            pending: false, failed: resourceFailed, created: Reflect.get(value, 'op') === 'create' && !resourceFailed })
-        } catch (error) {
-          if (error instanceof ClientFailure && error.code === 'close-unconfirmed') cleanupFailure = error
-          if (!signal.aborted) state.set({ ...state.getSnapshot(), rows: [], templates: [], total: 0, pending: false, failed: true })
-        }
-      })()
-    } }
+        })()
+      } }
     owner.effect(() => owner.locale.register(ACCOUNT_MANAGEMENT_NS, accountManagementDictionaries))
     let opened = false
     owner.effect(() => owner.slots.inject('settings.section', () => owner.slots.register({ name: 'settings.section',

@@ -9,6 +9,8 @@ import type { AccessConfig } from './types.ts'
 import type { ApplicationReadLimits } from '@deepseek-ai/dsh-pe-opensandbox/types'
 import type { ForwardLimits } from './forward-types.ts'
 import { OWNER_HOP_HEADER } from './owner-hop.ts'
+import { posix } from 'node:path'
+import type { DiagnosticGrantConfig } from './diagnostic-ownership.ts'
 import { ServiceApplicationConfigSchema, parseServiceApplicationConfig, type ServiceApplicationConfig } from './application-policy.ts'
 
 /** Fixed deployment entries; PG metadata can select only an exact reviewed HTTPS address. */
@@ -70,6 +72,8 @@ export interface AuthRootConfig extends AccessConfig {
   /** Explicit Better Auth email sign-in window and attempt budget. */
   readonly loginRateLimit?: Readonly<{ windowSeconds: number; maxAttempts: number }>
   readonly accountAdministration?: AccountAdministrationConfig
+  /** Host-protected exact grants for the optional allocation diagnostics. */
+  readonly allocationDiagnostics?: DiagnosticGrantConfig
   readonly database: {
     readonly host: string
     readonly port: number
@@ -124,6 +128,9 @@ export const AuthRootConfigSchema: z<AuthRootConfig> = deploymentConfig<AuthRoot
     }).default(undefined as never),
     accountAdministration: z.union([z.object({ maxAccounts: positive(), maxPageSize: positive(),
       initialAdministratorIds: z.array(text()).required() }).required()]),
+    allocationDiagnostics: z.object({
+      grantPath: z.string().required(), maxGrantBytes: z.natural().min(2).max(65536).required(),
+    }).default(undefined as never),
     database: z.object({
       host: text(), port: z.natural().min(1).max(65535).required(), user: text(), database: text(),
       passwordRef: z.string().pattern(/^[A-Za-z_][A-Za-z0-9_]*$/).required(), ssl: z.boolean().required(),
@@ -181,6 +188,12 @@ export function parseAuthRootConfig(input: AuthRootConfig): AuthRootConfig {
       || new Set(config.accountAdministration.initialAdministratorIds).size
         !== config.accountAdministration.initialAdministratorIds.length)) throw new DeploymentConfigError('$.accountAdministration: requires disabled sign-up, at least two pool connections and distinct administrator ids within account limits')
     if (config.maxSecretBytes < 32) throw new DeploymentConfigError('$.maxSecretBytes: must be at least 32')
+    const grants = config.allocationDiagnostics
+    if (grants !== undefined && (config.ingress === undefined || config.accountAdministration === undefined
+      || !posix.isAbsolute(grants.grantPath) || grants.grantPath !== posix.normalize(grants.grantPath)
+      || grants.grantPath.endsWith('/') || Buffer.byteLength(grants.grantPath) > 4096 || /[\0\\]/.test(grants.grantPath))) {
+      throw new DeploymentConfigError('$.allocationDiagnostics: requires administrator ingress and a normalized protected grant path')
+    }
     if (config.pool.lockTimeoutMs > config.pool.statementTimeoutMs) throw new DeploymentConfigError('$.pool.lockTimeoutMs: must not exceed pool.statementTimeoutMs')
     if (config.ingress !== undefined && (config.ingress.sessionRecheckLeadMs >= config.sessionRecheckMs
       || config.ingress.maxOperationsPerAccount > config.ingress.maxOperations)) throw new DeploymentConfigError('$.ingress: recheck lead must be below sessionRecheckMs and per-account operations must not exceed total operations')

@@ -562,6 +562,12 @@ borrowOwnedAccount(expected: AccountOwner): Promise<AccountUse>
  */
 controlDatabase(participant: DrainParticipant): RootMetadataDatabase
 
+/** Resolve the original current account's protected Native storage for cold diagnostics.
+ * @param accountId Exact independently authorized account, bound to the current storage plan.
+ * @returns Trusted Sessions root, without borrowing or mounting any account.
+ */
+diagnosticSessionsRoot?(accountId: AccountId): string
+
 /**
  * Audit actual Root facts; missing real storage keeps sealing rejected.
  * @param input Fixed requirements and original object identities, never caller readiness assertions.
@@ -670,6 +676,14 @@ Source: [`packages/cloud/pe-cloud-runtime/src/types.ts`](../../packages/cloud/pe
 Owns one finite authentication pool and its actual secret/library work, without publishing raw resources.
 
 ```ts cordis-catalog
+/** Record the durable original Native artifact through the Root-only creation bridge.
+ * @param binding Original account generation issued by Runtime.
+ * @param sessionId Exact original Session id from Native creation.
+ * @param path Current original JSONL artifact under that account's trusted storage.
+ * @returns Actual write settlement. Root retains it through pool teardown.
+ */
+async recordDiagnosticBirth(binding: AccountBinding, sessionId: string, path: string): Promise<void>
+
 /**
  * Inspect bounded resource counts without exposing secrets, SQL, raw pools or a readiness certificate.
  * @returns A frozen snapshot; request admission stays closed independently of authentication initialization.
@@ -1514,6 +1528,12 @@ isEpochIdle(_binding: AccountBinding): boolean
 
 /** Check actual registration and declared requirements; closed mode authorizes no execution. */
 abstract assertReady(): void
+
+/** Read the managed Root's original allocation history after independent Account and Session authorization.
+ * @param selection Exact authorized Account/Session and the bounded time and row selection.
+ * @returns The durable redacted rows while the original coordinator remains current.
+ */
+readAllocationHistory?(selection: Parameters<AllocationHistoryReader>[0]): ReturnType<AllocationHistoryReader>
 
 /**
  * Issue one restricted port from runtime's trusted native prepare scope.

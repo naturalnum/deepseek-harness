@@ -18,6 +18,7 @@ import { SessionAllocationOwner, type AllocationOwnerConfig, type NativeAllocati
 import { AllocationStoreError, PostgresAllocationStore } from './allocation-store.ts'
 import type { AllocationPage, AllocationStoreLimits, SandboxAllocation } from './allocation-types.ts'
 import { allocationDatabase } from './allocation-database.ts'
+import { allocationHistoryReader, type AllocationHistoryReader } from './allocation-history.ts'
 import { SdkLifecycleFailure, type VerifiedExecutionMount } from './lifecycle-types.ts'
 import { BootstrapFailure } from './bootstrap/bootstrap.ts'
 import { LocalRefusal, ControlUncertain, RemoteRefusal } from './agent-data/errors.ts'
@@ -219,6 +220,8 @@ export class ManagedCoordinator extends SandboxCoordinator {
   private readonly ports = new WeakMap<AccountExecutionPort, AccountWork>()
   private readonly accounts = new Map<AccountId, AccountWork>()
   private readonly observedRefusals = new WeakSet<SkillProjectRefusalError>()
+  private readonly readHistory: AllocationHistoryReader
+  private readonly historyReads = new Set<ReturnType<AllocationHistoryReader>>()
   private readonly state: {
     open: boolean
     ready: boolean
@@ -263,7 +266,9 @@ export class ManagedCoordinator extends SandboxCoordinator {
     }
     super(ctx)
     runtime.registerDrainParticipant(this)
-    this.resources.store = new PostgresAllocationStore(allocationDatabase(runtime.controlDatabase(this)), config.store)
+    const metadata = runtime.controlDatabase(this)
+    this.resources.store = new PostgresAllocationStore(allocationDatabase(metadata), config.store)
+    this.readHistory = allocationHistoryReader(metadata, config.store.maxPendingQueries)
     this.resources.allocations = new SessionAllocationOwner(this.store, {
       create: (intent, mount) => deployment.backend.create(intent, mount),
       prepare: async (created, mount, until) => deployment.runtimes.bindPrepared(await deployment.backend.prepare(created, mount, until)),
@@ -364,6 +369,17 @@ export class ManagedCoordinator extends SandboxCoordinator {
   override assertReady(): void {
     if (!this.state.open || !this.state.ready) this.unavailable()
     this.deployment.assertCurrent()
+  }
+
+  override async readAllocationHistory(selection: Parameters<AllocationHistoryReader>[0]): ReturnType<AllocationHistoryReader> {
+    this.assertReady()
+    const actual = this.readHistory(selection)
+    this.historyReads.add(actual)
+    try {
+      const rows = await actual
+      this.assertReady()
+      return rows
+    } finally { this.historyReads.delete(actual) }
   }
 
   /** Observe original command/request and allocation settlement while retaining healthy warm Sessions.
@@ -721,7 +737,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
     const accounts = [...this.accounts.values()]
     for (const work of accounts) this.beginStop(work)
     const startupJoined = this.state.starting?.then(() => undefined, () => undefined)
-    const actual = Promise.allSettled([this.resources.allocations?.close(), startupJoined,
+    const actual = Promise.allSettled([this.resources.allocations?.close(), startupJoined, Promise.allSettled(this.historyReads),
       this.deployment.backend.closeRootActual(), ...accounts.map(work => work.stopping)])
     void actual.then((results) => {
       const failed = results.find(result => result.status === 'rejected')

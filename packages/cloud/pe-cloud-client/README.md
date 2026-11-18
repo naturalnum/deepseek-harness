@@ -176,6 +176,8 @@ Read these owners for the account checks and native browser behavior this packag
 
 The administrator settings entry uses the account-bound transport and authoritative server roles. After an unsuccessful mutation it reads the listing again without repeating the operation. If that read also fails, it clears old account and template rows and retains the failure notice.
 
+When bootstrap advertises allocation diagnostics, Account Administration includes an execution diagnostics form for the exact target Account ID, Session ID and a half-open UTC time range. The date-time inputs include milliseconds and wrap onto separate rows in narrow settings panes. The form uses the same actor-bound transport. A denied lookup clears prior records, and sign-out withdraws the settings entry with the page lifetime.
+
 Cloud owns running brand contributions, managed terminal copy, forwarded skill-catalog invalidation, model credential actions and workspace restriction messages. Native slots, controllers, editor Factories and graph disposal own their rendering and lifecycle. The [static Cloud Web entry](../pe-cloud-web/README.md) owns unauthenticated layout and styles.
 
 ## Model Experience

@@ -13,6 +13,7 @@ import type { RuntimeRootConfig } from './root-config.ts'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { AccountFactory, type AccountFactoryRequest, type AccountNativeCloseObservation } from './account-factory.ts'
 import { deriveAccountLayout, defaultProjectLayout } from './account-layout.ts'
+import { nativeDiagnosticArtifact } from './native-diagnostic-birth.ts'
 import { AccountMountPrerequisiteError, type AccountRecipe } from './account-mount.ts'
 import { PgOwnerExecutor } from './owner-pg-executor.ts'
 import { SingleInstanceControl } from './single-instance.ts'
@@ -35,6 +36,13 @@ function hasConfigurationPeerConsumer(value: unknown): value is ConfigurationPee
 }
 function hasRootFetch(value: unknown): value is { inspectRootFetch(): readonly ExactFetchExposure[] } {
   return value !== null && typeof value === 'object' && typeof Reflect.get(value, 'inspectRootFetch') === 'function'
+}
+function hasDiagnosticBirthWriter(value: unknown): value is {
+  readonly diagnosticBirthsEnabled: boolean
+  recordDiagnosticBirth(binding: AccountBinding, sessionId: string, path: string): Promise<void>
+} {
+  return value !== null && typeof value === 'object' && Reflect.get(value, 'diagnosticBirthsEnabled') === true
+    && typeof Reflect.get(value, 'recordDiagnosticBirth') === 'function'
 }
 function hasReadCarrier(value: unknown): value is {
   readOperationCurrent(peer: PeerScope, binding: AccountBinding, endpoint: string): boolean
@@ -373,6 +381,18 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     const control = this.activeControl()
     control.factory.logObservation(accountId)
     return control.owners.locate(accountId)
+  }
+
+  diagnosticSessionsRoot(accountId: AccountId): string {
+    const control = this.activeControl(), storage = this.ctx.root.get('peFilesPool')?.requireStorageOwner()
+    if (storage === undefined) throw new AccountRuntimeError('cloud/account-unavailable', 'Root Session storage is unavailable')
+    const selected = storage.resolveAccountStorage(accountId)
+    const paths = control.config.paths
+    const deployment = storage.staticInventory() === undefined ? paths
+      : { ...paths, assignment: { storageKey: selected.storageKey, accountRoot: selected.accountRoot } }
+    const layout = deriveAccountLayout(accountId, control.instance.identity.instanceId, deployment)
+    if (layout.accountRoot !== selected.accountRoot) throw new AccountRuntimeError('cloud/account-unavailable', 'Root Session storage differs')
+    return layout.sessionsRoot
   }
 
   /**
@@ -1009,6 +1029,20 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
         storage: Object.freeze({ owner: storage, files }),
         native: { withPeerUse: withModelKeyPeerUse, saves: control.saves, exposure: exposure.policy, execution,
           stopTimeoutMs: config.shutdownTimeoutMs,
+          ...!hasDiagnosticBirthWriter(auth) ? {} : { recordDiagnosticBirth: async (binding, header, signal) => {
+            const assertCurrent = (): void => {
+              signal.throwIfAborted()
+              if (binding.accountId !== accountId || binding.lifetime.aborted) throw new AccountMountPrerequisiteError()
+              this.assertRecipeSealed(config.recipeVersion)
+              const current: unknown = this.ctx.root.get('peAuth')
+              if (!hasDiagnosticBirthWriter(current) || (Reflect.get(current, symbols.original) ?? current)
+                !== (Reflect.get(auth, symbols.original) ?? auth)) throw new AccountMountPrerequisiteError()
+            }
+            assertCurrent()
+            const path = await nativeDiagnosticArtifact(layout.sessionsRoot, header)
+            assertCurrent()
+            if (path !== undefined) await auth.recordDiagnosticBirth(binding, header.id, path)
+          } },
           ...this.fileReadTiming === undefined ? {} : { fileReadTiming: this.fileReadTiming },
           ...config.subagentCapacity === undefined ? {} : {
             reserveSubagent: (binding, depth) => control.factory.reserveSubagent(binding, depth),

@@ -162,6 +162,7 @@ async function fixture(options: {
   timing?: FileReadTiming
   realFiles?: boolean
   presetServices?: boolean
+  recordDiagnosticBirth?: ConstructorParameters<typeof AccountNativeIntegration>[0]['recordDiagnosticBirth']
 } = {}) {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'm8s-native-integration-')))
   directories.push(directory)
@@ -341,6 +342,7 @@ async function fixture(options: {
       ...options.firstScreen ? { firstScreen: { home: layout.privateRoot, maxHomeBytes: 4096,
         maxCollectionItems: 16, maxFrameBytes: 65536, maxQueuedEvents: 16, maxQueuedBytes: 131072 } } : {},
       ...options.readCurrent === undefined ? {} : { readCurrent: options.readCurrent },
+      ...options.recordDiagnosticBirth === undefined ? {} : { recordDiagnosticBirth: options.recordDiagnosticBirth },
       ...options.captureStreamCurrent === undefined ? {} : { captureStreamCurrent: options.captureStreamCurrent },
       assertRootCurrent: () => {
         if (options.instructionSources === undefined || options.factoryComponent) { root.peAccountRuntime.assertRecipeSealed('m8s'); return }
@@ -800,6 +802,21 @@ it('does not advertise edit in an approved legacy preset when the real account f
   expect(ctx.fs.supportsTextEdit).toBe(false)
   expect(ctx.tools.get('write', agent)).toBeDefined()
   expect(ctx.tools.get('edit', agent)).toBeUndefined()
+})
+
+it('records a fresh Native Session after flushing the same original persistence service', async () => {
+  let persistedBytes = 0
+  const recordDiagnosticBirth = vi.fn(async (_binding: AccountBinding, header: Session['header']) => {
+    const path = Jsonl.logPath(f.layout.sessionsRoot, header.cwd, header.id, 'none')
+    persistedBytes = (await fs.stat(path)).size
+  })
+  const f = await fixture({ instructionSources: instructionSourceFixture(), recordDiagnosticBirth })
+  const outcome = await f.start()
+  if (outcome.status === 'failed') throw outcome.cause
+  const created = await outcome.context.sessionController.create({})
+  expect(recordDiagnosticBirth).toHaveBeenCalledExactlyOnceWith(outcome.binding,
+    expect.objectContaining({ id: created.sessionId }), expect.any(AbortSignal))
+  expect(persistedBytes).toBeGreaterThan(0)
 })
 
 it('continues an armed account goal after the user turn through the original Loader-installed driver', async () => {

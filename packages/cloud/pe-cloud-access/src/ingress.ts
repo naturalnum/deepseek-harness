@@ -15,6 +15,7 @@ import { SESSION_LOG_EXPORT_PATH } from '@deepseek-ai/dsh-session-log-export'
 import type { ConfigurationPeerOperation } from './peers.ts'
 import { BetterAuthAccess } from './auth.ts'
 import { AuthAccessError } from './auth-error.ts'
+import { queryAllocationDiagnostics, type AllocationDiagnosticsPort } from './allocation-diagnostics.ts'
 import { assertAuthTransport } from './auth-trust.ts'
 import { assertExpectedAccount, assertExpectedGeneration, RequestBindingError } from './binding.ts'
 import { readRequestExpectation } from './expectation.ts'
@@ -42,6 +43,7 @@ import { readServiceApplicationReply } from './application-response.ts'
 import type { ApplicationServiceSelection, RegisteredApplicationService } from '@deepseek-ai/dsh-pe-opensandbox/types'
 
 type RequestId = Branded<'pe-request-id'>
+const ALLOCATION_DIAGNOSTICS_PATH = '/cloud/admin/allocation-diagnostics'
 type GuardStage = 'run.start' | 'request.url' | 'request.transport' | 'ingress.current'
   | 'auth.handler' | 'auth.authenticate' | 'auth.login-current' | 'request.binding' | 'account.bind'
   | 'account.locate' | 'account.acquire' | 'account.use-current' | 'account.binding' | 'account.generation'
@@ -51,6 +53,7 @@ type GuardStage = 'run.start' | 'request.url' | 'request.transport' | 'ingress.c
   | 'beforeDispatch.api' | 'beforeDispatch.peer-current' | 'native.invoke-or-transfer'
   | 'preview.authenticate' | 'preview.selection' | 'preview.borrow' | 'preview.forward' | 'preview.transfer'
   | 'application.identity' | 'application.fetch' | 'application.borrow' | 'application.service'
+  | 'diagnostics.authorize' | 'diagnostics.read'
   | 'owner.hop' | 'owner.resolve' | 'owner.borrow' | 'owner.forward' | 'owner.recheck'
 
 const FAILURE_CODES: readonly string[] = Object.freeze([
@@ -97,6 +100,7 @@ interface Dependencies {
   readonly exposure?: ExposureService
   readonly assertAuthenticationCurrent: () => void
   readonly ownerRouting?: OwnerRouting
+  readonly allocationDiagnostics?: AllocationDiagnosticsPort
   readonly applications?: { readonly config: ServiceApplicationConfig; readonly views: ServiceApplicationViews }
 }
 interface Operation {
@@ -223,6 +227,9 @@ export class CloudIngress {
         { kind: 'exact', path: '/cloud/settings', handler: (req, res) => this.handleHttp(req, res) },
         { kind: 'prefix', path: API_PATH, handler: (req, res) => this.handleHttp(req, res) },
       ]
+      if (this.auth.accountAdministrationEnabled && this.dependencies.allocationDiagnostics !== undefined) {
+        routes.push({ kind: 'exact', path: ALLOCATION_DIAGNOSTICS_PATH, handler: (req, res) => this.handleHttp(req, res) })
+      }
       for (const route of routes) {
         this.register(() => this.dependencies.web.register(route), 'pe-cloud-access: shared HTTP route')
       }
@@ -358,7 +365,8 @@ export class CloudIngress {
     const web = this.ctx.get('webServer')
     const contentWeb = this.applicationListener?.ctx.get('webServer')
     const expectedRegistrations = 5 + (this.limits.servicePreview === undefined ? 0 : 1)
-      + (this.auth.accountAdministrationEnabled ? 1 : 0) + (this.dependencies.applications === undefined ? 0 : 2)
+      + (this.auth.accountAdministrationEnabled ? this.dependencies.allocationDiagnostics === undefined ? 1 : 2 : 0)
+      + (this.dependencies.applications === undefined ? 0 : 2)
     const original = (value: object): object => {
       const target: unknown = Reflect.get(value, symbols.original)
       return target !== null && (typeof target === 'object' || typeof target === 'function') ? target : value
@@ -478,6 +486,10 @@ export class CloudIngress {
         response.end(body)
         return
       }
+      if (url.pathname === ALLOCATION_DIAGNOSTICS_PATH && this.dependencies.allocationDiagnostics !== undefined) {
+        await this.handleAllocationDiagnostics(operation, url, response, this.dependencies.allocationDiagnostics)
+        return
+      }
       if (url.pathname === '/cloud/bootstrap' && request.method === 'GET') {
         operation.stage = 'bootstrap.authenticate'
         const verified = await this.auth.authenticateForBootstrap(request, operation.id, this.limits.maxBootstrapResponseBytes)
@@ -508,7 +520,7 @@ export class CloudIngress {
             () => this.ctx.get('pluginPackages'),
             verified.account, this.limits.maxBootstrapResponseBytes,
             AbortSignal.any([operation.observer.signal, use.binding.lifetime]), current,
-            () => this.generations.current(use.binding, operation.id), recheckLogin)
+            () => this.generations.current(use.binding, operation.id), recheckLogin, this.dependencies.allocationDiagnostics !== undefined)
           await recheckLogin()
           projected.assertCurrent()
           current()
@@ -798,6 +810,55 @@ export class CloudIngress {
         },
       })
     })
+  }
+
+  private async handleAllocationDiagnostics(
+    operation: Operation, url: URL, response: ServerResponse, diagnostics: AllocationDiagnosticsPort,
+  ): Promise<void> {
+    const { request, id, observer } = operation
+    if (request.method !== 'POST' || url.search !== '' || request.headers.origin !== this.config.publicOrigin) {
+      throw new AuthAccessError('cloud/forbidden', id)
+    }
+    const authenticateAdministrator = async () => {
+      operation.stage = 'diagnostics.authorize'
+      const { principal, account } = await this.auth.authenticateForBootstrap(request, id, this.limits.maxBootstrapResponseBytes)
+      this.trackPrincipal(operation, principal)
+      this.assertOperation(operation)
+      if (account.role !== 'admin') throw new AuthAccessError('cloud/forbidden', id)
+      return principal
+    }
+    const actor = await authenticateAdministrator()
+    const expected = readRequestExpectation(request, url, this.config.bindingFields, 'headers', id)
+    assertExpectedAccount(expected, actor.accountId, id)
+    this.bindAccount(operation, actor.accountId)
+    operation.principal = actor
+    operation.accountManagement = true
+    const input = this.applicationJson(await this.applicationBody(operation, this.limits.maxAuthRequestBodyBytes), id)
+    const result = await queryAllocationDiagnostics(input, id, {
+      authorize: async (target) => {
+        operation.stage = 'diagnostics.authorize'
+        this.assertOperation(operation)
+        this.auth.assertLoginCurrent(actor, id)
+        if (!await diagnostics.allows(actor, target, observer.signal)) throw new AuthAccessError('cloud/forbidden', id)
+        this.assertOperation(operation)
+        const current = await authenticateAdministrator()
+        if (current.accountId !== actor.accountId || current.authSessionId !== actor.authSessionId) {
+          throw new AuthAccessError('cloud/unauthenticated', id)
+        }
+        return { ...target, role: 'admin', actorId: current.accountId, authSessionId: current.authSessionId }
+      },
+      read: (selection) => {
+        operation.stage = 'diagnostics.read'
+        this.assertOperation(operation)
+        return diagnostics.read(selection)
+      },
+    })
+    this.assertOperation(operation)
+    this.auth.assertLoginCurrent(actor, id)
+    const body = JSON.stringify(result)
+    if (Buffer.byteLength(body) > this.limits.maxBootstrapResponseBytes) throw new AuthAccessError('cloud/capacity', id)
+    response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+    response.end(body)
   }
 
   private async applicationBody(operation: Operation, maximum: number): Promise<Uint8Array> {

@@ -30,10 +30,11 @@ function isAccountFace(value: unknown): value is AccountFace {
   return store !== null && typeof store === 'object' && typeof Reflect.get(store, 'getSnapshot') === 'function'
     && typeof Reflect.get(store, 'subscribe') === 'function'
 }
-async function fixture(role: 'admin' | 'user', respond?: (body: object) => Response | Promise<Response>) {
+async function fixture(role: 'admin' | 'user', respond?: (body: object) => Response | Promise<Response>, diagnostics = false) {
   const disabled = { state: 'disabled', reason: 'not-approved' } as const
   const bootstrap: CloudBootstrap = { account: { id: 'actor', displayName: 'Actor', role }, recipeVersion: 'accounts', connectionGeneration: 'original',
     capabilities: { accountAdministration: role === 'admin' ? { state: 'available' } : disabled,
+      ...diagnostics ? { allocationDiagnostics: { state: 'available' } } : {},
       projects: { state: 'available' }, filePreview: disabled, shell: disabled, developmentServices: disabled, servicePreview: disabled,
       sandboxScope: 'session', backgroundJobs: false, localDesktop: false, arbitraryBackendPlugins: false,
       subprocess: { spawn: false, pipes: false, control: false, inherit: false, terminal: false, consumers: [] },
@@ -142,8 +143,8 @@ function accountArticle(): HTMLElement {
   if (article === null) throw new Error('Native account article absent')
   return article
 }
-async function renderedAccount(respond: (body: object) => Response | Promise<Response>) {
-  const f = await fixture('admin', respond)
+async function renderedAccount(respond: (body: object) => Response | Promise<Response>, diagnostics = false) {
+  const f = await fixture('admin', respond, diagnostics)
   const absent = createSnapshotStore<StandardSourceBinding>({ key: undefined, hooks: {}, keyedHooks: {}, props: { sessionId: undefined } })
   f.slots.installScope('session', { current: absent, bindingSource: () => absent })
   f.slots.install(createSlotRenderer())
@@ -151,6 +152,42 @@ async function renderedAccount(respond: (body: object) => Response | Promise<Res
   await screen.findByRole('heading', { name: 'user@example.test' })
   return { ...f, view, tree }
 }
+
+it('uses the existing Settings lifetime and actor binding for exact allocation diagnostics', async () => {
+  let status = 200
+  const observedAt = '2026-11-18T12:00:00.125Z'
+  const f = await renderedAccount((body) => {
+    if (Reflect.get(body, 'op') === 'list') return authoritativeAccounts()
+    if (status !== 200) return Response.json({ code: 'cloud/forbidden' }, { status })
+    return Response.json({ entries: [{ accountId: 'target', sessionId: 'one', allocationId: 'original-allocation',
+      observedAt, state: 'failed', reasonCode: 'cancelled-before-provider-create', stage: 'before-provider-create' }], more: false })
+  }, true)
+  const account = screen.getByLabelText('Target Account ID')
+  fireEvent.change(account, { target: { value: 'target' } })
+  fireEvent.change(screen.getByLabelText('Session ID'), { target: { value: 'one' } })
+  fireEvent.change(screen.getByLabelText('From (UTC, inclusive)'), { target: { value: '2026-11-18T12:00:00.125' } })
+  fireEvent.change(screen.getByLabelText('To (UTC, exclusive)'), { target: { value: '2026-11-18T12:00:00.250' } })
+  const form = account.closest('form')
+  if (form === null) throw new Error('Diagnostic Settings form absent')
+  fireEvent.submit(form)
+  await screen.findByText('original-allocation')
+  expect(f.requests[1]?.target).toBe('https://example.test/app/cloud/admin/allocation-diagnostics')
+  expect(f.requests[1]?.headers.get('x-account')).toBe('actor')
+  expect(f.requests[1]?.headers.get('x-generation')).toBe('original')
+  expect(f.requests[1]?.body).toEqual({ accountId: 'target', sessionId: 'one', fromMs: Date.parse(observedAt),
+    toMs: Date.parse('2026-11-18T12:00:00.250Z'), limit: 10 })
+  status = 403
+  fireEvent.change(screen.getByLabelText('Session ID'), { target: { value: 'elsewhere' } })
+  fireEvent.submit(form)
+  await screen.findByText('This Account and Session are unavailable to your login.')
+  expect(screen.queryByText('original-allocation')).toBeNull()
+  status = 401
+  fireEvent.submit(form)
+  f.view.unmount()
+  await vi.waitFor(() => { expect(f.page.lifetime.transport.signal.aborted).toBe(true) })
+  await vi.waitFor(() => { expect(f.slots.entries('settings.section').some(row => row.options.id === 'cloud-account-management')).toBe(false) })
+  expect(f.requests).toHaveLength(4)
+})
 
 it.each(['role', 'rename'] as const)('restores same-value authoritative controls after refused %s without replaying it', async (op) => {
   const mutation = Promise.withResolvers<Response>(), refresh = Promise.withResolvers<Response>()

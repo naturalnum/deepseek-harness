@@ -6,6 +6,7 @@ import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import type { CloudAccountFiles } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { AccountExecutionPort } from './account-port.ts'
+import type { AllocationHistoryReader } from './allocation-history.ts'
 
 /** Lazy account-native authority; binding does not consume it and closed coordinators ignore it. */
 export interface NativeAccountExecutionAuthority {
@@ -54,6 +55,12 @@ export abstract class SandboxCoordinator extends Service implements DrainPartici
 
   /** Check actual registration and declared requirements; closed mode authorizes no execution. */
   abstract assertReady(): void
+
+  /** Read the managed Root's original allocation history after independent Account and Session authorization.
+   * @param selection Exact authorized Account/Session and the bounded time and row selection.
+   * @returns The durable redacted rows while the original coordinator remains current.
+   */
+  readAllocationHistory?(selection: Parameters<AllocationHistoryReader>[0]): ReturnType<AllocationHistoryReader>
 
   /**
    * Issue one restricted port from runtime's trusted native prepare scope.

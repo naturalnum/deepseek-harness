@@ -420,6 +420,11 @@ export interface AccountRuntimeService {
    * @returns The immutable Root-only query capability; it cannot close or retarget the driver.
    */
   controlDatabase(participant: DrainParticipant): RootMetadataDatabase
+  /** Resolve the original current account's protected Native storage for cold diagnostics.
+   * @param accountId Exact independently authorized account, bound to the current storage plan.
+   * @returns Trusted Sessions root, without borrowing or mounting any account.
+   */
+  diagnosticSessionsRoot?(accountId: AccountId): string
   /**
    * Audit actual Root facts; missing real storage keeps sealing rejected.
    * @param input Fixed requirements and original object identities, never caller readiness assertions.

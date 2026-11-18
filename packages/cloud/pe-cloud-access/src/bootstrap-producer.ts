@@ -88,12 +88,13 @@ function selectedNative(row: EndpointExposure, expected: Readonly<Record<string,
  * @param current Original operation/login/Use/Root admission, checked around all awaited work.
  * @param generation Original access generation issuer; it grants no additional readiness.
  * @param recheckLogin Original ingress-owned captured-cookie verification after awaited work, before the same synchronous guards.
+ * @param allocationDiagnostics Whether this ingress installed the optional private diagnostics route.
  * @returns Bounded compact JSON and an original-fact recheck to run immediately before response.end.
  */
 export async function produceCloudBootstrap(
   ctx: Context, binding: AccountBinding, exposure: ExposureService | undefined, resolvePackages: () => PluginPackages | undefined,
   account: CloudBootstrap['account'], maximum: number, signal: AbortSignal,
-  current: () => void, generation: () => string, recheckLogin?: () => Promise<void>,
+  current: () => void, generation: () => string, recheckLogin?: () => Promise<void>, allocationDiagnostics = false,
 ): Promise<{ readonly body: string; readonly assertCurrent: () => void }> {
   current()
   if (!(exposure instanceof ExposureService) || account.id !== binding.accountId
@@ -225,7 +226,10 @@ export async function produceCloudBootstrap(
   const releaseArchive = api.skillReleaseBinaryPolicy()
   const disabled = Object.freeze({ state: 'disabled', reason: 'not-approved' } as const)
   const value = decodeCloudBootstrap({ account, recipeVersion: binding.recipeVersion, connectionGeneration: token,
-    capabilities: { ...account.role === undefined ? {} : { accountAdministration: account.role === 'admin' ? { state: 'available' } : disabled }, projects: { state: 'available' }, filePreview: previewSelected ? { state: 'available' } : disabled,
+    capabilities: {
+      ...account.role === undefined ? {} : { accountAdministration: account.role === 'admin' ? { state: 'available' } : disabled },
+      ...allocationDiagnostics && account.role === 'admin' ? { allocationDiagnostics: { state: 'available' } } : {},
+      projects: { state: 'available' }, filePreview: previewSelected ? { state: 'available' } : disabled,
       shell: accountExecutionMode(ctx) === 'session-collect' ? { state: 'available' } : disabled,
       developmentServices: services.developmentServices ? { state: 'available' } : disabled,
       servicePreview: services.servicePreview && previewRouteSelected ? { state: 'available' } : disabled, sandboxScope: 'session', backgroundJobs: false,

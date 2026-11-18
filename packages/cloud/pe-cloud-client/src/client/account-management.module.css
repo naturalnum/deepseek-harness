@@ -5,7 +5,10 @@
 .section p { font-size: 13px; line-height: 1.6; }
 .header, .list { display: grid; gap: 12px; min-width: 0; }
 .card { display: grid; gap: 16px; min-width: 0; padding: 16px; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: var(--dsw-radius-sm); background: var(--dsw-alias-bg-layer-2); }
-.formGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 12px; min-width: 0; }
+.formGrid, .diagnosticsGrid { display: grid; gap: 12px; min-width: 0; }
+.formGrid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); }
+.diagnosticsGrid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); }
+.diagnosticsGrid input[type="datetime-local"] { font-family: inherit; font-size: inherit; }
 .field { display: grid; gap: 6px; min-width: 0; font-size: 13px; line-height: 1.5; }
 .control { box-sizing: border-box; width: 100%; min-width: 0; }
 .select { box-sizing: border-box; width: 100%; min-width: 0; height: 34px; padding: 0 8px; border: 0.5px solid var(--dsw-alias-border-l4); border-radius: var(--dsw-radius-md); background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: inherit; }
@@ -18,5 +21,11 @@
 .actions { align-items: center; }
 .status { gap: 4px 12px; color: var(--dsw-alias-label-secondary); }
 .error { color: var(--dsw-alias-state-error-primary); }
+.diagnosticsTable { min-width: 0; overflow: auto; }
+.diagnosticsTable table { width: 100%; border-collapse: collapse; text-align: start; font-size: 13px; }
+.diagnosticsTable :is(th, td) { padding: 8px; text-align: start; border-bottom: 1px solid var(--dsw-alias-border-l2); }
 .section button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
-@media (max-width: 480px) { .section { padding: 16px; } }
+@media (max-width: 480px) {
+  .section { padding: 16px; }
+  .diagnosticsGrid { grid-template-columns: minmax(0, 1fr); }
+}

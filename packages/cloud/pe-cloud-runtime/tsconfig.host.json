@@ -84,6 +84,9 @@
       "path": "../../session/session-persistence"
     },
     {
+      "path": "../../session/session-persistence-jsonl"
+    },
+    {
       "path": "../../core/agent"
     },
     {

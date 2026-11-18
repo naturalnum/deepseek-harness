@@ -2096,6 +2096,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'The immutable Root-only query capability; it cannot close or retarget the driver.',
       },
       {
+        signature: 'diagnosticSessionsRoot?(accountId: AccountId): string',
+        description: 'Resolve the original current account\'s protected Native storage for cold diagnostics.',
+        parameters: [{ name: 'accountId', description: 'Exact independently authorized account, bound to the current storage plan.' }],
+        returns: 'Trusted Sessions root, without borrowing or mounting any account.',
+      },
+      {
         signature: 'sealRecipe(input: RootRecipeInput): void',
         description: 'Audit actual Root facts; missing real storage keeps sealing rejected.',
         parameters: [{ name: 'input', description: 'Fixed requirements and original object identities, never caller readiness assertions.' }],
@@ -2193,6 +2199,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     summary: 'Owns one finite authentication pool and its actual secret/library work, without publishing raw resources.',
     description: 'Owns one finite authentication pool and its actual secret/library work, without publishing raw resources.',
     methods: [
+      {
+        signature: 'async recordDiagnosticBirth(binding: AccountBinding, sessionId: string, path: string): Promise<void>',
+        description: 'Record the durable original Native artifact through the Root-only creation bridge.',
+        parameters: [{ name: 'binding', description: 'Original account generation issued by Runtime.' }, { name: 'sessionId', description: 'Exact original Session id from Native creation.' }, { name: 'path', description: 'Current original JSONL artifact under that account\'s trusted storage.' }],
+        returns: 'Actual write settlement. Root retains it through pool teardown.',
+      },
       {
         signature: 'observe(): AuthRootObservation',
         description: 'Inspect bounded resource counts without exposing secrets, SQL, raw pools or a readiness certificate.',
@@ -2915,6 +2927,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'abstract assertReady(): void',
         description: 'Check actual registration and declared requirements; closed mode authorizes no execution.',
         parameters: [],
+      },
+      {
+        signature: 'readAllocationHistory?(selection: Parameters<AllocationHistoryReader>[0]): ReturnType<AllocationHistoryReader>',
+        description: 'Read the managed Root\'s original allocation history after independent Account and Session authorization.',
+        parameters: [{ name: 'selection', description: 'Exact authorized Account/Session and the bounded time and row selection.' }],
+        returns: 'The durable redacted rows while the original coordinator remains current.',
       },
       {
         signature: 'abstract bindAccount( ctx: Context, binding: AccountBinding, assertCurrent: () => void, authority?: NativeAccountExecutionAuthority, ): AccountExecutionPort',
@@ -6199,6 +6217,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AgentStatus = \'idle\' | \'running\';',
   },
   {
+    name: 'AllocationHistoryReader',
+    declaration: 'export type AllocationHistoryReader = (selection: Readonly<Selection>) => Promise<readonly AllocationHistoryRow[]>;',
+  },
+  {
+    name: 'AllocationHistoryRow',
+    declaration: 'export interface AllocationHistoryRow {\n    readonly accountId: string;\n    readonly sessionId: string;\n    readonly allocationId: string;\n    readonly lastCheckedAt: string;\n    readonly state: \'failed\' | \'released\' | \'uncertain\' | \'stopping\';\n    readonly failureCode: SafeReason | null;\n}',
+  },
+  {
     name: 'AnonymousTranslationProvider',
     declaration: 'export type AnonymousTranslationProvider = \'google\' | \'bing\';',
   },
@@ -8252,7 +8278,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'NativeAgentFactoryGuards',
-    declaration: 'export interface NativeAgentFactoryGuards {\n    assertCreate(options: CreateOptions, signal: AbortSignal): Promise<void | number>;\n    assertResume(options: ResumeOptions, signal: AbortSignal): Promise<void | number>;\n    assertPrepared(agent: PreparedAgent, parent?: CreateOptions[\'parentAgent\']): void;\n    prepareChild?(agent: PreparedAgent, parent: NonNullable<CreateOptions[\'parentAgent\']>, signal: AbortSignal): Promise<void>;\n    withChildPreparation?<T>(this: void, child: PreparedAgent, parent: NonNullable<CreateOptions[\'parentAgent\']>, signal: AbortSignal, operation: () => Promise<T>): Promise<T>;\n}',
+    declaration: 'export interface NativeAgentFactoryGuards {\n    readonly recordFreshSession?: (session: Session, flush: () => Promise<void>, signal: AbortSignal) => Promise<void>;\n    assertCreate(options: CreateOptions, signal: AbortSignal): Promise<void | number>;\n    assertResume(options: ResumeOptions, signal: AbortSignal): Promise<void | number>;\n    assertPrepared(agent: PreparedAgent, parent?: CreateOptions[\'parentAgent\']): void;\n    prepareChild?(agent: PreparedAgent, parent: NonNullable<CreateOptions[\'parentAgent\']>, signal: AbortSignal): Promise<void>;\n    withChildPreparation?<T>(this: void, child: PreparedAgent, parent: NonNullable<CreateOptions[\'parentAgent\']>, signal: AbortSignal, operation: () => Promise<T>): Promise<T>;\n}',
   },
   {
     name: 'NativeCommands',

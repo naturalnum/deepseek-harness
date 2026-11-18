@@ -9,6 +9,14 @@ const en = {
   failed: 'The operation was refused or its result is unconfirmed. Refresh before trying again.',
   pending: 'Processing…', created: 'Account created and ready to use.',
   capacityFull: 'Account capacity is full. Add capacity before creating another account.',
+  diagnosticTitle: 'Execution diagnostics', diagnosticAccount: 'Target Account ID', diagnosticSession: 'Session ID',
+  diagnosticFrom: 'From (UTC, inclusive)', diagnosticTo: 'To (UTC, exclusive)', diagnosticRun: 'Find execution records',
+  diagnosticDenied: 'This Account and Session are unavailable to your login.',
+  diagnosticFailed: 'The diagnostic query could not be completed.',
+  diagnosticInvalid: 'Enter both IDs and a time range of up to 24 hours.',
+  diagnosticEmpty: 'No records in this time range.', diagnosticMore: 'More records exist. Narrow the time range to see them.',
+  diagnosticObserved: 'Observed (UTC)', diagnosticAllocation: 'Allocation ID', diagnosticState: 'State',
+  diagnosticReason: 'Reason code', diagnosticStage: 'Stage',
 }
 const zh: typeof en = {
   title: '账号管理', introduction: '管理平台账号，各账号的项目数据保持独立。',
@@ -20,6 +28,14 @@ const zh: typeof en = {
   failed: '操作被拒绝或结果尚未确认，请先刷新核对状态再尝试。',
   pending: '正在处理…', created: '账号已创建，可以使用。',
   capacityFull: '账号资源容量已用完，扩容后可继续创建账号。',
+  diagnosticTitle: '执行诊断', diagnosticAccount: '目标账号 ID', diagnosticSession: '会话 ID',
+  diagnosticFrom: '开始时间（UTC，含）', diagnosticTo: '结束时间（UTC，不含）', diagnosticRun: '查询执行记录',
+  diagnosticDenied: '当前登录无法查看此账号和会话。',
+  diagnosticFailed: '诊断查询未完成。',
+  diagnosticInvalid: '请输入两个 ID 和不超过 24 小时的时间范围。',
+  diagnosticEmpty: '此时间范围内没有记录。', diagnosticMore: '还有更多记录，请缩小时间范围查询。',
+  diagnosticObserved: '观察时间（UTC）', diagnosticAllocation: '分配 ID', diagnosticState: '状态',
+  diagnosticReason: '原因码', diagnosticStage: '阶段',
 }
 /** Native locale namespace for the account settings menu. */
 export const ACCOUNT_MANAGEMENT_NS = 'cloud-account-management'

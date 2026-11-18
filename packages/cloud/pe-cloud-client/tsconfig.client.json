@@ -19,6 +19,7 @@
     "src/client/CloudAccountMenu.tsx",
     "src/client/account-locales.ts",
     "src/client/account-management.tsx",
+    "src/client/account-diagnostics.tsx",
     "src/client/account-management-locales.ts",
     "src/client/approved-settings.ts",
     "src/client/ApprovedSettings.tsx",

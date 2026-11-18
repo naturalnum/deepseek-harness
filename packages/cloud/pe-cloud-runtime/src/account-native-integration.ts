@@ -149,6 +149,8 @@ export interface AccountNativePreparation {
   readonly files?: (ctx: Context, binding: AccountBinding, getFileProject: ResolveAccountFileProject) => AccountFilesPreparation
   /** Actual files/project/Preset/model provider; absence rejects guarded native entry activation. */
   readonly guards?: (ctx: Context, binding: AccountBinding, files: CloudAccountFiles) => AccountNativeGuards
+  /** Root receipt writer restricted to original fresh Native Session publication. */
+  readonly recordDiagnosticBirth?: (binding: AccountBinding, header: SessionHeader, signal: AbortSignal) => Promise<void>
 }
 
 /** Fixed private builtin names for the native account recipe, not additional package Loader exports. */
@@ -614,7 +616,21 @@ export class AccountNativeIntegration {
       inject: [...AgentLoop.inject, 'peCloudApi'], Config: AgentLoop.Config,
       apply: (owner: Context, config: ConstructorParameters<typeof AgentLoop>[1]) => {
         const reserveSubagent = input.reserveSubagent
-        this.loop = api.createAgentLoop(owner, requireGuards(owner).agents, config,
+        const guards = requireGuards(owner).agents, record = input.recordDiagnosticBirth
+        const recordFreshSession: typeof guards.recordFreshSession = record === undefined ? undefined
+          : async (session, flush, signal) => {
+            const persistence = owner.get('sessionPersistence')
+            if (persistence === undefined) return
+            const original = Reflect.get(persistence, symbols.original) ?? persistence
+            await flush()
+            signal.throwIfAborted()
+            const current = owner.get('sessionPersistence')
+            if (current !== undefined && (Reflect.get(current, symbols.original) ?? current) === original
+              && owner.get('sessions')?.get(session.id) === session) {
+              await record(binding, session.header, signal)
+            }
+          }
+        this.loop = api.createAgentLoop(owner, recordFreshSession === undefined ? guards : { ...guards, recordFreshSession }, config,
           reserveSubagent === undefined ? undefined : depth => reserveSubagent(binding, depth))
         this.loopFiber = owner.fiber
         const agents = owner.get('agents'), persistence = owner.get('sessionPersistence')

@@ -5,6 +5,7 @@ import { AuthRootConfigSchema, type AuthRootConfig } from './root-config.ts'
 export { AuthAccessError } from './auth-error.ts'
 export { PeAuthService } from './auth-root.ts'
 export { parseAuthRootConfig } from './root-config.ts'
+export type { AllocationDiagnosticsAuthority } from './allocation-diagnostics.ts'
 
 /** Configuration and activation failures prevent the native launcher from committing startup. */
 export const startupRequired = true
@@ -31,7 +32,8 @@ export const Config = AuthRootConfigSchema
  */
 export async function apply(ctx: Context, config: Config): Promise<void> {
   if (config.ingress === undefined) await PeAuthService.mountRoot(ctx, config)
-  else await ctx.inject(['credentials', 'peAccountRuntime', 'webServer', 'peExposure'], async (scope) => {
+  else await ctx.inject(['credentials', 'peAccountRuntime', 'webServer', 'peExposure',
+    ...(config.allocationDiagnostics === undefined ? [] : ['peSandboxCoordinator'])], async (scope) => {
     await PeAuthService.mountRoot(scope, config)
   })
 }
