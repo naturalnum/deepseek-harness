@@ -12,6 +12,7 @@ function fixture(holdAllocation = false, maxLifetimeMs = 1000) {
   const ctx = new Context(), lifetime = new AbortController(), scopeLifetime = new AbortController()
   const invocation = new AbortController()
   const operations = new Set<ManagedCommandOperation>(), unknown = vi.fn<(cause: unknown) => void>()
+  const providerFailed = vi.fn<NativeExecutionProviderPort['providerFailed']>()
   const snapshot: CommandSnapshot = { prepared: true, submitted: false, commitClosed: false, rangeEmpty: false,
     ioClosed: false, physicalStopRequired: false, providerFailure: false, direct: undefined,
     stdout: { bytes: Buffer.alloc(0), observedBytes: 0, eof: false },
@@ -45,7 +46,7 @@ function fixture(holdAllocation = false, maxLifetimeMs = 1000) {
       lifetime.signal.throwIfAborted()
       if (!operations.has(operation)) throw new Error('foreign operation')
     },
-    providerFailed: vi.fn(),
+    providerFailed,
     async closeProvider() {
       const owned = [...operations]
       for (const operation of owned) operation.release()
@@ -60,7 +61,7 @@ function fixture(holdAllocation = false, maxLifetimeMs = 1000) {
     for (const operation of owned) operation.acknowledgePhysicalStop()
     await Promise.all(owned.map(operation => operation.whenEmpty)); await ctx.fiber.dispose()
   })
-  return { ctx, port, shell, lifetime, scopeLifetime, invocation, operations, allocations, channel, unknown }
+  return { ctx, port, shell, lifetime, scopeLifetime, invocation, operations, allocations, channel, unknown, providerFailed }
 }
 
 it('resolves a native skill directory suffix before preparing the original Cloud command', async () => {
@@ -93,7 +94,7 @@ it('reports a completely joined run deadline as Shell timeout while native done 
   const handle = await f.shell.execute(f.shell.resolve({ command: 'synthetic original deadline', onExpiry: 'none' }))
   await expect(handle.done).resolves.toBeUndefined()
   await expect(handle.result()).resolves.toMatchObject({ exitCode: null, signal: null, timedOut: true, aborted: false })
-  expect(f.port.providerFailed).not.toHaveBeenCalled()
+  expect(f.providerFailed).not.toHaveBeenCalled()
   const [operation] = f.operations
   expect(operation).toBeDefined()
   await expect(operation!.handle.done).rejects.toMatchObject({ name: 'CommandRunDeadlineError' })
@@ -110,7 +111,7 @@ it('retains the machine identity and provider failure for an unclassified missin
   expect(failure).toMatchObject({ name: 'CommandOperationFailure', code: 'cloud/command-direct-incomplete',
     message: 'The command ended without complete direct exit facts.' })
   await expect(handle.result()).rejects.toBe(failure)
-  expect(f.port.providerFailed).toHaveBeenCalledWith(operation, failure)
+  expect(f.providerFailed).toHaveBeenCalledWith(operation, failure)
 })
 
 it('keeps Root platform lifetime distinct from the joined guest deadline in Shell', async () => {
@@ -128,7 +129,7 @@ it('keeps Root platform lifetime distinct from the joined guest deadline in Shel
     message: 'The command exceeded its platform lifetime.' })
   expect(operation!.stopReason()?.runDeadline).toBeUndefined()
   await expect(handle.result()).rejects.toBe(failure)
-  expect(f.port.providerFailed).toHaveBeenCalledWith(operation, failure)
+  expect(f.providerFailed).toHaveBeenCalledWith(operation, failure)
 })
 
 it('retains the original Shell provider failure when a commit attempt never confirms submission', async () => {
@@ -143,7 +144,7 @@ it('retains the original Shell provider failure when a commit attempt never conf
   expect(f.unknown).toHaveBeenCalledWith(failure)
   operation!.acknowledgePhysicalStop(); await handle.done
   await expect(handle.result()).rejects.toBe(failure)
-  expect(f.port.providerFailed).toHaveBeenCalledWith(operation, failure)
+  expect(f.providerFailed).toHaveBeenCalledWith(operation, failure)
 })
 
 it.each(['caller', 'kill'] as const)('keeps the original Shell %s interruption ahead of a guest deadline', async (source) => {
@@ -158,7 +159,7 @@ it.each(['caller', 'kill'] as const)('keeps the original Shell %s interruption a
     stdout: { bytes: Buffer.alloc(0), observedBytes: 0, eof: true }, stderr: { bytes: Buffer.alloc(0), observedBytes: 0, eof: true } })
   await handle.done
   await expect(handle.result()).resolves.toMatchObject({ exitCode: null, signal: null, timedOut: false, aborted: source === 'caller' })
-  expect(f.port.providerFailed).not.toHaveBeenCalled()
+  expect(f.providerFailed).not.toHaveBeenCalled()
 })
 
 it('keeps actual direct exit facts when the guest also reports a run deadline', async () => {
@@ -169,7 +170,7 @@ it('keeps actual direct exit facts when the guest also reports a run deadline', 
     stdout: { bytes: Buffer.alloc(0), observedBytes: 0, eof: true }, stderr: { bytes: Buffer.alloc(0), observedBytes: 0, eof: true } }))
   const handle = await f.shell.execute(f.shell.resolve({ command: 'synthetic direct outcome', onExpiry: 'none' }))
   await expect(handle.result()).resolves.toMatchObject({ exitCode: 7, signal: null, timedOut: false, aborted: false })
-  expect(f.port.providerFailed).not.toHaveBeenCalled()
+  expect(f.providerFailed).not.toHaveBeenCalled()
 })
 
 it('does not reuse another command deadline as this caller interruption', async () => {
@@ -190,7 +191,7 @@ it('does not reuse another command deadline as this caller interruption', async 
   caller.abort(reason); committed.resolve(terminal)
   await second.done
   await expect(second.result()).resolves.toMatchObject({ timedOut: false, aborted: true, exitCode: null, signal: null })
-  expect(f.port.providerFailed).not.toHaveBeenCalled()
+  expect(f.providerFailed).not.toHaveBeenCalled()
 })
 
 it.each(['acquire', 'prepare'] as const)('keeps another operation deadline rejected by %s out of this operation marker', async (stage) => {
@@ -210,7 +211,7 @@ it.each(['acquire', 'prepare'] as const)('keeps another operation deadline rejec
   expect(operation).toBeDefined()
   await expect(operation!.handle.done).rejects.toBe(reason)
   expect(operation!.stopReason()?.runDeadline).toBeUndefined()
-  expect(f.port.providerFailed).not.toHaveBeenCalled()
+  expect(f.providerFailed).not.toHaveBeenCalled()
 })
 
 it('returns the specified empty settled Shell timeout while late allocation remains with its original owner', async () => {
@@ -252,7 +253,7 @@ it.each(['caller', 'invocation', 'scope'] as const)('keeps a %s-cancelled unsubm
     expect(f.operations.size).toBe(0)
     expect(() => handle.result()).toThrow('foreign operation')
   }
-  expect(f.port.providerFailed).not.toHaveBeenCalled()
+  expect(f.providerFailed).not.toHaveBeenCalled()
 })
 
 it('preserves pre-publication native cancellation and rejects unsupported environment before reservation', async () => {

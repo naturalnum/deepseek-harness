@@ -154,7 +154,7 @@ it('joins the native close barrier before releasing either the slot or original 
     expect(settled).toBe(false)
     expect(test.pool.inspect().work.running).toBe(1)
     expect(test.pool.inspect().work.residentBytes).toBeGreaterThan(0)
-    expect(() => enumeration.assertCurrent()).toThrow()
+    expect(() => { enumeration.assertCurrent() }).toThrow()
     test.release(); await closing
     expect(test.pool.inspect().work).toMatchObject({ running: 0, pending: 0, residentBytes: 0 })
   } finally { test.release(); await closing }
@@ -206,7 +206,9 @@ it('admits the last allowed page and refuses a further scan when the total page 
     directoryPagingCurrent: () => {} }
   const target = await test.selected(scope, () => test.fs.resolve('.'))
   const enumeration = await test.selected(scope, () => test.fs.openDirectory(target, 8))
-  expect(await enumeration.next()).toMatchObject({ eof: false, closed: false, entries: expect.any(Array) })
+  const page = await enumeration.next()
+  expect(page).toMatchObject({ eof: false, closed: false })
+  expect(Array.isArray(page.entries)).toBe(true)
   await expect(enumeration.next()).rejects.toMatchObject({ code: 'FS_TOO_LARGE' })
   expect(Atomics.load(test.counters, 3)).toBe(1)
   await enumeration.close()

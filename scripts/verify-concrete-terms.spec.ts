@@ -6,6 +6,30 @@ import { findConcreteTermViolations, readTrackedSource } from './verify-concrete
 
 const blockedTerm = 'prove' + 'nance'
 
+describe('native deployment compatibility field spellings', () => {
+  const file = 'deploy/local/native-update.mjs'
+  const field = blockedTerm + 'File', digest = blockedTerm + 'Sha256'
+  it('retains exact input and persisted field names while rejecting new ambiguous labels', () => {
+    const source = `exactFields(input, ['${field}']); input.${field}; const row = { ${digest}: digest(raw) }`
+    expect(findConcreteTermViolations(file, source)).toEqual([])
+    expect(findConcreteTermViolations('deploy/local/another.mjs', source)).not.toEqual([])
+    for (const text of [`const ${field} = 'new label'`, `// ${field}`, `input.${field}Extra`,
+      `const note = '${blockedTerm}'`, `const note = '${field}'`, `const notes = ['${field}']`,
+      `input.${field}; // ambiguous ${blockedTerm}`]) {
+      expect(findConcreteTermViolations(file, text)).toHaveLength(1)
+    }
+  })
+  it('retains only the exact original diagnostic argument and documented inline input field', () => {
+    const code = 'directory-arm-' + blockedTerm
+    expect(findConcreteTermViolations(file, `throw new NativeDeliveryUnconfirmed('${code}')`)).toEqual([])
+    expect(findConcreteTermViolations(file, `const note = '${code}'`)).toHaveLength(1)
+    const usage = 'deploy/local/USAGE.md'
+    expect(findConcreteTermViolations(usage, `Input includes \`${field}\`.`)).toEqual([])
+    expect(findConcreteTermViolations(usage, `Input includes \`${field}\` and ${blockedTerm}.`)).toHaveLength(1)
+    expect(findConcreteTermViolations('docs/another.md', `Input includes \`${field}\`.`)).toHaveLength(1)
+  })
+})
+
 describe('concrete terminology policy', () => {
   it.each([
     'references/rule-migration-manifest-v3.6.0.json',

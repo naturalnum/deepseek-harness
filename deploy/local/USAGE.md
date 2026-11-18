@@ -52,9 +52,9 @@
 
 ### 更换正式目录资产与 profile
 
-已验证并正常释放的原生组需要更换为正式目录资产时，在正常 `update <真实普通包>` 后追加 `--native-asset-successor '<0600私有JSON>'`。它与前两个原生参数互斥，仅用于 update。输入固定包含 format=`pe-cloud-local-native-directory-asset/v1`、predecessor（operation、descriptorSha256、targetTupleSha256）、assetFile、provenanceFile、sourceManifestFile、compatibleBundle，以及 directoryPaging 的 idleTimeoutMs、totalTimeoutMs、maxPages。后三值必须显式选择为 1 至 2147483647 的整数；不接受配置正文、任意选择器、允许组、版本字典或其它字段。
+已验证并正常释放的原生组需要更换为正式目录资产时，在正常 `update <真实普通包>` 后追加 `--native-asset-successor '<0600私有JSON>'`。它与前两个原生参数互斥，仅用于 update。输入固定包含 format=`pe-cloud-local-native-directory-asset/v1`、predecessor（operation、descriptorSha256、targetTupleSha256）、`assetFile`、`provenanceFile`、`sourceManifestFile`、`compatibleBundle`，以及 directoryPaging 的 idleTimeoutMs、totalTimeoutMs、maxPages。后三值必须显式选择为 1 至 2147483647 的整数；不接受配置正文、任意选择器、允许组、版本字典或其它字段。
 
-此入口只复用已审正式三宏编译的 143776 字节目录/技能 ARM 原件及原 provenance、source.sha256，不重编或重标旧包。两份正常产品包通过原 verifyBundle，四 C 和读者来源从各包真实 sourceCommit 的 Git 对象读取，记录 tree、blob、摘要及依赖闭包；控制器自己的提交不代替产品来源。对应产品源对象必须先经原正常源交付流程到件，缺失时在新 stage 前停止。只有 deploy 控制源改变且产品闭包实核相同，可复用已经真实产出的两正常包及其原 sourceCommit，不为控制器新提交再打包或改标签。
+此入口只复用已审正式三宏编译的 143776 字节目录/技能 ARM 原件及原资产来源记录、source.sha256，不重编或重标旧包。两份正常产品包通过原 verifyBundle，四 C 和读者来源从各包真实 sourceCommit 的 Git 对象读取，记录 tree、blob、摘要及依赖闭包；控制器自己的提交不代替产品来源。对应产品源对象必须先经原正常源交付流程到件，缺失时在新 stage 前停止。只有 deploy 控制源改变且产品闭包实核相同，可复用已经真实产出的两正常包及其原 sourceCommit，不为控制器新提交再打包或改标签。
 
 原 Root 的完整 verified 记录、释放、私有输入、实际已安装组及 namespace/holder 在新准备前和 reserve 前重新确认。新 original 取当前选中组的真实 FD/profile，保原资产父身份和全部上限；新资产路径及来源旁件已存在时拒绝，不覆盖或认领。新操作、新 journal 和 assetBinding 单独承担原 fd-profile 九步，不能借用只换 JS 的 successor-js，也不重开旧操作。两份新包、原正式资产来源、精确协议、三个预算、stream、容量和候选 profile 摘要共同绑定；资产旁件的 sourceSha256 继续是原四 C 清单摘要；新读者/配置派生回执另有 originSha256。后续普通互切与同 FD 后继仍核这些来源，目录同 FD pair 使用单独固定格式承诺 origin 与 facts 摘要，旧 pair 的固定字段和三组同 FD/profile 条件不放宽。
 

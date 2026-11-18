@@ -49,7 +49,7 @@ function requireAssetPlan(plan) {
 const DIRECTORY_INPUT = 'pe-cloud-local-native-directory-asset/v1'
 const DIRECTORY_PLAN = 'pe-cloud-local-native-directory-plan/v1'
 const ARM_SHA = 'ab72d61fa50e2c91b34bac7a2b53ee42c4f1a184754592acdc19fc89ff39da3c'
-const ARM_PROVENANCE_SHA = '05d74360aa303e04b2e013a621acdacab305e0bc37370c2bb02256e7e38655ed'
+const ARM_SOURCE_RECORD_SHA = '05d74360aa303e04b2e013a621acdacab305e0bc37370c2bb02256e7e38655ed'
 const ARM_SOURCE_SHA = '52d1081e425a1dc6b44c21c1d4eecb39de50e2e30dff4b07315934600687468f'
 const NATIVE_PATHS = ['fd.c', 'skill-project.h', 'skill-versions.h', 'skill-bundles.h']
 const READER_PATHS = ['packages/cloud/pe-cloud-files/src/file-worker.ts', 'packages/cloud/pe-cloud-files/src/worker-client.ts',
@@ -98,20 +98,20 @@ function publicArtifact(filename, maximum) {
 function directoryArtifacts(input) {
   const asset = publicArtifact(input.assetFile, 143776), raw = publicArtifact(input.provenanceFile, 32768)
   const source = publicArtifact(input.sourceManifestFile, 4096)
-  if (asset.length !== 143776 || digest(asset) !== ARM_SHA || digest(raw) !== ARM_PROVENANCE_SHA || digest(source) !== ARM_SOURCE_SHA) {
+  if (asset.length !== 143776 || digest(asset) !== ARM_SHA || digest(raw) !== ARM_SOURCE_RECORD_SHA || digest(source) !== ARM_SOURCE_SHA) {
     throw new NativeDeliveryUnconfirmed('directory-arm-origin')
   }
-  const provenance = JSON.parse(raw), rows = source.toString('utf8').trimEnd().split('\n').map(row => row.match(/^([a-f0-9]{64})  ([a-z.-]+)$/))
+  const sourceRecord = JSON.parse(raw), rows = source.toString('utf8').trimEnd().split('\n').map(row => row.match(/^([a-f0-9]{64})  ([a-z.-]+)$/))
   if (rows.length !== 4 || rows.some((row, index) => !row || row[2] !== NATIVE_PATHS[index])
-    || provenance.sha256 !== ARM_SHA || provenance.bytes !== 143776
-    || provenance.target !== 'linux-arm64-glibc' || provenance.simulation_macros.length !== 0
-    || !isDeepStrictEqual(provenance.production_macros, ['DSH_FD_TEXT_ABI', 'DSH_FD_CONTENT_ABI', 'DSH_FD_SKILL_ABI'])) {
+    || sourceRecord.sha256 !== ARM_SHA || sourceRecord.bytes !== 143776
+    || sourceRecord.target !== 'linux-arm64-glibc' || sourceRecord.simulation_macros.length !== 0
+    || !isDeepStrictEqual(sourceRecord.production_macros, ['DSH_FD_TEXT_ABI', 'DSH_FD_CONTENT_ABI', 'DSH_FD_SKILL_ABI'])) {
     throw new NativeDeliveryUnconfirmed('directory-arm-provenance')
   }
   return { asset, arm: { assetSha256: ARM_SHA, bytes: asset.length, provenanceSha256: digest(raw),
-    sourceManifestSha256: digest(source), sourceCommit: provenance.source_commit, sourceTree: provenance.source_tree,
-    builderImage: provenance.builder_image_id, baseImage: provenance.base_image_id,
-    recipeManifestSha256: provenance.recipe_manifest_sha256, productionMacros: provenance.production_macros },
+    sourceManifestSha256: digest(source), sourceCommit: sourceRecord.source_commit, sourceTree: sourceRecord.source_tree,
+    builderImage: sourceRecord.builder_image_id, baseImage: sourceRecord.base_image_id,
+    recipeManifestSha256: sourceRecord.recipe_manifest_sha256, productionMacros: sourceRecord.production_macros },
   nativeSources: rows.map(row => ({ path: 'packages/cloud/pe-cloud-files/native/' + row[2], sha256: row[1] })) }
 }
 
@@ -175,7 +175,7 @@ export function requireSavedAssetPlan(plan) {
   requireAssetPlan({ ...legacy, format: 'pe-cloud-local-native-asset/v1', profile: legacyProfile })
   profileModule.directoryPaging(directoryPaging)
   if (nativeProtocol !== profileModule.DIRECTORY_PROTOCOL || origin?.format !== 'pe-cloud-directory-reader-origin/v1'
-    || origin.arm?.assetSha256 !== ARM_SHA || origin.arm?.provenanceSha256 !== ARM_PROVENANCE_SHA
+    || origin.arm?.assetSha256 !== ARM_SHA || origin.arm?.provenanceSha256 !== ARM_SOURCE_RECORD_SHA
     || origin.arm?.sourceManifestSha256 !== ARM_SOURCE_SHA || !/^[a-f0-9]{64}$/.test(origin.readerConfigSourceSha256) || plan.asset.sha256 !== ARM_SHA || plan.asset.bytes !== 143776
     || plan.asset.sourceSha256 !== ARM_SOURCE_SHA
     || digest(JSON.stringify(directoryFacts)) !== origin.directoryFactsSha256

@@ -8,6 +8,38 @@ import { findRepositoryReferences, scanRepositoryReferences, uniquePrefixMatch }
 
 const organizationUrl = `https://${['github.com', ['deepseek', 'harness'].join('-')].join('/')}`
 
+describe('deployment integrity source pins', () => {
+  const revision = 'b'.repeat(40), commits = new Set([revision])
+  const native = 'deploy/local/native-update.mjs'
+  const owned = 'deploy/local/second-environment-20261115/update-owned-arm-product-bind.mjs'
+  it('accepts only exact sourceCommit equality checks in the original deployment controllers', () => {
+    expect(findRepositoryReferences(native, `if (state.manifest?.sourceCommit !== '${revision}') refuse()`, commits)).toEqual([])
+    expect(findRepositoryReferences(owned, `need(previous.sourceCommit === '${revision}', 'Exact source required')`, commits)).toEqual([])
+    for (const source of [`// ${revision}`, `const note = '${revision}'`,
+      `need(previous.note === '${revision}')`, `need(previous.sourceCommit.includes('${revision}'))`]) {
+      expect(findRepositoryReferences(native, source, commits)).toHaveLength(1)
+    }
+    expect(findRepositoryReferences('deploy/local/another.mjs', `need(manifest.sourceCommit === '${revision}')`, commits)).toHaveLength(1)
+  })
+  it('retains the original fixed SOURCE and exact manifest-read path, without exempting arbitrary strings', () => {
+    expect(findRepositoryReferences(owned, `const SOURCE = '${revision}'`, commits)).toEqual([])
+    const reader = 'deploy/local/second-environment-20261115/update-owned-arm-ingress-diagnostic-product.mjs'
+    expect(findRepositoryReferences(reader, `fs.readFileSync(A + '/product-update-${revision}/manifest.json')`, commits)).toEqual([])
+    expect(findRepositoryReferences(reader, `const note = '/product-update-${revision}/manifest.json'`, commits)).toHaveLength(1)
+    expect(findRepositoryReferences(native, `const SOURCE = '${revision}'`, commits)).toHaveLength(1)
+    expect(findRepositoryReferences(owned, `let SOURCE = '${revision}'`, commits)).toHaveLength(1)
+  })
+  it('accepts only the three schema-bound image record fields', () => {
+    const file = 'deploy/upstream/report-content-arm64-image.json'
+    const record = { schema: 'pe-report-content-arm64-image-binding/v1', sourceCommit: revision,
+      roles: { sourceCommit: revision }, acceptedProduct: { sourceCommit: revision } }
+    expect(findRepositoryReferences(file, JSON.stringify(record, null, 2), commits)).toEqual([])
+    expect(findRepositoryReferences(file, JSON.stringify({ ...record, note: revision }), commits)).toHaveLength(1)
+    expect(findRepositoryReferences(file, JSON.stringify({ ...record, schema: 'other' }), commits)).not.toEqual([])
+    expect(findRepositoryReferences('deploy/upstream/another.json', JSON.stringify(record), commits)).toHaveLength(1)
+  })
+})
+
 describe('research source revision fields', () => {
   const revision = 'a'.repeat(40), commits = new Set([revision])
   const file = 'integrations/epri-research/source-records/cloud-integration.json'

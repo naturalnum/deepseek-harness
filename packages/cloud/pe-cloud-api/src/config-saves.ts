@@ -33,7 +33,7 @@ function credentialReadFailure(value: unknown) {
     const rawCode: unknown = value !== null && typeof value === 'object'
       ? Object.getOwnPropertyDescriptor(value, 'code')?.value : undefined
     code = typeof rawCode === 'string' && /^[A-Za-z0-9_./:-]{1,64}$/.test(rawCode) ? rawCode : undefined
-    const prototype: object | null = value instanceof Error ? Object.getPrototypeOf(value) : null
+    const prototype: object | null = value instanceof Error ? Reflect.getPrototypeOf(value) : null
     const constructor: unknown = prototype === null ? undefined : Object.getOwnPropertyDescriptor(prototype, 'constructor')?.value
     const type: unknown = typeof constructor === 'function' ? Object.getOwnPropertyDescriptor(constructor, 'name')?.value : typeof value
     const message: unknown = value instanceof CloudApiError || value instanceof ConfigSaveOutcomeUnknown

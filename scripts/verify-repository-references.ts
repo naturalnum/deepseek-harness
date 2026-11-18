@@ -100,6 +100,70 @@ function researchSourcePins(file: string, source: string): { value: string; line
   })
 }
 
+/** Source literals consumed by the original deployment identity checks, never arbitrary documentation. */
+function deploymentSourcePins(file: string, source: string): { value: string; line: number; column: number }[] {
+  const owned = 'deploy/local/second-environment-20261115/'
+  const controllers = new Set(['deploy/local/native-update.mjs', ...[
+    'seal-installed-arm-products.mjs', 'update-owned-arm-image-python-product.mjs',
+    'update-owned-arm-ingress-diagnostic-product.mjs', 'update-owned-arm-post-completion-product.mjs',
+    'update-owned-arm-product-bind.mjs',
+  ].map(name => owned + name)])
+  const imageRecord = file === 'deploy/upstream/report-content-arm64-image.json'
+  if (!controllers.has(file) && !imageRecord) return []
+  const parsed = imageRecord ? ts.parseJsonText(file, source)
+    : ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
+  const pins: { value: string; offset: number }[] = []
+  const collect = (node: ts.StringLiteralLike): void => {
+    if (/^[a-f0-9]{40}$/.test(node.text) && node.getText(parsed).slice(1, -1) === node.text) {
+      pins.push({ value: node.text, offset: node.getStart(parsed) + 1 })
+    }
+  }
+  if (imageRecord) {
+    try { JSON.parse(source) } catch { return [] }
+    const first = parsed.statements[0]
+    if (first === undefined || !ts.isExpressionStatement(first) || !ts.isObjectLiteralExpression(first.expression)) return []
+    const object = first.expression, schema = property(object, 'schema')
+    if (schema === undefined || !ts.isStringLiteralLike(schema) || schema.text !== 'pe-report-content-arm64-image-binding/v1') return []
+    const objects = [object, ...['roles', 'acceptedProduct'].flatMap((key) => {
+      const value = property(object, key)
+      return value !== undefined && ts.isObjectLiteralExpression(value) ? [value] : []
+    })]
+    for (const item of objects) {
+      const value = property(item, 'sourceCommit')
+      if (value !== undefined && ts.isStringLiteralLike(value)) collect(value)
+    }
+  } else {
+    const visit = (node: ts.Node): void => {
+      if (ts.isStringLiteralLike(node)) {
+        const parent = node.parent
+        if (ts.isBinaryExpression(parent)
+          && [ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken].includes(parent.operatorToken.kind)) {
+          const other = parent.left === node ? parent.right : parent.left
+          if (ts.isPropertyAccessExpression(other) && other.name.text === 'sourceCommit') collect(node)
+        }
+        if (file === owned + 'update-owned-arm-product-bind.mjs' && ts.isVariableDeclaration(parent)
+          && ts.isIdentifier(parent.name) && parent.name.text === 'SOURCE' && ts.isVariableDeclarationList(parent.parent)
+          && (parent.parent.flags & ts.NodeFlags.Const) !== 0) collect(node)
+        const match = /^\/product-update-([a-f0-9]{40})\/manifest\.json$/.exec(node.text)
+        if (match?.[1] !== undefined && node.getText(parsed).slice(1, -1) === node.text
+          && ts.isBinaryExpression(parent) && parent.operatorToken.kind === ts.SyntaxKind.PlusToken
+          && parent.right === node && ts.isIdentifier(parent.left) && parent.left.text === 'A'
+          && ts.isCallExpression(parent.parent) && parent.parent.arguments[0] === parent
+          && ts.isPropertyAccessExpression(parent.parent.expression) && ts.isIdentifier(parent.parent.expression.expression)
+          && parent.parent.expression.expression.text === 'fs' && parent.parent.expression.name.text === 'readFileSync') {
+          pins.push({ value: match[1], offset: node.getStart(parsed) + 1 + '/product-update-'.length })
+        }
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(parsed)
+  }
+  return pins.map((pin) => {
+    const position = parsed.getLineAndCharacterOfPosition(pin.offset)
+    return { value: pin.value, line: position.line, column: position.character }
+  })
+}
+
 /**
  * Inspect a maintained source file against known commit identifiers.
  * @param file - Repository-relative path used in diagnostics and exclusions.
@@ -114,7 +178,8 @@ export function findRepositoryReferences(
 ): RepositoryReference[] {
   if (!isMaintained(file)) return []
   const officePin = officeSourcePin(file, source)
-  const sourcePins = [...officePin === undefined ? [] : [officePin], ...researchSourcePins(file, source)]
+  const sourcePins = [...officePin === undefined ? [] : [officePin], ...researchSourcePins(file, source),
+    ...deploymentSourcePins(file, source)]
   const references: RepositoryReference[] = []
   for (const [index, line] of source.split('\n').entries()) {
     if (organizationUrl.test(canonicalReferenceText(line).replace(kitRepositoryUrl, ''))) {

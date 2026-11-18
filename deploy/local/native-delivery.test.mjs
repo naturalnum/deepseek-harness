@@ -1439,7 +1439,7 @@ test('new asset input is explicit strict and cannot reopen first delivery same-F
   }
   const input = { format: 'pe-cloud-local-native-directory-asset/v1', predecessor: { operation: pins.operation,
     descriptorSha256: '1'.repeat(64), targetTupleSha256: '2'.repeat(64) }, assetFile: '/public/asset.node',
-    provenanceFile: '/public/asset-provenance.json', sourceManifestFile: '/public/source.sha256', compatibleBundle: '/public/compatible', directoryPaging: directoryBudgets }
+    provenanceFile: '/public/asset-source-record.json', sourceManifestFile: '/public/source.sha256', compatibleBundle: '/public/compatible', directoryPaging: directoryBudgets }
   assert.doesNotThrow(() => requireDirectoryAssetInput(input))
   assert.throws(() => requireDirectoryAssetInput({ ...input, allowGroups: [] }), unconfirmed)
   assert.throws(() => requireDirectoryAssetInput({ ...input, nativeProtocol: 'arbitrary' }), unconfirmed)
@@ -1567,7 +1567,7 @@ test('directory authority preserves the selected protocol budgets facts and boun
   assert.equal(sent.original.source, approved.profile.original.source)
 })
 
-test('directory preflight refuses existing asset or provenance paths and propagates an unknown path read', () => {
+test('directory preflight refuses existing asset or source-record paths and propagates an unknown path read', () => {
   const asset = { sha256: 'a'.repeat(64) }, missing = Object.assign(new Error('absent'), { code: 'ENOENT' })
   let calls = 0
   assert.doesNotThrow(() => profileModule.requireUnpublishedDirectoryAsset(asset, { lstatSync() { calls++; throw missing } }))
