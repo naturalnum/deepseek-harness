@@ -998,6 +998,9 @@ export class AccountNativeIntegration {
     this.input.saves.releaseAccount(this.saves)
   }
 
+  /** Close API and first-screen event admission synchronously. The native stop joins the retained event withdrawal. */
+  closeApiAdmission(): void { this.api?.invalidate() }
+
   /**
    * Close new API/execution work before native disposal; unknown saves retain their hooks and graph.
    * @param beforeWithdraw Optional factory drain hook; omission performs ordinary shutdown. The hook first
@@ -1009,7 +1012,7 @@ export class AccountNativeIntegration {
     if (this.stopping !== undefined && beforeWithdraw !== undefined) {
       throw new AccountRuntimeError('cloud/stop-unconfirmed', 'Original native shutdown already owns its terminal hook')
     }
-    this.api?.invalidate()
+    this.closeApiAdmission()
     this.execution?.close()
     this.stopping ??= (async () => {
       let receipt = await this.saves?.stopConfigSaves(Date.now() + this.input.stopTimeoutMs)

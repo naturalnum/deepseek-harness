@@ -915,9 +915,16 @@ export class AccountFactory {
    * @returns Retained close observations; each production release requires all original drain evidence.
    */
   close(): Promise<readonly AccountNativeCloseObservation[]> {
+    if (this.closing !== undefined) return this.closing
+    const closed = Promise.withResolvers<readonly AccountNativeCloseObservation[]>()
+    this.closing = closed.promise
     this.closed = true
-    for (const slot of this.slots.values()) slot.closeRequested = true
-    this.closing ??= (async () => {
+    void (async () => {
+      for (const slot of this.slots.values()) {
+        slot.closeRequested = true
+        // Later accounts can still have live bindings while the first account is draining.
+        slot.integration?.closeApiAdmission()
+      }
       const observations: AccountNativeCloseObservation[] = []
       for (const slot of this.slots.values()) {
         try { observations.push(await this.stopNative(slot.accountId)) }
@@ -925,8 +932,8 @@ export class AccountFactory {
         try { await slot.configuration } catch (_cause) { /* original failure remains with its slot/store/save owner */ }
       }
       return Object.freeze(observations)
-    })()
-    return this.closing
+    })().then(closed.resolve, closed.reject)
+    return closed.promise
   }
 
   /**

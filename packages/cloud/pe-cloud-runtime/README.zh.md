@@ -239,6 +239,8 @@ API 目录显式选择 `modelKey` 时，Root 按有限批准的 provider/entry/m
 
 普通 Factory 关闭时先关闭准入和图 lifetime，等待原保存屏障，调用原 AgentLoop 服务的终态 `stop()` 并保持其 fiber 及持久化 provider 已挂载，核对原 AgentRegistry 为空并 flush SessionPersistence，再撤回原生 hook 和销毁图。它等待剩余借用及实际 execution/files 参与者后才关闭原 storage lease。Clean owner 释放还要求 confirmed 原生销毁、保存和参与者证据，以及实际 PG drain/release CAS。工作或元数据结果未知时保留容量和归属；账户排空未知时 Root 继续持有控制资源。
 
+Root Factory 关闭时，在等待首个账号排空前先关闭所有已挂载账号的 API 和首屏事件准入。各账号的原生停机等待原事件撤回，并保留此前记录的错误。
+
 装配容量随实际启动及已开始的原生清理结算。仅原生销毁不能证明完整排空，因此账户预留仍保留。工厂关闭外部准入时仍保留内部排空预留及原生销毁责任；清理未知继续持有排空容量。只有确定在 claim 前或从未提交的失败且没有原生资源时，才释放未启动账户槽。已提交结果未知保留原槽，不盲目重启。
 
 实际根在配方未封口时于 PG 领取前拒绝 acquire。其私有 request 保留原 storage owner，以及原生集成消费的同一 coordinator、exposure policy、execution issuer 和[具体账户策略](src/account-policy.ts)。Factory 在任何 Profile/patch 或原生配置读取前取得原 storage lease，先记录规范的已安装 binding，再执行唯一一次 files bind，并在未发布阶段审核实际项目、closed execution 和原生 API。实际 ready CAS 前后均复核 Root、lease 和 binding。此后精确且有效的图才能签发 `AccountUse`；release 幂等且不 cancel Agent。独立 native-only 路径不授予 `AccountUse`。

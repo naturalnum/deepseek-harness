@@ -131,6 +131,7 @@ afterEach(async () => {
 
 async function fixture(options: {
   accountId?: AccountId
+  sharedFactory?: Readonly<{ factory: AccountFactory; capacity: RuntimeCapacity }>
   bootstrapInventory?: boolean
   nativeDirectoryHelper?: string
   modelKey?: boolean
@@ -202,8 +203,10 @@ async function fixture(options: {
   })
   roots.push(root)
   if (options.bootstrapInventory) new PluginPackages(root)
-  const capacity = new RuntimeCapacity({ maxMountedAccounts: 2, maxConcurrentMounts: 1, maxConcurrentDrains: 1 })
-  const factory = new AccountFactory(capacity, { maxWaiters: 2, maxWaitersPerAccount: 2, maxBorrows: 2, maxBorrowsPerAccount: 2 })
+  const capacity = options.sharedFactory?.capacity
+    ?? new RuntimeCapacity({ maxMountedAccounts: 2, maxConcurrentMounts: 1, maxConcurrentDrains: 1 })
+  const factory = options.sharedFactory?.factory
+    ?? new AccountFactory(capacity, { maxWaiters: 2, maxWaitersPerAccount: 2, maxBorrows: 2, maxBorrowsPerAccount: 2 })
   const identity = createProcessInstanceIdentity()
   const accountId = options.accountId ?? brandString<AccountId>('m8s-' + directory)
   const layout = deriveAccountLayout(accountId, identity.instanceId, {
@@ -537,6 +540,83 @@ async function fixture(options: {
       return resolveFiles(caller, signal)
     } }
 }
+
+it.each(['event-during-close', 'genuine-old-epoch'] as const)('[S10 first-screen shutdown] %s', async (scenario) => {
+  const options = { firstScreen: true, instructionSources: instructionSourceFixture(), factoryComponent: true }
+  const first = await fixture(options)
+  const ordinary = await fixture({ ...options, sharedFactory: first })
+  for (const account of [first, ordinary]) {
+    vi.spyOn(account.root.peAccountRuntime, 'assertRecipeSealed').mockImplementation(() => {})
+  }
+  const predecessor = await first.start()
+  if (predecessor.status === 'failed') throw predecessor.cause
+  const second = await ordinary.start()
+  if (second.status === 'failed') throw second.cause
+  const factory = first.factory
+  const slots = factory['slots']
+  const firstSlot = slots.get(predecessor.binding.accountId), secondSlot = slots.get(second.binding.accountId)
+  if (firstSlot === undefined || secondSlot === undefined) throw new Error('Original factory slots are absent')
+  // These native-only fixtures own their lifetimes and never publish PostgreSQL readiness.
+  firstSlot.state = 'ready'
+  firstSlot.controller = first.lifetime
+  secondSlot.state = 'ready'
+  secondSlot.controller = ordinary.lifetime
+  const { context: ctx, binding } = second
+  const { sessionId } = await ctx.sessionController.create({})
+  const agent = ctx.agents.get(sessionId)
+  if (agent === undefined) throw new Error('Original Native Agent is absent')
+  await ctx.sessions.flush(agent.session)
+
+  const persistence = predecessor.context.sessionPersistence
+  const raw: unknown = Reflect.get(persistence, symbols.original) ?? persistence
+  if (!(raw instanceof SessionPersistence)) throw new Error('Original Native persistence is absent')
+  const flush = raw.flush.bind(raw)
+  const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  vi.spyOn(raw, 'flush').mockImplementationOnce(async () => {
+    entered.resolve(undefined)
+    await release.promise
+    await flush()
+  })
+  const output = vi.spyOn(console, 'error').mockImplementation(() => {})
+  if (scenario === 'genuine-old-epoch') {
+    // The registered source still refers to epoch one while the active slot presents a different binding.
+    secondSlot.binding = Object.freeze({ ...binding, epoch: brandString<OwnerEpoch>('2') })
+    try { ctx.emit('api-session/activity', sessionId, 41) }
+    finally { secondSlot.binding = binding }
+  }
+
+  const closing = factory.close()
+  try {
+    await entered.promise
+    expect(factory.close()).toBe(closing)
+    expect(predecessor.binding.lifetime.aborted).toBe(true)
+    expect(binding.lifetime.aborted).toBe(false)
+    expect(() => { factory.assertMountCurrent(binding) }).toThrow(expect.objectContaining({ code: 'cloud/stale-generation' }))
+    ctx.emit('api-session/activity', sessionId, 42)
+  } finally { release.resolve(undefined) }
+
+  const [firstObserved, secondObserved] = await closing
+  expect(firstObserved).toMatchObject({ status: 'observed', native: { status: 'confirmed' } })
+  const failures = output.mock.calls.flat().filter((entry): entry is string =>
+    typeof entry === 'string' && entry.includes('cloud/shutdown-unknown'))
+  if (scenario === 'event-during-close') {
+    const cause = secondObserved?.cause
+    expect({ status: secondObserved?.status, native: secondObserved?.native?.status,
+      code: cause instanceof AccountRuntimeError ? cause.code : undefined,
+    }).toEqual({ status: 'observed', native: 'confirmed', code: undefined })
+    expect(failures).toEqual([])
+    expect(ctx.get('loader')).toBeUndefined()
+    return
+  }
+  expect(secondObserved).toMatchObject({ status: 'unknown', cause: { code: 'cloud/stale-generation' } })
+  expect(secondObserved?.cause).toBeInstanceOf(AccountRuntimeError)
+  const cause = secondObserved?.cause
+  if (!(cause instanceof AccountRuntimeError)) throw new Error('Original stale error is absent')
+  expect(cause.stack).toContain('AccountFactory.assertMountCurrent')
+  expect(cause.stack).toContain('first-screen-events.ts')
+  expect(failures).toHaveLength(1)
+  expect(factory.inspect().unknown).toBe(1)
+})
 
 it('mounts Native preset settings and read-only Cordis providers in the actual account Loader', async () => {
   const f = await fixture({ presetServices: true })
