@@ -11,7 +11,7 @@ afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(
 function fixture(holdAllocation = false, maxLifetimeMs = 1000) {
   const ctx = new Context(), lifetime = new AbortController(), scopeLifetime = new AbortController()
   const invocation = new AbortController()
-  const operations = new Set<ManagedCommandOperation>()
+  const operations = new Set<ManagedCommandOperation>(), unknown = vi.fn<(cause: unknown) => void>()
   const snapshot: CommandSnapshot = { prepared: true, submitted: false, commitClosed: false, rangeEmpty: false,
     ioClosed: false, physicalStopRequired: false, providerFailure: false, direct: undefined,
     stdout: { bytes: Buffer.alloc(0), observedBytes: 0, eof: false },
@@ -36,7 +36,7 @@ function fixture(holdAllocation = false, maxLifetimeMs = 1000) {
       const operation = new ManagedCommandOperation(input, { maxArgvBytes: 4096, maxArgvEntries: 16, maxPathBytes: 512,
         maxStdinBytes: 4096, maxTailBytes: 32, maxObservedBytes: 65536, pollIntervalMs: 1, maxWaiters: 2,
         maxLifetimeMs, stopWaitMs: 100 }, { lifetime: scopeLifetime.signal, acquire: allocations,
-        assertCurrent() { lifetime.signal.throwIfAborted() }, unknown() { /* Actual remote cleanup belongs to Root in production. */ },
+        assertCurrent() { lifetime.signal.throwIfAborted() }, unknown,
         retired() { operations.delete(operation) } })
       operations.add(operation)
       return operation
@@ -60,7 +60,7 @@ function fixture(holdAllocation = false, maxLifetimeMs = 1000) {
     for (const operation of owned) operation.acknowledgePhysicalStop()
     await Promise.all(owned.map(operation => operation.whenEmpty)); await ctx.fiber.dispose()
   })
-  return { ctx, port, shell, lifetime, scopeLifetime, invocation, operations, allocations, channel }
+  return { ctx, port, shell, lifetime, scopeLifetime, invocation, operations, allocations, channel, unknown }
 }
 
 it('resolves a native skill directory suffix before preparing the original Cloud command', async () => {
@@ -127,6 +127,21 @@ it('keeps Root platform lifetime distinct from the joined guest deadline in Shel
   expect(failure).toMatchObject({ name: 'CommandOperationFailure', code: 'cloud/command-platform-lifetime',
     message: 'The command exceeded its platform lifetime.' })
   expect(operation!.stopReason()?.runDeadline).toBeUndefined()
+  await expect(handle.result()).rejects.toBe(failure)
+  expect(f.port.providerFailed).toHaveBeenCalledWith(operation, failure)
+})
+
+it('retains the original Shell provider failure when a commit attempt never confirms submission', async () => {
+  const f = fixture()
+  f.channel.commit.mockImplementation(async () => ({ prepared: true, submitted: false, commitClosed: true,
+    rangeEmpty: true, ioClosed: true, physicalStopRequired: false, providerFailure: false, direct: undefined, stopCause: 'run-deadline',
+    stdout: { bytes: Buffer.alloc(0), observedBytes: 0, eof: true }, stderr: { bytes: Buffer.alloc(0), observedBytes: 0, eof: true } }))
+  const handle = await f.shell.execute(f.shell.resolve({ command: 'synthetic unconfirmed submission', onExpiry: 'none' }))
+  const [operation] = f.operations, failure = await operation!.handle.done.catch((cause: unknown) => cause)
+  expect(failure).toMatchObject({ code: 'cloud/command-submission-unconfirmed' })
+  expect(operation!.stopReason()?.runDeadline).toBeUndefined()
+  expect(f.unknown).toHaveBeenCalledWith(failure)
+  operation!.acknowledgePhysicalStop(); await handle.done
   await expect(handle.result()).rejects.toBe(failure)
   expect(f.port.providerFailed).toHaveBeenCalledWith(operation, failure)
 })

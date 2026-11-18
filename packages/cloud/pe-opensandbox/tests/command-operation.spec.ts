@@ -204,6 +204,69 @@ it('identifies the original Root platform lifetime without marking a guest deadl
   expect(f.channel.stop).toHaveBeenCalledOnce()
 })
 
+it('does not classify an unsubmitted operation as a completed run deadline', async () => {
+  const f = fixture(), empty = initial()
+  f.channel.prepare.mockResolvedValue({ ...empty, rangeEmpty: true, ioClosed: true, stopCause: 'run-deadline',
+    stdout: { ...empty.stdout, eof: true }, stderr: { ...empty.stderr, eof: true } })
+  f.op.publish(); f.op.begin()
+  await expect(f.op.handle.done).rejects.toMatchObject({ code: 'cloud/command-submission-unconfirmed' })
+  expect(f.authority.unknown).toHaveBeenCalledOnce()
+  f.op.acknowledgePhysicalStop()
+  await f.op.whenEmpty
+  expect(f.op.stopReason()?.runDeadline).toBeUndefined()
+  expect(f.channel.commit).not.toHaveBeenCalled()
+})
+
+it('does not replace a commit attempt with confirmed submission for a run deadline', async () => {
+  const f = fixture(), empty = initial()
+  f.channel.commit.mockResolvedValue({ ...empty, rangeEmpty: true, ioClosed: true, stopCause: 'run-deadline',
+    stdout: { ...empty.stdout, eof: true }, stderr: { ...empty.stderr, eof: true } })
+  f.op.publish(); f.op.begin()
+  await expect(f.op.handle.done).rejects.toMatchObject({ code: 'cloud/command-submission-unconfirmed' })
+  expect(f.authority.unknown).toHaveBeenCalledOnce()
+  f.op.acknowledgePhysicalStop()
+  await f.op.whenEmpty
+  expect(f.channel.commit).toHaveBeenCalledOnce()
+  expect(f.op.stopReason()?.runDeadline).toBeUndefined()
+})
+
+it('keeps a missing latest submission fact outside the joined deadline marker', async () => {
+  const f = fixture(), running: CommandSnapshot = { ...initial(), submitted: true, stopCause: 'run-deadline' }
+  f.channel.commit.mockResolvedValue(running)
+  f.op.publish(); f.op.begin()
+  await vi.waitFor(() => { expect(f.channel.poll).toHaveBeenCalledOnce() })
+  const terminal = complete()
+  f.poll.resolve({ ...terminal, direct: undefined, submitted: false, stopCause: 'run-deadline' })
+  await expect(f.op.handle.done).rejects.toMatchObject({ code: 'cloud/command-submission-unconfirmed' })
+  expect(f.authority.unknown).toHaveBeenCalledOnce()
+  f.op.acknowledgePhysicalStop()
+  await f.op.whenEmpty
+  expect(f.op.stopReason()?.runDeadline).toBeUndefined()
+})
+
+it('keeps a claimed submission before the original commit on unknown cleanup', async () => {
+  const f = fixture(), terminal = complete()
+  f.channel.prepare.mockResolvedValue({ ...terminal, direct: undefined, stopCause: 'run-deadline' })
+  f.op.publish(); f.op.begin()
+  await expect(f.op.handle.done).rejects.toThrow('before its original commit attempt')
+  expect(f.channel.commit).not.toHaveBeenCalled()
+  expect(f.authority.unknown).toHaveBeenCalledOnce()
+  expect(f.op.stopReason()?.runDeadline).toBeUndefined()
+})
+
+it('keeps the caller reason while submission contradictions still require original unknown cleanup', async () => {
+  const f = fixture(), reason = new Error('original caller stop')
+  f.channel.commit.mockResolvedValue({ ...initial(), submitted: true, stopCause: 'run-deadline' })
+  f.op.publish(); f.op.begin()
+  await vi.waitFor(() => { expect(f.channel.poll).toHaveBeenCalledOnce() })
+  f.caller.abort(reason)
+  f.poll.resolve({ ...complete(), direct: undefined, submitted: false, stopCause: 'run-deadline' })
+  await expect(f.op.handle.done).rejects.toBe(reason)
+  expect(f.authority.unknown).toHaveBeenCalledWith(expect.objectContaining({ code: 'cloud/command-submission-unconfirmed' }))
+  expect(f.op.stopReason()?.runDeadline).toBeUndefined()
+  f.op.acknowledgePhysicalStop(); await f.op.whenEmpty
+})
+
 it.each(['acquire', 'prepare'] as const)('keeps a foreign deadline failure from %s outside this original operation marker', async (stage) => {
   const original = fixture()
   original.channel.commit.mockResolvedValue({ ...complete(), direct: undefined, stopCause: 'run-deadline' })

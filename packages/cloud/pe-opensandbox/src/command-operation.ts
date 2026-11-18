@@ -46,7 +46,8 @@ class CommandRunDeadlineError extends Error {
 /** Fixed command-owner failures; their original messages and unknown-cleanup handling remain unchanged. */
 class CommandOperationFailure extends Error {
   constructor(readonly code: 'cloud/command-platform-lifetime' | 'cloud/command-direct-incomplete'
-    | 'cloud/command-physical-stop-required' | 'cloud/command-provider-failure' | 'cloud/command-stop-unconfirmed', message: string) {
+    | 'cloud/command-physical-stop-required' | 'cloud/command-provider-failure' | 'cloud/command-stop-unconfirmed'
+    | 'cloud/command-submission-unconfirmed', message: string) {
     super(message)
     this.name = 'CommandOperationFailure'
   }
@@ -402,6 +403,11 @@ export class ManagedCommandOperation {
         if (!committed && (snapshot.submitted || snapshot.direct !== undefined)) {
           throw new Error('The remote command ran before its original commit attempt.')
         }
+        if (snapshot.stopCause === 'run-deadline' && (!committed || !snapshot.submitted)
+          && !snapshot.physicalStopRequired && !snapshot.providerFailure) {
+          throw new CommandOperationFailure('cloud/command-submission-unconfirmed',
+            'The run deadline lacks confirmed original commit and submission facts.')
+        }
         this.accept(snapshot)
         if (snapshot.physicalStopRequired || snapshot.providerFailure) {
           throw new CommandOperationFailure(snapshot.physicalStopRequired ? 'cloud/command-physical-stop-required' : 'cloud/command-provider-failure',
@@ -451,7 +457,8 @@ export class ManagedCommandOperation {
       }
       if (this.stream !== undefined) await this.waitForOutput(this.stream)
       if (this.direct === undefined || !this.eof.stdout || !this.eof.stderr) {
-        if (snapshot.stopCause === 'run-deadline' && this.requestedStop === undefined && this.direct === undefined
+        if (snapshot.stopCause === 'run-deadline' && committed && snapshot.submitted && this.submittedObserved
+          && this.requestedStop === undefined && this.direct === undefined
           && this.eof.stdout && this.eof.stderr && snapshot.rangeEmpty && snapshot.ioClosed) runDeadline = true
         else this.fail(this.requestedStop?.reason ?? new CommandOperationFailure('cloud/command-direct-incomplete',
           'The command ended without complete direct exit facts.'))
