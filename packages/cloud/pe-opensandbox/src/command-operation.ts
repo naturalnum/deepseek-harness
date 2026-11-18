@@ -1,7 +1,7 @@
 /** One Root-owned command; native direct completion and actual range settlement remain separate facts. */
 import { setTimeout as delay } from 'node:timers/promises'
 import { posix } from 'node:path'
-import type { SubprocessHandle, SubprocessOutcome, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
+import { SubprocessOutputLimitError, type SubprocessHandle, type SubprocessOutcome, type SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { CollectedOutputFailure, CollectedOutputMirror } from './collected-output.ts'
 import { PrivateSemanticAudit, type SemanticFacts } from './semantic-audit.ts'
 import type { NativeFilePolicy } from './agent-data/file-policy.ts'
@@ -98,6 +98,7 @@ export class ManagedCommandOperation {
   private readonly waiters = new Set<RangeWaiter>()
   private readonly output: { stdout: CollectedOutputMirror; stderr: CollectedOutputMirror } | undefined
   private readonly refusedOutput: Partial<Record<'stdout' | 'stderr', number>> = {}
+  private outputLimitFailure: { readonly cause: CollectedOutputFailure; readonly stream: 'stdout' | 'stderr' } | undefined
   private readonly streams: CommandStreams | undefined
   private readonly streamFailure: ReturnType<typeof Promise.withResolvers<never>> | undefined
   private stream: AgentDataStream | undefined
@@ -205,8 +206,15 @@ export class ManagedCommandOperation {
     this.graceMs = spec.graceMs; this.signal = spec.signal
     const signal = this.signal
     this.prepared = this.preparation.promise; this.whenEmpty = this.empty.promise
-    // Failures remain in the original promises even if the native consumer attaches after synchronous publication.
-    void this.completion.promise.catch(() => { /* The original rejected promise remains the native outcome. */ })
+    const done = this.completion.promise.catch((cause: unknown) => {
+      const failure = this.outputLimitFailure
+      if (failure !== undefined && failure.cause === cause) {
+        throw new SubprocessOutputLimitError(failure.stream, failure.cause.maxObservedBytes, { cause })
+      }
+      throw cause
+    })
+    // The public projection never replaces Root's original failure or cleanup observers.
+    void done.catch(() => { /* Retain the public rejection until its consumer attaches. */ })
     void this.prepared.catch(() => { /* Root's preparation observer retains the original rejection. */ })
     const cancelled = (): void => { this.requestStop(this.signal?.reason) }
     const released = (): void => { this.release() }
@@ -224,12 +232,12 @@ export class ManagedCommandOperation {
         stderr: Object.freeze({ readFrom: (offset: number) => { this.assertPublic(); return output.stderr.readFrom(offset) } }),
       }),
       ...output === undefined ? {} : { releaseCollected: () => { this.release() } },
-      done: this.completion.promise,
+      done,
       terminate: () => { this.assertPublic(); this.requestStop(new Error('Native command termination requested.')) },
       waitForExit: (signal?: AbortSignal) => { this.assertPublic(); return this.waitForExit(signal) },
     }
     Object.defineProperty(handle, 'done', {
-      get: () => { this.assertPublic(); return this.completion.promise }, enumerable: true,
+      get: () => { this.assertPublic(); return done }, enumerable: true,
     })
     this.handle = Object.freeze(handle)
   }
@@ -465,6 +473,7 @@ export class ManagedCommandOperation {
         catch (cause) {
           if (!(cause instanceof CollectedOutputFailure) || cause.reason !== 'observed-byte-limit') throw cause
           this.refusedOutput[name] = stream.observedBytes
+          this.outputLimitFailure ??= { cause, stream: name }
           this.eof[name] = stream.eof
           this.fail(this.stopRequest()?.reason ?? cause)
           this.requestStop(cause)

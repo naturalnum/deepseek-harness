@@ -1,0 +1,13 @@
+- id: typert-loader
+  disabled: true
+- id: subprocess
+  disabled: true
+- insert:
+    - id: search-output-limit-subprocess
+      name: '../../../packages/cloud/pe-opensandbox/tests/fixtures/search-output-limit-snapshot.ts'
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: true
+    rawOutputMaxBytes: 4096
+    stderrMaxBytes: 4096

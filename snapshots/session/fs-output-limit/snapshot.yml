@@ -1,0 +1,10 @@
+version: 1
+scenario: fs-output-limit
+profile: headless
+composition: fs-output-limit
+recording: authored
+header:
+  class: fs-output-limit
+  pin: true
+permission: read-only
+platform: posix

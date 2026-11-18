@@ -189,7 +189,10 @@ export interface SubprocessHandle {
    * actual range and I/O settlement remain provider-owned, including unknown or cancelled work.
    */
   releaseCollected?(): void
-  /** Resolves with spawned-command exit facts; rejects for spawn or provider failures. */
+  /**
+   * Resolves with spawned-command exit facts; rejects for spawn or provider failures.
+   * SubprocessOutputLimitError identifies a provider's output refusal, not range or I/O settlement.
+   */
   readonly done: Promise<SubprocessOutcome>
   /**
    * Begin the provider's documented termination procedure on the managed range

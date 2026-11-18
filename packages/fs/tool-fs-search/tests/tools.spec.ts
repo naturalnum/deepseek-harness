@@ -19,7 +19,7 @@ import { createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { TOOL_ABORTED_BEFORE_DISPATCH, type ToolExecution, type ToolExecutionToken } from '@deepseek-ai/dsh-tools'
-import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
+import { SubprocessOutputLimitError, SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type { SubprocessCollectedOutputs, SubprocessHandle, SubprocessOutcome, SubprocessOutputRead, SubprocessOutputReader, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { rgPath } from '@vscode/ripgrep'
@@ -620,6 +620,39 @@ describe('exit semantics and failure classification', () => {
 })
 
 describe('raw output acquisition', () => {
+  it.each(['stdout', 'stderr'] as const)('reports the provider %s limit through the existing overflow result', async (stream) => {
+    const { ctx, subprocess, spill } = await setup({ spill: true })
+    const failure = new SubprocessOutputLimitError(stream, 65536, { cause: new Error('private provider detail') })
+    subprocess.handler = () => ({ reject: failure })
+    const result = await call(ctx, 'grep', { pattern: 'x' })
+    expect(result.error).toMatchObject({ info: { name: 'SearchError', code: 'SEARCH_RAW_OUTPUT_OVERFLOW' } })
+    expect(text(result)).toBe(`Error: grep ${stream} exceeded the 65536-byte output limit; narrow pattern, path, or include and retry`)
+    expect(text(result)).not.toContain('private provider detail')
+    expect(spill?.saves).toHaveLength(0)
+    expect(subprocess.spawns).toHaveLength(1)
+  })
+
+  it('preserves the typed provider failure as the search cause', async () => {
+    const { ctx, subprocess } = await setup()
+    const failure = new SubprocessOutputLimitError('stdout', 65536)
+    subprocess.handler = () => ({ reject: failure })
+    const exec: ToolExecution = { signal: testToolSignal, name: 'glob', arguments: {},
+      callId: ToolCallId('output-limit'), rootCallId: ToolCallId('output-limit'), token: Symbol('output-limit') as ToolExecutionToken }
+    await expect(runRipgrep(ctx, exec, 'glob', ['--files'], 1_000_000, 3_000, 4096)).rejects
+      .toMatchObject({ code: 'SEARCH_RAW_OUTPUT_OVERFLOW', cause: failure })
+  })
+
+  it.each([
+    new Error('Subprocess stdout exceeded the 65536-byte output limit.'),
+    Object.assign(new Error('unrelated capacity refusal'), { code: 'cloud/capacity' }),
+  ])('keeps untyped or unrelated provider refusals as SEARCH_FAILED: %s', async (failure) => {
+    const { ctx, subprocess } = await setup()
+    subprocess.handler = () => ({ reject: failure })
+    const result = await call(ctx, 'glob', { pattern: '*' })
+    expect(result.error).toMatchObject({ info: { name: 'SearchError', code: 'SEARCH_FAILED' } })
+    expect(text(result)).toContain('ripgrep provider failure')
+  })
+
   it('fails with SEARCH_RAW_OUTPUT_OVERFLOW when truncated stdout has a raw spill path', async () => {
     const { ctx, subprocess } = await setup({ config: { rawOutputMaxBytes: 16 } })
     subprocess.handler = () => runResult('', { stdout: { text: 'x', lossy: true, spillPath: '/does/not/get-read' } })

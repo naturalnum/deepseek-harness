@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { PassThrough } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
-import { scrubbedParentEnv, SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
+import { scrubbedParentEnv, SubprocessOutputLimitError, SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type {
   SubprocessHandle,
   SubprocessOutputRead,
@@ -54,6 +54,15 @@ class StubSubprocessRuntime extends SubprocessRuntime {
 }
 
 describe('SubprocessRuntime seam', () => {
+  it('identifies an output refusal independently of its cause and requested retention', () => {
+    const cause = new Error('provider output refusal')
+    const error = new SubprocessOutputLimitError('stderr', 65536, { cause })
+    expect(error).toBeInstanceOf(Error)
+    expect(error).toMatchObject({ name: 'SubprocessOutputLimitError', code: 'SUBPROCESS_OUTPUT_LIMIT',
+      stream: 'stderr', limitBytes: 65536, cause })
+    expect(error.message).toBe('Subprocess stderr exceeded the 65536-byte output limit.')
+  })
+
   it('a concrete subclass registers as ctx.subprocess and serves the abstract API', async () => {
     const ctx = new Context()
     await ctx.plugin(StubSubprocessRuntime)

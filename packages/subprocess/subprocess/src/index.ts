@@ -175,3 +175,19 @@ export class SubprocessExecutableNotFoundError extends Error {
     this.name = 'SubprocessExecutableNotFoundError'
   }
 }
+
+/** Provider refusal after an output limit is exceeded; neither an exit outcome nor a cleanup receipt. */
+export class SubprocessOutputLimitError extends Error {
+  /** Stable failure identity, independent of provider wording. */
+  readonly code = 'SUBPROCESS_OUTPUT_LIMIT'
+
+  /**
+   * @param stream - output stream that exceeded the provider's limit.
+   * @param limitBytes - provider's enforced byte limit, independent of the requested retention budget.
+   * @param options - original provider failure, when available.
+   */
+  constructor(readonly stream: 'stdout' | 'stderr', readonly limitBytes: number, options?: ErrorOptions) {
+    super(`Subprocess ${stream} exceeded the ${limitBytes}-byte output limit.`, options)
+    this.name = 'SubprocessOutputLimitError'
+  }
+}

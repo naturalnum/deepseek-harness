@@ -167,7 +167,10 @@ interface SubprocessHandle {
    * actual range and I/O settlement remain provider-owned, including unknown or cancelled work.
    */
   releaseCollected?(): void
-  /** Resolves with spawned-command exit facts; rejects for spawn or provider failures. */
+  /**
+   * Resolves with spawned-command exit facts; rejects for spawn or provider failures.
+   * SubprocessOutputLimitError identifies a provider's output refusal, not range or I/O settlement.
+   */
   readonly done: Promise<SubprocessOutcome>
   /**
    * Begin the provider's documented termination procedure on the managed range
@@ -233,7 +236,7 @@ interface SubprocessCollectedOutputs {
 
 ## Outcomes carry exit facts only
 
-`done` reports Node's close-event vocabulary and no cause classification — the service kills on abort but never decides why (the caller reads the deadline signal it owns, e.g. the bash executor's `timedOut`/`aborted` split). Collected output stays readable through `handle.collected` after settlement, so batch and streaming callers share one access path.
+`done` resolves with Node's close-event vocabulary, without timeout or cancellation classification; the caller reads its own deadline signal. Its rejection may be `SubprocessOutputLimitError`, whose stable `code: 'SUBPROCESS_OUTPUT_LIMIT'`, `stream` and enforced `limitBytes` identify a provider output refusal and preserve the original cause. That rejection is neither an exit outcome nor confirmation of range or I/O settlement; cleanup remains provider-owned. Successful collected output stays readable through `handle.collected` after settlement.
 
 ```ts type-equiv
 /**

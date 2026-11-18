@@ -40,7 +40,7 @@ One provider registers `ctx.subprocess` per composition; load it beside the cons
 
 ### Starting a managed process
 
-The request is fully explicit: the program and arguments, the working directory, one stdio disposition per stream, a termination grace, an optional abort signal, and optional environment overrides. Target and managed-range identities remain provider-private. `done` resolves with the direct command's exit facts (`exitCode` and `signal`) and rejects for spawn or provider failures; collected output stays readable after exit.
+The request is fully explicit: the program and arguments, the working directory, one stdio disposition per stream, a termination grace, an optional abort signal, and optional environment overrides. Target and managed-range identities remain provider-private. `done` resolves with the direct command's exit facts (`exitCode` and `signal`) and rejects for spawn or provider failures; successful collected output stays readable after exit. `SubprocessOutputLimitError` identifies a provider output refusal through `code: 'SUBPROCESS_OUTPUT_LIMIT'`, `stream` and the enforced `limitBytes`, preserving the original cause. This rejection confirms neither range nor I/O settlement; cleanup remains provider-owned.
 
 ```text
 const executable = await ctx.subprocess.resolveExecutable('bash')

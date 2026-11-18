@@ -160,12 +160,30 @@ function overflowingOutput(empty = false): CommandSnapshot {
     stderr: { bytes: Buffer.alloc(0), observedBytes: 0, eof: empty } }
 }
 
+it('projects the actual refused stderr stream without changing its private output failure', async () => {
+  const f = fixture(), done = f.op.handle.done, overflow = overflowingOutput(true)
+  f.channel.commit.mockResolvedValue({ ...overflow, stdout: overflow.stderr, stderr: overflow.stdout })
+  f.op.publish(); f.op.begin()
+  const error = await done.catch((cause: unknown) => cause)
+  expect(error).toMatchObject({ name: 'SubprocessOutputLimitError', code: 'SUBPROCESS_OUTPUT_LIMIT',
+    stream: 'stderr', limitBytes: 65536, cause: { code: 'cloud/capacity', reason: 'observed-byte-limit' } })
+  expect(f.op.handle.done).toBe(done)
+  await expect(f.op.handle.done).rejects.toBe(error)
+  expect(() => f.op.handle.collected.stderr!.readFrom(0)).toThrow('observed-byte budget')
+  await f.op.whenEmpty
+  expect(f.authority.unknown).not.toHaveBeenCalled()
+})
+
 it('keeps an output-capacity refusal local while joining the original confirmed stop', async () => {
   const f = fixture(), stopped = Promise.withResolvers<CommandSnapshot>(), done = f.op.handle.done
+  cleanups.unshift(async () => { stopped.resolve(overflowingOutput(true)) })
   f.channel.commit.mockResolvedValue(overflowingOutput())
   f.channel.stop.mockImplementation(() => stopped.promise)
   f.op.publish(); f.op.begin()
-  await expect(done).rejects.toMatchObject({ code: 'cloud/capacity', reason: 'observed-byte-limit' })
+  await expect(done).rejects.toMatchObject({ name: 'SubprocessOutputLimitError', code: 'SUBPROCESS_OUTPUT_LIMIT',
+    stream: 'stdout', limitBytes: 65536, cause: { code: 'cloud/capacity', reason: 'observed-byte-limit' } })
+  expect(f.op.handle.done).toBe(done)
+  await expect(f.op.handle.waitForExit()).rejects.toMatchObject({ code: 'cloud/capacity', reason: 'observed-byte-limit' })
   await vi.waitFor(() => { expect(f.channel.stop).toHaveBeenCalledTimes(1) })
   let empty = false
   void f.op.whenEmpty.then(() => { empty = true })
@@ -174,7 +192,7 @@ it('keeps an output-capacity refusal local while joining the original confirmed 
   expect(() => f.op.handle.collected.stdout!.readFrom(0)).toThrow('observed-byte budget')
   stopped.resolve(overflowingOutput(true)); await f.op.whenEmpty
   expect(f.authority.unknown).not.toHaveBeenCalled()
-  await expect(done).rejects.toMatchObject({ code: 'cloud/capacity' })
+  await expect(done).rejects.toMatchObject({ code: 'SUBPROCESS_OUTPUT_LIMIT' })
   expect(f.authority.retired).not.toHaveBeenCalled()
   f.op.release(); expect(f.authority.retired).toHaveBeenCalledTimes(1)
 })
@@ -183,7 +201,8 @@ it('retains a capacity refusal without declaring unknown when the same snapshot 
   const f = fixture(), done = f.op.handle.done
   f.channel.commit.mockResolvedValue(overflowingOutput(true))
   f.op.publish(); f.op.begin()
-  await expect(done).rejects.toMatchObject({ code: 'cloud/capacity', reason: 'observed-byte-limit' })
+  await expect(done).rejects.toMatchObject({ code: 'SUBPROCESS_OUTPUT_LIMIT',
+    cause: { code: 'cloud/capacity', reason: 'observed-byte-limit' } })
   expect(f.authority.unknown).not.toHaveBeenCalled()
   await f.op.whenEmpty
   expect(f.channel.stop).not.toHaveBeenCalled()
@@ -223,7 +242,8 @@ it.each(['provider-failure', 'physical-stop-required', 'stop-rejected', 'counter
     if (failure === 'stop-rejected') f.channel.stop.mockRejectedValue(transport)
     else f.channel.stop.mockResolvedValue(terminal)
     f.op.publish(); f.op.begin()
-    await expect(done).rejects.toMatchObject({ code: 'cloud/capacity' })
+    await expect(done).rejects.toMatchObject({ code: 'SUBPROCESS_OUTPUT_LIMIT',
+      cause: { code: 'cloud/capacity', reason: 'observed-byte-limit' } })
     await vi.waitFor(() => { expect(f.authority.unknown).toHaveBeenCalledTimes(1) })
     let empty = false
     void f.op.whenEmpty.then(() => { empty = true })

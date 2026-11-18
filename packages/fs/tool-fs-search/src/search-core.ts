@@ -24,6 +24,7 @@ import { isAbsolute, join, parse, relative, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { HarnessError } from '@deepseek-ai/dsh-llm'
 import { ItemRetainer, TextRetainer } from '@deepseek-ai/dsh-output-retention'
+import { SubprocessOutputLimitError } from '@deepseek-ai/dsh-subprocess'
 import type { RetainedItems } from '@deepseek-ai/dsh-output-retention'
 import type { SubprocessHandle, SubprocessOutcome, SubprocessOutputRead, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import type { SaveTextSpill, SpillRef } from '@deepseek-ai/dsh-spill'
@@ -71,7 +72,8 @@ export const SEARCH_META_MAX_BYTES = 65_536
  * glob; `SEARCH_FAILED` — the search could not run or its output could not be
  * parsed (a failed `rg` launch, inaccessible target, signal kill, malformed
  * `--json`); `SEARCH_RAW_OUTPUT_OVERFLOW` — raw `rg` output exceeded
- * `rawOutputMaxBytes` or stayed truncated after that requested stdout budget;
+ * `rawOutputMaxBytes`, stayed truncated after that requested stdout budget,
+ * or was refused by the subprocess provider's output limit;
  * `SEARCH_ABORTED` — the cooperative tool timeout or caller cancellation cut
  * the search short.
  */
@@ -263,6 +265,12 @@ export async function runRipgrep(
   try {
     outcome = await handle.done
   } catch (error: unknown) {
+    if (error instanceof SubprocessOutputLimitError) {
+      throw new SearchError(
+        `${toolName} ${error.stream} exceeded the ${error.limitBytes}-byte output limit; narrow pattern, path, or include and retry`,
+        'SEARCH_RAW_OUTPUT_OVERFLOW', { cause: error },
+      )
+    }
     throw new SearchError(`${toolName} subprocess failed before reporting an outcome (ripgrep provider failure)`, 'SEARCH_FAILED', { cause: error })
   }
   const stdout = handle.collected.stdout?.readFrom(0)

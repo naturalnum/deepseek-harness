@@ -40,7 +40,7 @@ kind: "package-reference"
 
 ### 启动受管进程
 
-请求完全明确：程序与参数、工作目录、每条流一种 stdio 处置方式、终止宽限期、可选的中止信号与可选的环境覆盖。目标与受管范围标识保留在提供方内部。`done` 以直接命令的退出事实（`exitCode` 与 `signal`）resolve，并在 spawn 或提供方失败时 reject；收集输出在退出后仍可读取。
+请求完全明确：程序与参数、工作目录、每条流一种 stdio 处置方式、终止宽限期、可选的中止信号与可选的环境覆盖。目标与受管范围标识保留在提供方内部。`done` 以直接命令的退出事实（`exitCode` 与 `signal`）resolve，并在 spawn 或提供方失败时 reject；成功收集的输出在退出后仍可读取。`SubprocessOutputLimitError` 通过 `code: 'SUBPROCESS_OUTPUT_LIMIT'`、`stream` 和实际执行的 `limitBytes` 标识提供方的输出拒绝，并保留原始 cause。此拒绝不确认执行范围或 I/O 已结束；清理责任仍由提供方持有。
 
 ```text
 const executable = await ctx.subprocess.resolveExecutable('bash')

@@ -167,7 +167,10 @@ interface SubprocessHandle {
    * actual range and I/O settlement remain provider-owned, including unknown or cancelled work.
    */
   releaseCollected?(): void
-  /** Resolves with spawned-command exit facts; rejects for spawn or provider failures. */
+  /**
+   * Resolves with spawned-command exit facts; rejects for spawn or provider failures.
+   * SubprocessOutputLimitError identifies a provider's output refusal, not range or I/O settlement.
+   */
   readonly done: Promise<SubprocessOutcome>
   /**
    * Begin the provider's documented termination procedure on the managed range
@@ -233,7 +236,7 @@ interface SubprocessCollectedOutputs {
 
 ## 结果只承载退出事实
 
-`done` 报告 Node close 事件的词汇，不携带原因分类：服务会在中止时终止进程，但绝不判定原因（调用方读取归自己所有的 deadline 信号，例如 bash 执行器的 `timedOut`/`aborted` 拆分）。收集到的输出在结算后仍可经 `handle.collected` 读取，因此批量与流式调用方共用一条访问路径。
+`done` resolve 为 Node close 事件的词汇，不携带超时或取消分类；调用方读取自己的 deadline 信号。其拒绝可能为 `SubprocessOutputLimitError`，通过稳定的 `code: 'SUBPROCESS_OUTPUT_LIMIT'`、`stream` 和实际执行的 `limitBytes` 标识提供方输出拒绝，并保留原始 cause。此拒绝既不是退出结果，也不确认执行范围或 I/O 已结束；清理责任仍由提供方持有。成功收集的输出在结算后仍可经 `handle.collected` 读取。
 
 ```ts type-equiv
 /**
