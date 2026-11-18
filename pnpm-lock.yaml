@@ -6817,9 +6817,15 @@ importers:
       '@deepseek-ai/dsh-host-plugin-inventory':
         specifier: workspace:*
         version: link:../../host/plugin-inventory
+      '@deepseek-ai/dsh-http-proxy':
+        specifier: workspace:*
+        version: link:../../util/http-proxy
       '@deepseek-ai/dsh-timeout':
         specifier: workspace:*
         version: link:../../util/timeout
+      '@deepseek-ai/dsh-web-fetch-http':
+        specifier: workspace:*
+        version: link:../../web/web-fetch-http
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
@@ -6830,6 +6836,9 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      undici:
+        specifier: 8.11.2
+        version: 8.11.2
       '@deepseek-ai/cordis':
         specifier: workspace:~
         version: link:../../../vendor/cordis
@@ -7079,9 +7088,6 @@ importers:
       '@deepseek-ai/dsh-web-deepseek-api':
         specifier: workspace:*
         version: link:../../web/web-deepseek-api
-      '@deepseek-ai/dsh-web-fetch-http':
-        specifier: workspace:*
-        version: link:../../web/web-fetch-http
       '@deepseek-ai/dsh-web-search-deepseek':
         specifier: workspace:*
         version: link:../../web/web-search-deepseek

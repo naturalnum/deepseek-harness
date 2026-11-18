@@ -6,7 +6,7 @@ import { allowAllAccess, makeTranslate } from '@deepseek-ai/dsh-client-test-runt
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { McpConnectionId } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { CloudMcpConnectionReply, CloudMcpConnectionRequest, CloudMcpConnectionView } from '@deepseek-ai/dsh-pe-cloud-api/types'
-import { McpConnectionsSection } from '../src/client/mcp/McpConnectionsSection.tsx'
+import { McpConnectionsSection, McpDestinationForbidden } from '../src/client/mcp/McpConnectionsSection.tsx'
 import { mcpSettingsDictionaries } from '../src/client/mcp/locales.ts'
 
 afterEach(cleanup)
@@ -15,6 +15,23 @@ const unused = (): never => { throw new Error('Unused native slot prop') }
 const props = { ...allowAllAccess, useSessions: unused, useSessionStatus: unused, useSessionRetainInfo: unused,
   usePanelInfo: unused, useWorkspaces: unused, useResource: unused, scope: 'A:1', close() {}, t: makeTranslate(en) }
 const limits = { maxConnections: 4, maxToolCallTimeoutMs: 2000 }
+
+it.each(Object.values(mcpSettingsDictionaries))('shows the localized destination refusal', async (copy) => {
+  const call = async (request: CloudMcpConnectionRequest): Promise<CloudMcpConnectionReply> => {
+    if (request.action === 'test') throw new McpDestinationForbidden()
+    return { connections: [{ id: brandString<McpConnectionId>('00000000-0000-4000-8000-000000000001'),
+      serverName: 'saved', url: 'https://saved.fixture.test/mcp', enabled: true, toolCallTimeoutMs: 1000,
+      configured: false, toolCount: 0, destinationBlocked: true }], version: '1', limits }
+  }
+  render(<McpConnectionsSection {...props} t={makeTranslate(copy)} call={call}/>)
+  await screen.findByText(copy.destinationBlocked)
+  expect(screen.getByRole('button', { name: copy.disable }).hasAttribute('disabled')).toBe(false)
+  expect(screen.getByRole('button', { name: copy.remove }).hasAttribute('disabled')).toBe(false)
+  fireEvent.change(screen.getByLabelText(copy.serverName), { target: { value: 'compute' } })
+  fireEvent.change(screen.getByLabelText(copy.url), { target: { value: 'https://mcp.fixture.test/tools' } })
+  fireEvent.click(screen.getByRole('button', { name: copy.test }))
+  await screen.findByText(copy.destinationForbidden)
+})
 
 it('configures HTTP plus a private Bearer token, tests, edits without reading credentials, toggles and removes', async () => {
   let connections: CloudMcpConnectionReply['connections'] = [], revision = 0

@@ -17,7 +17,8 @@ import { expect, it } from 'vitest'
 import { ConfigSaveCoordinator } from '../src/config-saves.ts'
 import { AccountMcpConnections } from '../src/mcp-connection-runtime.ts'
 import { mcpConnectionsPolicy } from '../src/mcp-policy.ts'
-import { startHttpMcpFixture } from '../../../mcp/mcp-client/tests/http-fixture.ts'
+import { startApprovedMcpFixture } from './fixtures/mcp-loopback-carrier.ts'
+import { McpDestinations } from '../src/mcp-destinations.ts'
 
 const limits = { maxConnections: 4, maxUrlBytes: 2048, maxHeaderBytes: 2048, maxHeaderCount: 8, maxToolCallTimeoutMs: 2000 }
 const policy = { maxInstructionBytes: 4096, maxIncomingResponseBytes: 4194304, listMaxPages: 4,
@@ -26,6 +27,10 @@ const policy = { maxInstructionBytes: 4096, maxIncomingResponseBytes: 4194304, l
 it('requires finite incoming HTTP and SDK page budgets before enabling account MCP', () => {
   const selected = { limits: { ...limits, maxRequestBytes: 20000, maxReplyBytes: 65536 }, runtime: policy }
   expect(mcpConnectionsPolicy(selected).runtime).toMatchObject({ maxIncomingResponseBytes: 4194304, listMaxPages: 4 })
+  expect(mcpConnectionsPolicy(selected).allowedEndpoints).toEqual([])
+  expect(mcpConnectionsPolicy({ ...selected, allowedEndpoints: ['HTTPS://MCP.FIXTURE.TEST:443/mcp'] }).allowedEndpoints)
+    .toEqual(['https://mcp.fixture.test/mcp'])
+  expect(() => mcpConnectionsPolicy({ ...selected, allowedEndpoints: ['http://127.0.0.1/mcp'] })).toThrow('cloud/invalid-mcp-destination')
   for (const patch of [{ maxIncomingResponseBytes: undefined }, { maxIncomingResponseBytes: 0 },
     { maxIncomingResponseBytes: 67108865 }, { listMaxPages: undefined }, { listMaxPages: 0 }, { listMaxPages: 65 }]) {
     expect(() => mcpConnectionsPolicy({ ...selected, runtime: { ...policy, ...patch } })).toThrow()
@@ -34,7 +39,7 @@ it('requires finite incoming HTTP and SDK page budgets before enabling account M
 
 it('keeps credentials, tool scopes and restored HTTP connections within the original account', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'cloud-mcp-native-')), contexts: Context[] = []
-  const fixture = await startHttpMcpFixture({ requiredAuthorization: 'Bearer synthetic-account-token' })
+  const fixture = await startApprovedMcpFixture({ requiredAuthorization: 'Bearer synthetic-account-token' })
   const saves = new ConfigSaveCoordinator({ maxAccounts: 4, maxRunning: 2, maxQueued: 8, maxQueuedPerAccount: 4,
     maxTrackedOperations: 16, maxTrackedOperationsPerAccount: 8, maxNestedPerOperation: 8, maxWaitersPerAccount: 8 })
   const create = async (name: string, epoch: string) => {
@@ -49,7 +54,8 @@ it('keeps credentials, tool scopes and restored HTTP connections within the orig
     const barrier = saves.createAccount(binding)
     const check = (): void => { lifetime.signal.throwIfAborted(); ctx.fiber.assertActive() }
     const store = await openMcpConnectionStore(ctx, binding, limits, check, check, task => barrier.admit('mcp-connection', task))
-    const runtime = new AccountMcpConnections(ctx, store, policy, check, () => { check() })
+    const runtime = new AccountMcpConnections(ctx, store, policy, check, () => { check() },
+      new McpDestinations([fixture.url], lifetime.signal))
     return { ctx, lifetime, store, runtime, barrier }
   }
   const input: McpConnectionInput = { serverName: 'compute', url: fixture.url, enabled: true, toolCallTimeoutMs: 2000,

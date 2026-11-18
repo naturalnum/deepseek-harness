@@ -9,7 +9,7 @@ import { CloudAccountFiles } from '@deepseek-ai/dsh-pe-cloud-files'
 import { installAccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/src/binding.ts'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { PeerId, PeerScope } from '@deepseek-ai/dsh-typert-protocol'
-import { startHttpMcpFixture } from '../../../../mcp/mcp-client/tests/http-fixture.ts'
+import { startApprovedMcpFixture } from './mcp-loopback-carrier.ts'
 import { CloudAccountApi } from '../../src/account-service.ts'
 import { ConfigSaveCoordinator } from '../../src/config-saves.ts'
 import { ExposurePolicy } from '../../src/exposure.ts'
@@ -38,7 +38,7 @@ export async function apply(owner: Context): Promise<void> {
   }
   const saves = new ConfigSaveCoordinator({ maxAccounts: 1, maxRunning: 1, maxQueued: 2, maxQueuedPerAccount: 2,
     maxTrackedOperations: 8, maxTrackedOperationsPerAccount: 8, maxNestedPerOperation: 16, maxWaitersPerAccount: 2 })
-  const barrier = saves.createAccount(binding), external = await startHttpMcpFixture()
+  const barrier = saves.createAccount(binding), external = await startApprovedMcpFixture()
   ctx.effect(() => async () => {
     try { await external.close() }
     finally {
@@ -71,7 +71,8 @@ export async function apply(owner: Context): Promise<void> {
     defaultGrant: { binding, backend: 'root-owned-isolated-linux-tmpfs', leaf: 'default-workspace',
       parent: { rootPath: project, rootDevice: String(info.dev), rootInode: String(info.ino) }, assertExclusive: current },
     assertMountCurrent: current, assertUnpublished: current })
-  const mcp = await api.prepareCloudMcpConnections(ctx, { files, policy, assertBusinessCurrent: current,
+  const mcp = await api.prepareCloudMcpConnections(ctx, { files, policy: { ...policy, allowedEndpoints: [external.url] },
+    assertBusinessCurrent: current,
     assertToolCurrent(exec) {
       current(); exec.signal?.throwIfAborted()
       if (exec.agent === undefined) throw new Error('The recovered tool requires the original Agent')

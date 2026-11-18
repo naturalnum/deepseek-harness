@@ -9,7 +9,7 @@
 import { lookup as systemLookup } from 'node:dns/promises'
 import type { LookupAddress, LookupOptions } from 'node:dns'
 import { isIP } from 'node:net'
-import type { Dispatcher, Response } from 'undici'
+import type { Dispatcher, RequestInit, Response } from 'undici'
 
 import ipaddr from 'ipaddr.js'
 import { WebError } from '@deepseek-ai/dsh-web'
@@ -70,12 +70,14 @@ export function isPublicIpAddress(input: string): boolean {
  * @param hostname - URL hostname, including brackets when it is an IPv6 literal.
  * @param signal - aborts the wait for system resolution; an in-flight OS lookup may finish unused.
  * @param resolver - lookup implementation, overridden only by focused tests.
+ * @param addressAllowed - optional narrower address policy, including for translated IPv4 addresses.
  * @returns the validated, non-empty address set.
  */
 export async function resolvePublicAddresses(
   hostname: string,
   signal: AbortSignal,
   resolver: AddressResolver = systemLookup,
+  addressAllowed: (address: string) => boolean = () => true,
 ): Promise<PublicAddress[]> {
   const unbracketed = stripIpv6Brackets(hostname)
   const literalFamily = isIP(unbracketed)
@@ -97,11 +99,11 @@ export async function resolvePublicAddresses(
     if ((entry.family !== 4 && entry.family !== 6) || isIP(entry.address) !== entry.family) {
       throw new WebError(`hostname "${hostname}" resolved to an invalid IP address`, 'WEB_PROVIDER_ERROR')
     }
-    if (!isPublicIpAddress(entry.address)) {
+    if (!isPublicIpAddress(entry.address) || !addressAllowed(entry.address)) {
       throw new WebError(`URL hostname "${hostname}" resolves to a non-public IP address`, 'WEB_BLOCKED_URL')
     }
     const translatedIpv4 = translatedIpv4Address(entry.address, nat64Prefixes)
-    if (translatedIpv4 !== undefined && !isPublicIpAddress(translatedIpv4)) {
+    if (translatedIpv4 !== undefined && (!isPublicIpAddress(translatedIpv4) || !addressAllowed(translatedIpv4))) {
       throw new WebError(`URL hostname "${hostname}" resolves through NAT64 to a non-public IPv4 address`, 'WEB_BLOCKED_URL')
     }
     addresses.push({ address: entry.address, family: entry.family })
@@ -281,6 +283,29 @@ export function createPinnedLookup(addresses: readonly PublicAddress[]): (
       return
     }
     callback(null, selected.address, selected.family)
+  }
+}
+
+interface PinnedHttpTransport {
+  request(url: URL, init: Pick<RequestInit, 'method' | 'headers' | 'body' | 'signal'>): Promise<Response>
+  close(): Promise<void>
+}
+
+/**
+ * Open a direct HTTP carrier whose caller admits each URL and validates the lookup answers.
+ * @param lookup Node connector lookup that supplies only retained, validated addresses.
+ * @returns Requests that never follow redirects, and closure of their shared dispatcher.
+ */
+export async function createPinnedHttpTransport(lookup: ReturnType<typeof createPinnedLookup>): Promise<PinnedHttpTransport> {
+  const { Agent, fetch } = await import('undici')
+  // proxy-exempt: the owner refuses proxied routes before using this address-pinned dispatcher.
+  const dispatcher = new Agent({ autoSelectFamily: true, connect: { lookup } })
+  return {
+    request(url: URL, init: Pick<RequestInit, 'method' | 'headers' | 'body' | 'signal'>): Promise<Response> {
+      // proxy-exempt: caller admits the URL and selects the direct route; lookup pins its addresses.
+      return fetch(url, { ...init, duplex: 'half', redirect: 'error', dispatcher })
+    },
+    close: () => dispatcher.close(),
   }
 }
 

@@ -14,6 +14,9 @@ export interface McpConnectionsInjected {
 /** Native settings slot props plus the account-owned Remote adapter. */
 export type McpConnectionsProps = PropsRuntime<'settings.section'> & PropsLocale<'cloud-mcp-settings'> & InjectFace<McpConnectionsInjected>
 
+/** Known destination rejection from the account-owned Cloud Remote. */
+export class McpDestinationForbidden extends Error {}
+
 /** Mount a fresh form whenever the original account page changes.
  * @param props Native slot, locale and account operation adapter.
  * @returns HTTP MCP configuration content in the original Settings shell.
@@ -40,7 +43,7 @@ function McpConnectionsBody({ t, call }: McpConnectionsProps): ReactNode {
       if (!mounted()) return false
       if (reply === undefined) setTimeoutValue(value.limits.maxToolCallTimeoutMs)
       setReply(value); setProbe(value.test); return true
-    } catch (_error) { if (mounted()) setError(t('failed')); return false }
+    } catch (error) { if (mounted()) setError(t(error instanceof McpDestinationForbidden ? 'destinationForbidden' : 'failed')); return false }
     finally { pending.current = false; if (mounted()) setBusy(false) }
   }
   useEffect(() => {
@@ -96,7 +99,8 @@ function McpConnectionsBody({ t, call }: McpConnectionsProps): ReactNode {
     {reply?.connections.length === 0 && <p>{t('empty')}</p>}
     <div className={css.list}>{reply?.connections.map(row => <article className={css.card} key={row.id}>
       <header><strong>{row.serverName}</strong><span>{t(row.enabled ? 'enabled' : 'disabled')}</span></header>
-      <p>{row.url}</p><p>{t(row.configured ? 'headersStored' : 'noHeaders')} · {t('toolCount', { count: row.toolCount })}</p>
+      <p>{row.url}</p>{row.destinationBlocked && <p>{t('destinationBlocked')}</p>}
+      <p>{t(row.configured ? 'headersStored' : 'noHeaders')} · {t('toolCount', { count: row.toolCount })}</p>
       <div className={css.actions}>
         <Button disabled={busy} onClick={() => { edit(row) }}>{t('edit')}</Button>
         <Button disabled={busy} onClick={() => { void request({ action: 'enabled', id: row.id,

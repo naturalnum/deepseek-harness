@@ -14,6 +14,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type { FetchLike } from '@modelcontextprotocol/client'
 import z from '@deepseek-ai/schemastery'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
@@ -169,9 +170,11 @@ export const Config = z.union([
  * @param ctx - plugin context carrying the tool registry.
  * @param config - resolved transport and server namespace configuration.
  * @param observeLifecycle - optional programmatic host observer, called before startup awaits; never configuration data.
+ * @param httpFetch - optional programmatic HTTP transport owned by the host.
  * @returns startup readiness after connection and initial tool discovery settle.
  */
-export async function apply(ctx: Context, config: Config, observeLifecycle?: (lifecycle: McpClientLifecycle) => void): Promise<void> {
+export async function apply(ctx: Context, config: Config, observeLifecycle?: (lifecycle: McpClientLifecycle) => void,
+  httpFetch?: FetchLike): Promise<void> {
   if (config.listMaxPages !== undefined && (!Number.isSafeInteger(config.listMaxPages) || config.listMaxPages < 0)) {
     throw new TypeError('mcp-client: nonnegative finite listMaxPages required')
   }
@@ -205,7 +208,7 @@ export async function apply(ctx: Context, config: Config, observeLifecycle?: (li
   // The supervisor owns the client/transport generations, the reconnect
   // loop, and the live tool registrations; disposal stops reconnection,
   // quiesces in-flight work, and unregisters the current generation.
-  const connection = startConnection(ctx, config, reconnect)
+  const connection = startConnection(ctx, config, reconnect, httpFetch)
   registerServerContext(ctx, config.serverName, connection)
   let stopping: Promise<void> | undefined
   const dispose = (): Promise<void> => stopping ??= connection.dispose()

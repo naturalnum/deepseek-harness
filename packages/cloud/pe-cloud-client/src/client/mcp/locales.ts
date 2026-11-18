@@ -9,10 +9,12 @@ const en = {
   timeout: 'Tool timeout (milliseconds)', test: 'Test connection', reachable: 'Connection test succeeded',
   unreachable: 'Connection test failed. Check the endpoint and credentials.', toolCount: '{count} discovered tools',
   pending: 'Applying MCP operation…', failed: 'The MCP operation failed or its outcome could not be confirmed. Refresh before retrying.',
+  destinationForbidden: 'This MCP address is not allowed. Use an endpoint approved by your administrator.',
+  destinationBlocked: 'Connection blocked by your administrator’s address policy. Use an approved endpoint to reconnect.',
   invalidHeaders: 'Headers must be a JSON object with string values.', loading: 'Loading MCP connections…',
   changed: 'The connections changed while you were editing. Reopen the connection to review the current values before saving.',
   removeConfirm: 'Confirm removal', removeHint: 'Remove this connection and its private headers?',
-  httpHint: 'URLs are reached from the cloud server. HTTP and HTTPS are supported; local-process and OAuth connections are not available.',
+  httpHint: 'Use an HTTP or HTTPS endpoint approved by your administrator. Connections originate from the cloud server.',
 }
 const zh: Record<keyof typeof en, string> = {
   title: 'MCP 连接', intro: '为当前账号配置外部 HTTP MCP 服务，Agent 可在聊天中调用其工具。',
@@ -24,10 +26,12 @@ const zh: Record<keyof typeof en, string> = {
   timeout: '工具调用时限（毫秒）', test: '测试连接', reachable: '连接测试成功',
   unreachable: '连接测试失败，请检查服务地址和凭据。', toolCount: '已发现 {count} 个工具',
   pending: '正在应用 MCP 操作…', failed: 'MCP 操作失败或结果尚未确认，请刷新后再试。',
+  destinationForbidden: '此 MCP 地址不允许连接，请使用管理员批准的服务地址。',
+  destinationBlocked: '此连接受管理员的地址策略限制。请使用已批准的地址重新连接。',
   invalidHeaders: '请求头必须是值为字符串的 JSON 对象。', loading: '正在读取 MCP 连接…',
   changed: '编辑期间连接配置已变化，请重新打开该连接，核对最新值后再保存。',
   removeConfirm: '确认移除', removeHint: '移除此连接及其私有请求头？',
-  httpHint: '服务地址由云端服务器访问。支持 HTTP 和 HTTPS，暂不支持本地进程和 OAuth 连接。',
+  httpHint: '请使用管理员批准的 HTTP 或 HTTPS 地址。连接由云端服务器发起。',
 }
 /** Native locale namespace for the optional MCP settings entry. */
 export const MCP_SETTINGS_NAMESPACE = 'cloud-mcp-settings'

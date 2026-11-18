@@ -6260,7 +6260,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ApprovedMcpConnections',
-    declaration: 'export interface ApprovedMcpConnections {\n    readonly limits: McpStoreLimits & {\n        readonly maxRequestBytes: number;\n        readonly maxReplyBytes: number;\n    };\n    readonly runtime: McpConnectionRuntimePolicy;\n}',
+    declaration: 'export interface ApprovedMcpConnections {\n    readonly limits: McpStoreLimits & {\n        readonly maxRequestBytes: number;\n        readonly maxReplyBytes: number;\n    };\n    readonly runtime: McpConnectionRuntimePolicy;\n    readonly allowedEndpoints?: readonly string[];\n}',
   },
   {
     name: 'ApprovedModelKeyBinding',
@@ -6504,7 +6504,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CloudApiErrorCode',
-    declaration: 'export type CloudApiErrorCode = \'cloud/forbidden\' | \'cloud/invalid-config\' | \'cloud/account-unavailable\' | \'cloud/stale-generation\' | \'cloud/model-not-allowed\' | \'cloud/config-busy\' | \'cloud/config-conflict\' | \'cloud/capacity\' | \'cloud/invalid-project-title\' | \'cloud/invalid-skill-bundle\';',
+    declaration: 'export type CloudApiErrorCode = \'cloud/forbidden\' | \'cloud/invalid-config\' | \'cloud/account-unavailable\' | \'cloud/stale-generation\' | \'cloud/model-not-allowed\' | \'cloud/config-busy\' | \'cloud/config-conflict\' | \'cloud/capacity\' | \'cloud/invalid-project-title\' | \'cloud/invalid-skill-bundle\' | \'cloud/mcp-destination-forbidden\';',
   },
   {
     name: 'CloudMcpConnectionPreparation',
@@ -6524,7 +6524,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CloudMcpConnectionView',
-    declaration: 'export interface CloudMcpConnectionView extends McpConnectionRecord {\n    readonly configured: boolean;\n    readonly toolCount: number;\n}',
+    declaration: 'export interface CloudMcpConnectionView extends McpConnectionRecord {\n    readonly configured: boolean;\n    readonly toolCount: number;\n    readonly destinationBlocked?: true;\n}',
   },
   {
     name: 'CloudModelKeyPreparation',

@@ -8,7 +8,7 @@ import type { PeerId, PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 import { expect, it, vi } from 'vitest'
 import { textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import { policyFixture } from './account-policy-fixture.ts'
-import { startHttpMcpFixture } from '../../../mcp/mcp-client/tests/http-fixture.ts'
+import { fixtureDispatchCount, fixtureEndpoints, startApprovedMcpFixture as startHttpMcpFixture } from '../../pe-cloud-api/tests/fixtures/mcp-loopback-carrier.ts'
 import * as nativeTransport from '../../../mcp/mcp-client/src/transport.ts'
 import Credentials from '@deepseek-ai/dsh-credentials-local'
 import { AccountMcpConnections } from '../../pe-cloud-api/src/mcp-connection-runtime.ts'
@@ -23,6 +23,7 @@ const manualRecoveryPolicy: ApprovedMcpConnections = { ...policy, runtime: { ...
   reconnect: { ...policy.runtime.reconnect, enabled: false } } }
 
 async function account(name: string, selectedPolicy: ApprovedMcpConnections = policy) {
+  let currentPolicy = selectedPolicy
   const uses = new Map<PeerScope, AccountUse>()
   const fixture = policyFixture([{ endpoint: 'cloudMcpConnections/action', handlerId: 'native:cloudMcpConnections', guard: 'authenticated-account' }],
     undefined, name, { selected: [], inspectRootFetch: () => [] }, undefined, undefined, undefined, undefined, [], false, undefined, {
@@ -41,7 +42,8 @@ async function account(name: string, selectedPolicy: ApprovedMcpConnections = po
           async apply(owner: Context) {
             const api = owner.get('peCloudApi'), files = owner.get('peCloudFiles')
             if (api === undefined || files === undefined) throw new Error('Original account providers are absent')
-            await api.prepareCloudMcpConnections(owner, { files, policy: selectedPolicy,
+            await api.prepareCloudMcpConnections(owner, { files,
+              policy: { ...currentPolicy, allowedEndpoints: currentPolicy.allowedEndpoints ?? fixtureEndpoints() },
               assertBusinessCurrent: () => { owner.fiber.assertActive(); binding.lifetime.throwIfAborted(); api.requireRpc('session/create') },
               assertToolCurrent: (exec) => {
                 if (exec.agent === undefined) throw new Error('Native MCP requires the original Agent')
@@ -65,8 +67,41 @@ async function account(name: string, selectedPolicy: ApprovedMcpConnections = po
     }) as Promise<CloudMcpConnectionReply>
     return { ...graph, invokeMcp: invoke, peer, revokeLogin: () => { login.abort() } }
   }
-  return { ...await start('1'), coldStart: () => start('2') }
+  return { ...await start('1'), coldStart: (next = selectedPolicy) => { currentPolicy = next; return start('2') } }
 }
+
+it('refuses unapproved MCP definitions and legacy restore before any outbound request', async () => {
+  const external = await startHttpMcpFixture()
+  try {
+    const warm = await account('mcp-address-policy')
+    const initial = await warm.invokeMcp({ action: 'list' })
+    const definition = { serverName: 'compute', url: external.url, enabled: true, toolCallTimeoutMs: 1000 }
+    const before = fixtureDispatchCount()
+    const refusal = { code: 'cloud/mcp-destination-forbidden' }
+    const rejected = { ...definition, url: new URL('/unapproved', external.url).href }
+    await expect(warm.invokeMcp({ action: 'test', connection: rejected })).rejects.toMatchObject(refusal)
+    await expect(warm.invokeMcp({ action: 'save', version: initial.version, connection: rejected })).rejects.toMatchObject(refusal)
+    expect(await warm.invokeMcp({ action: 'list' })).toEqual(initial)
+    expect(fixtureDispatchCount()).toBe(before)
+    const saved = await warm.invokeMcp({ action: 'save', version: initial.version, connection: definition })
+    const row = saved.connections[0]
+    if (row === undefined) throw new Error('Approved connection was not saved')
+    expect(row.toolCount).toBe(1)
+    await warm.close()
+    const after = fixtureDispatchCount()
+
+    const cold = await warm.coldStart({ ...policy, allowedEndpoints: [] })
+    const restored = await cold.invokeMcp({ action: 'list' })
+    expect(restored.connections).toEqual([{ ...row, toolCount: 0, destinationBlocked: true }])
+    expect(cold.ctx.tools.schemas().some(tool => tool.name.startsWith('mcp__'))).toBe(false)
+    await expect(cold.invokeMcp({ action: 'test', id: row.id, connection: definition })).rejects.toMatchObject(refusal)
+    await expect(cold.invokeMcp({ action: 'enabled', id: row.id, version: restored.version, enabled: true })).rejects.toMatchObject(refusal)
+    const disabled = await cold.invokeMcp({ action: 'enabled', id: row.id, version: restored.version, enabled: false })
+    expect(disabled.connections).toEqual([{ ...row, enabled: false, toolCount: 0, destinationBlocked: true }])
+    expect((await cold.invokeMcp({ action: 'remove', id: row.id, version: disabled.version })).connections).toEqual([])
+    expect(fixtureDispatchCount()).toBe(after)
+  } finally { await external.close() }
+})
 
 it('restores persisted HTTP tools before a cold account Agent assembles its first model request without visiting MCP settings', async () => {
   const external = await startHttpMcpFixture({ requiredAuthorization: 'Bearer synthetic-cold-account-token' })
@@ -272,7 +307,9 @@ it('reapplies an unchanged saved zero-tool connection after one authenticated pr
     expect(applications()).toBe(1)
     expect(a.saveBarrier.snapshot().failures).toEqual([])
     external.setAvailable(true)
-    for (const patch of [{ serverName: 'draft' }, { url: row.url + '?draft=1' }, { enabled: false },
+    await expect(a.invokeMcp({ action: 'test', id: row.id, connection: { ...definition, url: row.url + '?draft=1' } }))
+      .rejects.toMatchObject({ code: 'cloud/mcp-destination-forbidden' })
+    for (const patch of [{ serverName: 'draft' }, { enabled: false },
       { toolCallTimeoutMs: row.toolCallTimeoutMs + 1 }, { headers: { Authorization: 'Bearer synthetic-manual-recovery' } }]) {
       const probed = await a.invokeMcp({ action: 'test', id: row.id, connection: { ...definition, ...patch } })
       expect(probed.test).toMatchObject({ reachable: true, toolCount: 1 })
@@ -376,8 +413,8 @@ it('retains an unconfirmed old connection when a successful saved-connection pro
   const external = await startHttpMcpFixture(), create = nativeTransport.createTransport
   const originalClosers: Array<() => Promise<void>> = []
   let mountedGenerations = 0
-  const transport = vi.spyOn(nativeTransport, 'createTransport').mockImplementation((config, observeIncoming) => {
-    const actual = create(config, observeIncoming)
+  const transport = vi.spyOn(nativeTransport, 'createTransport').mockImplementation((config, observeIncoming, httpFetch) => {
+    const actual = create(config, observeIncoming, httpFetch)
     if (!config.failOnStartupError) {
       mountedGenerations++
       originalClosers.push(actual.close.bind(actual))
@@ -435,8 +472,8 @@ it('cancels a negotiating HTTP probe on login withdrawal, joins transport dispos
 it('retains a real native HTTP probe whose transport rejects closure and refuses to treat a resolved fiber disposer as release', async () => {
   const external = await startHttpMcpFixture(), create = nativeTransport.createTransport
   const originalClosers: Array<() => Promise<void>> = []
-  const transport = vi.spyOn(nativeTransport, 'createTransport').mockImplementation((config, observeIncoming) => {
-    const actual = create(config, observeIncoming)
+  const transport = vi.spyOn(nativeTransport, 'createTransport').mockImplementation((config, observeIncoming, httpFetch) => {
+    const actual = create(config, observeIncoming, httpFetch)
     originalClosers.push(actual.close.bind(actual))
     actual.close = () => Promise.reject(new Error('synthetic transport close failure'))
     return actual

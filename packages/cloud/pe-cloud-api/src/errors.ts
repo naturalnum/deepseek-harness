@@ -7,6 +7,7 @@ export type CloudApiErrorCode =
   | 'cloud/stale-generation' | 'cloud/model-not-allowed'
   | 'cloud/config-busy' | 'cloud/config-conflict' | 'cloud/capacity'
   | 'cloud/invalid-project-title' | 'cloud/invalid-skill-bundle'
+  | 'cloud/mcp-destination-forbidden'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface RemoteErrorDetailsMap {
@@ -27,6 +28,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'cloud/capacity': {}
     'cloud/invalid-project-title': Record<string, never>
     'cloud/invalid-skill-bundle': Record<string, never>
+    'cloud/mcp-destination-forbidden': Record<string, never>
   }
 }
 

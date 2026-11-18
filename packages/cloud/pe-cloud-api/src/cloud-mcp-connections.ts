@@ -13,6 +13,7 @@ import type { CloudMcpConnectionRequest, CloudMcpConnectionReply } from './mcp-t
 import type { ApprovedMcpConnections } from './mcp-policy.ts'
 import { AccountMcpConnections, McpConnectionCleanupError, type McpConnectionTest } from './mcp-connection-runtime.ts'
 import { CloudApiError } from './errors.ts'
+import { McpDestinations } from './mcp-destinations.ts'
 
 /** Original Root callbacks and selected policy; no authority comes from request JSON. */
 export interface CloudMcpConnectionPreparation {
@@ -34,7 +35,8 @@ export class CloudMcpConnectionService extends TypertRemoteService {
     private readonly data: AccountMcpConnectionStore, private readonly saves: ConfigSaveBarrier) {
     super(ctx, 'cloudMcpConnections', { namespace: 'cloudMcpConnections' })
     this.runtime = new AccountMcpConnections(ctx, data, input.policy.runtime,
-      () => { this.current(); input.assertBusinessCurrent() }, input.assertToolCurrent)
+      () => { this.current(); input.assertBusinessCurrent() }, input.assertToolCurrent,
+      new McpDestinations(input.policy.allowedEndpoints ?? [], api.binding.lifetime))
     ctx.on('system-prompt/prepare', async (context, next) => {
       if (context.agent === undefined) return next()
       context.signal?.throwIfAborted()
@@ -84,7 +86,13 @@ export class CloudMcpConnectionService extends TypertRemoteService {
         operationSignal.throwIfAborted(); principal(); this.current()
         this.api.requireRpc(namespace + '/action')
       }
-      check(); await this.runtime.restore(); check()
+      check()
+      if (value.action === 'test' || value.action === 'save') this.runtime.assertDestination(value.connection.url)
+      if (value.action === 'enabled' && value.enabled) {
+        const row = this.data.list().find(entry => entry.id === value.id)
+        if (row !== undefined) this.runtime.assertDestination(row.url)
+      }
+      await this.runtime.restore(); check()
       let test: CloudMcpConnectionReply['test']
       if (value.action === 'test') {
         const probe = await this.saves.admit('mcp-connection', async () => {
@@ -168,7 +176,8 @@ export class CloudMcpConnectionService extends TypertRemoteService {
     for (const row of this.data.list()) {
       const configured = await this.data.configured(row.id); check()
       connections.push({ ...row, configured,
-        toolCount: this.runtime.toolCount(row.id) })
+        toolCount: this.runtime.toolCount(row.id),
+        ...this.runtime.allowsDestination(row.url) ? {} : { destinationBlocked: true } })
     }
     const reply: CloudMcpConnectionReply = { connections, version: this.data.version(),
       limits: { maxConnections: this.input.policy.limits.maxConnections,

@@ -5,6 +5,7 @@ import { createScope } from '@deepseek-ai/dsh-scope'
 import type { AccountMcpConnectionStore, McpConnectionInput, McpConnectionRecord, McpConnectionId } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { ConfigSaveOutcomeUnknown } from './config-saves.ts'
+import type { McpDestinations } from './mcp-destinations.ts'
 
 /** Explicit native HTTP admission and reconnect policy selected by deployment. */
 export interface McpConnectionRuntimePolicy {
@@ -37,10 +38,11 @@ export class AccountMcpConnections {
    * @param policy Explicit deployment reconnect and instruction budgets.
    * @param current Account generation and business check for public operations.
    * @param toolCurrent Original account/session/Agent authorization repeated before and after calls.
+   * @param destinations Original Root destination selection and its account-owned HTTP transport.
    */
   constructor(private readonly ctx: Context, private readonly store: AccountMcpConnectionStore,
     private readonly policy: McpConnectionRuntimePolicy, private readonly current: () => void,
-    toolCurrent: (exec: Pick<ToolRunContext, 'agent' | 'signal'>) => void) {
+    toolCurrent: (exec: Pick<ToolRunContext, 'agent' | 'signal'>) => void, private readonly destinations: McpDestinations) {
     ctx.on('tools/execute', async (exec, next) => {
       if (![...this.namespaces.values()].some(name => exec.name.startsWith(`mcp__${name}__`))) return next()
       this.check(); toolCurrent(exec)
@@ -50,6 +52,17 @@ export class AccountMcpConnections {
     })
     ctx.effect(() => () => this.close(), 'pe-cloud-api: close optional native MCP clients')
   }
+
+  /** Refuse an account management operation for a blocked endpoint.
+   * @param url Endpoint for an admitted test, save or enable operation.
+   */
+  assertDestination(url: string): void { this.destinations.assertAllowed(url) }
+
+  /** Check the saved destination independently of the user's enable switch.
+   * @param url Endpoint from the saved definition.
+   * @returns True if the Root policy permits the endpoint.
+   */
+  allowsDestination(url: string): boolean { return this.destinations.allows(url) }
 
   /** Restore enabled definitions after the account's private providers are installed.
    * @returns Actual initial client connection/discovery settlement; unavailable external servers retain native reconnect behavior.
@@ -78,13 +91,13 @@ export class AccountMcpConnections {
     this.check()
     await this.detach(row.id)
     this.check()
-    if (!row.enabled) return
+    if (!row.enabled || !this.destinations.allows(row.url)) return
     await this.store.withHeaders(row.id, async (headers) => {
       this.check()
       const config = this.config(row, headers, false)
       const fiber = this.ctx.plugin({ name: `cloud-mcp-${row.id}`, inject: ['tools'],
         apply: async (scope: Context): Promise<void> => {
-          await McpClient.apply(scope, config, lifecycle => this.clients.set(row.id, lifecycle))
+          await McpClient.apply(scope, config, lifecycle => this.clients.set(row.id, lifecycle), this.destinations.fetch)
         } })
       this.mounted.set(row.id, fiber); this.namespaces.set(row.id, row.serverName)
       await fiber
@@ -134,7 +147,7 @@ export class AccountMcpConnections {
         try {
           await McpClient.apply(owner, this.config(input, { ...input.headers }, true), (observed) => {
             lifecycle = observed; this.probes.add(observed)
-          })
+          }, this.destinations.fetch)
           observation.connected = true
         } catch (_error) { /* Return a sanitized observation after the same native lifecycle is joined. */ }
       } })
@@ -170,6 +183,7 @@ export class AccountMcpConnections {
       const probes = await Promise.allSettled([...this.probes].map(lifecycle => lifecycle.close()))
       if (results.some(result => result.status === 'rejected')
         || probes.some(result => result.status === 'rejected' || !result.value)) throw new McpConnectionCleanupError()
+      await this.destinations.close()
       this.mounted.clear(); this.namespaces.clear(); this.clients.clear(); this.probes.clear()
     })()
   }

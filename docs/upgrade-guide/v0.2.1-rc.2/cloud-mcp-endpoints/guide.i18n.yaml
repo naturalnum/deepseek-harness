@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.1-rc.2/cloud-mcp-endpoints/guide.md
+/:
+  en: e8ad7cb7c8f0ae4b
+  zh: 9ddb0c530152ceea
+/approve-cloud-http-mcp-endpoints:
+  en: 3374fe07b6a00d5c
+  zh: fa8fff0f9655a790
+/approve-cloud-http-mcp-endpoints/change:
+  en: e05ca69ff803be66
+  zh: 7a55c07bc3af0c01
+/approve-cloud-http-mcp-endpoints/migration:
+  en: c74df38d0f2b11b2
+  zh: 2f35e72a8b82fcac

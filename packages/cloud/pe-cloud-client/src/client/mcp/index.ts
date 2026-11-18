@@ -6,7 +6,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { PreparedCloudPage } from '../prepared-page.ts'
 import { observeCloudDisposal } from '../observe-disposal.ts'
-import { McpConnectionsSection, type McpConnectionsInjected } from './McpConnectionsSection.tsx'
+import { McpConnectionsSection, McpDestinationForbidden, type McpConnectionsInjected } from './McpConnectionsSection.tsx'
 import { MCP_SETTINGS_NAMESPACE, mcpSettingsDictionaries } from './locales.ts'
 
 /** Attach only the explicitly approved account-local MCP capability.
@@ -24,7 +24,10 @@ export function installCloudMcpConnections(ctx: Context, page: PreparedCloudPage
       current()
       const result = await owner.remote.cloudMcpConnections.action(request, signal)
       current()
-      if (!result.ok) throw new Error('cloud/mcp-operation-unconfirmed')
+      if (!result.ok) {
+        if (result.error.code === 'cloud/mcp-destination-forbidden') throw new McpDestinationForbidden()
+        throw new Error('cloud/mcp-operation-unconfirmed')
+      }
       return result.value
     }
     owner.effect(() => owner.locale.register(MCP_SETTINGS_NAMESPACE, mcpSettingsDictionaries), 'pe-cloud-client: MCP settings copy')

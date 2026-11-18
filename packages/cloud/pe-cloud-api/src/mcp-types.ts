@@ -1,10 +1,12 @@
 /** Account-local MCP management DTOs; headers are accepted only as explicit credential input. */
 import type { McpConnectionId, McpConnectionInput, McpConnectionRecord } from '@deepseek-ai/dsh-pe-cloud-files'
 
-/** One visible connection; configured reports only whether a private credential record exists. */
+/** One visible connection. The Root policy may block a stored definition independently of the saved enable switch. */
 export interface CloudMcpConnectionView extends McpConnectionRecord {
+  /** Whether a private credential record exists. */
   readonly configured: boolean
   readonly toolCount: number
+  readonly destinationBlocked?: true
 }
 /** Closed account-local operations; neither package/module names nor account selectors are accepted. */
 export type CloudMcpConnectionRequest =

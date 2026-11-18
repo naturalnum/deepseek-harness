@@ -168,6 +168,12 @@
       "path": "../../mcp/mcp-client"
     },
     {
+      "path": "../../util/http-proxy"
+    },
+    {
+      "path": "../../web/web-fetch-http"
+    },
+    {
       "path": "../../core/scope"
     }
   ]
