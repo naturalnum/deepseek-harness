@@ -127,7 +127,8 @@ test('handshake compares original runtime/payload/world/roots/limits rather than
     (v) => { v.runtimeIdentity = '0'.repeat(64) }, (v) => { v.protocolVersion = 'future' },
     (v) => { v.pins.agentSourceSha256 = '0'.repeat(64) }, (v) => { v.pins.userWorldArgvSha256 = '0'.repeat(64) },
     (v) => { v.mounts[PROJECT].inode = Number.MAX_SAFE_INTEGER }, (v) => { v.mounts[PROJECT].inode = '18446744073709551614' },
-    (v) => { v.limits.runMs = 5001 }, (v) => { v.declaredImageId = 'sha256:' + '4'.repeat(64) }]
+    (v) => { v.limits.runMs = 5001 }, (v) => { v.limits.childFileBytes = 67108864 },
+    (v) => { v.declaredImageId = 'sha256:' + '4'.repeat(64) }]
   for (const change of changes) {
     const { client, transport } = raw(), value = handshakeFixture(); change(value)
     const pending = client.handshake(); transport.reply(0, value)

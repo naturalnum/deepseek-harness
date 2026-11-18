@@ -7,7 +7,7 @@ import { rootDeploymentFixture, sharedPathDeploymentFixture } from './fixtures/r
 it('accepts the refreshed source digest and rejects the prior runtime digest', () => {
   const value = sharedPathDeploymentFixture()
   expect(parseRootDeploymentInput(value).lifecycle.payloadSha256).toBe(SOURCE_DIGEST)
-  value.lifecycle.payloadSha256 = 'd2d3e62db5f958a8305b7405d8d72db6d20bd7a0c0b7082955f25f5762bb728d'
+  value.lifecycle.payloadSha256 = 'deac1aad47774bab0181638a23ae02ce9eaaea4b89db7fcacb20371e27aacc3b'
   expect(() => parseRootDeploymentInput(value)).toThrow('lifecycle.fixedSelection')
 })
 

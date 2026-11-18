@@ -21,7 +21,7 @@ for key in ['OPENBLAS_NUM_THREADS', 'MAX_CONCURRENCY', 'MALLOC_ARENA_MAX']:
   execFileSync('python3', ['-I', '-S', '-B', '-c', program, directory], { timeout: 10000 })
 })
 
-it.skipIf(process.platform === 'win32')('sets the fixed child limits and rejects a file beyond the process limit', () => {
+it.skipIf(process.platform === 'win32')('allows 100 MiB and rejects sizes above the fixed 128 MiB child file limit', () => {
   const directory = fileURLToPath(new URL('../runtime/agent', import.meta.url))
   const program = String.raw`
 import errno, json, os, resource, sys, tempfile
@@ -36,13 +36,15 @@ def set_limit(kind, limits):
 resource.setrlimit = set_limit
 guardian.child_limits()
 assert calls[str(resource.RLIMIT_AS)] == [536870912, 536870912]
-assert calls[str(resource.RLIMIT_FSIZE)] == [67108864, 67108864]
 with tempfile.TemporaryFile() as f:
-    os.ftruncate(f.fileno(), 16 * 1024 * 1024)
-    try: os.ftruncate(f.fileno(), 67108865)
+    for size in (100 * 1024 * 1024, 128 * 1024 * 1024):
+        os.ftruncate(f.fileno(), size)
+        assert os.fstat(f.fileno()).st_size == size
+    try: os.ftruncate(f.fileno(), 128 * 1024 * 1024 + 1)
     except OSError as error: assert error.errno == errno.EFBIG
     else: raise AssertionError('oversize file was permitted')
-try: actual(resource.RLIMIT_FSIZE, (67108865, 67108865))
+assert resource.getrlimit(resource.RLIMIT_FSIZE) == (134217728, 134217728)
+try: actual(resource.RLIMIT_FSIZE, (134217729, 134217729))
 except (ValueError, OSError): pass
 else: raise AssertionError('child could raise its hard limit')
 print(json.dumps({'file':calls[str(resource.RLIMIT_FSIZE)][0], 'address':calls[str(resource.RLIMIT_AS)][0]}))
