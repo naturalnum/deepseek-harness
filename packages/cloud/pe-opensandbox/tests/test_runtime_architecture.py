@@ -188,7 +188,9 @@ class DeletionHistory(unittest.TestCase):
         service = self.view.service
         service._deletion_view = self.view
         service._delete_sandbox_without_completion = lambda sid, *, expected_container_id: removed.append((sid, expected_container_id))
-        with TemporaryDirectory(prefix='completion-test-', dir=RUNTIME.parent) as directory:
+        # CompletionRecords checks every ancestor. A shared source checkout or
+        # system temporary directory can be writable by other users.
+        with TemporaryDirectory(prefix='completion-test-', dir=Path.home().resolve()) as directory:
             receipt_dir = Path(directory) / 'records'
             service._deletion_records = records(receipt_dir, uid=os.getuid(), require_domain=False)
             try:
