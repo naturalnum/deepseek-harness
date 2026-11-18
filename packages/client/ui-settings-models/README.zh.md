@@ -37,6 +37,8 @@ kind: "package-reference"
 
 应用设置并关闭编辑器后，当前提供商、settings 与凭据快照就绪时才显示保存状态。打开任一行的编辑器、添加提供商和打开移除确认都会等待该刷新。新打开的 Models 区域或页面加载失败后的重试会等到 ready 快照后才挂载编辑器。后台刷新期间，只要编辑器仍挂载，已打开的草稿就会保留用户的修改；页面加载失败或提供商被移除可能关闭编辑器。
 
+读取凭据状态失败时，Models 保留提供商列表并提供重试。密钥状态徽标和密钥移除入口均以已确认的凭据状态为依据。
+
 Host 配置 `credentialOnboarding` 默认为 `true`。Electron preload 标记会抑制自动凭证引导和 Web 欢迎须知；模型设置页与显式 API Key 编辑仍然可用。[账号插件](../ui-settings-account/README.zh.md#desktop-onboarding)负责 Desktop 引导。其他原生壳可以通过 `credentialOnboarding: false` 仅禁用凭证步骤。Host 通过 `webserver/index-inject` 发布这个公开的布尔值，Client 在注册弹窗前校验它。它是页面初始化数据，不是持久化的完成标记。
 
 集成页面可提供带版本的设置写入，并单独处理密钥编辑。该写入获批用于 DeepSeek 模型目录时，原生提供商编辑器显示模型行，不开放端点或凭据字段；保存结果未确认时，当前草稿不能再次提交。该集成模式暂不开放提供商创建和移除。

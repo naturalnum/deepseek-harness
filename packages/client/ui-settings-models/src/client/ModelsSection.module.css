@@ -33,6 +33,13 @@
   color: var(--dsw-alias-state-warn-label);
 }
 
+.credentialNotice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 .savedNotice {
   margin: 0;
   font-size: 12px;

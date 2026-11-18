@@ -433,6 +433,19 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
       <h2 className={styles['title']}>{t('title')}</h2>
       <p className={styles['intro']}>{t('intro')}</p>
       {!state.writable && state.status === 'ready' ? <p className={styles['notice']}>{t('readOnly')}</p> : null}
+      {state.credentialError !== null && (
+        <div className={styles['credentialNotice']}>
+          <p className={styles['error']} role="alert">{t('credentialStatusLoadFailed')}</p>
+          <button
+            type="button"
+            className={styles['secondaryButton']}
+            disabled={state.status === 'loading'}
+            onClick={() => { void controller.load() }}
+          >
+            {t('retry')}
+          </button>
+        </div>
+      )}
       {savedIdentity === undefined
         ? null
         : (

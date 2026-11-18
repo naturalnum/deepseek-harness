@@ -58,6 +58,62 @@ it('loads the original store only through the readonly page input and preserves 
   expect(JSON.stringify(controller.store.getSnapshot())).not.toContain('PRIVATE_METADATA_ERROR')
 })
 
+it.each([
+  { language: 'en', copy: en, notice: 'Could not check API key status.', edit: 'Edit API key', remove: 'Remove API key' },
+  { language: 'zh', copy: zh, notice: '无法读取 API 密钥状态', edit: '编辑 API Key', remove: '移除 API Key' },
+] as const)('shows unknown key status and retries through the admitted reader ($language)', async ({ language, copy, notice, edit, remove }) => {
+  const mock = RemoteMock.create().load(remoteDefaultResponses)
+  const ctx = new Context()
+  const source = integration()
+  const prepare = vi.fn(async () => null)
+  const retryResult = Promise.withResolvers<Awaited<ReturnType<typeof source.reads.credentials>>>()
+  source.editing.set({ ...credentialPresentation, scope: 'original-page', isCurrent: () => true, prepare })
+  source.reads.credentials
+    .mockRejectedValueOnce(new Error('FIXTURE_CREDENTIAL_FAILURE'))
+    .mockImplementationOnce(() => retryResult.promise)
+  onTestFinished(async () => { await ctx.fiber.dispose(); mock.assertNoUnmatched() })
+  await ctx.plugin(SlotRegistry).await()
+  const locale = new LocaleRuntime(ctx)
+  ctx.provide('locale', locale)
+  new TestRemote(ctx, {
+    credentials: { describe: denied, set: denied, unset: denied },
+    llm: { listProviders: denied, listConfigurableProviders: denied, discoverModels: denied },
+    settings: mock.remote.settings,
+    session: { initializeDefaultModel: denied },
+  })
+  await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
+  ctx.provide('modelsSettingsIntegration', source)
+  ctx.slots.register({ name: 'root', children: { 'settings.section': { kind: 'list', scope: 'root' }, 'settings.onboarding': { kind: 'list', scope: 'root' } } }, TestHost)
+  await ctx.plugin({ inject: [...inject], apply }).await()
+  await createModelKeyTestRenderer(ctx)
+  locale.setLocale(language)
+  render(ctx.slots.renderSlot('root', {}))
+
+  expect(await screen.findByRole('button', { name: edit })).toBeDefined()
+  expect(screen.getByText('DeepSeek')).toBeDefined()
+  expect(screen.queryByText('FIXTURE_CREDENTIAL_FAILURE')).toBeNull()
+  expect(screen.queryByRole('img', { name: copy.credentialConfigured })).toBeNull()
+  expect(screen.queryByRole('img', { name: copy.credentialMissing })).toBeNull()
+  expect(screen.queryByRole('button', { name: remove })).toBeNull()
+  expect(screen.getByRole('alert').textContent).toBe(notice)
+  expect(source.reads.credentials).toHaveBeenCalledExactlyOnceWith([ref])
+
+  const retry = screen.getByRole('button', { name: copy.retry })
+  fireEvent.click(retry)
+  expect(retry).toHaveProperty('disabled', true)
+  await waitFor(() => { expect(source.reads.credentials).toHaveBeenNthCalledWith(2, [ref]) })
+  expect(screen.queryByRole('button', { name: remove })).toBeNull()
+  await act(async () => {
+    retryResult.resolve({ [ref]: { configured: true, writable: true, source: 'file' } })
+  })
+
+  expect(screen.getByRole('img', { name: copy.credentialConfigured })).toBeDefined()
+  expect(screen.getByRole('button', { name: remove })).toBeDefined()
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(screen.queryByRole('button', { name: copy.retry })).toBeNull()
+  expect(prepare).not.toHaveBeenCalled()
+})
+
 it('publishes original slot hooks, clears a draft on null and withdraws its source listener during HMR',async()=>{
   const mock=RemoteMock.create().load(remoteDefaultResponses),ctx=new Context(),source=integration()
   onTestFinished(async()=>{await ctx.fiber.dispose();mock.assertNoUnmatched()})
