@@ -36,7 +36,7 @@ it.each(['arm64', 'amd64'] as const)('binds %s to its own exact local binary pin
 })
 
 it('preserves all ARM suppliers and refuses platform or execd mixing before remote work', () => {
-  expect(qualifiedSupplierTuples).toHaveLength(13)
+  expect(qualifiedSupplierTuples).toHaveLength(14)
   for (const tuple of qualifiedSupplierTuples.slice(0, 8)) {
     expect(tuple.platform).toBe('arm64')
     expect(tuple.execdImageDigest).toBe(RUNTIME_PROFILES.arm64.execdImageDigest)
@@ -47,7 +47,7 @@ it('preserves all ARM suppliers and refuses platform or execd mixing before remo
     expect(isQualifiedSupplierPair(tuple.schema, tuple.workloadImageDigest, tuple.serverImageDigest,
       'arm64', RUNTIME_PROFILES.amd64.execdImageDigest)).toBe(false)
   }
-  for (const tuple of qualifiedSupplierTuples.slice(8, 11)) {
+  for (const tuple of qualifiedSupplierTuples.filter(row => row.platform === 'amd64')) {
     expect(tuple.platform).toBe('amd64')
     expect(tuple.execdImageDigest).toBe(RUNTIME_PROFILES.amd64.execdImageDigest)
     expect(isQualifiedSupplierPair(tuple.schema, tuple.workloadImageDigest, tuple.serverImageDigest,

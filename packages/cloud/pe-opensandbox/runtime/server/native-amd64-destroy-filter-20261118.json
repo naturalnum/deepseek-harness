@@ -1,0 +1,36 @@
+{
+  "schema": "native-amd64-destroy-filter-overlay/v1",
+  "platform": "linux/amd64",
+  "deploymentSchema": "pe-opensandbox-root-deployment-v2",
+  "sourceCommit": "db0e326f4b60ecdae4a28eb63cf107830c588ad0",
+  "sourceTree": "56df9f4d96f2138e96565d38f5d7da0cb4a3ae5f",
+  "parentServer": {
+    "archiveSha256": "432d8f06a3eba6dff7a6cf0ab05ba9de36821b5391af636735c6e255bd68e640",
+    "archiveBytes": 83707904,
+    "manifestDigest": "sha256:e4fc713db05339d41b70215f2ffdbc1c37f8948b92c949eb4cd2c164ce90038a",
+    "configDigest": "sha256:6ab048f3f4553f1e28d702900b41dd3f19fe0bce0a707bda8b5d7114474ea5c4",
+    "layerCount": 6
+  },
+  "server": {
+    "manifest": "sha256:67eb1b98ee174004ffe048b00df70025b2754efc8bbf1a5b667dfe7ee339df08",
+    "config": "sha256:5cf9cfffeae655971670e7c4a30a3361c03b529a2039332066611aafcf45b61c",
+    "archiveSha256": "7314e257c6ecdc8afc9996ca3923b09ca634a0bbece7c8e18c3e40047a5f1ce5",
+    "archiveBytes": 83716608
+  },
+  "workloadManifest": "sha256:32c17c742af43a6d9c89c69441fbc543751af41b0f61bf8294ed00ac3a4df62f",
+  "execdManifest": "sha256:ca4ff631193b68ba0a47622773389b054994c77971cf2859c6beacf6cb9314de",
+  "build": {
+    "contextSha256": "1bc5132580020091d5ecc59a6b92000eaedfcd58538d4cf2ddde670102eeeaf9",
+    "contextBytes": 30720,
+    "sourceDateEpoch": 1794998169,
+    "network": "none",
+    "pull": false
+  },
+  "replacement": {
+    "path": "/usr/local/lib/python3.12/site-packages/opensandbox_server/services/docker/completion_view.py",
+    "sha256": "16cacf9003e553d2f18448ba947a9105b2d04ad4a2c0c7326d05f323b1dacdd8",
+    "parentSha256": "e10a91eaa433f9e2eba5f9acf4522f6f764587511d3305c36d42b1debd448cce",
+    "layerDigest": "sha256:ddc4fed3a6050e3b5756f59efaca25fdee89d408c23e7eab2f38a11f33ff8dc1",
+    "unchangedDeletionOwnerSha256": "96496b09fdb4b5bf094cb34c96b24671f2ae2679a9e06234a50ad85a6ebc35a4"
+  }
+}

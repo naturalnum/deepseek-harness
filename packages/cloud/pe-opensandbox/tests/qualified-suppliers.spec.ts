@@ -89,11 +89,19 @@ const priorContentSuppliers = [...priorManifestSuppliers, {
   sessionDirectories: true,
 }] as const
 
-const suppliers = [...priorContentSuppliers, {
+const previousSuppliers = [...priorContentSuppliers, {
   schema: 'pe-opensandbox-root-deployment-v2',
   workloadImageDigest: 'sha256:3ec6ba073f482c4c39d2ad0e03fde8f841373a0bd30c53a2660e9cbd10b2f202',
   serverImageDigest: 'sha256:2c0389e8aaf9430c6a07d2ba796a2ae0b578a1d02839f7be9f02f6c164c1c74e',
   platform: 'arm64', execdImageDigest: 'sha256:b6dc1290091b2d4c5b51e0776e718d275069224110ae07a07dad14d249447b4e',
+  sessionDirectories: true,
+}] as const
+
+const suppliers = [...previousSuppliers, {
+  schema: 'pe-opensandbox-root-deployment-v2',
+  workloadImageDigest: 'sha256:32c17c742af43a6d9c89c69441fbc543751af41b0f61bf8294ed00ac3a4df62f',
+  serverImageDigest: 'sha256:67eb1b98ee174004ffe048b00df70025b2754efc8bbf1a5b667dfe7ee339df08',
+  platform: 'amd64', execdImageDigest: 'sha256:ca4ff631193b68ba0a47622773389b054994c77971cf2859c6beacf6cb9314de',
   sessionDirectories: true,
 }] as const
 
@@ -105,6 +113,7 @@ it('retains the original suppliers and permits only the exact built v2 superset 
   expect(qualifiedSupplierTuples.slice(0, 10)).toEqual(priorAmd64Suppliers)
   expect(qualifiedSupplierTuples.slice(0, 11)).toEqual(priorManifestSuppliers)
   expect(qualifiedSupplierTuples.slice(0, 12)).toEqual(priorContentSuppliers)
+  expect(qualifiedSupplierTuples.slice(0, 13)).toEqual(previousSuppliers)
   expect(qualifiedSupplierTuples).toEqual(suppliers)
   expect(NATIVE_AMD64_WORKLOAD_IMAGE_DIGEST).toBe(suppliers[8].workloadImageDigest)
   expect(NATIVE_AMD64_SERVER_IMAGE_DIGEST).toBe(suppliers[8].serverImageDigest)

@@ -53,6 +53,8 @@ export const OFFICE_RESEARCH_GIT_SSH_AMD64_SERVER_IMAGE_DIGEST = 'sha256:28e4ebc
 export const NATIVE_AMD64_REBUILD_20261115_WORKLOAD_IMAGE_DIGEST = 'sha256:32c17c742af43a6d9c89c69441fbc543751af41b0f61bf8294ed00ac3a4df62f'
 /** Exact guarded server rebuilt with only that Native AMD64 workload selected. */
 export const NATIVE_AMD64_REBUILD_20261115_SERVER_IMAGE_DIGEST = 'sha256:e4fc713db05339d41b70215f2ffdbc1c37f8948b92c949eb4cd2c164ce90038a'
+/** Same guarded Linux workload and execd with the exact Docker destroy evidence reader. */
+export const NATIVE_AMD64_DESTROY_FILTER_SERVER_IMAGE_DIGEST = 'sha256:67eb1b98ee174004ffe048b00df70025b2754efc8bbf1a5b667dfe7ee339df08'
 
 /** One reviewed storage schema, workload and server combination; no caller can register another supplier. */
 export interface QualifiedSupplierTuple {
@@ -108,6 +110,9 @@ export const qualifiedSupplierTuples: readonly QualifiedSupplierTuple[] = Object
   Object.freeze({ schema: 'pe-opensandbox-root-deployment-v2', workloadImageDigest: REPORT_CONTENT_ARM64_WORKLOAD_IMAGE_DIGEST,
     platform: 'arm64', execdImageDigest: 'sha256:b6dc1290091b2d4c5b51e0776e718d275069224110ae07a07dad14d249447b4e',
     serverImageDigest: REPORT_CONTENT_ARM64_SERVER_IMAGE_DIGEST, sessionDirectories: true }),
+  Object.freeze({ schema: 'pe-opensandbox-root-deployment-v2', workloadImageDigest: NATIVE_AMD64_REBUILD_20261115_WORKLOAD_IMAGE_DIGEST,
+    platform: 'amd64', execdImageDigest: RUNTIME_PROFILES.amd64.execdImageDigest,
+    serverImageDigest: NATIVE_AMD64_DESTROY_FILTER_SERVER_IMAGE_DIGEST, sessionDirectories: true }),
 ])
 
 /**
