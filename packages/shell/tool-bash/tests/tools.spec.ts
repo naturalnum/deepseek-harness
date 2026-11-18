@@ -1008,11 +1008,13 @@ describe('processOutcome', () => {
   it('maps a completed process to its exit code', () => {
     expect(processOutcome(settled({ exitCode: 3 })))
       .toEqual({ status: 'completed', detail: 'exit code: 3' })
+    expect(processOutcome(settled({ exitCode: 0 })))
+      .toEqual({ status: 'completed', detail: 'exit code: 0' })
   })
 
-  it('defensively reads a null exit code as 0 (handle shapes from other executors)', () => {
+  it('reports an unavailable exit code without inventing a successful exit', () => {
     expect(processOutcome(settled({ exitCode: null })))
-      .toEqual({ status: 'completed', detail: 'exit code: 0' })
+      .toEqual({ status: 'completed', detail: 'exit code unavailable' })
   })
 
   it('appends sandbox facts to the terminal detail', () => {
@@ -1242,6 +1244,46 @@ describe('tool-owned UI presentation (presentCall / presentResult)', () => {
       { content: [{ type: 'text', text: 'started background job bash-1' }], isError: false },
     )
     expect(result).toEqual({ card: 'generic', content: [{ type: 'text', text: '```console\nstarted background job bash-1\n```' }] })
+  })
+
+  it('keeps diagnostic lines as output when the Bash executor reports success', async () => {
+    const ctx = await setup()
+    const args = { command: "printf '%s\\n%s' 'diagnostic summary' '[exit code: 5]'", description: 'Print diagnostics' }
+    try {
+      const result = await call(ctx, 'bash', args)
+      const view = ctx.tools.get('bash')!.presentResult!(args, result)
+      expect(view).toEqual({ card: 'terminal', output: 'diagnostic summary\n[exit code: 5]', exitCode: 0 })
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('keeps a truncated Bash tail and reports the recorded nonzero exit', async () => {
+    const ctx = await setup()
+    try {
+      const output = 'last line\n[output truncated; full output: (unavailable)]'
+      const result = ctx.tools.get('bash')!.presentResult!({ command: 'x', description: 'x' }, {
+        content: [{ type: 'text', text: `${output}\n[exit code: -1]` }], isError: false,
+        meta: { bashExit: { exitCode: -1, signal: null } },
+      })
+      expect(result).toEqual({ card: 'terminal', output, exitCode: -1 })
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('leaves the Host exit capsule empty when the Bash executor has no exit status', async () => {
+    const ctx = await setup()
+    try {
+      const output = 'last line\n[exit code: null]'
+      const result = ctx.tools.get('bash')!.presentResult!({ command: 'x', description: 'x' }, {
+        content: [{ type: 'text', text: output }], isError: false,
+        meta: { bashExit: { exitCode: null, signal: null } },
+      })
+      expect(result).toEqual({ card: 'terminal', output })
+    } finally {
+      await ctx.fiber.dispose()
+    }
   })
 
   it('bash presentResult: an isError result is a generic card (no real process exit to report)', async () => {
@@ -1504,7 +1546,7 @@ describe('resolved launch directory metadata', () => {
       expect(result.isError).toBe(false)
       if (result.isError) throw new Error('expected shell success')
       expect(result.value).toMatchObject({ cwd: directory })
-      expect(result.meta).toEqual({ cwd: directory })
+      expect(result.meta).toEqual(background ? { cwd: directory } : { cwd: directory, bashExit: { exitCode: 0, signal: null } })
       expect(resolving).toHaveBeenCalledOnce()
       expect(resolving).toHaveBeenCalledWith(expect.objectContaining({ workdir: workdir === undefined ? current : join(current, workdir) }))
       expect(launch).toHaveBeenCalledWith(expect.objectContaining({ workdir: directory }))

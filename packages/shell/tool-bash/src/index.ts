@@ -137,7 +137,18 @@ function presentBashResult(args: unknown, result: ToolResult): ToolResultView | 
   if (isBackground || isPromoted || result.isError) {
     return { card: 'generic', content: [{ type: 'text', text: `\`\`\`console\n${raw.replace(/\n+$/, '')}\n\`\`\`` }] }
   }
-  // The exit marker becomes the card's exit pill, so it leaves the output body.
+  const meta = result.meta
+  if (typeof meta === 'object' && meta !== null && 'bashExit' in meta) {
+    const exit = meta.bashExit
+    if (typeof exit !== 'object' || exit === null) return { card: 'terminal', output: raw }
+    const signal = 'signal' in exit && typeof exit.signal === 'string' && exit.signal.length > 0 ? exit.signal : undefined
+    const exitCode = 'exitCode' in exit && typeof exit.exitCode === 'number' && Number.isSafeInteger(exit.exitCode)
+      ? exit.exitCode : undefined
+    const marker = signal !== undefined ? `\n[killed by signal: ${signal}]`
+      : exitCode !== undefined && exitCode !== 0 ? `\n[exit code: ${exitCode}]` : undefined
+    const output = marker !== undefined && raw.endsWith(marker) ? raw.slice(0, -marker.length) : raw
+    return { card: 'terminal', output, ...signal !== undefined ? { signal } : exitCode !== undefined ? { exitCode } : {} }
+  }
   const { body, ...exit } = parseExitStatus(raw)
   return { card: 'terminal', output: body, ...exit }
 }
@@ -473,7 +484,10 @@ export function apply(ctx: Context, config: Config = {}): void {
               ? renderPromoted(value)
               : renderResult(value as { kind: 'foreground' } & ShellRunResult, escalationModes),
         }],
-        presentationMeta: (_args, value) => ({ cwd: value.cwd }),
+        presentationMeta: (_args, value) => ({
+          cwd: value.cwd,
+          ...value.kind === 'foreground' ? { bashExit: { exitCode: value.exitCode, signal: value.signal } } : {},
+        }),
       },
       async execute(args: BashToolArgs, exec) {
         // Description is display metadata; workdir defaults to the caller's session.

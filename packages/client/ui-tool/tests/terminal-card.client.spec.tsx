@@ -90,6 +90,36 @@ describe('terminalCardModel', () => {
     expect(terminalExitLabel(model, enT)).toBe('signal SIGTERM')
   })
 
+  it('uses the recorded Bash exit status without removing diagnostic text', () => {
+    const output = 'diagnostic summary\n[exit code: 5]'
+    const model = terminalCardModel(settled({
+      content: [{ type: 'text', text: output }],
+      meta: { bashExit: { exitCode: 0, signal: null } },
+    }))
+    expect(model?.card).toMatchObject({ output, exitCode: 0 })
+    expect(terminalExitLabel(model, enT)).toBeNull()
+  })
+
+  it('preserves the recorded Bash exit status if a preview has no final marker', () => {
+    const output = 'last line\n[output truncated; full output: (unavailable)]'
+    const model = terminalCardModel(settled({
+      content: [{ type: 'text', text: output }],
+      meta: { bashExit: { exitCode: 7, signal: null } },
+    }))
+    expect(model?.card).toMatchObject({ output, exitCode: 7 })
+    expect(terminalExitLabel(model, enT)).toBe('exit code 7')
+  })
+
+  it('represents an unavailable Bash exit status explicitly', () => {
+    const output = 'unfinished'
+    const model = terminalCardModel(settled({
+      content: [{ type: 'text', text: output }],
+      meta: { bashExit: { exitCode: null, signal: null } },
+    }))
+    expect(model?.card).toMatchObject({ output, exitCode: null })
+    expect(terminalExitLabel(model, enT)).toBe('no exit code')
+  })
+
   it.each(['bash', 'pwsh'])('preserves a %s timeout without an exit code', (name) => {
     const model = terminalCardModel(settled({
       call: { name, argsRaw: ARGS },

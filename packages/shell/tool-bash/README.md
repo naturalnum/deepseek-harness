@@ -106,7 +106,7 @@ The tool resolves the workdir before `ctx.shell.resolve()` runs: an explicit rel
 
 ### Rendering story
 
-The result text is stdout, then a marked `[stderr]` section, then conditional markers: truncation notice, sandbox denial (plus the same-turn escalation hint when the composition advertises escalation), timeout, signal, and exit code — each on its own line. The exit marker doubles as the UI card's exit-status pill: the shared `parseExitStatus` from `dsh-shell` consumes it from the output body, so replay shows the pill without duplicating the marker.
+The result text contains stdout, a marked `[stderr]` section, and any truncation, sandbox denial, timeout, signal, or exit-code markers. New foreground results persist the actual process exit code or signal in presentation metadata. Terminal cards use this metadata for the exit status and preserve similar-looking lines printed by the command. Older recordings use their final text marker. When a completed background process supplies no exit code, its job detail reads `exit code unavailable`.
 
 </details>
 

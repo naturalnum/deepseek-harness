@@ -298,10 +298,24 @@ function parseExitStatus(text: string): { output: string; exitCode?: number | nu
   return { output: text, exitCode: 0 }
 }
 
+function bashExitStatus(text: string, meta: unknown): { output: string; exitCode?: number | null; signal?: string } {
+  if (typeof meta !== 'object' || meta === null || !('bashExit' in meta)) return parseExitStatus(text)
+  const exit = meta.bashExit
+  if (typeof exit !== 'object' || exit === null) return { output: text, exitCode: null }
+  const signal = 'signal' in exit && typeof exit.signal === 'string' && exit.signal.length > 0 ? exit.signal : undefined
+  const exitCode = 'exitCode' in exit && typeof exit.exitCode === 'number' && Number.isSafeInteger(exit.exitCode)
+    ? exit.exitCode : null
+  const marker = signal !== undefined ? `\n[killed by signal: ${signal}]`
+    : exitCode !== 0 ? `\n[exit code: ${exitCode}]` : undefined
+  const output = marker !== undefined && text.endsWith(marker) ? text.slice(0, -marker.length) : text
+  return signal !== undefined ? { output, signal } : { output, exitCode }
+}
+
 /**
  * Derive terminal props for supported shell and terminal-send calls, including
- * nested PTC dispatch calls. Standard shell results parse their final status
- * marker. Successful background shell launches retain only their command after
+ * nested PTC dispatch calls. Bash results use their recorded exit status when
+ * present. Other standard shell results parse their final status marker.
+ * Successful background shell launches retain only their command after
  * settlement; persistent shell results, spill previews, background terminal sends,
  * errors, and malformed input use the generic path. {@link isSettledPersistentShellCall} lets that generic
  * persistent result remain expandable without inventing one process status.
@@ -346,7 +360,8 @@ export function terminalCardModel(
   }
   const output = singleResultText(block)
   if (output === undefined) return null
-  const status = call.kind === 'terminal-send' ? { output } : parseExitStatus(output)
+  const status = call.kind === 'terminal-send' ? { output }
+    : parsed.name === 'bash' ? bashExitStatus(output, block.meta) : parseExitStatus(output)
   return {
     copy,
     card: {
