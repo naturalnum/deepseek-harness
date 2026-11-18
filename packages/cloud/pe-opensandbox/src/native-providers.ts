@@ -27,6 +27,8 @@ export interface NativeExecutionConfig {
 export interface NativeExecutionProviderPort {
   /** Present only on the original command owner that signs and enforces per-Session policy for all execution paths. */
   readonly enforcesSessionFilePolicy?: true | undefined
+  readonly waitsForBackgroundShell?: true | undefined
+  createForBackgroundShell?(caller: Context, spec: SubprocessSpawnSpec, policy?: SandboxExecutionPolicy): Promise<ManagedCommandOperation>
   /** Original Root terminal allocation, absent on collect-only channels.
    * @param caller Actual Native tool scope. @param spec Complete terminal request with its approved policy.
    * @returns Original terminal handle after guardian readiness.
@@ -194,10 +196,13 @@ export class CloudShellExecutor extends ShellExecutor {
     const timer = deadline(spec.signal, spec.onExpiry === 'kill' ? spec.timeoutMs : 0, SHELL_TIMEOUT)
     let operation: ManagedCommandOperation
     try {
-      operation = this.port.create(caller, { argv: [this.config.bashPath, '--noprofile', '--norc', '-c', spec.command],
+      const command: SubprocessSpawnSpec = { argv: [this.config.bashPath, '--noprofile', '--norc', '-c', spec.command],
         cwd: spec.workdir, graceMs: this.config.graceMs, signal: timer.signal,
         stdio: { stdin: spec.stdin === undefined ? 'ignore' : { data: spec.stdin },
-          stdout: { maxBytes: spec.stdoutMaxBytes }, stderr: { maxBytes: this.config.maxOutputBytes } } }, spec.sandboxPolicy)
+          stdout: { maxBytes: spec.stdoutMaxBytes }, stderr: { maxBytes: this.config.maxOutputBytes } } }
+      operation = spec.onExpiry === 'none' && this.port.waitsForBackgroundShell === true && this.port.createForBackgroundShell !== undefined
+        ? await this.port.createForBackgroundShell(caller, command, spec.sandboxPolicy)
+        : this.port.create(caller, command, spec.sandboxPolicy)
       operation.begin()
     } catch (cause) { timer[Symbol.dispose](); throw cause }
     const cancelled = Promise.withResolvers<never>()

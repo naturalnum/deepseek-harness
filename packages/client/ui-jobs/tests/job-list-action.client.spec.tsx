@@ -493,6 +493,20 @@ describe('JobListAction human kill', () => {
     expect(screen.queryByTitle(stopTitle('done'))).toBeNull()
   })
 
+  it('renders the authoritative capacity wait and cancels the same original job from the roster', async () => {
+    const killJob = vi.fn(async () => true)
+    render(<JobListAction {...props([job({ waitingForCapacity: true })], undefined, {}, killJob)} />)
+    expect(screen.getByRole('button', { name: '1 个后台任务' })).toBeDefined()
+    openList()
+    expect(screen.getByText(zh['status.waitingForCapacity'])).toBeDefined()
+    expect(screen.queryByText(zh['status.running'])).toBeNull()
+    const cancel = screen.getByTitle(zh['kill.cancelWaiting'].replace('{label}', 'pnpm run build'))
+    fireEvent.click(cancel)
+    expect(killJob).not.toHaveBeenCalled()
+    await act(async () => { fireEvent.click(cancel) })
+    expect(killJob).toHaveBeenCalledExactlyOnceWith(SESSION, 'bash-1')
+  })
+
   it('arms on the first press and kills on the confirming press', async () => {
     const killJob = vi.fn(async () => true)
     render(<JobListAction {...props([job()], undefined, {}, killJob)} />)

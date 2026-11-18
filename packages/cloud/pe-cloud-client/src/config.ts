@@ -5,7 +5,7 @@ import { parseServicePreviewPolicy } from './preview-policy.ts'
 import { parseServiceApplicationPolicy } from './application-policy.ts'
 
 const MAX_TIMER_MS = 2_147_483_647
-const NATIVE_CONTROLS = ['commands', 'models', 'permissions', 'goals', 'plan', 'feedback', 'export', 'attachments'] as const
+const NATIVE_CONTROLS = ['commands', 'models', 'permissions', 'goals', 'plan', 'feedback', 'export', 'attachments', 'jobs'] as const
 const NATIVE_MANAGEMENT = ['plugins', 'presets', 'automations'] as const
 const COMMAND_CONTROLS: readonly CloudNativeSessionControl[] = ['models', 'permissions', 'plan', 'feedback', 'export']
 

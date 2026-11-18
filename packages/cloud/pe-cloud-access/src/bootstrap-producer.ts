@@ -1,6 +1,7 @@
 /** C11 projection from original graph owners and explicitly audited execution/file policies. */
 import { symbols, type Context } from '@deepseek-ai/cordis'
-import { CloudAccountApi, CloudApiError, ExposureService, approvedSettingsMatch, MODEL_KEY_RPC_ENDPOINTS, PLUGIN_RPC_ENDPOINTS, SESSION_CONTROLLER_ENDPOINTS } from '@deepseek-ai/dsh-pe-cloud-api'
+import { CloudAccountApi, CloudApiError, ExposureService, approvedSettingsMatch, JOB_CONTROLLER_ENDPOINTS,
+  MODEL_KEY_RPC_ENDPOINTS, PLUGIN_RPC_ENDPOINTS, SESSION_CONTROLLER_ENDPOINTS } from '@deepseek-ai/dsh-pe-cloud-api'
 import { CloudAccountFiles } from '@deepseek-ai/dsh-pe-cloud-files'
 import { accountExecutionMode, accountServiceAvailability, assertAccountExecutionProviders } from '@deepseek-ai/dsh-pe-opensandbox'
 import type { PluginPackages } from '@deepseek-ai/dsh-app-boot'
@@ -29,6 +30,7 @@ const nativeRpc: Readonly<Record<string, Pick<EndpointExposure, 'handlerId' | 'g
   'officeToPdf/render': { handlerId: 'native:officeToPdf', guard: 'account-session' },
   'officeToPdf/generation': { handlerId: 'native:officeToPdf', guard: 'authenticated-account' },
   ...Object.fromEntries(SESSION_CONTROLLER_ENDPOINTS.filter(row => row.mode === 'rpc').map(row => [row.endpoint, row])),
+  ...Object.fromEntries(JOB_CONTROLLER_ENDPOINTS.filter(row => row.mode === 'rpc').map(row => [row.endpoint, row])),
   'workspace/initializeDefault': { handlerId: 'native:workspaceController', guard: 'account-project' },
   'workspace/create': { handlerId: 'native:workspaceController', guard: 'account-project' },
   'workspace/rename': { handlerId: 'native:workspaceController', guard: 'account-project' },
@@ -62,6 +64,7 @@ const nativeRpc: Readonly<Record<string, Pick<EndpointExposure, 'handlerId' | 'g
 }
 const nativeStreams: Readonly<Record<string, Pick<EndpointExposure, 'handlerId' | 'guard'>>> = {
   ...Object.fromEntries(SESSION_CONTROLLER_ENDPOINTS.filter(row => row.mode === 'stream').map(row => [row.endpoint, row])),
+  ...Object.fromEntries(JOB_CONTROLLER_ENDPOINTS.filter(row => row.mode === 'stream').map(row => [row.endpoint, row])),
   'workspace/follow': { handlerId: 'native:workspaceController', guard: 'account-project' },
   'remoteAccess/follow': { handlerId: 'native:remoteAccess', guard: 'authenticated-account' },
   '$events': { handlerId: 'native:typertGateway', guard: 'authenticated-account' },

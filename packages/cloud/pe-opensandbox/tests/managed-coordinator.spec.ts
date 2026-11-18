@@ -575,9 +575,12 @@ async function applicationFixture(options: {
   skillCopies?: number
   pipes?: boolean
   allocationLimits?: Pick<ManagedCoordinatorConfig['allocations'], 'maxAllocations' | 'maxAllocationsPerAccount'>
+  commandWaiting?: ManagedCoordinatorConfig['commandWaiting']
 } = {}) {
   const managed: ManagedCoordinatorConfig = { ...config, maxActiveCommands: 8, maxActiveCommandsPerAccount: 4,
     maxResidentCommands: 16, maxResidentCommandsPerAccount: 8,
+    ...options.commandWaiting === undefined ? {} : { commandWaiting: options.commandWaiting,
+      maxActiveCommands: 1, maxActiveCommandsPerAccount: 1 },
     ...options.pipes ? { maxActiveCommands: 2, maxActiveCommandsPerAccount: 1,
       maxResidentCommands: 8, maxResidentCommandsPerAccount: 4 } : {},
     maxResidentBytes: options.globalBytes ?? options.bytes ?? 1048576, maxResidentBytesPerAccount: options.bytes ?? 1048576,
@@ -587,6 +590,7 @@ async function applicationFixture(options: {
     commands: { ...config.commands, allowedTools: options.pipes ? ['bash', 'run_code', 'terminal_open'] : ['bash', 'dev_service'], maxScopes: 8,
       ...options.pipes ? { pipes: { controlInputBytes: 8388608, controlOutputBytes: 8388608 } } : {},
       commandLimits: { ...config.commands.commandLimits, pollIntervalMs: 1000, maxLifetimeMs: 190000, maxWaiters: 4,
+        ...options.commandWaiting === undefined ? {} : { pollIntervalMs: 5 },
         ...options.pipes ? { maxTailBytes: 4096, maxLifetimeMs: 155000, pollIntervalMs: 5 } : {},
         ...options.skillCopies === undefined ? {} : { maxArgvBytes: 256, maxArgvEntries: 8, maxPathBytes: 128, maxStdinBytes: 256 } },
       ...(options.services === false ? {} : { services: { maxOutputBytes: 32, graceMs: 1000,
@@ -688,6 +692,70 @@ async function applicationFixture(options: {
   return { ...f, prepare, service, application, attempts, account,
     emptyChannels: () => { for (const channel of channels) channel.empty() } }
 }
+
+
+it('uses the original Root active slots and actual local Bash around the queued background job', async () => {
+  const f = await applicationFixture({ services: false,
+    commandWaiting: { maxWaiting: 2, maxWaitingPerAccount: 1, maxRecords: 4, timeoutMs: 5000 } })
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), 'dsh-native-command-wait-')))
+  const launches: KernelLaunch[] = []
+  onTestFinished(() => {
+    for (const launch of launches) {
+      if (launch.process.exitCode === null && launch.process.signalCode === null) launch.process.kill('SIGTERM')
+    }
+    rmSync(directory, { recursive: true, force: true })
+  })
+  const command = vi.spyOn(f.deployment.runtimes, 'command').mockImplementation(() =>
+    localKernelChannel(directory, (launch) => { launches.push(launch) }, () => {}))
+  const first = await f.account('queue-real-a', 1)
+  const second = await f.account('queue-real-b', 1)
+  for (const a of [first, second]) {
+    a.authority.assertRetainedExecutionOwner.mockImplementation((agent, workspace) => {
+      expect(a.agents).toContain(agent); expect(workspace).toBe(a.workspace); a.lifetime.signal.throwIfAborted()
+    })
+    await a.ctx.plugin(LocalJobRegistry, { pumpPollMs: 5 })
+    await a.ctx.plugin(ToolJobs, { completionDelivery: 'quiet' })
+    await a.ctx.plugin(ToolBash)
+  }
+  const start = async (a: typeof first, id: string, script: string) => {
+    const agent = a.agents[0]!
+    const previous = new Set(a.ctx.jobs.list(agent.id).map(job => job.id))
+    const result = await a.ctx.tools.execute({ callId: ToolCallId(id), name: 'bash', agent, signal: new AbortController().signal,
+      arguments: { command: script, description: 'Ordinary isolated Bash admission fixture', run_in_background: true } })
+    expect(result.isError).toBe(false)
+    return a.ctx.jobs.list(agent.id).find(job => !previous.has(job.id))!
+  }
+  await start(first, 'slot-holder', 'for i in {1..200}; do if [ -f release ]; then exit 0; fi; sleep 0.02; done; exit 7')
+  await vi.waitFor(() => { expect(launches).toHaveLength(1) })
+  const cancelled = await start(second, 'queued-and-cancelled', 'printf must-not-execute')
+  const session = second.agents[0]!.id
+  await vi.waitFor(() => { expect(second.ctx.jobs.get(cancelled.id, session).waitingForCapacity).toBe(true) })
+  expect(command).toHaveBeenCalledOnce()
+  expect(f.prepare).toHaveBeenCalledOnce()
+  expect(f.owner).toMatchObject({ state: { active: 1, resident: 1 } })
+  expect(launches[0]?.process.exitCode).toBeNull()
+  const cancel = await second.ctx.tools.execute({ callId: ToolCallId('cancel-active-capacity-wait'), name: 'job_kill',
+    agent: second.agents[0]!, signal: new AbortController().signal,
+    arguments: { job_id: cancelled.id, reason: 'Cancel before original execution admission' } })
+  expect(cancel.isError).toBe(false)
+  await vi.waitFor(() => { expect(second.ctx.jobs.get(cancelled.id, session).status).toBe('killed') })
+  expect(f.prepare).toHaveBeenCalledOnce()
+  expect(launches).toHaveLength(1)
+  const job = await start(second, 'queued-successor', 'printf actual-successor; exit 23')
+  expect(job.id).not.toBe(cancelled.id)
+  await vi.waitFor(() => { expect(second.ctx.jobs.get(job.id, session).waitingForCapacity).toBe(true) })
+
+  writeFileSync(join(directory, 'release'), 'fixture only')
+  await vi.waitFor(() => { expect(second.ctx.jobs.get(job.id, session).status).toBe('completed') }, { timeout: 3500 })
+  expect(second.ctx.jobs.get(job.id, session)).toMatchObject({ detail: 'exit code: 23' })
+  expect(second.ctx.jobs.get(job.id, session).waitingForCapacity).toBeUndefined()
+  expect(second.ctx.jobs.readAt(job.id, 0, session).chunks.map(value => value.text).join('')).toBe('actual-successor')
+  expect(launches.map(launch => launch.process.exitCode)).toEqual([0, 23])
+  expect(command).toHaveBeenCalledTimes(2)
+  expect(f.create).not.toHaveBeenCalled()
+  expect(f.fetch).not.toHaveBeenCalled()
+  await vi.waitFor(() => { expect(f.owner).toMatchObject({ state: { active: 0, resident: 0 } }) })
+}, 12000)
 
 it('starts python-http-v1 with the qualified workload image interpreter without requiring a Session venv', async () => {
   const f = await applicationFixture(), a = await f.account('image-python')

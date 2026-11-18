@@ -54,7 +54,7 @@ export interface CloudSkillSettingsConfig {
 }
 
 /** Explicit original browser controls supplied by the cloud deployment; selection grants no server capability. */
-export type CloudNativeSessionControl = 'commands' | 'models' | 'permissions' | 'goals' | 'plan' | 'feedback' | 'export' | 'attachments'
+export type CloudNativeSessionControl = 'commands' | 'models' | 'permissions' | 'goals' | 'plan' | 'feedback' | 'export' | 'attachments' | 'jobs'
 
 /** Explicit native management page groups; selection grants no account authority. */
 export type CloudNativeManagement = 'plugins' | 'presets' | 'automations'

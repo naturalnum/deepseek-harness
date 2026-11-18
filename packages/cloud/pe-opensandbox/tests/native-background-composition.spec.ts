@@ -14,12 +14,39 @@ import type { JobOutcome } from '@deepseek-ai/dsh-jobs'
 import * as ToolJobs from '@deepseek-ai/dsh-tool-jobs'
 import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
 import { expect, it, onTestFinished, vi } from 'vitest'
-import { NativeCommandAccount, type NativeCommandRoot } from '../src/native-command-account.ts'
+import { NativeCommandAccount, type NativeCommandReservation, type NativeCommandRoot } from '../src/native-command-account.ts'
+import { CommandWaitQueue, waitForOwnedCommand } from '../src/command-wait-queue.ts'
 import { CloudShellExecutor } from '../src/native-providers.ts'
 import { CloudShellEnvRegistry } from '../src/native-shell-env.ts'
 import type { CommandChannel, CommandSnapshot } from '../src/command-operation.ts'
 
-async function fixture() {
+interface SimulatedRootSlot {
+  readonly queue: CommandWaitQueue<NativeCommandReservation>
+  reserve(capacity: { active: number; resident: number }): NativeCommandReservation | undefined
+}
+
+function sharedSlots(maxActive: number): SimulatedRootSlot & { readonly active: number } {
+  const queue = new CommandWaitQueue<NativeCommandReservation>({ maxWaiting: 5, maxWaitingPerAccount: 1, maxRecords: 10, timeoutMs: 5000 })
+  let active = 0
+  return { queue, get active() { return active }, reserve(capacity) {
+    if (active >= maxActive) return undefined
+    active++; capacity.active++; capacity.resident++
+    let holdsActive = true, holdsResident = true
+    return {
+      releaseActive() {
+        if (!holdsActive) return
+        holdsActive = false; capacity.active--; active--
+        queueMicrotask(() => { queue.capacityReleased() })
+      },
+      releaseResident() {
+        if (!holdsResident) return
+        holdsResident = false; capacity.resident--
+      },
+    }
+  } }
+}
+
+async function fixture(suffix = '', slots?: SimulatedRootSlot) {
   const ctx = new Context(), generation = new AbortController()
   const owner: { commands?: NativeCommandAccount } = {}
   onTestFinished(async () => {
@@ -27,17 +54,17 @@ async function fixture() {
     finally { vi.restoreAllMocks() }
   })
   const binding = installAccountBinding(ctx, {
-    accountId: brandString<AccountBinding['accountId']>('native-background-account'),
+    accountId: brandString<AccountBinding['accountId']>('native-background-account' + suffix),
     epoch: brandString<AccountBinding['epoch']>('1'), recipeVersion: 'scripted-native-composition', lifetime: generation.signal,
   })
   await mountAgentLoopTestDependencies(ctx, { tools: { mode: 'native' } })
   provideWorkingDirectoryFixture(ctx, '/project')
   const harness = await mountAgentLoopTestHarness(ctx)
-  const agent = await harness.create(SessionId('native-background-agent'), {}, { cwd: '/project' })
+  const agent = await harness.create(SessionId('native-background-agent' + suffix), {}, { cwd: '/project' })
   await ctx.plugin(LocalJobRegistry, { pumpPollMs: 5 })
   await ctx.plugin(ToolJobs, { completionDelivery: 'quiet' })
   const workspace: Workspace = {
-    id: brandString<Workspace['id']>('native-background-workspace'), path: '/project', sessionIds: [agent.id],
+    id: brandString<Workspace['id']>('native-background-workspace' + suffix), path: '/project', sessionIds: [agent.id],
     title: 'scripted Workspace', createdAt: '2026-10-20T00:00:00Z', updatedAt: '2026-10-20T00:00:00Z',
     setTitle: () => Promise.reject(new Error('No Workspace I/O in this composition.')),
     attachSession: () => Promise.reject(new Error('No Workspace I/O in this composition.')),
@@ -47,13 +74,13 @@ async function fixture() {
   const empty = { bytes: Buffer.alloc(0), observedBytes: 0, eof: false }
   const initial: CommandSnapshot = { prepared: true, submitted: false, commitClosed: false, rangeEmpty: false,
     ioClosed: false, physicalStopRequired: false, providerFailure: false, direct: undefined, stdout: empty, stderr: empty }
-  const state = { output: '', terminal: false, cancelled: false, runDeadline: false }
+  const state = { output: '', terminal: false, directOnly: false, cancelled: false, runDeadline: false }
   const snapshot = (): CommandSnapshot => ({ ...initial, submitted: true, commitClosed: state.terminal,
     rangeEmpty: state.terminal, ioClosed: state.terminal,
     ...state.runDeadline ? { stopCause: 'run-deadline' as const } : {},
-    direct: state.terminal && !state.runDeadline ? { exitCode: state.cancelled ? null : 0, signal: state.cancelled ? 'SIGTERM' : null } : undefined,
-    stdout: { bytes: Buffer.from(state.output), observedBytes: Buffer.byteLength(state.output), eof: state.terminal },
-    stderr: { ...empty, eof: state.terminal } })
+    direct: (state.terminal || state.directOnly) && !state.runDeadline ? { exitCode: state.cancelled ? null : 0, signal: state.cancelled ? 'SIGTERM' : null } : undefined,
+    stdout: { bytes: Buffer.from(state.output), observedBytes: Buffer.byteLength(state.output), eof: state.terminal || state.directOnly },
+    stderr: { ...empty, eof: state.terminal || state.directOnly } })
   const channel = {
     prepare: vi.fn<CommandChannel['prepare']>(() => Promise.resolve(initial)),
     commit: vi.fn<CommandChannel['commit']>(() => Promise.resolve(snapshot())),
@@ -65,9 +92,20 @@ async function fixture() {
     acquire: vi.fn<NativeCommandRoot['acquire']>(() => Promise.resolve(channel)),
     unknown: vi.fn<NativeCommandRoot['unknown']>(),
     reserve: vi.fn<NativeCommandRoot['reserve']>(() => {
+      if (slots !== undefined) {
+        const held = slots.reserve(capacity)
+        if (held === undefined) throw new Error('Original active capacity unavailable')
+        return held
+      }
       capacity.active++; capacity.resident++
       return { releaseActive() { capacity.active-- }, releaseResident() { capacity.resident-- } }
     }), close: vi.fn(() => Promise.resolve()),
+    ...(slots === undefined ? {} : { waitForCommand: ((_scope, _spec, job, signal) =>
+      waitForOwnedCommand(slots.queue, job, signal, () => {
+        const held = slots.reserve(capacity)
+        return held === undefined ? { kind: 'busy' } : { kind: 'reserved', start: () => held,
+          releaseUnstarted: () => { held.releaseActive(); held.releaseResident() } }
+      })) satisfies NonNullable<NativeCommandRoot['waitForCommand']> }),
   } satisfies NativeCommandRoot
   const commands = new NativeCommandAccount(ctx, binding, {
     assertBusinessCurrent() { generation.signal.throwIfAborted() }, getAgent: id => ctx.agents.get(id),
@@ -108,16 +146,77 @@ async function fixture() {
   const call = (name: string, args: Record<string, unknown>) => ctx.tools.execute({
     callId: ToolCallId(`native-background-${++sequence}`), name, arguments: args, agent, signal: new AbortController().signal,
   })
-  const start = async () => {
+  const start = async (waitForCommit = true) => {
+    const previous = new Set(ctx.jobs.list(agent.id).map(job => job.id))
     const result = await call('bash', { command: 'printf native-background', description: 'Scripted external execution', run_in_background: true })
     expect(result.isError).toBe(false)
-    const job = ctx.jobs.list(agent.id)[0]
+    const job = ctx.jobs.list(agent.id).find(job => !previous.has(job.id))
     if (job === undefined) throw new Error('Native Bash did not register its job.')
-    await vi.waitFor(() => { expect(channel.commit).toHaveBeenCalledTimes(1) })
+    if (waitForCommit) await vi.waitFor(() => { expect(channel.commit).toHaveBeenCalledTimes(1) })
     return job
   }
   return { ctx, agent, harness, binding, producer, commands, root, capacity, state, channel, call, start }
 }
+
+
+it('lets the fifth ordinary account wait, cancel by its original JobId, and start a replacement after real slot release', async () => {
+  const slots = sharedSlots(4)
+  onTestFinished(() => { slots.queue.close() })
+  const holders: Awaited<ReturnType<typeof fixture>>[] = []
+  for (const suffix of ['-A', '-B', '-C', '-D']) {
+    const next = await fixture(suffix, slots)
+    await next.start()
+    holders.push(next)
+  }
+  const fifth = await fixture('-E', slots)
+  const first = await fifth.start(false)
+  await vi.waitFor(() => { expect(fifth.ctx.jobs.get(first.id, fifth.agent.id).waitingForCapacity).toBe(true) })
+  expect(slots.active).toBe(4)
+  expect(fifth.channel.prepare).not.toHaveBeenCalled()
+  expect(fifth.channel.commit).not.toHaveBeenCalled()
+  expect(fifth.capacity).toEqual({ active: 0, resident: 0 })
+  expect(() => fifth.ctx.jobs.get(first.id, holders[0]!.agent.id)).toThrow()
+  expect(() => fifth.ctx.jobs.kill(first.id, holders[0]!.agent.id)).toThrow()
+  const shown = await fifth.call('job_output', { job_id: first.id })
+  expect(shown.content).toContainEqual({ type: 'text', text: expect.stringContaining('[status: waiting]') })
+
+  const cancelled = await fifth.call('job_kill', { job_id: first.id, reason: 'cancel the original wait' })
+  expect(cancelled.isError).toBe(false)
+  await vi.waitFor(() => { expect(fifth.ctx.jobs.get(first.id, fifth.agent.id).status).toBe('killed') })
+  expect(fifth.ctx.jobs.get(first.id, fifth.agent.id).waitingForCapacity).toBeUndefined()
+  expect(fifth.channel.prepare).not.toHaveBeenCalled()
+  expect(fifth.channel.commit).not.toHaveBeenCalled()
+
+  const replacement = await fifth.start(false)
+  expect(replacement.id).not.toBe(first.id)
+  await vi.waitFor(() => { expect(fifth.ctx.jobs.get(replacement.id, fifth.agent.id).waitingForCapacity).toBe(true) })
+  const released = holders[0]!
+  released.state.directOnly = true
+  await vi.waitFor(() => { expect(released.channel.poll).toHaveBeenCalled() })
+  expect(released.capacity.active).toBe(1)
+  expect(fifth.channel.commit).not.toHaveBeenCalled()
+  released.state.terminal = true
+  await vi.waitFor(() => { expect(fifth.channel.commit).toHaveBeenCalledOnce() })
+  expect(slots.active).toBe(4)
+  expect(fifth.ctx.jobs.get(replacement.id, fifth.agent.id).waitingForCapacity).toBeUndefined()
+  expect(fifth.capacity.active).toBe(1)
+  fifth.state.terminal = true
+  for (const holder of holders) holder.state.terminal = true
+  await vi.waitFor(() => { expect(fifth.ctx.jobs.get(replacement.id, fifth.agent.id).status).toBe('completed') })
+  expect(fifth.channel.prepare).toHaveBeenCalledOnce()
+  expect(fifth.root.unknown).not.toHaveBeenCalled()
+})
+
+it('keeps a hard admission refusal out of the live wait projection', async () => {
+  const slots = sharedSlots(1)
+  vi.spyOn(slots, 'reserve').mockImplementation(() => { throw new Error('permanent resident cap refusal') })
+  const f = await fixture('-hard-refusal', slots)
+  const job = await f.start(false)
+  await vi.waitFor(() => { expect(f.ctx.jobs.get(job.id, f.agent.id).status).toBe('failed') })
+  expect(f.ctx.jobs.get(job.id, f.agent.id)).toMatchObject({ detail: 'permanent resident cap refusal' })
+  expect(f.ctx.jobs.get(job.id, f.agent.id).waitingForCapacity).toBeUndefined()
+  expect(f.channel.prepare).not.toHaveBeenCalled()
+})
 
 it('releases a joined background deadline without reporting Root unknown and admits the next Native Bash', async () => {
   const f = await fixture()

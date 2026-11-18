@@ -42,6 +42,8 @@ import { createNativePermissions, type NativePermissions } from './native-permis
 import { createNativePresets, type NativePresets, type NativePresetGuards } from './native-presets.ts'
 import { createNativePluginInventory, type NativePluginInventory } from './native-plugin-inventory.ts'
 import { createNativeUserQuestions, type NativeUserQuestions } from './native-user-questions.ts'
+import { createNativeJobs, type NativeJobs } from './native-jobs.ts'
+import { selectJobController } from './job-endpoints.ts'
 import { createNativeSchedule, type NativeSchedule } from './native-schedule.ts'
 import { createNativeSessionFeedback, createNativeMessageFeedback, createNativeFeedbackIdentity } from './native-feedback.ts'
 import { AccountPluginControl, type CloudPluginPreparation } from './plugin-control.ts'
@@ -148,6 +150,7 @@ export class CloudAccountApi extends Service {
   private readonly presets: { native?: NativePresets } = {}
   private readonly pluginInventory: { native?: NativePluginInventory } = {}
   private readonly questions: { native?: NativeUserQuestions } = {}
+  private readonly jobs: { native?: NativeJobs } = {}
   private readonly schedule: { native?: NativeSchedule } = {}
   private readonly sessionFeedback: { native?: ReturnType<typeof createNativeSessionFeedback> } = {}
   private readonly messageFeedback: { native?: ReturnType<typeof createNativeMessageFeedback> } = {}
@@ -299,6 +302,7 @@ export class CloudAccountApi extends Service {
     const commands = this.commands.native?.inspect()
     const goals = this.goals.native?.inspect()
     const permissions = this.permissions.native?.inspect(), questions = this.questions.native?.inspect()
+    const jobs = this.jobs.native?.inspect()
     const pluginInventory = this.pluginInventory.native?.inspect()
     const presets = this.presets.native?.inspect()
     const schedule = this.schedule.native?.inspect()
@@ -312,12 +316,12 @@ export class CloudAccountApi extends Service {
         ...skills?.rpcEndpoints ?? [], ...plugins?.rpcEndpoints ?? [], ...remoteServers?.rpcEndpoints ?? [],
         ...commands?.rpcEndpoints ?? [], ...goals?.rpcEndpoints ?? [], ...permissions?.rpcEndpoints ?? [],
         ...pluginInventory?.rpcEndpoints ?? [], ...presets?.rpcEndpoints ?? [],
-        ...questions?.rpcEndpoints ?? [], ...schedule?.rpcEndpoints ?? [],
+        ...questions?.rpcEndpoints ?? [], ...jobs?.rpcEndpoints ?? [], ...schedule?.rpcEndpoints ?? [],
         ...sessionFeedback?.rpcEndpoints ?? [], ...messageFeedback?.rpcEndpoints ?? [], ...capabilities.rpcEndpoints,
         ...events?.resultEndpoint === undefined ? [] : [{ endpoint: events.resultEndpoint, handlerId: 'native:typertGateway',
           guard: 'authenticated-account' as const }]],
       streamEndpoints: [...sessionInventory.streamEndpoints, ...firstScreen?.streamEndpoints ?? [], ...questions?.streamEndpoints ?? [],
-        ...files?.streamEndpoints ?? [], ...capabilities.streamEndpoints, ...events === undefined ? [] : [{ endpoint: events.endpoint, handlerId: 'native:typertGateway',
+        ...jobs?.streamEndpoints ?? [], ...files?.streamEndpoints ?? [], ...capabilities.streamEndpoints, ...events === undefined ? [] : [{ endpoint: events.endpoint, handlerId: 'native:typertGateway',
           guard: 'authenticated-account' as const }]],
       exactFetchRoutes: [...fetch.native, ...fetch.root],
     }
@@ -431,6 +435,7 @@ export class CloudAccountApi extends Service {
   requireRpc(endpoint: string): EndpointExposure {
     this.admit()
     const row = this.installation.exposure.requireRpc(endpoint)
+    if (endpoint === 'job/kill') this.assertJobsCurrent()
     this.capabilityInventories.assertEndpoint(this.ctx, row, 'rpc')
     if (endpoint === '$events/result' && this.firstScreen.events?.inspect().resultEndpoint !== endpoint) this.nativeUnavailable()
     if (endpoint.startsWith('commands/')) {
@@ -532,6 +537,7 @@ export class CloudAccountApi extends Service {
   requireStream(endpoint: string): EndpointExposure {
     this.admit()
     const row = this.installation.exposure.requireStream(endpoint)
+    if (endpoint === 'job/list' || endpoint === 'job/follow') this.assertJobsCurrent()
     this.capabilityInventories.assertEndpoint(this.ctx, row, 'stream')
     if (endpoint === 'userQuestions/attachWait') {
       if (this.questions.native === undefined) this.nativeUnavailable()
@@ -1005,6 +1011,21 @@ export class CloudAccountApi extends Service {
     return native.value
   }
 
+  /** Load the original Job Controller under exact Session and Project admission. */
+  createJobs(owner: Context, config: Parameters<typeof createNativeJobs>[5]): NativeJobs['value'] {
+    this.assertInstalled(owner)
+    if (this.jobs.native !== undefined || this.maxNativeInventoryEntries === undefined) this.duplicateNative()
+    const native = createNativeJobs(owner, this.binding, this.installation.exposure,
+      session => this.sessionProject(session), this.maxNativeInventoryEntries, config)
+    this.jobs.native = native
+    return native.value
+  }
+
+  private assertJobsCurrent(): void {
+    if (this.jobs.native === undefined) this.nativeUnavailable()
+    this.jobs.native.inspect()
+  }
+
   /** Install the original Schedule service under this account's Session admission.
    * @param owner Actual account Loader entry.
    * @param guards Shared native Session/project admission.
@@ -1292,6 +1313,7 @@ export class CloudAccountApi extends Service {
     this.presets.native?.inspect()
     this.pluginInventory.native?.inspect()
     this.questions.native?.inspect()
+    if (selectJobController(exposure.manifest)) this.assertJobsCurrent()
     this.schedule.native?.inspect()
     this.sessionFeedback.native?.inspect()
     this.messageFeedback.native?.inspect()

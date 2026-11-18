@@ -203,6 +203,8 @@ An explicit approved Settings field policy requires `native.firstScreen` and the
 
 Remote-server activation requires the approved catalog's `remoteServers` policy, the audited `cloudRemoteServers/action` endpoint, an account recipe entry using `cordis:pe-cloud-remote-servers`, and the original managed execution opt-in. Runtime prepares the original files, saves, approval and Session guards before publishing the account; a missing entry fails the existing inventory audit. Remote execution requires both the original composed preset and its committed Session selection to be `standard`; a header alone cannot authorize it. The original account/project admission and this Standard check run again after approval and credential waits.
 
+To enable the native background job controls, select `job/kill` as an RPC and `job/list` and `job/follow` as streams in the protected exposure manifest. All three use `handlerId: native:jobController` and `guard: account-session`. Add one `cordis:pe-cloud-jobs` entry to the sealed account recipe alongside its native jobs registry. Ordinary profiles omit these entries. The controller uses the original Session and its current registered Project, and omits unowned jobs from the account roster and observations. Account, Peer and controller withdrawal close pending observations.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

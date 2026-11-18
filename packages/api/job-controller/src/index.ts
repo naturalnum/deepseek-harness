@@ -51,6 +51,9 @@ export class JobController extends TypertRemoteService {
   private readonly observeFlushMs: number
   private readonly observeMaxFrameBytes: number
 
+  /** Whether the native roster includes account-independent jobs visible to every local session. */
+  protected readonly includeUnownedJobs: boolean = true
+
   /**
    * @param ctx - Host context carrying the live Agent registry and the job registry.
    * @param config - observation cadence and framing policy.
@@ -74,7 +77,9 @@ export class JobController extends TypertRemoteService {
    */
   @Remote({ mode: 'stream' })
   list(request: JobListRequest, signal: AbortSignal): AsyncIterable<JobListFrame> {
-    return streamJobRows(this.ctx.jobs, request, { flushMs: this.observeFlushMs }, signal)
+    return streamJobRows(this.ctx.jobs, request, {
+      flushMs: this.observeFlushMs, includeUnowned: this.includeUnownedJobs,
+    }, signal)
   }
 
   /**

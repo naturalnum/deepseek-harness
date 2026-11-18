@@ -18,6 +18,7 @@ import * as Spawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import * as Fork from '@deepseek-ai/dsh-subagent-fork-in-process'
 import type { SubagentCapacityReservation } from '../src/types.ts'
 import UserQuestions from '@deepseek-ai/dsh-user-questions'
+import LocalJobs from '@deepseek-ai/dsh-jobs-local'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import AgentPreset from '@deepseek-ai/dsh-agent-preset'
 import AgentPresets, { type PresetDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
@@ -43,7 +44,7 @@ import Tools from '@deepseek-ai/dsh-tools'
 import Typert from '@deepseek-ai/dsh-typert-registry'
 import FsLocal from '@deepseek-ai/dsh-fs-local'
 import LlmRuntime, { LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
-import { CloudAccountApi, ConfigSaveCoordinator, ExposureService, type ConfigSaveBarrier, type EndpointExposure,
+import { CloudAccountApi, ConfigSaveCoordinator, ExposureService, selectJobController, type ConfigSaveBarrier, type EndpointExposure,
   type ExactFetchExposure, type ApprovedConfigurationCatalog, type ModelKeyPeerConsumer } from '@deepseek-ai/dsh-pe-cloud-api'
 import { CloudAccountFiles, type AccountFilesPreparation } from '@deepseek-ai/dsh-pe-cloud-files'
 import * as FilesAccount from '@deepseek-ai/dsh-pe-cloud-files/account'
@@ -52,7 +53,7 @@ import { onTestFinished, vi } from 'vitest'
 import { accountPresetConfigDigest, createAccountPolicy, type AccountPolicyConfig } from '../src/account-policy.ts'
 import { AccountPolicyConfigSchema } from '../src/schema.ts'
 import type { OfficeProfileSelection } from '../src/office-profile.ts'
-import { ACCOUNT_NATIVE_ENTRIES } from '../src/account-native-integration.ts'
+import { ACCOUNT_NATIVE_ENTRIES, accountJobEntries } from '../src/account-native-integration.ts'
 import { startNativeAccountBoot } from '../src/native-boot.ts'
 import { nativeProjectDeriver } from './native-project-fixture.ts'
 import type { AccountBinding, AccountId, OwnerEpoch, AccountUse } from '../src/types.ts'
@@ -84,7 +85,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
   firstScreen?: Omit<NonNullable<Parameters<CloudAccountApi['installFirstScreenEvents']>[1]>, 'home' | 'maxInventoryEntries'>
     & { readonly maxCollectionItems: number; readonly expectedHome?: string }, accountId = 'component',
   rootFetch?: { readonly selected: readonly ExactFetchExposure[]; readonly inspectRootFetch?: () => readonly ExactFetchExposure[] },
-  bootstrapCatalog?: ApprovedConfigurationCatalog, settingsManifest?: Parameters<Typert['register']>[0],
+  bootstrapCatalog?: ApprovedConfigurationCatalog, hostManifest?: Parameters<Typert['register']>[0],
   reserveChild?: (binding: AccountBinding, depth: number) => SubagentCapacityReservation,
   presetChildFiber?: 'active' | 'pending', extraStreams: readonly EndpointExposure[] = [],
   preserveProfile = false, initialLoopLimit?: number,
@@ -173,6 +174,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
   const exposureOwner = new ExposureService(shared,
     bootstrapCatalog === undefined ? manifest : { ...manifest, approvedConfiguration: bootstrapCatalog })
   const exposure = exposureOwner.policy
+  const jobsSelected = selectJobController(exposure.manifest)
   const graphs: { close(): Promise<void> }[] = []
   let retainedFailure = false
   onTestFinished(async () => {
@@ -208,10 +210,10 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
     const requireApi = () => { if (api === undefined) throw new Error('Component API absent'); return api }
     const dependencies = { async apply(owner: Context) {
       await owner.plugin(Typert)
-      if (settingsManifest !== undefined) {
+      if (hostManifest !== undefined) {
         const registry = owner.get('typert')
         if (registry === undefined) throw new Error('Native fixture Typert registry absent')
-        registry.register(settingsManifest)
+        registry.register(hostManifest)
       }
       await owner.plugin(RemoteAccess); await owner.plugin(Gateway)
       await owner.plugin(Sessions); await owner.plugin(Projections)
@@ -282,6 +284,10 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
       { id: 'controller', name: 'cordis:m8z-controller', config: { nativeOpen: false } },
       ...[...extraRpc, ...extraStreams].some(row => row.endpoint.startsWith('userQuestions/')) ? [
         { id: 'user-questions', name: 'cordis:' + ACCOUNT_NATIVE_ENTRIES.userQuestions },
+      ] : [],
+      ...jobsSelected ? [
+        { id: 'jobs-registry', name: 'cordis:m8z-local-jobs' },
+        { id: 'job-controller', name: 'cordis:' + ACCOUNT_NATIVE_ENTRIES.jobs, config: { observeFlushMs: 1 } },
       ] : [],
       ...firstScreen === undefined ? [] : [
         { id: 'settings', name: 'cordis:m8ax-settings' }, { id: 'locale', name: bootstrapCatalog === undefined ? 'cordis:m8ax-locale' : '@deepseek-ai/dsh-client-locale', config: { preference: 'en' } },
@@ -418,6 +424,8 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
           'm8z-credentials': api.providers.credentials, 'm8z-jsonl': Jsonl, 'm8z-title': SessionTitle, 'm8z-files': FilesAccount,
           'm8z-llm': llm, 'm8z-working-directory': WorkingDirectory, 'm8z-presets': presetRegistry, 'm8z-preset': AgentPreset,
           'm8z-persona': persona, 'm8z-model': DefaultModel, 'm8z-query': ExactQuery,
+          ...jobsSelected ? { 'm8z-local-jobs': LocalJobs } : {},
+          ...accountJobEntries(api, manifest),
           [ACCOUNT_NATIVE_ENTRIES.agentLoop]: loop, 'm8z-controller': controller,
           [ACCOUNT_NATIVE_ENTRIES.userQuestions]: { inject: ['peCloudApi', 'agents', 'sessionProjections'], Config: UserQuestions.Config,
             apply(owner: Context) {
@@ -469,7 +477,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
         && (marker.mode ?? 'rpc') === 'rpc')), streamEndpoints: manifest.streamEndpoints.filter(row =>
       remoteMethods(outcome.context.sessionController).some(marker => `${outcome.context.sessionController.typertRemote.namespace}/${marker.exportName ?? marker.method}` === row.endpoint
         && marker.mode === 'stream')), exactFetchRoutes: [] }
-    if (firstScreen === undefined && rootFetch === undefined) api.audit(inventory)
+    if (firstScreen === undefined && rootFetch === undefined && !jobsSelected) api.audit(inventory)
     else {
       if (firstScreen !== undefined) {
         if (eventOwner === undefined) throw new Error('Actual event registration Loader entry absent')

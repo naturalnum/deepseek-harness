@@ -84,6 +84,7 @@ interface TrackedJob {
   owner: Agent | undefined
   cancel: (reason?: string) => void
   status: JobStatus
+  waitingForCapacity?: true
   ring: OutputRing
   /** The model's consuming cursor; {@link JobRegistry.readAt} never moves it. */
   modelCursor: number
@@ -333,6 +334,14 @@ export class LocalJobRegistry extends JobRegistry {
     return this.killJob(this.expect(id, caller), reason)
   }
 
+  override markCapacityWaiting(id: JobId, waiting: boolean, caller: SessionId): void {
+    const job = this.expect(id, caller)
+    if (job.owner?.id !== caller || job.status !== 'running' || (job.waitingForCapacity === true) === waiting) return
+    if (waiting) job.waitingForCapacity = true
+    else delete job.waitingForCapacity
+    this.emit({ type: 'progress', job: this.view(job) }, job.owner)
+  }
+
   async wait(id: JobId, timeoutMs: number, caller?: SessionId, signal?: AbortSignal): Promise<JobView> {
     return this.waitJob(this.expect(id, caller), timeoutMs, signal)
   }
@@ -424,6 +433,7 @@ export class LocalJobRegistry extends JobRegistry {
       ...owner !== undefined ? { owner } : {},
       ...job.outputLimitBytes !== undefined ? { outputLimitBytes: job.outputLimitBytes } : {},
       status: job.status,
+      ...job.status === 'running' && job.waitingForCapacity === true ? { waitingForCapacity: true as const } : {},
       ...job.state.progress !== undefined ? { progress: job.state.progress } : {},
       ...job.detail !== undefined ? { detail: job.detail } : {},
       startedAt: job.startedAt,

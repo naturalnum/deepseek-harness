@@ -29,6 +29,7 @@ const NATIVE_SESSION_CLIENT_PACKAGES: Readonly<Record<CloudNativeSessionControl,
   feedback: ['@deepseek-ai/dsh-client-ui-message-feedback'],
   export: ['@deepseek-ai/dsh-session-log-export'],
   attachments: ['@deepseek-ai/dsh-client-ui-attachment', '@deepseek-ai/dsh-client-ui-trajectory', '@deepseek-ai/dsh-client-ui-tool'],
+  jobs: ['@deepseek-ai/dsh-api-job-controller', '@deepseek-ai/dsh-client-ui-jobs'],
 }
 
 const NATIVE_MANAGEMENT_CLIENT_PACKAGES: Readonly<Record<CloudNativeManagement, readonly string[]>> = {

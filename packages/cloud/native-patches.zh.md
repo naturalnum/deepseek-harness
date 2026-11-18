@@ -80,6 +80,8 @@ Gateway `inspectInvocation` 将既有严格/SRC 解析器作为只读 Host 检�
 
 独立账号插件通过 Runtime 原有的 `projectForSession` 回调复用 `CloudAccountApi.sessionProject(actualSession)`；缺少回调或当前业务准入时拒绝访问。该 Host 方法不创建 Session、Agent 或执行权限。
 
+原生 Job Controller 支持从列表和触发列表刷新的生命周期事件中排除无归属作业。原生默认包含无归属作业。Cloud 选择限定归属的列表，并在通过原 Session 和 Project 校验后复用原生输出迭代器和取消操作。
+
 原生 SubprocessHandle 增加可选 `releaseCollected()`；Cloud 收集输出句柄将其转交给原有 ManagedCommandOperation.release()。消费者先复制输出。原有执行范围和 I/O 结算继续持有容量及未知清理责任，使同一原生科研工具可顺序执行工作流或 Git 命令，而无需将全部已结束输出保留到最终投影。
 
 原生 `SubprocessOutputLimitError` 通过流名、实际字节上限和原始 cause 标识提供方输出拒绝。Cloud 仅在公开的 `SubprocessHandle.done` 上投影其明确的收集输出观察字节拒绝；原内部失败、停止、执行范围/I/O 终结和未知责任均不变。原生搜索将这一共享错误映射到已有的 `SEARCH_RAW_OUTPUT_OVERFLOW` 及缩小查询提示，不导入 Cloud 错误。原生提供方保留既有输出与清理行为；不改变任何预算、reader 或恢复机制。

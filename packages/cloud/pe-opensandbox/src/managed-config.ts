@@ -15,6 +15,7 @@ const INTEGER_MAX = 2147483647
 const rootKeys = ['maxBoundAccounts', 'maxActiveCommands', 'maxActiveCommandsPerAccount', 'maxResidentCommands',
   'maxResidentCommandsPerAccount', 'maxResidentBytes', 'maxResidentBytesPerAccount', 'maxStopObservers',
   'stopWaitBudgetMs', 'recoveryPageSize', 'allocations', 'store', 'commands', 'shell'] as const
+const commandWaitingKeys = ['maxWaiting', 'maxWaitingPerAccount', 'maxRecords', 'timeoutMs'] as const
 const allocationKeys = ['environmentVersion', 'provider', 'createBudgetMs', 'maxAllocations', 'maxAllocationsPerAccount',
   'maxWaiters', 'maxWaitersPerAllocation'] as const
 const storeKeys = ['maxFieldBytes', 'maxInputBytes', 'maxRowBytes', 'maxResultBytes', 'maxRows', 'maxCapabilities',
@@ -241,9 +242,21 @@ function shellLimits(value: unknown, commands: CommandOperationLimits): NativeEx
  * The 64KiB observation threshold is a stop trigger, not an exact emitted-output cap or a full S4 qualification.
  */
 export function parseManagedCoordinatorConfig(value: unknown): ManagedCoordinatorConfig {
-  const row = object(value, rootKeys, 'configuration')
+  const hasCommandWaiting = value !== null && typeof value === 'object' && Object.hasOwn(value, 'commandWaiting')
+  const row = object(value, [...rootKeys, ...(hasCommandWaiting ? ['commandWaiting'] : [])], 'configuration')
   const store = storeLimits(row['store']), allocations = allocationLimits(row['allocations'], store)
   const commands = commandLimits(row['commands']), shell = shellLimits(row['shell'], commands.commandLimits)
+  const waiting = hasCommandWaiting ? object(row['commandWaiting'], commandWaitingKeys, 'commandWaiting') : undefined
+  const commandWaiting = waiting === undefined ? undefined : Object.freeze({
+    maxWaiting: integer(waiting, 'maxWaiting', 'commandWaiting'),
+    maxWaitingPerAccount: integer(waiting, 'maxWaitingPerAccount', 'commandWaiting'),
+    maxRecords: integer(waiting, 'maxRecords', 'commandWaiting'),
+    timeoutMs: integer(waiting, 'timeoutMs', 'commandWaiting'),
+  })
+  if (commandWaiting !== undefined) {
+    requireLimit(commandWaiting.maxWaitingPerAccount <= commandWaiting.maxWaiting, 'commandWaiting.maxWaitingPerAccount')
+    requireLimit(commandWaiting.maxWaiting <= commandWaiting.maxRecords, 'commandWaiting.maxRecords')
+  }
   if (commands.pipes !== undefined) {
     requireLimit(shell.enforceSessionFilePolicy === true, 'shell.enforceSessionFilePolicy')
     requireLimit(commands.maxScopes >= 2, 'commands.maxScopes')
@@ -257,7 +270,8 @@ export function parseManagedCoordinatorConfig(value: unknown): ManagedCoordinato
     maxResidentBytes: integer(row, 'maxResidentBytes', 'configuration'),
     maxResidentBytesPerAccount: integer(row, 'maxResidentBytesPerAccount', 'configuration'),
     maxStopObservers: integer(row, 'maxStopObservers', 'configuration'), stopWaitBudgetMs: integer(row, 'stopWaitBudgetMs', 'configuration'),
-    recoveryPageSize: integer(row, 'recoveryPageSize', 'configuration'), allocations, store, commands, shell })
+    recoveryPageSize: integer(row, 'recoveryPageSize', 'configuration'), allocations, store, commands, shell,
+    ...commandWaiting === undefined ? {} : { commandWaiting } })
   requireLimit(config.maxActiveCommandsPerAccount <= config.maxActiveCommands, 'configuration.maxActiveCommandsPerAccount')
   requireLimit(config.maxResidentCommandsPerAccount <= config.maxResidentCommands, 'configuration.maxResidentCommandsPerAccount')
   requireLimit(config.maxResidentBytesPerAccount <= config.maxResidentBytes, 'configuration.maxResidentBytesPerAccount')

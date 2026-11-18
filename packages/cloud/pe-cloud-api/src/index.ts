@@ -38,6 +38,7 @@ export { approvedSettingsMatch, projectApprovedSettings } from './approved-setti
 export type { NativeSettingsWritePolicy } from './native-first-screen.ts'
 
 export { SESSION_CONTROLLER_ENDPOINTS } from './session-endpoints.ts'
+export { JOB_CONTROLLER_ENDPOINTS, selectJobController } from './job-endpoints.ts'
 
 export { remoteServerApproval } from './remote-server-approval.ts'
 export { CloudRemoteServerService } from './cloud-remote-servers.ts'

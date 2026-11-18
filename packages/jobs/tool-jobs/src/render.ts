@@ -13,7 +13,7 @@ export interface PublicJobSnapshot {
   id: string
   kind: string
   label: string
-  status: JobView['status']
+  status: JobView['status'] | 'waiting'
   /** The live progress line while running, the terminal reason once settled. */
   detail?: string
   startedAt: number
@@ -41,7 +41,7 @@ export function publicJob(job: JobView): PublicJobSnapshot {
     id: job.id,
     kind: job.kind,
     label: job.label,
-    status: job.status,
+    status: job.status === 'running' && job.waitingForCapacity === true ? 'waiting' : job.status,
     ...detail !== undefined ? { detail } : {},
     startedAt: job.startedAt,
     ...job.finishedAt !== undefined ? { finishedAt: job.finishedAt } : {},

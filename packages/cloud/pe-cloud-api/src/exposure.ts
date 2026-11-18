@@ -1,5 +1,6 @@
 /** Immutable exact matching and native inventory audit for C-04. */
 import { CloudApiError } from './errors.ts'
+import { selectJobController } from './job-endpoints.ts'
 import type {
   EndpointExposure, ExactFetchExposure, ExposureInventory, ExposureManifest, SettingsExposure,
 } from './types.ts'
@@ -81,6 +82,7 @@ export class ExposurePolicy {
     })
     this.rpc = unique(this.manifest.rpcEndpoints, row => row.endpoint)
     this.streams = unique(this.manifest.streamEndpoints, row => row.endpoint)
+    selectJobController(this.manifest)
     for (const name of this.rpc.keys()) {
       if (this.streams.has(name)) invalid('An endpoint cannot be both unary and streaming.')
     }

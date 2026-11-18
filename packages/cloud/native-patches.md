@@ -81,6 +81,8 @@ The native attachment staging provider exposes a phase-scoped storage-capacity e
 
 Independent account plugins reuse `CloudAccountApi.sessionProject(actualSession)` through Runtime's original `projectForSession` callback; missing callback or current business admission rejects access. This Host-only method creates no Session, Agent or execution authority.
 
+The native Job Controller can omit unowned jobs from its roster and its lifecycle wakeups. Native defaults include unowned jobs. Cloud selects the restricted roster and uses the same native output iterator and cancellation operation after the original Session and Project checks.
+
 The native SubprocessHandle has optional `releaseCollected()`; Cloud collected handles delegate it to their original ManagedCommandOperation.release(). The consumer copies output first. Original range/I/O settlement retains reservations and unknown cleanup, so a single native research tool can run sequential workflow/Git commands without retaining every completed output until final projection.
 
 Native `SubprocessOutputLimitError` identifies a provider output refusal with its stream, enforced byte limit and original cause. Cloud projects only its exact collected observed-byte refusal on public `SubprocessHandle.done`; original internal failure, stop, range/I/O settlement and unknown responsibility remain unchanged. Native search maps this shared error to its existing `SEARCH_RAW_OUTPUT_OVERFLOW` and narrowing hint, without importing Cloud errors. Native providers retain their existing output and cleanup behavior; no budget, reader or recovery mechanism changes.

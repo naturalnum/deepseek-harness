@@ -26,6 +26,16 @@ it('keeps Session file-policy enforcement explicit and preserves the legacy omis
   }
 })
 
+it('selects bounded background command waiting only from explicit Root configuration', () => {
+  const raw = input(), commandWaiting = { maxWaiting: 5, maxWaitingPerAccount: 1, maxRecords: 12, timeoutMs: 5000 }
+  expect(parseManagedCoordinatorConfig(raw)).not.toHaveProperty('commandWaiting')
+  expect(parseManagedCoordinatorConfig({ ...raw, commandWaiting }).commandWaiting).toEqual(commandWaiting)
+  for (const invalid of [undefined, { ...commandWaiting, maxWaitingPerAccount: 6 }, { ...commandWaiting, maxRecords: 4 },
+    { ...commandWaiting, timeoutMs: 2147483648 }, { ...commandWaiting, unknown: true }]) {
+    expect(() => parseManagedCoordinatorConfig({ ...raw, commandWaiting: invalid })).toThrow('commandWaiting')
+  }
+})
+
 it('rejects malformed or accessor Session file-policy flags without invoking code', () => {
   for (const value of [undefined, null, 'true', 1, {}, []]) {
     const raw = input()

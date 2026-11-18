@@ -24,7 +24,8 @@ import { BootstrapFailure } from './bootstrap/bootstrap.ts'
 import { LocalRefusal, ControlUncertain, RemoteRefusal } from './agent-data/errors.ts'
 import type { SdkAllocationBackend } from './sdk-lifecycle.ts'
 import type { SkillCommandBorrow, TrustedRuntimeRegistry } from './trusted-runtime.ts'
-import { NativeCommandAccount, type NativeCommandAccountLimits, type NativeCommandReservation } from './native-command-account.ts'
+import { NativeCommandAccount, type NativeCommandAccountLimits, type NativeCommandReservation, type NativeCommandRoot } from './native-command-account.ts'
+import { CommandWaitQueue, waitForOwnedCommand, type CommandWaitLimits } from './command-wait-queue.ts'
 import { CloudShellExecutor, CloudSubprocessRuntime, type NativeExecutionConfig } from './native-providers.ts'
 import { CloudSandboxProvider } from './native-sandbox.ts'
 import { CloudShellEnvRegistry } from './native-shell-env.ts'
@@ -44,6 +45,7 @@ export interface ManagedCoordinatorConfig {
   readonly maxActiveCommands: number
   /** Per-account group ceiling; each member pays separate resident counts and bytes until actual settlement. */
   readonly maxActiveCommandsPerAccount: number
+  readonly commandWaiting?: CommandWaitLimits
   readonly maxResidentCommands: number
   readonly maxResidentCommandsPerAccount: number
   readonly maxResidentBytes: number
@@ -219,6 +221,8 @@ export class ManagedCoordinator extends SandboxCoordinator {
   private readonly bindings = new WeakMap<AccountBinding, AccountWork>()
   private readonly ports = new WeakMap<AccountExecutionPort, AccountWork>()
   private readonly accounts = new Map<AccountId, AccountWork>()
+  private readonly commandWait: CommandWaitQueue<NativeCommandReservation> | undefined
+  private commandWakeScheduled = false
   private readonly observedRefusals = new WeakSet<SkillProjectRefusalError>()
   private readonly readHistory: AllocationHistoryReader
   private readonly historyReads = new Set<ReturnType<AllocationHistoryReader>>()
@@ -264,7 +268,10 @@ export class ManagedCoordinator extends SandboxCoordinator {
       || !Number.isSafeInteger(copies * 2048 + 4096) || copies * 2048 + 4096 > config.maxResidentBytesPerAccount)) {
       throw new RangeError('Working-copy metadata cannot fit the explicit original execution reservation.')
     }
+    const commandWait = config.commandWaiting === undefined ? undefined
+      : new CommandWaitQueue<NativeCommandReservation>(config.commandWaiting)
     super(ctx)
+    this.commandWait = commandWait
     runtime.registerDrainParticipant(this)
     const metadata = runtime.controlDatabase(this)
     this.resources.store = new PostgresAllocationStore(allocationDatabase(metadata), config.store)
@@ -497,6 +504,13 @@ export class ManagedCoordinator extends SandboxCoordinator {
         }),
       } }),
     }
+    const commandWait = this.commandWait
+    const waitForCommand: NativeCommandRoot['waitForCommand'] = commandWait === undefined ? undefined :
+      (scope, spec, job, signal) => waitForOwnedCommand(commandWait, job, signal, () => {
+        const held = this.tryReserve(work, scope, spec, true)
+        if (held === undefined) return { kind: 'busy' }
+        return { kind: 'reserved', start: () => held, releaseUnstarted: () => { held.releaseActive(); held.releaseResident() } }
+      })
     const commands = new NativeCommandAccount(ctx, work.binding, work.authority, commandConfig, {
       acquire: async (scope, signal, registered) => {
         registered?.assertCurrent()
@@ -581,6 +595,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
           })
       },
       reserve: (scope, spec) => this.reserve(work, scope, spec),
+      ...(waitForCommand === undefined ? {} : { waitForCommand }),
       close: () => this.stopAllocations(work),
     })
     const sandbox = configured.pipes === undefined ? undefined : new CloudSandboxProvider(ctx, commands.calls, {
@@ -731,6 +746,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
   closeRoot(): Promise<void> {
     if (this.state.closing !== undefined) return this.state.closing
     this.state.open = false; this.state.ready = false
+    this.commandWait?.close()
     this.startupWait.abort()
     const closing = Promise.withResolvers<undefined>()
     this.state.closing = closing.promise
@@ -944,6 +960,13 @@ export class ManagedCoordinator extends SandboxCoordinator {
   }
 
   private reserve(work: AccountWork, scope: ExecutionScope<Workspace>, spec: SubprocessSpawnSpec): NativeCommandReservation {
+    const held = this.tryReserve(work, scope, spec, false)
+    if (held === undefined) return this.capacity()
+    return held
+  }
+
+  private tryReserve(work: AccountWork, scope: ExecutionScope<Workspace>, spec: SubprocessSpawnSpec,
+    waitForActive: boolean): NativeCommandReservation | undefined {
     this.assertReady(); work.authority.assertBusinessCurrent()
     if (!work.open || scope.binding !== work.binding) this.stale()
     const stdinBytes = typeof spec.stdio.stdin === 'object' ? Buffer.byteLength(spec.stdio.stdin.data) : 0
@@ -958,10 +981,14 @@ export class ManagedCoordinator extends SandboxCoordinator {
     const parent = work.providers?.commands.calls.programParent(scope)
     const shared = parent === undefined ? undefined : work.activeCommands.get(parent)
     if (work.activeCommands.has(scope)) this.stale()
-    if (!Number.isSafeInteger(bytes) || bytes < 1 || shared === undefined && (this.state.active >= this.config.maxActiveCommands
-      || work.capacity.active >= this.config.maxActiveCommandsPerAccount) || this.state.resident >= this.config.maxResidentCommands
+    if (!Number.isSafeInteger(bytes) || bytes < 1 || this.state.resident >= this.config.maxResidentCommands
       || work.capacity.resident >= this.config.maxResidentCommandsPerAccount || this.state.bytes + bytes > this.config.maxResidentBytes
       || work.capacity.bytes + bytes > this.config.maxResidentBytesPerAccount) this.capacity()
+    if (shared === undefined && (this.state.active >= this.config.maxActiveCommands
+      || work.capacity.active >= this.config.maxActiveCommandsPerAccount)) {
+      if (waitForActive) return undefined
+      this.capacity()
+    }
     const group = shared ?? { members: 0 }
     if (shared === undefined) { this.state.active++; work.capacity.active++ }
     group.members++; work.activeCommands.set(scope, group)
@@ -971,11 +998,17 @@ export class ManagedCoordinator extends SandboxCoordinator {
     return Object.freeze({ releaseActive: () => {
       if (!active) return
       active = false; work.activeCommands.delete(scope)
-      if (--group.members === 0) { this.state.active--; work.capacity.active-- }
+      if (--group.members === 0) { this.state.active--; work.capacity.active--; this.wakeCommandWaiters() }
     }, releaseResident: () => {
       if (!resident) return
       resident = false; this.state.resident--; work.capacity.resident--; this.state.bytes -= bytes; work.capacity.bytes -= bytes
     } })
+  }
+
+  private wakeCommandWaiters(): void {
+    if (this.commandWait === undefined || this.commandWakeScheduled) return
+    this.commandWakeScheduled = true
+    queueMicrotask(() => { this.commandWakeScheduled = false; this.commandWait?.capacityReleased() })
   }
 
   private reserveApplication(work: AccountWork, scope: ExecutionScope<Workspace>, charge: HttpRequestCharge): { release(): void } {

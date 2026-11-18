@@ -151,6 +151,8 @@ Root 与 SDK bootstrap 共用[精确工作负载镜像列表](src/bootstrap/work
 
 私有[受管协调器](src/managed-coordinator.ts) 通过原始延迟原生授权和 files 授权连接这些拥有者，活跃进程槽与保留输出分别释放。Root 启动时先检查持久化的非终态分配，再允许就绪；关闭时等待启动、分配、传输和元数据责任实际结束。[SDK 适配器](src/sdk-lifecycle.ts) 在唯一且受验证的物理 DELETE 前关闭并等待特权启动请求。启动失败本身不表示特权启动仍未结清：有界命令流已初始化、观察到执行完成事件并结束，且原传输实际关闭时，严格输出或错误校验仍可判启动失败，但允许进入原停止链。缺少终结事实、超出观察限额或传输关闭失败时仍保留 unknown 并阻止删除；HTTP 成功本身不证明命令终结或物理停止。[受信运行时登记器](src/trusted-runtime.ts) 保留普通认证请求直到本地实际结束；只有物理删除不能释放命令容量。有界[数据传输器](src/agent-data/index.ts) 保留原始字节坐标与原操作引用。其 Loader 安装仍要求原始受保护部署；组件安装本身不代表原生网页服务执行已通过验收。 合法的前台 `error` 事件及有界流 EOF 也属于失败命令的终态，无须另有 `execution_complete`；bootstrap 以 `command-failed` 失败，但允许原 dispatcher 实际汇合。只有 stderr 或错误结构不完整时不能认定终态。私有 unknown 原因标识具体失败的协议检查，不公开命令输出。
 
+受保护的 Root 配置可通过 `commandWaiting` 允许显式后台 Bash 作业等待活跃命令名额。将 `maxWaiting`、`maxWaitingPerAccount`、`maxRecords` 和 `timeoutMs` 设为正整数。等待中的作业使用原 job ID 查询状态和取消。原活跃名额释放后，Root 准入符合条件的等待作业。原驻留限额和其他准入检查继续生效。
+
 files 准备发布前确定的 `parent-borrows` 拒绝可以退休一个原本空闲的 Session，即使计算分配数尚未达到上限。Bash 与受管 Native 技能加载通过已安装的账号 port 共用此执行拥有者。并发准备等待同一次退休；只有物理停止、元数据结清及运行时退役全部确认后，才允许重新准备 files 一次。活跃命令、开发服务、准备在途及未知结果继续持有原授权。观察者取消仍等待已经开始的实际退休。其他 files 拒绝不触发退休；账号与 Root 上限保持原值。
 
 运行时报告 `singleInstanceActive === true` 时，启动会在就绪前扫描全部保留的非终态分配。对每个原沙箱编号尝试一次 DELETE，删除未确认时再查询一次 GET。DELETE 204/404 或 GET 404 允许执行原有终态元数据转换；其他结果等到共用的 `createDeadlineAt + ttlSeconds * 1000 + 30_000` 截止时间后执行相同终态转换，不再查询。没有编号的 creating 记录同样等到该时间才调用 `failNotCreated`；启动不重放创建，也不按标签查找。单实例状态缺失或为假时，仍按原行为拒绝保留的分配记录。

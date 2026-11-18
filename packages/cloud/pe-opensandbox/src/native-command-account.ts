@@ -15,7 +15,7 @@ import type { NativeAccountExecutionAuthority } from './coordinator.ts'
 import { PreviewHttpError, type HttpRequestCharge, type PreviewHttpOwner } from './application-http.ts'
 import { ManagedCommandOperation, type CommandChannel, type CommandOperationLimits, type CommandPipeOptions } from './command-operation.ts'
 import { ExecutionStateError } from './errors.ts'
-import { NativeExecutionCalls, type RetainedNativeService } from './native-calls.ts'
+import { NativeExecutionCalls, type NativeCommandCall, type RegisteredNativeJobAdmission, type RetainedNativeService } from './native-calls.ts'
 import type { NativeExecutionProviderPort } from './native-providers.ts'
 import type { ExecutionScope } from './scopes.ts'
 import type { DevelopmentServiceId, RegisteredApplicationService, ServicePreviewIdentity } from './types.ts'
@@ -51,6 +51,8 @@ export interface NativeCommandRoot {
   acquire(scope: ExecutionScope<Workspace>, signal: AbortSignal, service?: NativeRegisteredService): Promise<CommandChannel>
   unknown(scope: ExecutionScope<Workspace>, operation: ManagedCommandOperation, cause: unknown): void
   reserve(scope: ExecutionScope<Workspace>, spec: SubprocessSpawnSpec): NativeCommandReservation
+  waitForCommand?(scope: ExecutionScope<Workspace>, spec: SubprocessSpawnSpec, job: RegisteredNativeJobAdmission,
+    signal: AbortSignal): Promise<NativeCommandReservation>
   /** Join original physical allocations and transport without waiting for the command whenEmpty latches. */
   close(): Promise<void>
 }
@@ -154,6 +156,7 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
 
   /** Original Root configuration selects mandatory policy on every command path. */
   get enforcesSessionFilePolicy(): true | undefined { return this.config.enforceSessionFilePolicy === true ? true : undefined }
+  get waitsForBackgroundShell(): true | undefined { return this.root.waitForCommand === undefined ? undefined : true }
 
   /**
    * Refuse a permission change until this Session has no unsettled original command or service.
@@ -484,7 +487,39 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
    */
   create(caller: Context, spec: SubprocessSpawnSpec, policy?: SandboxExecutionPolicy,
     terminal?: Readonly<{ rows: number; cols: number }>): ManagedCommandOperation {
-    const { scope, signal } = this.capture(caller)
+    return this.createCaptured(caller, this.capture(caller), spec, policy, terminal)
+  }
+
+  /** Wait only for the same registered background Bash job before creating any command or SDK work. */
+  async createForBackgroundShell(caller: Context, spec: SubprocessSpawnSpec,
+    policy?: SandboxExecutionPolicy): Promise<ManagedCommandOperation> {
+    const captured = this.capture(caller), scope = captured.scope
+    if (this.root.waitForCommand === undefined || scope.consumerId !== 'bash' || scope.purpose !== 'command') {
+      return this.createCaptured(caller, captured, spec, policy)
+    }
+    // The registry commits the original Bash job after its synchronous starter returns.
+    await Promise.resolve()
+    const job = this.calls.registeredJobAdmission(scope)
+    if (job === undefined) return this.create(caller, spec, policy)
+    const signal = spec.signal === undefined ? captured.signal : AbortSignal.any([captured.signal, spec.signal])
+    signal.throwIfAborted()
+    this.validateInput(scope, spec, undefined)
+    this.requireSlot(scope, 'foreground')
+    if (policy !== undefined && this.config.enforceSessionFilePolicy !== true) throw this.failure()
+    const reservation = await this.root.waitForCommand(scope, spec, job, signal)
+    try {
+      signal.throwIfAborted(); this.calls.assertCurrent(scope)
+      return this.createCaptured(caller, captured, spec, policy, undefined, reservation)
+    } catch (cause) {
+      reservation.releaseActive(); reservation.releaseResident()
+      throw cause
+    }
+  }
+
+  private createCaptured(caller: Context, captured: NativeCommandCall<Workspace>, spec: SubprocessSpawnSpec,
+    policy?: SandboxExecutionPolicy, terminal?: Readonly<{ rows: number; cols: number }>,
+    held?: NativeCommandReservation): ManagedCommandOperation {
+    const { scope, signal } = captured
     signal.throwIfAborted(); spec.signal?.throwIfAborted(); this.validateInput(scope, spec, terminal)
     if (policy !== undefined && this.config.enforceSessionFilePolicy !== true) throw this.failure()
     const filePolicy = this.config.enforceSessionFilePolicy === true
@@ -535,7 +570,7 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
         else { reservation?.releaseActive(); reservation?.releaseResident() }
       } }, pipes)
     try {
-      reservation = this.root.reserve(scope, input); this.calls.assertCurrent(scope)
+      reservation = held ?? this.root.reserve(scope, input); this.calls.assertCurrent(scope)
       record = { scope, role, operation, reservation,
         ...filePolicy === undefined ? {} : { filePolicy }, activeReleased: false, retired: false, unknownReported: false }
       this.records.set(operation, record); this.claimSlot(record); this.watchEmpty(record, operation)

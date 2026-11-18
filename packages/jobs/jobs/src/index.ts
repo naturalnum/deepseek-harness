@@ -128,6 +128,9 @@ export abstract class JobRegistry extends Service {
    */
   abstract get(id: JobId, caller?: SessionId): JobView
 
+  /** Publish a live producer's actual admission wait through the original owner and job key. */
+  markCapacityWaiting?(id: JobId, waiting: boolean, caller: SessionId): void
+
   /**
    * Consume the ring from the model cursor and advance it to the current
    * total. After settlement the first read also carries the producer's

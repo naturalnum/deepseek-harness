@@ -10,6 +10,7 @@ import type { ToolDispatchExecution, ToolExecutionToken, ToolExecutionResult } f
 import { ExecutionScopes, type ExecutionScope, type ScopeAuthority } from './scopes.ts'
 import { assertInstalledExecutionBinding } from './account-port.ts'
 import { ExecutionStateError } from './errors.ts'
+import type { CommandWaitOwner } from './command-wait-queue.ts'
 
 interface NativeCall<Project> {
   readonly token: ToolExecutionToken
@@ -28,6 +29,15 @@ interface NativeCallJob {
   readonly id: JobId
   readonly registry: JobRegistry
   readonly settled: ReturnType<typeof Promise.withResolvers<void>>
+  admission?: RegisteredNativeJobAdmission
+}
+
+/** The original issued registry job, scoped to the same native producer and Session lifetime. */
+export interface RegisteredNativeJobAdmission {
+  readonly id: JobId
+  readonly owner: CommandWaitOwner
+  readonly untilRetired: Promise<void>
+  waiting(value: boolean): void
 }
 
 /** Trusted account-native inputs; ordinary command JSON supplies none of these callbacks. */
@@ -246,6 +256,21 @@ export class NativeExecutionCalls<Project> {
   ownsJob(scope: ExecutionScope<Project>): boolean {
     for (const call of this.jobs.values()) if (call.scope === scope) return true
     return false
+  }
+
+  registeredJobAdmission(scope: ExecutionScope<Project>): RegisteredNativeJobAdmission | undefined {
+    const call = this.current.getStore(), job = call?.job
+    if (call === undefined || call.scope !== scope || job === undefined || this.jobs.get(job.id) !== call
+      || job.registry.markCapacityWaiting === undefined) return undefined
+    this.scopes.assertCurrent(scope)
+    job.admission ??= Object.freeze({ id: job.id,
+      owner: Object.freeze({ accountId: scope.binding.accountId, sessionId: scope.sessionId, lifetime: scope.lifetime,
+        assertCurrent: () => { this.scopes.assertCurrent(scope) } }),
+      untilRetired: Promise.race([job.settled.promise, call.revoked.promise]),
+      waiting: (value: boolean) => {
+        if (this.jobs.get(job.id) === call && call.job === job) job.registry.markCapacityWaiting?.(job.id, value, scope.sessionId)
+      } })
+    return job.admission
   }
 
   /** End invocation authority; only the native registry's still-live Bash job retains its output scope. */

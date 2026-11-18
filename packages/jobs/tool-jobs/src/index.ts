@@ -74,7 +74,7 @@ const PUBLIC_JOB_SCHEMA = {
     status: {
       type: 'string',
       required: true,
-      enum: ['running', 'stopping', 'completed', 'killed', 'failed'],
+      enum: ['waiting', 'running', 'stopping', 'completed', 'killed', 'failed'],
     },
     detail: { type: 'string' },
     startedAt: { type: 'integer', required: true },

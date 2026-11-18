@@ -31,7 +31,7 @@ kind: "package-reference"
 
 - `job_output(job_id, wait?, timeout_ms?)`——读取任务输出。流任务只返回自上次读取以来的输出；最终输出任务在结算后返回其结果。每个响应都以 `[status: ...]` 结尾。除非 `wait: true`，否则读取是非阻塞的；`wait: true` 最多等待到配置上限，超时时仍让运行中的任务保持存活。一次读取先渲染 stdout，再把 stderr 放进一段 `[stderr]`，标注读取前已离开内存的输出，并在结算后的第一次读取恰好携带一次任务的结果（subagent 的回答）。
 - `job_list()`——列出你的后台任务及其 id、kind 与状态，每行一个：`<id> [<kind>] <status> — <label>`。
-- `job_kill(job_id, reason?)`——立即请求取消运行中的任务；任务在其工作真正停止后以 `killed` 结算。终止任务返回其当前快照，可选的原因会被记录并转发给任务。
+- `job_kill(job_id, reason?)` 可立即请求取消等待或运行中的任务。任务退出队列或实际停止后以 `killed` 结算。终态任务返回当前快照，可选的原因会被记录并转发给任务。
 
 三个工具依次返回 `{ text, job }`、`PublicJobSnapshot[]` 与 `{ outcome: 'cancellation-requested' | 'already-finished', job }`。公共快照携带 id、kind、label、带实时进度行或终态 detail 的状态，以及开始／结束时间，并省略归属与环偏移。三个工具都通过通用 UI 卡片渲染：output 和 list 用 `read`，kill 用 `execute`。
 
@@ -60,7 +60,7 @@ kind: "package-reference"
 
 ### 可能出什么问题
 
-组合中未加载 `tool-jobs` 的 agent 无法启动后台工作：本插件的控制器正是生产方 `ctx.jobs.start()` 得以启用所依赖的。模型给出的等待时间超过 `maxWaitTimeoutMs` 时会向下收敛到上限，超时的等待返回 `[status: running]` 并让任务保持存活，而不是失败。待领于空闲所有者的完成通知无法在该所有者释放后存活。
+组合中未加载 `tool-jobs` 的 agent 无法启动后台工作，因为生产方的 `ctx.jobs.start()` 依赖此插件的控制器。模型给出的等待时间超过 `maxWaitTimeoutMs` 时会收敛到上限。读取超时会返回任务的当前状态，如 `[status: waiting]` 或 `[status: running]`，任务保持存活。待领于空闲所有者的完成通知无法在该所有者释放后存活。
 
 -----
 

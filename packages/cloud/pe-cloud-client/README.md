@@ -69,7 +69,7 @@ The native browser Loader creates entries with `{ name }` and no per-entry confi
 | `maxDownloadBytes` | no default | Optional positive safe-integer download acceptance cap; omitted keeps both download actions unregistered. |
 | `modelSettingsRequestTimeoutMs` | no default | Optional finite positive native model-settings RPC observer deadline; omitted keeps this integration closed. |
 | `skillSettings` | no default | Optional `{ requestTimeoutMs, maxFileBytes }`; both fields are positive safe integers, with the deadline within the platform timer range. Omission keeps skill management closed. |
-| `nativeSessionControls` | no default | Optional unique selection of `commands`, `models`, `permissions`, `goals`, `plan`, `feedback`, `export`, and `attachments`; omission supplies no additional controls. |
+| `nativeSessionControls` | no default | Optional unique selection of `commands`, `models`, `permissions`, `goals`, `plan`, `feedback`, `export`, `attachments`, and `jobs`; omission supplies no additional controls. |
 | `nativeManagement` | no default | Optional unique selection of `plugins`, `presets`, and `automations`; supplies the original management modules without granting Host operations. |
 | `nativeSubagentSettingsNamespace` | no default | Optional actual Subagent Settings entry ID, 1–128 ASCII namespace characters; binds the native card without granting field access. |
 
@@ -78,6 +78,8 @@ The Subagent card uses this namespace with the current account's advertised fiel
 ### Native Session controls
 
 `client.nativeSessionControls` supplies the selected original browser plugins without replacing their controllers or projections. Models, permissions, plan, feedback and export also require `commands`. The parser rejects unknown groups, duplicates and incomplete command dependencies; package names are fixed by the application. Host services, Agent-preset plugins and exact account admission must be composed separately. Selecting a browser group grants no method or filesystem authority. Permissions include the original approval dialog. Agent presets use the original roster, blank-Session selector and Settings default selector; Cloud supplies no read-only roster replacement.
+
+Selecting `jobs` supplies the original Jobs controller client and the Session-header job panel. The deployment also selects the complete Session-scoped Job endpoint group and includes the Native Jobs entry in the sealed account recipe.
 
 Selecting `export` provides the original download plugin's HTTP and navigation integration before native activation. Its HEAD preflight uses the page's captured authenticated fetch, and its GET download uses the captured account/generation navigation binding. The original download controller still owns state, cancellation and disposal; an ended page rejects both integration operations. See [Session log export](../../session-query/session-log-export/README.md) for the native download contract.
 

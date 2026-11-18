@@ -7,11 +7,12 @@ import AgentPresets from '@deepseek-ai/dsh-agent-preset-registry'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import SessionPersistence from '@deepseek-ai/dsh-session-persistence'
 import SessionController from '@deepseek-ai/dsh-api-session-controller'
+import JobController from '@deepseek-ai/dsh-api-job-controller'
 import WorkspaceFiles from '@deepseek-ai/dsh-api-workspace-files'
 import OfficeToPdf from '@deepseek-ai/dsh-office-to-pdf'
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/types'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
-import { CloudAccountApi, CloudApiError, type ConfigSaveBarrier, type ConfigSaveCoordinator, type ConfigSaveReceipt,
+import { CloudAccountApi, CloudApiError, selectJobController, type ConfigSaveBarrier, type ConfigSaveCoordinator, type ConfigSaveReceipt,
   type ExposureService, type ExactFetchExposure, type CloudModelKeyPreparation,
   type CloudSkillPreparation, type CloudSkillService, type ManagedSkillPreparation, type CloudPluginPreparation,
   type AccountOfficeLifecycle, type NativePresetGuards } from '@deepseek-ai/dsh-pe-cloud-api'
@@ -165,6 +166,7 @@ export const ACCOUNT_NATIVE_ENTRIES = Object.freeze({
   goals: 'pe-cloud-goals',
   sessionExport: 'pe-cloud-session-export',
   permissions: 'pe-cloud-permissions', userQuestions: 'pe-cloud-user-questions', schedule: 'pe-cloud-schedule',
+  jobs: 'pe-cloud-jobs',
   pluginInventory: 'pe-cloud-plugin-inventory',
   sessionFeedback: 'pe-cloud-session-feedback', messageFeedback: 'pe-cloud-message-feedback',
   commandFeedback: 'pe-cloud-command-feedback',
@@ -178,6 +180,14 @@ export const ACCOUNT_FIRST_SCREEN_ENTRIES = Object.freeze({
   workspaceController: 'pe-cloud-workspace-controller', settingsController: 'pe-cloud-settings-controller',
   events: 'pe-cloud-first-screen-events',
 })
+
+/** Expose the guarded builtin to the sealed account recipe only when the complete Job group is selected. */
+export function accountJobEntries(api: CloudAccountApi, manifest: ExposureService['policy']['manifest']) {
+  return selectJobController(manifest) ? { [ACCOUNT_NATIVE_ENTRIES.jobs]: {
+    inject: [...JobController.inject, 'sessions', 'typertGateway', 'peCloudApi'], Config: JobController.Config,
+    apply(owner: Context, config: ConstructorParameters<typeof JobController>[1]) { api.createJobs(owner, config) },
+  } } : {}
+}
 
 /** One graph's real save barrier/API/execution ownership, including partially completed preparation. */
 export class AccountNativeIntegration {
@@ -738,6 +748,7 @@ export class AccountNativeIntegration {
         },
       },
       [ACCOUNT_NATIVE_ENTRIES.userQuestions]: userQuestions,
+      ...accountJobEntries(api, input.exposure.manifest),
       [ACCOUNT_NATIVE_ENTRIES.schedule]: schedule,
       [ACCOUNT_NATIVE_ENTRIES.sessionFeedback]: sessionFeedback,
       [ACCOUNT_NATIVE_ENTRIES.messageFeedback]: messageFeedback,

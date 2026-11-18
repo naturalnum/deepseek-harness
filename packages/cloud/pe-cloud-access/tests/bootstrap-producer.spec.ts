@@ -1,7 +1,7 @@
 import { modelKeyBinding } from '../../pe-cloud-api/tests/model-key-policy-data.ts'
 /** Producer contract tests on a native policy graph; execution/inventory/content stubs prove no product readiness or ABI8. */
 import { Context } from '@deepseek-ai/cordis'
-import { CloudApiError, ExposureService, MODEL_KEY_RPC_ENDPOINTS, PLUGIN_RPC_ENDPOINTS, APPROVED_PLUGIN_CONTROL, createNativeSchedule, type NativeSchedule, type ApprovedConfigurationCatalog, type EndpointExposure, type ExactFetchExposure } from '@deepseek-ai/dsh-pe-cloud-api'
+import { CloudApiError, ExposureService, JOB_CONTROLLER_ENDPOINTS, MODEL_KEY_RPC_ENDPOINTS, PLUGIN_RPC_ENDPOINTS, APPROVED_PLUGIN_CONTROL, createNativeSchedule, type NativeSchedule, type ApprovedConfigurationCatalog, type EndpointExposure, type ExactFetchExposure } from '@deepseek-ai/dsh-pe-cloud-api'
 import ScheduleService from '../../../schedule/schedule/src/index.ts'
 import { FILE_UPLOAD_PATH } from '@deepseek-ai/dsh-client-file-upload'
 import { accountExecutionMode, accountServiceAvailability, assertAccountExecutionProviders } from '@deepseek-ai/dsh-pe-opensandbox'
@@ -28,8 +28,11 @@ const projection = { endpoint: 'session/projections', handlerId: 'native:session
 
 async function fixture(rpc: readonly EndpointExposure[] = [], streams: readonly EndpointExposure[] = [],
   fetch: readonly ExactFetchExposure[] = [], modelKey = false, pluginControl = false,
-  skills: ApprovedConfigurationCatalog['skills'] = { mode: 'closed' }, actualProjection = false) {
-  const native = policyFixture(actualProjection ? [projection] : [], bounds), graph = await native.start(), root = new Context()
+  skills: ApprovedConfigurationCatalog['skills'] = { mode: 'closed' }, actualProjection = false, actualJobs = false) {
+  const mountedRpc = [...actualProjection ? [projection] : [], ...actualJobs ? rpc : []]
+  const native = policyFixture(mountedRpc, bounds, 'bootstrap-component', undefined, undefined, undefined,
+    undefined, undefined, actualJobs ? streams : [])
+  const graph = await native.start(), root = new Context()
   onTestFinished(async () => { vi.restoreAllMocks(); await root.fiber.dispose() })
   const manifest = native.exposureOwner.policy.manifest
   const exposure = new ExposureService(root, { ...manifest,
@@ -50,9 +53,9 @@ async function fixture(rpc: readonly EndpointExposure[] = [], streams: readonly 
   // Only the added owner audits are stubbed; the first-screen methods keep their real native API checks.
   const requireRpc = graph.api.requireRpc.bind(graph.api), requireStream = graph.api.requireStream.bind(graph.api)
   const auditedRpc = vi.spyOn(graph.api, 'requireRpc').mockImplementation(endpoint =>
-    (endpoint === projection.endpoint ? undefined : rpc.find(row => row.endpoint === endpoint)) ?? requireRpc(endpoint))
+    (endpoint === projection.endpoint || actualJobs ? undefined : rpc.find(row => row.endpoint === endpoint)) ?? requireRpc(endpoint))
   const auditedStream = vi.spyOn(graph.api, 'requireStream').mockImplementation(endpoint =>
-    streams.find(row => row.endpoint === endpoint) ?? requireStream(endpoint))
+    (actualJobs ? undefined : streams.find(row => row.endpoint === endpoint)) ?? requireStream(endpoint))
   const requireFetch = graph.api.requireFetch.bind(graph.api)
   const auditedFetch = vi.spyOn(graph.api, 'requireFetch').mockImplementation((method, path) =>
     fetch.find(row => row.method === method && row.path === path) ?? requireFetch(method, path))
@@ -69,6 +72,20 @@ it('produces bootstrap with the installed native Session projections endpoint', 
   expect(f.auditedRpc).toHaveBeenCalledWith(projection.endpoint)
   expect(JSON.parse(result.body)).toHaveProperty('capabilities')
   result.assertCurrent()
+})
+
+it('admits the explicitly selected native Job group and withdraws bootstrap when its Loader entry ends', async () => {
+  const rpc = JOB_CONTROLLER_ENDPOINTS.filter(row => row.mode === 'rpc')
+  const streams = JOB_CONTROLLER_ENDPOINTS.filter(row => row.mode === 'stream')
+  const f = await fixture(rpc, streams, [], false, false, { mode: 'closed' }, false, true)
+  const result = await f.produce()
+  for (const row of rpc) expect(f.auditedRpc).toHaveBeenCalledWith(row.endpoint)
+  for (const row of streams) expect(f.auditedStream).toHaveBeenCalledWith(row.endpoint)
+  result.assertCurrent()
+  const fiber = [...f.graph.ctx.loader.entries()].find(entry => entry.options.id === 'job-controller')?.fiber
+  if (fiber === undefined) throw new Error('Original Job Controller Loader entry absent')
+  await fiber.dispose()
+  expect(() => result.assertCurrent()).toThrow()
 })
 
 it.each([

@@ -8,6 +8,8 @@ import { OutputWaiter, sleep } from './wake.ts'
 export interface RowsOptions {
   /** Coalescing window after a lifecycle event before the next rows read, in milliseconds. */
   readonly flushMs: number
+  /** Omit unowned jobs and their lifecycle events when false. Defaults to the native visible set. */
+  readonly includeUnowned?: boolean
 }
 
 /**
@@ -31,21 +33,26 @@ export async function* streamJobRows(
 ): AsyncIterable<JobListFrame> {
   signal.throwIfAborted()
   const waiter = new OutputWaiter()
+  const visible = (owner: JobListRequest['sessionId'] | undefined): boolean =>
+    owner === request.sessionId || (owner === undefined && options.includeUnowned !== false)
+  const rows = (): JobListFrame => {
+    const jobs = registry.list(request.sessionId)
+    return { type: 'rows', jobs: options.includeUnowned === false ? jobs.filter(job => visible(job.owner)) : jobs }
+  }
   // Subscribe before the first read so a commit between the read and the
   // wait cannot be missed.
   const unsubscribe = registry.events.subscribe({ owners: 'all' }, (event) => {
     if (event.type === 'output') return
-    const owner = event.job.owner
-    if (owner === undefined || owner === request.sessionId) waiter.wake()
+    if (visible(event.job.owner)) waiter.wake()
   })
   try {
-    yield { type: 'rows', jobs: registry.list(request.sessionId) }
+    yield rows()
     while (true) {
       await waiter.wait(signal)
       // Let a burst of commits settle into one frame.
       await sleep(options.flushMs, signal)
       if (signal.aborted) return
-      yield { type: 'rows', jobs: registry.list(request.sessionId) }
+      yield rows()
     }
   } finally {
     unsubscribe()

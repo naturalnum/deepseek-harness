@@ -198,16 +198,17 @@ function JobItem({ job, view, expanded, now, onToggle, kill, t }: {
   t: TranslateNS<typeof NS>
 }) {
   const live = isLive(job)
-  const status = statusLabel(job.status, t)
-  const detail = jobDetail(job)
+  const waiting = job.status === 'running' && job.waitingForCapacity === true
+  const status = waiting ? t('status.waitingForCapacity') : statusLabel(job.status, t)
+  const detail = waiting ? status : jobDetail(job)
   const observable = isObservable(job)
-  const labels = useMemo(() => terminalLabels(t), [t])
+  const labels = useMemo(() => ({ ...terminalLabels(t), ...(waiting ? { running: t('status.waitingForCapacity') } : {}) }), [t, waiting])
   const elapsed = live ? now - job.startedAt : (job.finishedAt ?? job.startedAt) - job.startedAt
   const duration = formatDuration(elapsed, t)
   const durationCell = (
     <span
       className={css.duration}
-      title={t(live ? 'duration.title.live' : 'duration.title.done', { duration })}
+      title={t(waiting ? 'duration.title.waiting' : live ? 'duration.title.live' : 'duration.title.done', { duration })}
     >
       {duration}
     </span>
@@ -215,7 +216,7 @@ function JobItem({ job, view, expanded, now, onToggle, kill, t }: {
   const body = live
     ? (
       <>
-        <StateDot state={dotState(job.status)} className={css.rowDot} />
+        <StateDot state={waiting ? 'idle' : dotState(job.status)} className={css.rowDot} />
         <span className={css.main}>
           <span className={css.primary}>
             <span className={css.label} title={job.label}>{job.label}</span>
@@ -234,7 +235,7 @@ function JobItem({ job, view, expanded, now, onToggle, kill, t }: {
     )
     : (
       <>
-        <StateDot state={dotState(job.status)} className={css.rowDot} />
+        <StateDot state={waiting ? 'idle' : dotState(job.status)} className={css.rowDot} />
         <span className={css.kind}>{job.kind}</span>
         <span className={css.label} title={job.label}>{job.label}</span>
         <span className={css.status} title={detail ?? status}>{detail ?? status}</span>
@@ -252,7 +253,7 @@ function JobItem({ job, view, expanded, now, onToggle, kill, t }: {
     ? undefined
     : kill.state === 'armed'
       ? t('kill.confirm')
-      : kill.state === 'failed' ? t('kill.failed') : t('kill.stop', { label: job.label })
+      : kill.state === 'failed' ? t('kill.failed') : t(waiting ? 'kill.cancelWaiting' : 'kill.stop', { label: job.label })
   return (
     <li className={css.item}>
       <div className={live ? `${css.rowLine} ${css.rowLineLive}` : css.rowLine}>
@@ -448,10 +449,11 @@ export function JobListAction({ sessionId, useJobs, watchRows, observe, killJob,
 
   if (visibleCount === 0) return null
 
-  const countKey = liveRows.length > 0
-    ? (liveRows.length === 1 ? 'count.live.one' : 'count.live.other')
-    : (visibleCount === 1 ? 'count.idle.one' : 'count.idle.other')
-  const countLabel = t(countKey, { count: liveRows.length > 0 ? liveRows.length : visibleCount })
+  const count = liveRows.length > 0 ? liveRows.length : visibleCount
+  const countKey = liveRows.length > 0 && !liveRows.some(job => job.waitingForCapacity === true)
+    ? (count === 1 ? 'count.live.one' : 'count.live.other')
+    : (count === 1 ? 'count.idle.one' : 'count.idle.other')
+  const countLabel = t(countKey, { count })
 
   const clearSettled = (): void => {
     setClearedKeys((current) => {

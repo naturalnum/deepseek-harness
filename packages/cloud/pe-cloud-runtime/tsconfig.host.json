@@ -39,6 +39,9 @@
       "path": "../../core/agent-loop"
     },
     {
+      "path": "../../api/job-controller/tsconfig.host.json"
+    },
+    {
       "path": "../../api/session-controller/tsconfig.host.json"
     },
     {

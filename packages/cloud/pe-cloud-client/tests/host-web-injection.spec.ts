@@ -197,10 +197,12 @@ describe('existing Cloud declaration public Web injection', () => {
     },
   )
 
-  it('closes the configured native Models/tool graph through actual Registry bundles and public factories', async () => {
+  it('closes the configured native Models, tool and Jobs graph through actual Registry bundles and public factories', async () => {
     const ctx = await composition(), resolveHost = createRequire(HOST_BASE_URL)
-    const optional = ['@deepseek-ai/dsh-client-ui-settings-general', '@deepseek-ai/dsh-client-ui-settings-models', '@deepseek-ai/dsh-client-ui-tool']
-    const base = manifest(), web = { ...base, client: { ...base.client, modelSettingsRequestTimeoutMs: 500,
+    const jobs = ['@deepseek-ai/dsh-api-job-controller', '@deepseek-ai/dsh-client-ui-jobs']
+    const optional = ['@deepseek-ai/dsh-client-ui-settings-general', '@deepseek-ai/dsh-client-ui-settings-models',
+      '@deepseek-ai/dsh-client-ui-tool', ...jobs]
+    const base = manifest(), web = { ...base, client: { ...base.client, nativeSessionControls: ['jobs'], modelSettingsRequestTimeoutMs: 500,
       servicePreview: { managementOrigin: 'http://console.dsh.localhost:32848', previewOrigin: 'http://preview.dsh.localhost:32848',
         routePath: '/cloud/service-preview', maxFieldBytes: 128, maxUrlBytes: 2048 } } }
     await appendEntry(ctx, { id: 'modules', name: 'cordis:modules' })
@@ -229,7 +231,9 @@ describe('existing Cloud declaration public Web injection', () => {
     ].sort())
     expect(graph.entries.filter(row => row.activate === false).map(row => row.id)).toEqual(['@deepseek-ai/dsh-client-connection'])
     for (const row of boot.modules) {
-      for (const dependency of row.inject) expect(ids.has(dependency), `${row.id} inject ${dependency}`).toBe(true)
+      for (const dependency of row.inject) {
+        expect(ids.has(dependency) || Object.hasOwn(platform, dependency), `${row.id} inject ${dependency}`).toBe(true)
+      }
       for (const external of row.external) {
         expect(ids.has(stripClientSuffix(external)) || Object.hasOwn(platform, external), `${row.id} external ${external}`).toBe(true)
       }
@@ -264,10 +268,12 @@ describe('existing Cloud declaration public Web injection', () => {
       expect(system.loadCache.get(row.id)?.exports, row.id).toBe(exports)
     }
     for (const row of boot.modules) expect(system.importError(row.id), row.id).toBeUndefined()
+    for (const id of jobs) expect(await system.import(id)).toMatchObject({ apply: expect.any(Function) })
+    expect(ctx.get('jobController')).toBeUndefined()
     await ctx.loader.resolve('cloud').fiber?.dispose()
     expect(ctx.clientModules.graph().entries).toHaveLength(16)
     expect(rows(ctx)).toEqual([])
-    for (const id of ['@deepseek-ai/dsh-client-connection', ...BROWSER_CLIENT_PACKAGES]) {
+    for (const id of ['@deepseek-ai/dsh-client-connection', ...BROWSER_CLIENT_PACKAGES, ...jobs]) {
       expect(ctx.clientModules.graph().entries.some(row => row.id === id), id).toBe(false)
     }
   })
