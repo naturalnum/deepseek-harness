@@ -85,7 +85,7 @@ it('admits the explicitly selected native Job group and withdraws bootstrap when
   const fiber = [...f.graph.ctx.loader.entries()].find(entry => entry.options.id === 'job-controller')?.fiber
   if (fiber === undefined) throw new Error('Original Job Controller Loader entry absent')
   await fiber.dispose()
-  expect(() => result.assertCurrent()).toThrow()
+  expect(() => { result.assertCurrent() }).toThrow()
 })
 
 it.each([

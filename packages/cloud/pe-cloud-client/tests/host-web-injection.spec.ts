@@ -268,7 +268,10 @@ describe('existing Cloud declaration public Web injection', () => {
       expect(system.loadCache.get(row.id)?.exports, row.id).toBe(exports)
     }
     for (const row of boot.modules) expect(system.importError(row.id), row.id).toBeUndefined()
-    for (const id of jobs) expect(await system.import(id)).toMatchObject({ apply: expect.any(Function) })
+    for (const id of jobs) {
+      const loaded = await system.import(id)
+      expect(loaded && typeof loaded === 'object' && 'apply' in loaded && typeof loaded.apply).toBe('function')
+    }
     expect(ctx.get('jobController')).toBeUndefined()
     await ctx.loader.resolve('cloud').fiber?.dispose()
     expect(ctx.clientModules.graph().entries).toHaveLength(16)

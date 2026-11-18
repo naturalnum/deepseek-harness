@@ -178,7 +178,7 @@ it('lets the fifth ordinary account wait, cancel by its original JobId, and star
   expect(() => fifth.ctx.jobs.get(first.id, holders[0]!.agent.id)).toThrow()
   expect(() => fifth.ctx.jobs.kill(first.id, holders[0]!.agent.id)).toThrow()
   const shown = await fifth.call('job_output', { job_id: first.id })
-  expect(shown.content).toContainEqual({ type: 'text', text: expect.stringContaining('[status: waiting]') })
+  expect(shown.content.some(item => item.type === 'text' && item.text.includes('[status: waiting]'))).toBe(true)
 
   const cancelled = await fifth.call('job_kill', { job_id: first.id, reason: 'cancel the original wait' })
   expect(cancelled.isError).toBe(false)

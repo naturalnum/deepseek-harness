@@ -148,7 +148,7 @@ export class CommandWaitQueue<T> {
       ticket, state: 'waiting', settled: false, attempt, timer: undefined }
     this.records.set(key, entry)
     this.waiting.set(key, entry)
-    entry.timer = setTimeout(() => this.finish(entry, { state: 'expired' }), this.limits.timeoutMs)
+    entry.timer = setTimeout(() => { this.finish(entry, { state: 'expired' }) }, this.limits.timeoutMs)
     lifetime.addEventListener('abort', entry.cancel, { once: true })
     if (lifetime.aborted) entry.cancel()
     else this.drain()
@@ -228,7 +228,7 @@ export class CommandWaitQueue<T> {
       try { entry.owner.assertCurrent() }
       catch (cause) { this.finish(entry, { state: 'refused', cause }) }
     }
-    return entry.state === 'waiting'
+    return entry.ticket.waiting()
   }
 
   private advance(entry: Entry<T>): void {
@@ -255,6 +255,7 @@ export class CommandWaitQueue<T> {
       do {
         this.drainAgain = false
         for (const entry of [...this.waiting.values()]) this.advance(entry)
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- advance() can reenter drain or close the queue.
       } while (this.open && this.drainAgain)
     } finally { this.draining = false }
   }

@@ -76,8 +76,9 @@ it('mounts the original three methods and carries a waiting row, cancellation, b
   const roster = await open('list', { sessionId })
   const first = await roster.next()
   expect(first).toHaveProperty('value.jobs.length', 2)
-  expect(first).toMatchObject({ done: false, value: { type: 'rows', jobs: expect.arrayContaining([queued, successor].map(job =>
-    expect.objectContaining({ id: job.id, owner: sessionId, waitingForCapacity: true }))) } })
+  expect(first).toMatchObject({ done: false, value: { type: 'rows' } })
+  expect(first).toHaveProperty('value.jobs', expect.arrayContaining([queued, successor].map((job): unknown =>
+    expect.objectContaining({ id: job.id, owner: sessionId, waitingForCapacity: true }))))
   const cancelled = await open('follow', { sessionId, jobId: queued.id })
   await expect(cancelled.next()).resolves.toMatchObject({ value: { type: 'opened', job: { id: queued.id, waitingForCapacity: true } } })
   await expect(kill({ sessionId, jobId: queued.id })).resolves.toEqual({ outcome: 'requested' })
