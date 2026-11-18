@@ -173,7 +173,7 @@ export async function verifyBundle(directory) {
 }
 
 /**
- * Write and verify an update archive and its file manifest outside the worktree.
+ * Write and verify an update archive of files readable by the ordinary runtime user.
  * @param {string} root - Product source directory.
  * @param {string[]} paths - Selected relative regular-file paths.
  * @param {object} metadata - Source commit, Node version and lockfile digests.
@@ -192,7 +192,11 @@ export async function writeBundle(root, paths, metadata, output) {
   for (const path of [...paths].sort()) {
     if (!safePath(path) || !await regularFile(source, path)) throw new Error('产品包只能包含安全的相对普通文件。')
     const info = await lstat(join(source, path))
-    files.push({ path, size: info.size, mode: info.mode & 0o777, sha256: await fileDigest(join(source, path)) })
+    const mode = info.mode & 0o777
+    if ((mode & 0o004) === 0) {
+      throw new Error(`产品文件必须可由普通运行用户读取：${path}（模式 ${mode.toString(8)}）。`)
+    }
+    files.push({ path, size: info.size, mode, sha256: await fileDigest(join(source, path)) })
   }
   // Exact managed files are the rows below; roots additionally identify stale output files to remove.
   const manifest = { format: 'pe-cloud-update/v1', ...metadata, managedRoots: managedRoots(paths), files }
@@ -265,7 +269,12 @@ async function main(argv) {
   git(['diff', '--exit-code', '--quiet', 'HEAD', '--', 'packages', 'apps', 'vendor', 'integrations', 'package.json', 'pnpm-lock.yaml'])
   const sourceCommit = git(['rev-parse', 'HEAD'])
   const output = resolve(argv[1] ?? join(dirname(root), 'bundles', git(['rev-parse', '--short', 'HEAD'])))
-  await buildProducts(root)
+  const buildUmask = process.umask(0o022)
+  try {
+    await buildProducts(root)
+  } finally {
+    process.umask(buildUmask)
+  }
   const paths = await collectProductPaths(root, await readTrackedPaths(root))
   const pnpmLock = await readFile(join(root, 'pnpm-lock.yaml'), 'utf8')
   const pnpmLockHash = checksum(pnpmLock)

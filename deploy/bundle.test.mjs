@@ -121,6 +121,7 @@ test('refuses source-tree outputs and verifies archive members are regular files
   await fixture(async ({ root, directory, put }) => {
     const path = 'apps/web/dist/index.html'
     await put(path, 'web')
+    await chmod(join(root, path), 0o644)
     await assert.rejects(writeBundle(root, [path], {}, join(root, 'bundle')), /仓库之外/)
     const output = join(directory, 'bundle')
     await writeBundle(root, [path], {}, output)
@@ -129,5 +130,23 @@ test('refuses source-tree outputs and verifies archive members are regular files
     await symlink('index.html', join(root, 'apps/web/dist/link.html'))
     await create({ cwd: root, file: join(output, 'products.tar.gz'), gzip: true }, ['apps/web/dist/link.html'])
     await assert.rejects(verifyBundle(output), /非普通文件/)
+  })
+})
+
+test('refuses a root-only product file without replacing a usable bundle', async () => {
+  await fixture(async ({ root, directory, put }) => {
+    const path = 'packages/boot/app-boot/lib/index.js'
+    await put(path, 'export const ready = true\n')
+    await chmod(join(root, path), 0o644)
+    const output = join(directory, 'bundle')
+    const previous = await writeBundle(root, [path], {}, output)
+    const archive = await readFile(join(output, 'products.tar.gz'))
+
+    await put(path, 'export const ready = false\n')
+    await chmod(join(root, path), 0o600)
+    await assert.rejects(writeBundle(root, [path], {}, output), error =>
+      error.message.includes(path) && error.message.includes('600'))
+    assert.deepEqual(await readFile(join(output, 'products.tar.gz')), archive)
+    assert.deepEqual(await verifyBundle(output), previous)
   })
 })
