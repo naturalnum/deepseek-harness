@@ -8,7 +8,7 @@ import { CloudShellExecutor, CloudSubprocessRuntime, type NativeExecutionProvide
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup() })
 
-function fixture(holdAllocation = false) {
+function fixture(holdAllocation = false, maxLifetimeMs = 1000) {
   const ctx = new Context(), lifetime = new AbortController(), scopeLifetime = new AbortController()
   const invocation = new AbortController()
   const operations = new Set<ManagedCommandOperation>()
@@ -35,7 +35,7 @@ function fixture(holdAllocation = false) {
       const input = { ...spec, signal: AbortSignal.any([invocation.signal, ...(spec.signal === undefined ? [] : [spec.signal])]) }
       const operation = new ManagedCommandOperation(input, { maxArgvBytes: 4096, maxArgvEntries: 16, maxPathBytes: 512,
         maxStdinBytes: 4096, maxTailBytes: 32, maxObservedBytes: 65536, pollIntervalMs: 1, maxWaiters: 2,
-        maxLifetimeMs: 1000, stopWaitMs: 100 }, { lifetime: scopeLifetime.signal, acquire: allocations,
+        maxLifetimeMs, stopWaitMs: 100 }, { lifetime: scopeLifetime.signal, acquire: allocations,
         assertCurrent() { lifetime.signal.throwIfAborted() }, unknown() { /* Actual remote cleanup belongs to Root in production. */ },
         retired() { operations.delete(operation) } })
       operations.add(operation)
@@ -97,6 +97,38 @@ it('reports a completely joined run deadline as Shell timeout while native done 
   const [operation] = f.operations
   expect(operation).toBeDefined()
   await expect(operation!.handle.done).rejects.toMatchObject({ name: 'CommandRunDeadlineError' })
+})
+
+it('retains the machine identity and provider failure for an unclassified missing direct outcome', async () => {
+  const f = fixture()
+  f.channel.commit.mockImplementation(async () => ({ prepared: true, submitted: true, commitClosed: true,
+    rangeEmpty: true, ioClosed: true, physicalStopRequired: false, providerFailure: false, direct: undefined,
+    stdout: { bytes: Buffer.alloc(0), observedBytes: 0, eof: true }, stderr: { bytes: Buffer.alloc(0), observedBytes: 0, eof: true } }))
+  const handle = await f.shell.execute(f.shell.resolve({ command: 'synthetic unclassified stop', onExpiry: 'none' }))
+  await handle.done
+  const [operation] = f.operations, failure = await operation!.handle.done.catch((cause: unknown) => cause)
+  expect(failure).toMatchObject({ name: 'CommandOperationFailure', code: 'cloud/command-direct-incomplete',
+    message: 'The command ended without complete direct exit facts.' })
+  await expect(handle.result()).rejects.toBe(failure)
+  expect(f.port.providerFailed).toHaveBeenCalledWith(operation, failure)
+})
+
+it('keeps Root platform lifetime distinct from the joined guest deadline in Shell', async () => {
+  const f = fixture(false, 20)
+  const running: CommandSnapshot = { prepared: true, submitted: true, commitClosed: false, rangeEmpty: false, ioClosed: false,
+    physicalStopRequired: false, providerFailure: false, direct: undefined,
+    stdout: { bytes: Buffer.alloc(0), observedBytes: 0, eof: false }, stderr: { bytes: Buffer.alloc(0), observedBytes: 0, eof: false } }
+  f.channel.commit.mockResolvedValue(running); f.channel.poll.mockResolvedValue(running)
+  f.channel.stop.mockResolvedValue({ ...running, rangeEmpty: true, ioClosed: true,
+    stdout: { ...running.stdout, eof: true }, stderr: { ...running.stderr, eof: true } })
+  const handle = await f.shell.execute(f.shell.resolve({ command: 'synthetic Root lifetime', onExpiry: 'none' }))
+  await handle.done
+  const [operation] = f.operations, failure = await operation!.handle.done.catch((cause: unknown) => cause)
+  expect(failure).toMatchObject({ name: 'CommandOperationFailure', code: 'cloud/command-platform-lifetime',
+    message: 'The command exceeded its platform lifetime.' })
+  expect(operation!.stopReason()?.runDeadline).toBeUndefined()
+  await expect(handle.result()).rejects.toBe(failure)
+  expect(f.port.providerFailed).toHaveBeenCalledWith(operation, failure)
 })
 
 it.each(['caller', 'kill'] as const)('keeps the original Shell %s interruption ahead of a guest deadline', async (source) => {

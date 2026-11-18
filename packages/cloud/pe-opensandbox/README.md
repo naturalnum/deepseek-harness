@@ -30,6 +30,8 @@ The original authenticated command channel retains its first nonnull protocol ca
 
 Existing private semantic spans expose `runDeadline` as a boolean for this completed classification; delivery receipts remain observation only. Native background jobs retain their existing killed/status presentation when no signal was observed; the deadline classification invents neither a signal nor a direct outcome.
 
+`CommandOperationFailure` gives the fixed owner branches machine identities: `cloud/command-platform-lifetime`, `cloud/command-direct-incomplete`, `cloud/command-physical-stop-required`, `cloud/command-provider-failure` and `cloud/command-stop-unconfirmed`. Existing managed logs retain their type/code projection; messages, first-cause priority and unknown-cleanup handling stay unchanged. These failure codes grant neither a joined-deadline marker nor recovery authority.
+
 -----
 
 <a id="use-this-package"></a>

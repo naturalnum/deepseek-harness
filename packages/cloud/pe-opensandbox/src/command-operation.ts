@@ -43,6 +43,15 @@ class CommandRunDeadlineError extends Error {
   }
 }
 
+/** Fixed command-owner failures; their original messages and unknown-cleanup handling remain unchanged. */
+class CommandOperationFailure extends Error {
+  constructor(readonly code: 'cloud/command-platform-lifetime' | 'cloud/command-direct-incomplete'
+    | 'cloud/command-physical-stop-required' | 'cloud/command-provider-failure' | 'cloud/command-stop-unconfirmed', message: string) {
+    super(message)
+    this.name = 'CommandOperationFailure'
+  }
+}
+
 /** One immutable operation selection. Mutation methods each submit at most once, including lost replies. */
 export interface CommandChannel {
   prepare(spec: OperationSpec, filePolicy?: NativeFilePolicy): Promise<CommandSnapshot>
@@ -264,7 +273,8 @@ export class ManagedCommandOperation {
     void this.audit.watch(this.audit.begin('native-command'), this.whenEmpty, () => this.auditFacts())
     void this.audit.watch(this.audit.begin('native-direct'), this.completion.promise, () => this.auditFacts())
     this.lifetimeDeadlineAtMs = performance.now() + this.limits.maxLifetimeMs
-    this.lifetime = setTimeout(() => { this.requestStop(new Error('The command exceeded its platform lifetime.')) }, this.limits.maxLifetimeMs)
+    this.lifetime = setTimeout(() => { this.requestStop(new CommandOperationFailure('cloud/command-platform-lifetime',
+      'The command exceeded its platform lifetime.')) }, this.limits.maxLifetimeMs)
     void this.run().then((stopCause) => {
       this.localSettled = true
       this.audit.point('native-local-settled', this.auditFacts())
@@ -365,7 +375,7 @@ export class ManagedCommandOperation {
     this.rangeConfirmed = true
     this.publication.resolve()
     if (this.direct === undefined || !this.eof.stdout || !this.eof.stderr) {
-      this.fail(new Error('The sandbox stopped without a complete direct-command outcome.'))
+      this.fail(new CommandOperationFailure('cloud/command-direct-incomplete', 'The sandbox stopped without a complete direct-command outcome.'))
     }
     this.finishEmpty()
   }
@@ -393,10 +403,13 @@ export class ManagedCommandOperation {
           throw new Error('The remote command ran before its original commit attempt.')
         }
         this.accept(snapshot)
-        if (snapshot.physicalStopRequired || snapshot.providerFailure) throw new Error('The authenticated command channel requires physical stop.')
+        if (snapshot.physicalStopRequired || snapshot.providerFailure) {
+          throw new CommandOperationFailure(snapshot.physicalStopRequired ? 'cloud/command-physical-stop-required' : 'cloud/command-provider-failure',
+            'The authenticated command channel requires physical stop.')
+        }
         if (snapshot.rangeEmpty && snapshot.ioClosed) break
         if (stopAt !== undefined && Date.now() - stopAt >= this.limits.stopWaitMs) {
-          throw new Error('The remote command stop remains unconfirmed.')
+          throw new CommandOperationFailure('cloud/command-stop-unconfirmed', 'The remote command stop remains unconfirmed.')
         }
         const stopped = this.stopRequest()
         if (stopped !== undefined && stopAt === undefined) {
@@ -440,7 +453,8 @@ export class ManagedCommandOperation {
       if (this.direct === undefined || !this.eof.stdout || !this.eof.stderr) {
         if (snapshot.stopCause === 'run-deadline' && this.requestedStop === undefined && this.direct === undefined
           && this.eof.stdout && this.eof.stderr && snapshot.rangeEmpty && snapshot.ioClosed) runDeadline = true
-        else this.fail(this.requestedStop?.reason ?? new Error('The command ended without complete direct exit facts.'))
+        else this.fail(this.requestedStop?.reason ?? new CommandOperationFailure('cloud/command-direct-incomplete',
+          'The command ended without complete direct exit facts.'))
       }
     } catch (cause) {
       this.fail(this.stopRequest()?.reason ?? cause)

@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { channel } from 'node:diagnostics_channel'
 import type { SemanticAuditEvent } from '../src/semantic-audit.ts'
 import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { ManagedCommandOperation, type CommandChannel, type CommandSnapshot } from '../src/command-operation.ts'
+import { ManagedCommandOperation, type CommandChannel, type CommandSnapshot, type CommandOperationLimits } from '../src/command-operation.ts'
 
 const initial = (): CommandSnapshot => ({ prepared: true, submitted: false, commitClosed: false,
   rangeEmpty: false, ioClosed: false, physicalStopRequired: false, providerFailure: false, direct: undefined,
@@ -16,7 +16,7 @@ const complete = (empty = true): CommandSnapshot => ({ ...initial(), submitted: 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup() })
 
-function fixture(change: Partial<SubprocessSpawnSpec> = {}) {
+function fixture(change: Partial<SubprocessSpawnSpec> = {}, configured: Partial<CommandOperationLimits> = {}) {
   const lifetime = new AbortController(), caller = new AbortController()
   const poll = Promise.withResolvers<CommandSnapshot>(), acquire = Promise.withResolvers<CommandChannel>()
   let heldAcquisition = false
@@ -36,7 +36,7 @@ function fixture(change: Partial<SubprocessSpawnSpec> = {}) {
     stdio: { stdin: 'ignore', stdout: { maxBytes: 32 }, stderr: { maxBytes: 32 } }, graceMs: 100,
     signal: caller.signal, ...change }
   const limits = { maxArgvBytes: 4096, maxArgvEntries: 16, maxPathBytes: 512, maxStdinBytes: 4096, maxTailBytes: 32,
-    maxObservedBytes: 65536, pollIntervalMs: 1, maxWaiters: 2, maxLifetimeMs: 1000, stopWaitMs: 100 }
+    maxObservedBytes: 65536, pollIntervalMs: 1, maxWaiters: 2, maxLifetimeMs: 1000, stopWaitMs: 100, ...configured }
   const op = new ManagedCommandOperation(spec, limits, authority)
   cleanups.push(async () => {
     acquire.resolve(channel); poll.resolve(complete()); op.release(); op.acknowledgePhysicalStop(); await op.whenEmpty
@@ -186,8 +186,22 @@ it('keeps an absent deadline cause as the original incomplete outcome failure', 
   const f = fixture()
   f.channel.commit.mockResolvedValue({ ...complete(), direct: undefined })
   f.op.publish(); f.op.begin()
-  await expect(f.op.handle.done).rejects.toMatchObject({ name: 'Error' })
+  await expect(f.op.handle.done).rejects.toMatchObject({ name: 'CommandOperationFailure', code: 'cloud/command-direct-incomplete',
+    message: 'The command ended without complete direct exit facts.' })
   expect(f.op.stopReason()).toBeUndefined()
+})
+
+it('identifies the original Root platform lifetime without marking a guest deadline', async () => {
+  const f = fixture({}, { maxLifetimeMs: 20 }), running = { ...initial(), submitted: true }
+  f.channel.commit.mockResolvedValue(running)
+  f.channel.poll.mockResolvedValue(running)
+  f.channel.stop.mockResolvedValue({ ...complete(), direct: undefined })
+  f.op.publish(); f.op.begin()
+  await expect(f.op.handle.done).rejects.toMatchObject({ name: 'CommandOperationFailure', code: 'cloud/command-platform-lifetime',
+    message: 'The command exceeded its platform lifetime.' })
+  await f.op.whenEmpty
+  expect(f.op.stopReason()?.runDeadline).toBeUndefined()
+  expect(f.channel.stop).toHaveBeenCalledOnce()
 })
 
 it.each(['acquire', 'prepare'] as const)('keeps a foreign deadline failure from %s outside this original operation marker', async (stage) => {
@@ -227,7 +241,9 @@ it.each(['provider-failure', 'physical-stop-required', 'missing-stdout-eof', 'mi
       stdout: { ...terminal.stdout, eof: failure !== 'missing-stdout-eof' },
       stderr: { ...terminal.stderr, eof: failure !== 'missing-stderr-eof' } })
     f.op.publish(); f.op.begin()
-    await expect(f.op.handle.done).rejects.toMatchObject({ name: 'Error' })
+    const code = failure === 'provider-failure' ? 'cloud/command-provider-failure'
+      : failure === 'physical-stop-required' ? 'cloud/command-physical-stop-required' : 'cloud/command-direct-incomplete'
+    await expect(f.op.handle.done).rejects.toMatchObject({ name: 'CommandOperationFailure', code })
     expect(f.op.stopReason()).toBeUndefined()
     if (failure === 'provider-failure' || failure === 'physical-stop-required') {
       await vi.waitFor(() => { expect(f.authority.unknown).toHaveBeenCalledOnce() })
@@ -265,6 +281,8 @@ it.each(['stop-rejected', 'stop-timeout', 'counter-regressed', 'eof-regressed'] 
     f.caller.abort(reason); f.poll.resolve(before)
     await expect(f.op.handle.done).rejects.toBe(reason)
     await vi.waitFor(() => { expect(f.authority.unknown).toHaveBeenCalledOnce() })
+    if (failure === 'stop-timeout') expect(f.authority.unknown).toHaveBeenCalledWith(expect.objectContaining({
+      code: 'cloud/command-stop-unconfirmed', message: 'The remote command stop remains unconfirmed.' }))
     expect(f.op.stopReason()?.runDeadline).toBeUndefined()
     let empty = false
     void f.op.whenEmpty.then(() => { empty = true })

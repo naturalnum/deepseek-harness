@@ -34,6 +34,8 @@ Root 可显式配置 `commands.additionalTools`，选择至多三十二个互不
 
 既有私有语义 span 以布尔值 `runDeadline` 记录这一已完成分类；投递 receipt 仍只表示观察。未观察到信号时，原生后台 job 仍采用既有的 killed/status 展示；期限分类既不伪造信号，也不伪造直接退出结果。
 
+`CommandOperationFailure` 为固定拥有者分支提供机器标识：`cloud/command-platform-lifetime`、`cloud/command-direct-incomplete`、`cloud/command-physical-stop-required`、`cloud/command-provider-failure` 和 `cloud/command-stop-unconfirmed`。既有 managed 日志沿用 type/code 投影；message、首因优先级及未知清理处理不变。这些失败码既不授予已终结期限标记，也不授予恢复权限。
+
 -----
 
 <a id="use-this-package"></a>
