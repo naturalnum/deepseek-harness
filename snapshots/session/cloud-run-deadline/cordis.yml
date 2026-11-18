@@ -1,0 +1,9 @@
+- id: typert-loader
+  disabled: true
+- id: bash-sandbox
+  disabled: true
+- id: shell-env
+  disabled: true
+- insert:
+    - id: run-deadline-fixture
+      name: '../../../packages/cloud/pe-opensandbox/tests/fixtures/run-deadline-snapshot.ts'

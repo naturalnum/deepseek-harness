@@ -35,6 +35,8 @@ export interface SemanticFacts {
   readonly localSettled?: boolean | undefined
   readonly remoteAttempted?: boolean | undefined
   readonly physicalStopAcknowledged?: boolean | undefined
+  /** This original command's completed deadline classification; observation only. */
+  readonly runDeadline?: boolean | undefined
 }
 
 /** Original local span identity; not a server operation id or authority. */
@@ -76,7 +78,7 @@ function project(facts: SemanticFacts): Readonly<Record<string, string | number 
     }
   }
   for (const key of ['fenced', 'initialized', 'streamTerminal', 'failed', 'directObserved', 'stdoutEof', 'stderrEof',
-    'rangeConfirmed', 'localSettled', 'remoteAttempted', 'physicalStopAcknowledged'] as const) {
+    'rangeConfirmed', 'localSettled', 'remoteAttempted', 'physicalStopAcknowledged', 'runDeadline'] as const) {
     const value = facts[key]
     if (value !== undefined) fields[key] = value
   }

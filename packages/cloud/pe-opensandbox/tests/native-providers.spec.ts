@@ -83,6 +83,89 @@ it('runs native foreground Shell through the original prepared command controlle
   expect(f.shell.sandboxMode).toBeUndefined()
 })
 
+it('reports a completely joined run deadline as Shell timeout while native done still rejects', async () => {
+  const f = fixture()
+  f.channel.commit.mockImplementation(async () => ({ prepared: true, submitted: true, commitClosed: true,
+    rangeEmpty: true, ioClosed: true, physicalStopRequired: false, providerFailure: false,
+    direct: undefined, stopCause: 'run-deadline',
+    stdout: { bytes: Buffer.alloc(0), observedBytes: 0, eof: true },
+    stderr: { bytes: Buffer.alloc(0), observedBytes: 0, eof: true } }))
+  const handle = await f.shell.execute(f.shell.resolve({ command: 'synthetic original deadline', onExpiry: 'none' }))
+  await expect(handle.done).resolves.toBeUndefined()
+  await expect(handle.result()).resolves.toMatchObject({ exitCode: null, signal: null, timedOut: true, aborted: false })
+  expect(f.port.providerFailed).not.toHaveBeenCalled()
+  const [operation] = f.operations
+  expect(operation).toBeDefined()
+  await expect(operation!.handle.done).rejects.toMatchObject({ name: 'CommandRunDeadlineError' })
+})
+
+it.each(['caller', 'kill'] as const)('keeps the original Shell %s interruption ahead of a guest deadline', async (source) => {
+  const f = fixture(), caller = new AbortController(), committed = Promise.withResolvers<CommandSnapshot>()
+  f.channel.commit.mockImplementation(() => committed.promise)
+  const handle = await f.shell.execute(f.shell.resolve({ command: 'synthetic original stop', signal: caller.signal, onExpiry: 'none' }))
+  await vi.waitFor(() => { expect(f.channel.commit).toHaveBeenCalledOnce() })
+  if (source === 'caller') caller.abort(new Error('first caller interruption'))
+  else expect(handle.kill()).toBe(true)
+  committed.resolve({ prepared: true, submitted: true, commitClosed: true, rangeEmpty: true, ioClosed: true,
+    physicalStopRequired: false, providerFailure: false, direct: undefined, stopCause: 'run-deadline',
+    stdout: { bytes: Buffer.alloc(0), observedBytes: 0, eof: true }, stderr: { bytes: Buffer.alloc(0), observedBytes: 0, eof: true } })
+  await handle.done
+  await expect(handle.result()).resolves.toMatchObject({ exitCode: null, signal: null, timedOut: false, aborted: source === 'caller' })
+  expect(f.port.providerFailed).not.toHaveBeenCalled()
+})
+
+it('keeps actual direct exit facts when the guest also reports a run deadline', async () => {
+  const f = fixture()
+  f.channel.commit.mockImplementation(async () => ({ prepared: true, submitted: true, commitClosed: true,
+    rangeEmpty: true, ioClosed: true, physicalStopRequired: false, providerFailure: false,
+    direct: { exitCode: 7, signal: null }, stopCause: 'run-deadline',
+    stdout: { bytes: Buffer.alloc(0), observedBytes: 0, eof: true }, stderr: { bytes: Buffer.alloc(0), observedBytes: 0, eof: true } }))
+  const handle = await f.shell.execute(f.shell.resolve({ command: 'synthetic direct outcome', onExpiry: 'none' }))
+  await expect(handle.result()).resolves.toMatchObject({ exitCode: 7, signal: null, timedOut: false, aborted: false })
+  expect(f.port.providerFailed).not.toHaveBeenCalled()
+})
+
+it('does not reuse another command deadline as this caller interruption', async () => {
+  const f = fixture(), caller = new AbortController()
+  const terminal: CommandSnapshot = { prepared: true, submitted: true, commitClosed: true, rangeEmpty: true, ioClosed: true,
+    physicalStopRequired: false, providerFailure: false, direct: undefined, stopCause: 'run-deadline',
+    stdout: { bytes: Buffer.alloc(0), observedBytes: 0, eof: true }, stderr: { bytes: Buffer.alloc(0), observedBytes: 0, eof: true } }
+  f.channel.commit.mockResolvedValue(terminal)
+  const first = await f.shell.execute(f.shell.resolve({ command: 'first synthetic deadline', onExpiry: 'none' }))
+  await first.done
+  const [original] = f.operations
+  const reason = await original!.handle.done.catch((cause: unknown) => cause)
+  expect(reason).toMatchObject({ name: 'CommandRunDeadlineError' })
+  const committed = Promise.withResolvers<CommandSnapshot>()
+  f.channel.commit.mockImplementation(() => committed.promise)
+  const second = await f.shell.execute(f.shell.resolve({ command: 'caller shares first error', signal: caller.signal, onExpiry: 'none' }))
+  await vi.waitFor(() => { expect(f.channel.commit).toHaveBeenCalledTimes(2) })
+  caller.abort(reason); committed.resolve(terminal)
+  await second.done
+  await expect(second.result()).resolves.toMatchObject({ timedOut: false, aborted: true, exitCode: null, signal: null })
+  expect(f.port.providerFailed).not.toHaveBeenCalled()
+})
+
+it.each(['acquire', 'prepare'] as const)('keeps another operation deadline rejected by %s out of this operation marker', async (stage) => {
+  const f = fixture()
+  f.channel.commit.mockImplementation(async () => ({ prepared: true, submitted: true, commitClosed: true, rangeEmpty: true, ioClosed: true,
+    physicalStopRequired: false, providerFailure: false, direct: undefined, stopCause: 'run-deadline',
+    stdout: { bytes: Buffer.alloc(0), observedBytes: 0, eof: true }, stderr: { bytes: Buffer.alloc(0), observedBytes: 0, eof: true } }))
+  const first = await f.shell.execute(f.shell.resolve({ command: 'original confirmed deadline', onExpiry: 'none' }))
+  await first.done
+  const [original] = f.operations
+  const reason = await original!.handle.done.catch((cause: unknown) => cause)
+  expect(reason).toMatchObject({ name: 'CommandRunDeadlineError' })
+  if (stage === 'acquire') f.allocations.mockRejectedValue(reason)
+  else f.channel.prepare.mockRejectedValue(reason)
+  await expect(f.shell.execute(f.shell.resolve({ command: 'foreign failure during preparation', onExpiry: 'none' }))).rejects.toBe(reason)
+  const operation = [...f.operations].find(value => value !== original)
+  expect(operation).toBeDefined()
+  await expect(operation!.handle.done).rejects.toBe(reason)
+  expect(operation!.stopReason()?.runDeadline).toBeUndefined()
+  expect(f.port.providerFailed).not.toHaveBeenCalled()
+})
+
 it('returns the specified empty settled Shell timeout while late allocation remains with its original owner', async () => {
   const f = fixture(true), spec = f.shell.resolve({ command: 'never submitted' }), handle = await f.shell.execute(spec)
   await expect(handle.done).resolves.toBeUndefined()

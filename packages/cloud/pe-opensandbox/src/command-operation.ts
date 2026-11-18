@@ -25,8 +25,22 @@ export interface CommandSnapshot {
   readonly physicalStopRequired: boolean
   readonly providerFailure: boolean
   readonly direct: SubprocessOutcome | undefined
+  /** Exact identity-checked protocol cause; it does not confirm remote or local settlement. */
+  readonly stopCause?: 'run-deadline'
   readonly stdout: CommandStreamSnapshot
   readonly stderr: CommandStreamSnapshot
+}
+
+/** A validated run deadline after original range, EOF, I/O and local settlement; no direct exit is invented. */
+class CommandRunDeadlineError extends Error {
+  /** Original guest protocol cause. */
+  readonly reason = 'run-deadline'
+
+  /** Record the already joined original run deadline without an exit outcome. */
+  constructor() {
+    super('The command reached its run deadline without a direct exit outcome; original range and I/O settlement completed.')
+    this.name = 'CommandRunDeadlineError'
+  }
 }
 
 /** One immutable operation selection. Mutation methods each submit at most once, including lost replies. */
@@ -99,6 +113,7 @@ export class ManagedCommandOperation {
   private readonly output: { stdout: CollectedOutputMirror; stderr: CollectedOutputMirror } | undefined
   private readonly refusedOutput: Partial<Record<'stdout' | 'stderr', number>> = {}
   private outputLimitFailure: { readonly cause: CollectedOutputFailure; readonly stream: 'stdout' | 'stderr' } | undefined
+  private runDeadlineFailure: CommandRunDeadlineError | undefined
   private readonly streams: CommandStreams | undefined
   private readonly streamFailure: ReturnType<typeof Promise.withResolvers<never>> | undefined
   private stream: AgentDataStream | undefined
@@ -250,10 +265,17 @@ export class ManagedCommandOperation {
     void this.audit.watch(this.audit.begin('native-direct'), this.completion.promise, () => this.auditFacts())
     this.lifetimeDeadlineAtMs = performance.now() + this.limits.maxLifetimeMs
     this.lifetime = setTimeout(() => { this.requestStop(new Error('The command exceeded its platform lifetime.')) }, this.limits.maxLifetimeMs)
-    void this.run().then(() => {
+    void this.run().then((stopCause) => {
       this.localSettled = true
       this.audit.point('native-local-settled', this.auditFacts())
       this.finishEmpty()
+      if (stopCause === 'run-deadline' && this.rangeConfirmed && this.borrowReleaseFailure === undefined
+        && this.failed === undefined && !this.unknownReported) {
+        if (this.requestedStop === undefined) {
+          this.runDeadlineFailure = new CommandRunDeadlineError()
+          this.fail(this.runDeadlineFailure)
+        } else this.fail(this.requestedStop.reason)
+      }
     }, (cause: unknown) => {
       this.fail(cause)
       this.localSettled = true
@@ -288,9 +310,13 @@ export class ManagedCommandOperation {
   /**
    * Read the retained stop request without requesting or confirming termination.
    * @returns The first effective stop and whether its reason came from the operation signal or native scope abort.
-   * Late cancellation after confirmed range completion adds no stop request.
+   * Late cancellation after confirmed range completion adds no stop request. A joined protocol
+   * deadline exposes runDeadline only for this original operation, never for a caller-supplied reason.
    */
-  stopReason(): { readonly reason: unknown; readonly aborted: boolean } | undefined { return this.requestedStop }
+  stopReason(): { readonly reason: unknown; readonly aborted: boolean; readonly runDeadline?: true } | undefined {
+    const deadline = this.joinedRunDeadline()
+    return this.requestedStop ?? (deadline === undefined ? undefined : { reason: deadline, aborted: false, runDeadline: true })
+  }
 
   /**
    * Read the original acquisition status without admitting remote work.
@@ -344,9 +370,9 @@ export class ManagedCommandOperation {
     this.finishEmpty()
   }
 
-  private async run(): Promise<void> {
+  private async run(): Promise<'run-deadline' | undefined> {
     let attach: (() => Promise<AgentDataStream>) | undefined, joinAttachment: (() => Promise<void>) | undefined
-    let attachmentAttempted = false
+    let attachmentAttempted = false, runDeadline = false
     try {
       const channel = await this.authority.acquire(this.allocationWait.signal)
       this.channel = channel
@@ -412,7 +438,9 @@ export class ManagedCommandOperation {
       }
       if (this.stream !== undefined) await this.waitForOutput(this.stream)
       if (this.direct === undefined || !this.eof.stdout || !this.eof.stderr) {
-        this.fail(this.requestedStop?.reason ?? new Error('The command ended without complete direct exit facts.'))
+        if (snapshot.stopCause === 'run-deadline' && this.requestedStop === undefined && this.direct === undefined
+          && this.eof.stdout && this.eof.stderr && snapshot.rangeEmpty && snapshot.ioClosed) runDeadline = true
+        else this.fail(this.requestedStop?.reason ?? new Error('The command ended without complete direct exit facts.'))
       }
     } catch (cause) {
       this.fail(this.stopRequest()?.reason ?? cause)
@@ -438,6 +466,7 @@ export class ManagedCommandOperation {
         this.preparation.reject(this.failed?.cause ?? this.requestedStop?.reason ?? new Error('Command preparation did not complete.'))
       }
     }
+    return runDeadline ? 'run-deadline' : undefined
   }
 
   private accept(snapshot: CommandSnapshot): void {
@@ -573,10 +602,16 @@ export class ManagedCommandOperation {
   }
   private isRangeConfirmed(): boolean { return this.rangeConfirmed }
 
+  private joinedRunDeadline(): CommandRunDeadlineError | undefined {
+    const failure = this.runDeadlineFailure
+    return this.failed?.cause === failure ? failure : undefined
+  }
+
   private auditFacts(): SemanticFacts {
     return { directObserved: this.direct !== undefined, stdoutEof: this.eof.stdout, stderrEof: this.eof.stderr,
       rangeConfirmed: this.rangeConfirmed, localSettled: this.localSettled, remoteAttempted: this.remoteAttempted,
-      failed: this.failed !== undefined, physicalStopAcknowledged: this.physicalStopAcknowledged }
+      failed: this.failed !== undefined, physicalStopAcknowledged: this.physicalStopAcknowledged,
+      runDeadline: this.joinedRunDeadline() !== undefined }
   }
 
   private assertPublic(): void {

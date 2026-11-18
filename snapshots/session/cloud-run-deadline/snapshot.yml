@@ -1,0 +1,12 @@
+version: 1
+scenario: cloud-run-deadline
+profile: headless
+composition: cloud-run-deadline
+recording: authored
+header:
+  class: cloud-run-deadline
+  pin: true
+permission: read-only
+platform: posix
+workspace:
+  final: true

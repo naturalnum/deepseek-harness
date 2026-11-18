@@ -26,6 +26,18 @@ it('returns the original Promise and emits no reactions or events without a subs
   expect(then).not.toHaveBeenCalled(); expect(await original).toBe(7)
 })
 
+it.each([false, true])('projects the bounded run deadline classification %s without operational content', (runDeadline) => {
+  const events = collect(), audit = new PrivateSemanticAudit()
+  const facts = { runDeadline, directObserved: false, stdoutEof: true, stderrEof: true,
+    rangeConfirmed: true, localSettled: true, command: 'PRIVATE_COMMAND', stdout: 'PRIVATE_OUTPUT',
+    path: 'PRIVATE_PATH', token: 'PRIVATE_TOKEN' }
+  audit.point('native-local-settled', facts)
+  expect(events[0]?.fields).toEqual({ runDeadline, directObserved: false, stdoutEof: true, stderrEof: true,
+    rangeConfirmed: true, localSettled: true })
+  expect(JSON.stringify(events)).not.toContain('PRIVATE_')
+  expect(Buffer.byteLength(JSON.stringify(events[0]))).toBeLessThan(512)
+})
+
 it('records actual fulfilled and rejected settlement without wrapping or exposing failure text', async () => {
   const events = collect(), audit = new PrivateSemanticAudit(), pending = Promise.withResolvers<number>()
   const span = audit.begin('sdk-create', { sandboxId: 'original-id' })

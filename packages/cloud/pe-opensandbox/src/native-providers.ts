@@ -214,6 +214,7 @@ export class CloudShellExecutor extends ShellExecutor {
         if (killed) return 'killed'
         const stop = operation.stopReason()
         if (stop === undefined) return undefined
+        if (stop.runDeadline === true) return 'timed-out'
         if (timer.signal.aborted && stop.reason === timer.signal.reason) {
           return timeoutOf(timer.signal, SHELL_TIMEOUT) === undefined ? 'aborted' : 'timed-out'
         }

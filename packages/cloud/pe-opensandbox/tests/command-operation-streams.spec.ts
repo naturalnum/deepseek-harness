@@ -107,6 +107,38 @@ it('does not turn terminal EOF into a successful direct exit when the original o
   f.get().events.closed(); await terminal.terminate()
 })
 
+it.each(['joined', 'join-rejected'] as const)('keeps a run deadline behind the original local attachment: %s', async (outcome) => {
+  const f = fixture(), joined = Promise.withResolvers<undefined>(), failure = new Error('original local join failed')
+  f.channel.whenLocallySettled.mockImplementation(() => joined.promise)
+  const done = f.operation.handle.done
+  let settled = false
+  void done.then(() => { settled = true }, () => { settled = true })
+  try {
+    f.operation.publish(); f.operation.begin(); await f.operation.prepared
+    await vi.waitFor(() => { expect(f.channel.commit).toHaveBeenCalledOnce() })
+    const before = initial()
+    f.setSnapshot({ ...before, submitted: true, rangeEmpty: true, ioClosed: true, stopCause: 'run-deadline',
+      stdout: { ...before.stdout, eof: true }, stderr: { ...before.stderr, eof: true } })
+    f.eof(2); f.eof(3); f.eof(4)
+    await vi.waitFor(() => { expect(f.wire.close).toHaveBeenCalledOnce() })
+    f.get().events.closed()
+    await vi.waitFor(() => { expect(f.channel.whenLocallySettled).toHaveBeenCalledOnce() })
+    expect(settled).toBe(false)
+    expect(f.operation.stopReason()).toBeUndefined()
+    if (outcome === 'joined') {
+      joined.resolve(undefined)
+      await expect(done).rejects.toMatchObject({ name: 'CommandRunDeadlineError', reason: 'run-deadline' })
+      expect(f.authority.unknown).not.toHaveBeenCalled()
+    } else {
+      joined.reject(failure)
+      await expect(done).rejects.toBe(failure)
+      expect(f.authority.unknown).toHaveBeenCalledWith(failure)
+      expect(f.operation.stopReason()).toBeUndefined()
+    }
+    await f.operation.whenEmpty
+  } finally { joined.resolve(undefined) }
+})
+
 it('publishes raw endpoints synchronously but requires actual attachment before preparation and commit', async () => {
   const f = fixture(), handle = f.operation.handle
   expect(handle.stdin).toBeDefined(); expect(handle.stdout).toBeDefined(); expect(handle.control).toBeDefined()

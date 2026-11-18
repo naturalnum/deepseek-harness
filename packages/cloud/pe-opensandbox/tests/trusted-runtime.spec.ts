@@ -94,6 +94,28 @@ function registeredService(selected: AgentSelection) {
 }
 
 describe('Root original trusted runtime registry', () => {
+  it.each(['run-deadline', 'owner-stop'])(
+    'retains the first nonnull original command cause across replies: %s', async (firstCause) => {
+      const f = fixture(), signal = new AbortController().signal
+      const prepared = f.registry.bindPrepared({ ...await f.registry.handshake(f.selected, signal, readinessBudget()) })
+      const channel = f.registry.command(prepared)
+      await channel.prepare({ argv: ['/bin/true'], cwd: '/project', stdin: { mode: 'ignore' } })
+      f.client.poll.mockResolvedValue({ ...f.facts, firstCause })
+      await channel.poll(); await channel.poll()
+      f.client.poll.mockResolvedValue({ ...f.facts, firstCause: firstCause === 'owner-stop' ? 'run-deadline' : null })
+      await expect(channel.poll()).rejects.toMatchObject({ code: 'cloud/execution-unavailable' })
+    },
+  )
+  it.each(['run-deadline', 'run-deadline-extra', 'other-stop'])(
+    'projects only the exact validated run deadline cause: %s', async (firstCause) => {
+      const f = fixture(), signal = new AbortController().signal
+      const prepared = f.registry.bindPrepared({ ...await f.registry.handshake(f.selected, signal, readinessBudget()) })
+      const channel = f.registry.command(prepared)
+      await channel.prepare({ argv: ['/bin/true'], cwd: '/project', stdin: { mode: 'ignore' } })
+      f.client.poll.mockResolvedValue({ ...f.facts, firstCause })
+      expect((await channel.poll()).stopCause).toBe(firstCause === 'run-deadline' ? 'run-deadline' : undefined)
+    },
+  )
   it('captures the original application target and rechecks registration and fencing without command or allocation mutation', async () => {
     const transport = { withResponse: vi.fn(async () => {}) }
     const http = vi.fn<ApplicationHttpFactory>(() => transport), f = fixture(http), signal = new AbortController().signal

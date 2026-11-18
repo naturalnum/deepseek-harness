@@ -160,6 +160,119 @@ function overflowingOutput(empty = false): CommandSnapshot {
     stderr: { bytes: Buffer.alloc(0), observedBytes: 0, eof: empty } }
 }
 
+it('rejects a confirmed run deadline without inventing a direct exit or unknown cleanup', async () => {
+  const events: SemanticAuditEvent[] = [], bus = channel('dsh:pe-opensandbox:semantic:v1')
+  const listener = (message: unknown): void => { const event = message as SemanticAuditEvent; events.push(event); event.receipt() }
+  bus.subscribe(listener)
+  try {
+    const f = fixture(), done = f.op.handle.done, terminal = complete()
+    f.channel.commit.mockResolvedValue({ ...terminal, direct: undefined, stopCause: 'run-deadline' })
+    f.op.publish(); f.op.begin()
+    await expect(done).rejects.toMatchObject({ name: 'CommandRunDeadlineError', reason: 'run-deadline' })
+    await f.op.whenEmpty
+    await expect(f.op.handle.waitForExit()).resolves.toBe(true)
+    expect(f.op.stopReason()).toMatchObject({ reason: { name: 'CommandRunDeadlineError' }, aborted: false, runDeadline: true })
+    expect(f.op.handle.done).toBe(done)
+    expect(f.authority.unknown).not.toHaveBeenCalled()
+    expect(f.channel.stop).not.toHaveBeenCalled()
+    expect(events.find(event => event.operation === 'native-direct' && event.phase === 'end')?.fields)
+      .toMatchObject({ directObserved: false, stdoutEof: true, stderrEof: true, rangeConfirmed: true,
+        localSettled: true, failed: true, physicalStopAcknowledged: false, runDeadline: true })
+    expect(JSON.stringify(events)).not.toContain('raw')
+  } finally { bus.unsubscribe(listener) }
+})
+
+it('keeps an absent deadline cause as the original incomplete outcome failure', async () => {
+  const f = fixture()
+  f.channel.commit.mockResolvedValue({ ...complete(), direct: undefined })
+  f.op.publish(); f.op.begin()
+  await expect(f.op.handle.done).rejects.toMatchObject({ name: 'Error' })
+  expect(f.op.stopReason()).toBeUndefined()
+})
+
+it.each(['acquire', 'prepare'] as const)('keeps a foreign deadline failure from %s outside this original operation marker', async (stage) => {
+  const original = fixture()
+  original.channel.commit.mockResolvedValue({ ...complete(), direct: undefined, stopCause: 'run-deadline' })
+  original.op.publish(); original.op.begin()
+  const reason = await original.op.handle.done.catch((cause: unknown) => cause)
+  expect(reason).toMatchObject({ name: 'CommandRunDeadlineError' })
+  const f = fixture()
+  if (stage === 'acquire') f.authority.acquire.mockRejectedValue(reason)
+  else f.channel.prepare.mockRejectedValue(reason)
+  f.op.publish(); f.op.begin()
+  await expect(f.op.handle.done).rejects.toBe(reason)
+  expect(f.op.stopReason()?.runDeadline).toBeUndefined()
+})
+
+it('keeps a caller stop before a subsequently confirmed run deadline', async () => {
+  const f = fixture(), reason = new Error('original caller cancellation'), done = f.op.handle.done
+  const terminal: CommandSnapshot = { ...complete(), direct: undefined, stopCause: 'run-deadline' }
+  f.channel.commit.mockResolvedValue({ ...initial(), submitted: true })
+  f.channel.stop.mockResolvedValue(terminal)
+  f.op.publish(); f.op.begin()
+  await vi.waitFor(() => { expect(f.channel.poll).toHaveBeenCalledOnce() })
+  f.caller.abort(reason); f.poll.resolve(terminal)
+  await expect(done).rejects.toBe(reason)
+  await f.op.whenEmpty
+  expect(f.op.stopReason()?.reason).toBe(reason)
+  expect(f.op.stopReason()?.runDeadline).toBeUndefined()
+  expect(f.authority.unknown).not.toHaveBeenCalled()
+})
+
+it.each(['provider-failure', 'physical-stop-required', 'missing-stdout-eof', 'missing-stderr-eof'] as const)(
+  'does not classify a run deadline when %s', async (failure) => {
+    const f = fixture(), terminal = complete()
+    f.channel.commit.mockResolvedValue({ ...terminal, direct: undefined, stopCause: 'run-deadline',
+      providerFailure: failure === 'provider-failure', physicalStopRequired: failure === 'physical-stop-required',
+      stdout: { ...terminal.stdout, eof: failure !== 'missing-stdout-eof' },
+      stderr: { ...terminal.stderr, eof: failure !== 'missing-stderr-eof' } })
+    f.op.publish(); f.op.begin()
+    await expect(f.op.handle.done).rejects.toMatchObject({ name: 'Error' })
+    expect(f.op.stopReason()).toBeUndefined()
+    if (failure === 'provider-failure' || failure === 'physical-stop-required') {
+      await vi.waitFor(() => { expect(f.authority.unknown).toHaveBeenCalledOnce() })
+    }
+  },
+)
+
+it.each(['range', 'io'] as const)('keeps the deadline outcome pending while original %s settlement is missing', async (missing) => {
+  const f = fixture(), done = f.op.handle.done
+  f.channel.commit.mockResolvedValue({ ...complete(), direct: undefined, stopCause: 'run-deadline',
+    rangeEmpty: missing !== 'range', ioClosed: missing !== 'io' })
+  let settled = false
+  void done.then(() => { settled = true }, () => { settled = true })
+  f.op.publish(); f.op.begin()
+  await vi.waitFor(() => { expect(f.channel.poll).toHaveBeenCalledOnce() })
+  expect(settled).toBe(false)
+  expect(f.op.stopReason()).toBeUndefined()
+})
+
+it.each(['stop-rejected', 'stop-timeout', 'counter-regressed', 'eof-regressed'] as const)(
+  'retains unknown cleanup when a deadline observation is followed by %s', async (failure) => {
+    const f = fixture(), reason = new Error('original caller stop'), transport = new Error('original stop failure')
+    const before: CommandSnapshot = { ...initial(), submitted: true, stopCause: 'run-deadline',
+      stdout: { bytes: Buffer.from('x'), observedBytes: 1, eof: failure === 'eof-regressed' } }
+    const terminal: CommandSnapshot = { ...before, rangeEmpty: failure !== 'stop-timeout', ioClosed: failure !== 'stop-timeout',
+      stdout: { bytes: failure === 'counter-regressed' ? Buffer.alloc(0) : Buffer.from('x'),
+        observedBytes: failure === 'counter-regressed' ? 0 : 1, eof: failure !== 'eof-regressed' },
+      stderr: { ...before.stderr, eof: true } }
+    f.channel.commit.mockResolvedValue(before)
+    if (failure === 'stop-rejected') f.channel.stop.mockRejectedValue(transport)
+    else f.channel.stop.mockResolvedValue(terminal)
+    f.op.publish(); f.op.begin()
+    await vi.waitFor(() => { expect(f.channel.poll).toHaveBeenCalledOnce() })
+    if (failure === 'stop-timeout') f.channel.poll.mockResolvedValue(terminal)
+    f.caller.abort(reason); f.poll.resolve(before)
+    await expect(f.op.handle.done).rejects.toBe(reason)
+    await vi.waitFor(() => { expect(f.authority.unknown).toHaveBeenCalledOnce() })
+    expect(f.op.stopReason()?.runDeadline).toBeUndefined()
+    let empty = false
+    void f.op.whenEmpty.then(() => { empty = true })
+    expect(empty).toBe(false)
+    f.op.acknowledgePhysicalStop(); await f.op.whenEmpty
+  },
+)
+
 it('projects the actual refused stderr stream without changing its private output failure', async () => {
   const f = fixture(), done = f.op.handle.done, overflow = overflowingOutput(true)
   f.channel.commit.mockResolvedValue({ ...overflow, stdout: overflow.stderr, stderr: overflow.stdout })

@@ -26,6 +26,10 @@ Collected subprocess handles implement `releaseCollected()` through their origin
 
 A collected observed-byte refusal retains its original error and joins the existing stop without accepting further output. Actual range, EOF and I/O confirmation permits cleanup; stop failure, contradictory stream coordinates, provider failure or local cleanup failure still retains unknown responsibility. No output or execution limit is widened. The public `done` rejection projects only this original refusal as Native `SubprocessOutputLimitError`, preserving its cause, stream and enforced byte limit. Root cleanup observers and failed readers retain the private failure; an earlier caller stop remains unchanged.
 
+The original authenticated command channel retains its first nonnull protocol cause; changing or clearing it rejects as unconfirmed execution. Only its exact `run-deadline` can identify a deadline without DIRECT, after complete original range, stdout/stderr EOF, I/O, local attachment/write joins and borrow release, with no provider/physical-stop uncertainty or retained failure. Native `done` still rejects without fabricated exit facts; the operation's own joined-deadline marker lets Cloud Shell report `timedOut` while retaining its original `whenEmpty` observation. An error propagated from another operation during acquisition or preparation grants no such marker. Caller stop reasons take precedence, including a deadline error carried from another command. Missing causes, contradictory facts and cleanup failures retain their original failure handling. Background promotion does not extend the fixed guest run limit.
+
+Existing private semantic spans expose `runDeadline` as a boolean for this completed classification; delivery receipts remain observation only. Native background jobs retain their existing killed/status presentation when no signal was observed; the deadline classification invents neither a signal nor a direct outcome.
+
 -----
 
 <a id="use-this-package"></a>

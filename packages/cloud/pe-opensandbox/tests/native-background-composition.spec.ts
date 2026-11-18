@@ -47,10 +47,11 @@ async function fixture() {
   const empty = { bytes: Buffer.alloc(0), observedBytes: 0, eof: false }
   const initial: CommandSnapshot = { prepared: true, submitted: false, commitClosed: false, rangeEmpty: false,
     ioClosed: false, physicalStopRequired: false, providerFailure: false, direct: undefined, stdout: empty, stderr: empty }
-  const state = { output: '', terminal: false, cancelled: false }
+  const state = { output: '', terminal: false, cancelled: false, runDeadline: false }
   const snapshot = (): CommandSnapshot => ({ ...initial, submitted: true, commitClosed: state.terminal,
     rangeEmpty: state.terminal, ioClosed: state.terminal,
-    direct: state.terminal ? { exitCode: state.cancelled ? null : 0, signal: state.cancelled ? 'SIGTERM' : null } : undefined,
+    ...state.runDeadline ? { stopCause: 'run-deadline' as const } : {},
+    direct: state.terminal && !state.runDeadline ? { exitCode: state.cancelled ? null : 0, signal: state.cancelled ? 'SIGTERM' : null } : undefined,
     stdout: { bytes: Buffer.from(state.output), observedBytes: Buffer.byteLength(state.output), eof: state.terminal },
     stderr: { ...empty, eof: state.terminal } })
   const channel = {
@@ -117,6 +118,23 @@ async function fixture() {
   }
   return { ctx, agent, harness, binding, producer, commands, root, capacity, state, channel, call, start }
 }
+
+it('releases a joined background deadline without reporting Root unknown and admits the next Native Bash', async () => {
+  const f = await fixture()
+  f.state.runDeadline = true
+  const job = await f.start()
+  f.state.terminal = true
+  await vi.waitFor(() => { expect(f.ctx.jobs.get(job.id, f.agent.id).status).toBe('killed') })
+  await vi.waitFor(() => { expect(f.capacity).toEqual({ active: 0, resident: 0 }) })
+  expect(f.root.unknown).not.toHaveBeenCalled()
+  expect(f.commands.calls.inspect()).toBe(0)
+  f.state.runDeadline = false; f.state.output = 'T05_AFTER_JOINED_DEADLINE\n'
+  const result = await f.call('bash', { command: 'printf next', description: 'After joined deadline' })
+  expect(result.isError).toBe(false)
+  expect(result.value).toMatchObject({ kind: 'foreground', exitCode: 0, stdout: { text: f.state.output } })
+  expect(f.root.unknown).not.toHaveBeenCalled()
+  expect(f.capacity).toEqual({ active: 0, resident: 0 })
+})
 
 it('keeps Native background output through tools/result and releases after the registry final drain', async () => {
   const f = await fixture()

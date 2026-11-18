@@ -86,6 +86,7 @@ function snapshot(value: OperationSnapshot): CommandSnapshot {
   return Object.freeze({ prepared: value.prepared, submitted: value.submitted, commitClosed: value.commitClosed,
     rangeEmpty: value.rangeEmpty, ioClosed: value.ioClosed, physicalStopRequired: value.physicalStopRequired,
     providerFailure: value.providerFailure || value.failure !== null || value.cleanupFailure !== null,
+    ...value.firstCause === 'run-deadline' ? { stopCause: 'run-deadline' as const } : {},
     direct: code === undefined ? undefined : Object.freeze({ exitCode: code < 0 ? null : code, signal: signal ?? null }),
     stdout: stream('stdout'), stderr: stream('stderr') })
 }
@@ -279,12 +280,20 @@ export class TrustedRuntimeRegistry implements TrustedAgentLifecycle {
     record.commands++
     const operationId = randomUUID()
     let request: PreparedRequest | undefined
+    let firstCause: string | null = null
     const selected = (): PreparedRequest => {
       if (request === undefined) unavailable()
       return request
     }
     const run = async (work: () => Promise<OperationSnapshot>): Promise<CommandSnapshot> => {
-      try { return snapshot(await work()) }
+      try {
+        const value = await work()
+        if (firstCause !== null && value.firstCause !== firstCause) {
+          throw new Error('The original command first cause changed or disappeared.')
+        }
+        firstCause ??= value.firstCause
+        return snapshot(value)
+      }
       catch (cause) { record.failure ??= { cause }; return unavailable() }
     }
     return Object.freeze<CommandChannel>({
