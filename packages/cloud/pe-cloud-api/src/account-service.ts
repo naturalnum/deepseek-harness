@@ -1011,7 +1011,12 @@ export class CloudAccountApi extends Service {
     return native.value
   }
 
-  /** Load the original Job Controller under exact Session and Project admission. */
+  /**
+   * Load the original Job Controller under exact Session and Project admission.
+   * @param owner Loader context for this account.
+   * @param config Settings for the original Job Controller.
+   * @returns The controller registered in this account graph.
+   */
   createJobs(owner: Context, config: Parameters<typeof createNativeJobs>[5]): NativeJobs['value'] {
     this.assertInstalled(owner)
     if (this.jobs.native !== undefined || this.maxNativeInventoryEntries === undefined) this.duplicateNative()

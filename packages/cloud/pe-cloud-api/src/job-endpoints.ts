@@ -12,7 +12,11 @@ export const JOB_CONTROLLER_ENDPOINTS = Object.freeze([
   endpoint('kill', 'rpc'), endpoint('list', 'stream'), endpoint('follow', 'stream'),
 ] as const)
 
-/** Recognize the optional complete group, rejecting partial or differently scoped declarations. */
+/**
+ * Recognize the optional complete group, rejecting partial or differently scoped declarations.
+ * @param manifest Exposure manifest for this deployment.
+ * @returns Whether all three native job endpoints are selected.
+ */
 export function selectJobController(manifest: ExposureManifest): boolean {
   const rpc = manifest.rpcEndpoints.filter(row => row.endpoint.startsWith('job/'))
   const streams = manifest.streamEndpoints.filter(row => row.endpoint.startsWith('job/'))

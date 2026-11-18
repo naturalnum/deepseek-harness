@@ -181,8 +181,19 @@ export const ACCOUNT_FIRST_SCREEN_ENTRIES = Object.freeze({
   events: 'pe-cloud-first-screen-events',
 })
 
-/** Expose the guarded builtin to the sealed account recipe only when the complete Job group is selected. */
-export function accountJobEntries(api: CloudAccountApi, manifest: ExposureService['policy']['manifest']) {
+type AccountJobEntries = Partial<Record<typeof ACCOUNT_NATIVE_ENTRIES.jobs, {
+  inject: string[]
+  Config: typeof JobController.Config
+  apply(owner: Context, config: ConstructorParameters<typeof JobController>[1]): void
+}>>
+
+/**
+ * Expose the guarded builtin to the sealed account recipe only when the complete Job group is selected.
+ * @param api Account service that installs the Job Controller.
+ * @param manifest Exposure manifest for this account.
+ * @returns The selected Loader entry, or an empty map when jobs are disabled.
+ */
+export function accountJobEntries(api: CloudAccountApi, manifest: ExposureService['policy']['manifest']): AccountJobEntries {
   return selectJobController(manifest) ? { [ACCOUNT_NATIVE_ENTRIES.jobs]: {
     inject: [...JobController.inject, 'sessions', 'typertGateway', 'peCloudApi'], Config: JobController.Config,
     apply(owner: Context, config: ConstructorParameters<typeof JobController>[1]) { api.createJobs(owner, config) },

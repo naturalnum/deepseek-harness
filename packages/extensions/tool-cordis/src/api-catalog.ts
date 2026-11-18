@@ -1712,6 +1712,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'a fresh projection.',
       },
       {
+        signature: 'markCapacityWaiting?(id: JobId, waiting: boolean, caller: SessionId): void',
+        description: 'Publish a live producer\'s actual admission wait through the original owner and job key.',
+        parameters: [{ name: 'id', description: 'Registry-issued job id.' }, { name: 'waiting', description: 'Whether the producer is waiting for execution capacity.' }, { name: 'caller', description: 'Session that owns the job.' }],
+      },
+      {
         signature: 'abstract read(id: JobId, caller?: SessionId): JobRead',
         description: 'Consume the ring from the model cursor and advance it to the current total. After settlement the first read also carries the producer\'s result. Throws for an unknown or foreign job.',
         parameters: [{ name: 'id', description: 'job to read.' }, { name: 'caller', description: 'reading session checked against the owner.' }],
@@ -2526,6 +2531,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Install original question replies and timed-wait claims.',
         parameters: [{ name: 'owner', description: 'Actual account Loader entry.' }, { name: 'guards', description: 'Shared native active-Agent/project admission.' }],
         returns: 'The native question service.',
+      },
+      {
+        signature: 'createJobs(owner: Context, config: Parameters<typeof createNativeJobs>[5]): NativeJobs[\'value\']',
+        description: 'Load the original Job Controller under exact Session and Project admission.',
+        parameters: [{ name: 'owner', description: 'Loader context for this account.' }, { name: 'config', description: 'Settings for the original Job Controller.' }],
+        returns: 'The controller registered in this account graph.',
       },
       {
         signature: 'createSchedule(owner: Context, guards: NativeSessionGuards, config: Parameters<typeof createNativeSchedule>[6]): NativeSchedule[\'value\']',
@@ -7601,6 +7612,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface JobChunk {\n    readonly at: number;\n    readonly text: string;\n    readonly channel?: JobChannel;\n    readonly gapBefore?: true;\n}',
   },
   {
+    name: 'JobController',
+    declaration: 'export class JobController extends TypertRemoteService {\n    static inject;\n    static Config: z<Config>;\n    constructor(ctx: Context, config: Config);\n    @Remote({ mode: \'stream\' })\n    list(request: JobListRequest, signal: AbortSignal): AsyncIterable<JobListFrame>;\n    @Remote({ mode: \'stream\' })\n    follow(request: JobFollowRequest, signal: AbortSignal): AsyncIterable<JobFollowFrame>;\n    @Remote(\'kill\')\n    kill(request: JobKillRequest): JobKillValue;\n}',
+  },
+  {
     name: 'JobEvent',
     declaration: 'export type JobEvent = {\n    readonly type: \'registered\' | \'progress\' | \'stopping\' | \'removed\';\n    readonly job: JobView;\n} | {\n    readonly type: \'settled\';\n    readonly job: JobView;\n    readonly cause: JobSettleCause;\n    readonly awaited: boolean;\n} | {\n    readonly type: \'output\';\n    readonly id: JobId;\n    readonly owner?: SessionId;\n    readonly total: number;\n};',
   },
@@ -7698,7 +7713,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'JobView',
-    declaration: 'export interface JobView {\n    readonly id: JobId;\n    readonly kind: string;\n    readonly label: string;\n    readonly owner?: SessionId;\n    readonly outputLimitBytes?: number;\n    readonly status: JobStatus;\n    readonly progress?: string;\n    readonly detail?: string;\n    readonly startedAt: number;\n    readonly finishedAt?: number;\n    readonly output: {\n        readonly total: number;\n        readonly earliest: number;\n        readonly spillPaths?: readonly string[];\n    };\n}',
+    declaration: 'export interface JobView {\n    readonly id: JobId;\n    readonly kind: string;\n    readonly label: string;\n    readonly owner?: SessionId;\n    readonly outputLimitBytes?: number;\n    readonly status: JobStatus;\n    readonly waitingForCapacity?: true;\n    readonly progress?: string;\n    readonly detail?: string;\n    readonly startedAt: number;\n    readonly finishedAt?: number;\n    readonly output: {\n        readonly total: number;\n        readonly earliest: number;\n        readonly spillPaths?: readonly string[];\n    };\n}',
   },
   {
     name: 'JsonSchemaNode',
@@ -8299,6 +8314,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'NativeGoals',
     declaration: 'export interface NativeGoals {\n    readonly value: GoalService;\n    inspect(): ExposureInventory;\n}',
+  },
+  {
+    name: 'NativeJobs',
+    declaration: 'export interface NativeJobs {\n    readonly value: JobController;\n    inspect(): ExposureInventory;\n}',
   },
   {
     name: 'NativeModelSelectionPolicy',

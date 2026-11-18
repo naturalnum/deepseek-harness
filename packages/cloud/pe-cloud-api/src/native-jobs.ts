@@ -25,7 +25,16 @@ export interface NativeJobs {
 type Method = typeof JOB_CONTROLLER_ENDPOINTS[number]
 const [kill, list, follow] = JOB_CONTROLLER_ENDPOINTS
 
-/** Install one guarded Job Controller under the original account and Project policy. */
+/**
+ * Install one guarded Job Controller under the original account and Project policy.
+ * @param owner Loader context for the controller and job registry.
+ * @param binding Current account generation.
+ * @param policy Account exposure policy that selects and guards the job endpoints.
+ * @param projectForSession Resolves the Session's current authorized Project.
+ * @param maximum Maximum number of endpoints inspected in the Gateway inventory.
+ * @param config Settings for the original Job Controller.
+ * @returns The installed controller and its ownership and routing inspection.
+ */
 export function createNativeJobs(
   owner: Context, binding: AccountBinding, policy: ExposurePolicy,
   projectForSession: (session: Session) => Workspace, maximum: number, config: Config,

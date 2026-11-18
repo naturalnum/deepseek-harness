@@ -13,6 +13,7 @@ export interface CommandWaitOwner {
   assertCurrent(): void
 }
 
+/** The producer's registered job and its wait and retirement notifications. */
 export interface CommandWaitJob {
   readonly id: string
   readonly owner: CommandWaitOwner
@@ -20,7 +21,14 @@ export interface CommandWaitJob {
   waiting(value: boolean): void
 }
 
-/** Bind the queue ticket to the existing producer's identity, wait projection and cancellation. */
+/**
+ * Bind the queue ticket to the existing producer's identity, wait projection and cancellation.
+ * @param queue Queue owned by the command coordinator.
+ * @param job Existing job and its account and Session identity.
+ * @param signal The producer's cancellation signal.
+ * @param attempt Synchronous reservation of the original command slot.
+ * @returns The command started by the original reservation after admission.
+ */
 export async function waitForOwnedCommand<T>(
   queue: CommandWaitQueue<T>, job: CommandWaitJob, signal: AbortSignal, attempt: Attempt<T>,
 ): Promise<T> {
@@ -84,6 +92,7 @@ interface Entry<T> {
   settled: boolean
 }
 
+/** Pending and retained record limits and the admission deadline in milliseconds. */
 export interface CommandWaitLimits {
   readonly maxWaiting: number
   readonly maxWaitingPerAccount: number
@@ -146,12 +155,22 @@ export class CommandWaitQueue<T> {
     return { kind: 'tracked', ticket }
   }
 
-  /** Return only the state for the same still-authorized account, Session and generation. */
+  /**
+   * Read the state for the same still-authorized account, Session and generation.
+   * @param owner Current account and Session capability.
+   * @param jobKey Stable key issued by the job registry.
+   * @returns The recorded state, or undefined for an unmatched key.
+   */
   state(owner: CommandWaitOwner, jobKey: string): State | undefined {
     return this.find(owner, jobKey)?.state
   }
 
-  /** Cancel a still-waiting job. Once admitted, the result delegates cancellation to the original job owner. */
+  /**
+   * Cancel a waiting job. The original job owner handles cancellation after admission.
+   * @param owner Current account and Session capability.
+   * @param jobKey Stable key issued by the job registry.
+   * @returns The resulting state, or undefined for an unmatched key.
+   */
   cancel(owner: CommandWaitOwner, jobKey: string): State | undefined {
     const entry = this.find(owner, jobKey)
     entry?.cancel()

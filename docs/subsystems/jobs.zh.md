@@ -291,6 +291,8 @@ interface JobView {
   readonly outputLimitBytes?: number
   /** Current lifecycle state. */
   readonly status: JobStatus
+  /** The retained producer is waiting for original execution admission. */
+  readonly waitingForCapacity?: true
   /** The producer's live progress line (`3/10`, the current phase); cleared at settlement. */
   readonly progress?: string
   /** Terminal reason (`exit code: 3`); a recorded kill reason is merged in. */
@@ -480,6 +482,14 @@ abstract list(caller?: SessionId): JobView[]
  * @returns a fresh projection.
  */
 abstract get(id: JobId, caller?: SessionId): JobView
+
+/**
+ * Publish a live producer's actual admission wait through the original owner and job key.
+ * @param id Registry-issued job id.
+ * @param waiting Whether the producer is waiting for execution capacity.
+ * @param caller Session that owns the job.
+ */
+markCapacityWaiting?(id: JobId, waiting: boolean, caller: SessionId): void
 
 /**
  * Consume the ring from the model cursor and advance it to the current

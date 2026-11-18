@@ -128,7 +128,12 @@ export abstract class JobRegistry extends Service {
    */
   abstract get(id: JobId, caller?: SessionId): JobView
 
-  /** Publish a live producer's actual admission wait through the original owner and job key. */
+  /**
+   * Publish a live producer's actual admission wait through the original owner and job key.
+   * @param id Registry-issued job id.
+   * @param waiting Whether the producer is waiting for execution capacity.
+   * @param caller Session that owns the job.
+   */
   markCapacityWaiting?(id: JobId, waiting: boolean, caller: SessionId): void
 
   /**

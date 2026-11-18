@@ -258,6 +258,11 @@ export class NativeExecutionCalls<Project> {
     return false
   }
 
+  /**
+   * Bind admission to the live native job in the current call.
+   * @param scope Exact execution scope used by the job producer.
+   * @returns The job's admission binding if its original registry can publish the wait.
+   */
   registeredJobAdmission(scope: ExecutionScope<Project>): RegisteredNativeJobAdmission | undefined {
     const call = this.current.getStore(), job = call?.job
     if (call === undefined || call.scope !== scope || job === undefined || this.jobs.get(job.id) !== call

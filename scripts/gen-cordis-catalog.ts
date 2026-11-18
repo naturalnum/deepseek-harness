@@ -890,6 +890,8 @@ export const FOUNDATION_TYPE_NAMES: ReadonlySet<string> = new Set([
 export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   ProductEvent: 'Desktop event fields are owned by packages/client/product-analytics/README.md and src/events.ts',
   AllocationHistoryReader: 'the Root allocation history reader contract is owned by packages/cloud/pe-opensandbox/src/allocation-history.ts',
+  NativeJobs: 'account Job Controller installation is owned by packages/cloud/pe-cloud-api/src/native-jobs.ts',
+  createNativeJobs: 'account Job Controller installation is owned by packages/cloud/pe-cloud-api/src/native-jobs.ts',
   ConnectionFetchHandler: 'shared Fetch dispatch is owned by packages/client/connection/src/rpc.ts',
   ConnectionRequestRejection: 'transport rejection status is owned by packages/client/connection/src/rpc.ts',
   ConnectionTrustRequest: 'transport authentication input is owned by packages/client/connection/src/rpc.ts',

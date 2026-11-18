@@ -1077,6 +1077,14 @@ createPresets( owner: Context, config: Parameters<typeof createNativePresets>[6]
  */
 createUserQuestions(owner: Context, guards: NativeSessionGuards): NativeUserQuestions['value']
 
+/**
+ * Load the original Job Controller under exact Session and Project admission.
+ * @param owner Loader context for this account.
+ * @param config Settings for the original Job Controller.
+ * @returns The controller registered in this account graph.
+ */
+createJobs(owner: Context, config: Parameters<typeof createNativeJobs>[5]): NativeJobs['value']
+
 /** Install the original Schedule service under this account's Session admission.
  * @param owner Actual account Loader entry.
  * @param guards Shared native Session/project admission.

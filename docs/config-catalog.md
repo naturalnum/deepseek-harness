@@ -2397,7 +2397,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-pe-cloud-client`
 
 - `refs`: `BindingFieldNames` (`@deepseek-ai/dsh-pe-cloud-access/types`) · `BootstrapDecodeLimits` (`@deepseek-ai/dsh-pe-cloud-access/types`)
-- `source`: [`packages/cloud/pe-cloud-client/src/index.ts:48`](../packages/cloud/pe-cloud-client/src/index.ts)
+- `source`: [`packages/cloud/pe-cloud-client/src/index.ts:49`](../packages/cloud/pe-cloud-client/src/index.ts)
 
 ```ts config-catalog
 /** Optional public deployment inputs; the browser Loader entry still accepts no configuration. */
@@ -2484,7 +2484,7 @@ export interface CloudSkillSettingsConfig {
 }
 
 /** Explicit original browser controls supplied by the cloud deployment; selection grants no server capability. */
-export type CloudNativeSessionControl = 'commands' | 'models' | 'permissions' | 'goals' | 'plan' | 'feedback' | 'export' | 'attachments'
+export type CloudNativeSessionControl = 'commands' | 'models' | 'permissions' | 'goals' | 'plan' | 'feedback' | 'export' | 'attachments' | 'jobs'
 
 /** Explicit native management page groups; selection grants no account authority. */
 export type CloudNativeManagement = 'plugins' | 'presets' | 'automations'
