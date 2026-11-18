@@ -67,6 +67,8 @@ export interface AuthRootConfig extends AccessConfig {
   readonly applications?: ServiceApplicationConfig
   /** Omission retains component compatibility; first-trial deployment explicitly disables library sign-up. */
   readonly disableSignUp?: boolean
+  /** Explicit Better Auth email sign-in window and attempt budget. */
+  readonly loginRateLimit?: Readonly<{ windowSeconds: number; maxAttempts: number }>
   readonly accountAdministration?: AccountAdministrationConfig
   readonly database: {
     readonly host: string
@@ -117,6 +119,9 @@ export const AuthRootConfigSchema: z<AuthRootConfig> = deploymentConfig<AuthRoot
   z.object({
     applications: ServiceApplicationConfigSchema.default(undefined as never),
     disableSignUp: z.boolean(),
+    loginRateLimit: z.object({
+      windowSeconds: z.natural().min(1).max(2_147_483).required(), maxAttempts: positive(),
+    }).default(undefined as never),
     accountAdministration: z.union([z.object({ maxAccounts: positive(), maxPageSize: positive(),
       initialAdministratorIds: z.array(text()).required() }).required()]),
     database: z.object({

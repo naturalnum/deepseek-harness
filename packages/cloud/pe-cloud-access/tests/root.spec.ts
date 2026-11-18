@@ -165,6 +165,15 @@ describe('root authentication resources remain closed on incomplete or failed in
     expect(parseAuthRootConfig({ ...config(), disableSignUp: false }).disableSignUp).toBe(false)
     expect(() => z.resolve({ ...config(), disableSignUp: 'yes' }, AuthRootConfigSchema, {})).toThrow()
   })
+  it('parses a finite explicit email login budget and preserves omission', () => {
+    const loginRateLimit = { windowSeconds: 60, maxAttempts: 5 }
+    expect(parseAuthRootConfig({ ...config(), loginRateLimit }).loginRateLimit).toEqual(loginRateLimit)
+    expect(parseAuthRootConfig(config()).loginRateLimit).toBeUndefined()
+    for (const policy of [{ ...loginRateLimit, windowSeconds: 0 }, { ...loginRateLimit, maxAttempts: 1.5 },
+      { ...loginRateLimit, maxAttempts: Infinity }, { ...loginRateLimit, unknownField: 1 }]) {
+      expect(() => parseAuthRootConfig({ ...config(), loginRateLimit: policy })).toThrow()
+    }
+  })
   it('keeps real Loader boot pending and propagates a missing secret through startup failure and provider cleanup', async () => {
     const secret = Promise.withResolvers<ResolvedCredential | undefined>()
     const entered = Promise.withResolvers<undefined>()

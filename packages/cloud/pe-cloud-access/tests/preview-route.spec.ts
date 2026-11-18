@@ -14,8 +14,8 @@ const cleanups: (() => void)[] = []
 afterEach(() => { for (const close of cleanups.splice(0)) close() })
 function configured() {
   const original = rootConfig()
-  return { ...original, publicOrigin: 'http://console.dsh.localhost:4100',
-    servicePreview: { origin: 'http://preview.dsh.localhost:4100', cookieDomain: 'dsh.localhost' },
+  return { ...original, deploymentMode: 'production' as const, publicOrigin: 'https://console.auth.trial.example.test',
+    servicePreview: { origin: 'https://text.auth.trial.example.test', cookieDomain: 'auth.trial.example.test' },
     ingress: { ...original.ingress!, servicePreview: limits } }
 }
 function request(path = target, method = 'GET', headers: readonly string[] = []) {
@@ -29,36 +29,64 @@ it('preserves old Root configuration and requires explicit preview origins and c
   const enabled = parseAuthRootConfig(configured())
   expect(enabled.ingress?.servicePreview).toEqual(limits)
   const input = configured(); Reflect.deleteProperty(input, 'servicePreview')
-  expect(() => parseAuthRootConfig(input)).toThrow('Cloud authentication root')
+  expect(() => parseAuthRootConfig(input)).toThrow('$.ingress.servicePreview:')
   for (const key of Object.keys(limits)) {
     const value = configured(); value.ingress = { ...value.ingress, servicePreview: { ...limits } }
     Reflect.deleteProperty(value.ingress.servicePreview, key)
-    expect(() => parseAuthRootConfig(value)).toThrow('Cloud authentication root')
+    expect(() => parseAuthRootConfig(value)).toThrow(`$.ingress.servicePreview.${key}:`)
   }
   for (const key of Object.keys(limits.response)) {
     const value = configured(); value.ingress = { ...value.ingress, servicePreview: { ...limits, response: { ...limits.response } } }
     Reflect.deleteProperty(value.ingress.servicePreview.response, key)
-    expect(() => parseAuthRootConfig(value)).toThrow('Cloud authentication root')
+    expect(() => parseAuthRootConfig(value)).toThrow(`$.ingress.servicePreview.response.${key}:`)
+  }
+})
+
+it('parses management-only VPN and separate executable HTTPS preview settings', () => {
+  const base = rootConfig()
+  const loginRateLimit = { windowSeconds: 60, maxAttempts: 6 }
+  const accountAdministration = { maxAccounts: 6, maxPageSize: 6, initialAdministratorIds: ['fixture-administrator'] }
+  const rollout = { disableSignUp: true, loginRateLimit, accountAdministration,
+    trustedProxyAddresses: ['192.0.2.10'], pool: { ...base.pool, maxConnections: 2 } }
+  const management = { ...base, deploymentMode: 'production' as const,
+    publicOrigin: 'https://trial.vpn.example.test', ...rollout }
+  expect(parseAuthRootConfig(management)).toMatchObject({
+    publicOrigin: management.publicOrigin, ...rollout,
+  })
+  expect(parseAuthRootConfig(management).applications).toBeUndefined()
+  expect(() => parseAuthRootConfig({ ...management, trustedProxyAddresses: ['192.0.2.0/24'] })).toThrow('$.trustedProxyAddresses')
+
+  const applications = {
+    origin: 'https://apps.trial.example.test', siteDomain: 'trial.example.test',
+    maxUrlBytes: 2048, maxPathBytes: 1024, maxRequestHeaderCount: 16, maxRequestHeaderBytes: 2048,
+    maxRequestBodyBytes: 4096, maxQueuedRequests: 2, queueTimeoutMs: 1000, response: limits.response,
+    views: { maxViews: 2, maxViewsPerAccount: 1, maxRetainedBytes: 65536, maxFieldBytes: 128, lifetimeMs: 10000 },
+  }
+  const https = { ...configured(), ...rollout, applications }
+  expect(parseAuthRootConfig(https)).toMatchObject({ ...rollout, applications })
+  for (const origin of ['https://apps.auth.trial.example.test', 'http://apps.trial.example.test', 'https://apps.foreign.example.test']) {
+    expect(() => parseAuthRootConfig({ ...https, applications: { ...applications, origin } }))
+      .toThrow('Cloud authentication root')
   }
 })
 
 it('refuses selector-name collisions, nonpositive budgets, oversized chunks and application-controlled targets', () => {
   for (const name of ['sessionId', 'serviceHandle']) {
     const value = configured(); value.bindingFields = { ...value.bindingFields, accountQuery: name }
-    expect(() => parseAuthRootConfig(value)).toThrow('Cloud authentication root')
+    expect(() => parseAuthRootConfig(value)).toThrow('$.ingress.servicePreview:')
   }
   for (const field of Object.keys(limits)) {
     if (field === 'response') continue
     const value = configured(); value.ingress = { ...value.ingress, servicePreview: { ...limits, [field]: 0 } }
-    expect(() => parseAuthRootConfig(value)).toThrow('Cloud authentication root')
+    expect(() => parseAuthRootConfig(value)).toThrow(`$.ingress.servicePreview.${field}:`)
   }
   const value = configured(); value.ingress = { ...value.ingress, servicePreview: { ...limits,
     response: { ...limits.response, maxChunkBytes: limits.response.maxBodyBytes + 2 } } }
-  expect(() => parseAuthRootConfig(value)).toThrow('Cloud authentication root')
+  expect(() => parseAuthRootConfig(value)).toThrow('$.ingress.servicePreview:')
   for (const key of ['method', 'port', 'resourcePath', 'url', 'headers']) {
     const input = configured(); input.ingress = { ...input.ingress, servicePreview: { ...limits } }
     Object.assign(input.ingress.servicePreview, { [key]: 'ignored-target-must-not-enable' })
-    expect(() => parseAuthRootConfig(input)).toThrow('Cloud authentication root')
+    expect(() => parseAuthRootConfig(input)).toThrow('$.ingress.servicePreview')
   }
 })
 

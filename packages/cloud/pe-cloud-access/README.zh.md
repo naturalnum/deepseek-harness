@@ -53,6 +53,7 @@ kind: "package-reference"
 | 可选 `ingress.servicePreview` | 显式 URL、字段、请求头限额及全部响应限额。只注册 GET `/cloud/service-preview`；缺省时不注册预览入口。 |
 | 可选 `applications` | 独立内容 origin/site 后缀；显式路径、请求头、正文、排队、响应和保留视图限额见 [application-policy.ts](src/application-policy.ts)。要求 ingress，以及带 `/applications` 的隔离原生 WebServer。 |
 | 可选 `disableSignUp` | 委托给固定版本 Better Auth；省略时保持注册兼容，首试用部署须显式设为 `true`。 |
+| 可选 `loginRateLimit` | 通过 `windowSeconds` 和 `maxAttempts` 显式配置邮箱登录节流。受信代理清除客户端提供的同名头后，可设置一个有效的 `X-Real-IP`。其他请求使用套接字 IP。 |
 | 可选 `ingress` | 必填正有限值 `maxOperations`、`maxOperationsPerAccount`、`requestTimeoutMs`、`maxAuthRequestBodyBytes`、`maxRequestBodyBytes`、`maxBootstrapResponseBytes`、`maxGenerationBindings`、`maxFrameBytes`、`maxLogicalStreams`、`maxLogicalStreamsPerAccount`、`maxLogicalStreamsPerPeer`；子级容量不得大于父级。配置存在不授予 ready。 |
 
 `peAuth` 通过 `ctx.credentials` 解析认证秘密，每个池物理连接再次解析密码。引用使用正式凭据引用语法；根不读取环境变量或默认连接。池将 schema 固定为 `public`；服务端语句/锁/事务空闲上限负责停止 SQL 工作，不用客户端查询定时器宣称提前结算。启动检查库返回的所有迁移类别，包含索引、不安全变更及 schema 问题，不编译或执行 DDL。迁移须在部署时显式执行。

@@ -8,14 +8,16 @@ import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { AccountId } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { parseAccessConfig } from './config.ts'
 import type { AccessConfig, AuthenticatedPrincipal, CloudBootstrap } from './types.ts'
+import type { AuthRootConfig } from './root-config.ts'
 import { AuthAccessError } from './auth-error.ts'
 import { assertAuthTransport } from './auth-trust.ts'
 import { trackBody, type TrackedBody } from './body-stream.ts'
 import { getSessionCookie } from 'better-auth/cookies'
 import { admin } from 'better-auth/plugins'
-import { AccountAdministrator, accountRole, parseAccountAdministration, type AccountAdministrationConfig, type AccountResourceLifecycle } from './account-administration.ts'
+import { AccountAdministrator, accountRole, parseAccountAdministration, type AccountResourceLifecycle } from './account-administration.ts'
 
 type NodeAuth = typeof import('better-auth/node')
+type AuthLibraryConfig = AccessConfig & Pick<AuthRootConfig, 'disableSignUp' | 'accountAdministration' | 'loginRateLimit'>
 type AuthFactory = typeof import('better-auth')['betterAuth']
 type ApiErrorFactory = typeof import('better-auth')['APIError']
 type LoginInvalidator = (authSessionId: Branded<'pe-auth-session-id'>) => Promise<void>
@@ -94,7 +96,7 @@ export class BetterAuthAccess {
   private readonly bridges = new Set<Promise<void>>()
 
   private constructor(
-    config: AccessConfig & { readonly disableSignUp?: boolean; readonly accountAdministration?: AccountAdministrationConfig },
+    config: AuthLibraryConfig,
     database: Pool, secret: string, invalidate: LoginInvalidator,
     factory: AuthFactory, apiError: ApiErrorFactory, node: NodeAuth,
   ) {
@@ -109,6 +111,11 @@ export class BetterAuthAccess {
       basePath: '/cloud/auth',
       trustedOrigins: [this.config.publicOrigin],
       emailAndPassword: { enabled: true, disableSignUp: config.disableSignUp ?? false },
+      ...config.loginRateLimit === undefined ? {} : {
+        rateLimit: { enabled: true, customRules: {
+          '/sign-in/email': { window: config.loginRateLimit.windowSeconds, max: config.loginRateLimit.maxAttempts },
+        } },
+      },
       session: { cookieCache: { enabled: false } },
       advanced: {
         useSecureCookies: new URL(this.config.publicOrigin).protocol === 'https:',
@@ -159,7 +166,7 @@ export class BetterAuthAccess {
    * @throws Error if dependencies are unavailable or the loaded Better Auth version differs from 1.7.10.
    */
   static async create(
-    config: AccessConfig & { readonly disableSignUp?: boolean; readonly accountAdministration?: AccountAdministrationConfig },
+    config: AuthLibraryConfig,
     database: Pool, secret: string, invalidate: LoginInvalidator,
   ): Promise<BetterAuthAccess> {
     const [{ betterAuth, APIError }, node] = await Promise.all([import('better-auth'), import('better-auth/node')])
@@ -550,7 +557,15 @@ export class BetterAuthAccess {
       if (name === 'forwarded' || name.startsWith('x-forwarded-') || name === 'x-real-ip' || name === 'x-pe-auth-remote-ip') headers.delete(name)
     }
     const address = request.socket.remoteAddress
-    if (address !== undefined && isIP(address) !== 0) headers.set('x-pe-auth-remote-ip', address)
+    if (address !== undefined && isIP(address) !== 0) {
+      const forwarded = request.headers['x-real-ip']
+      const clientAddress = this.options.rateLimit !== undefined
+        && this.config.trustedProxyAddresses.includes(address)
+        && typeof forwarded === 'string' && isIP(forwarded) !== 0
+        && request.rawHeaders.filter((value, index) => index % 2 === 0 && value.toLowerCase() === 'x-real-ip').length === 1
+        ? forwarded : address
+      headers.set('x-pe-auth-remote-ip', clientAddress)
+    }
     return headers
   }
 

@@ -167,6 +167,76 @@ describe.skipIf(configPath === undefined)('real isolated PostgreSQL17 authentica
         expect(login.status).toBe(200)
         expect(login.headers.getSetCookie().length).toBeGreaterThan(0)
       } finally { adapter = current; await closed.close() }
+      const limitedConfig = { ...config, disableSignUp: true, loginRateLimit: { windowSeconds: 60, maxAttempts: 1 } }
+      const signIn = (email: string | undefined, clientAddress: string, password: string): Promise<Response> =>
+        fetch(`${origin}/cloud/auth/sign-in/email`, {
+          method: 'POST',
+          headers: { origin, 'content-type': 'application/json', 'x-real-ip': clientAddress },
+          body: JSON.stringify({ email, password }),
+        })
+      const wrongEmailAttempt = (clientAddress: string): Promise<Response> =>
+        signIn(emails.get(cookieB), clientAddress, 'Wrong-fixture-password!')
+      const limited = await BetterAuthAccess.create(limitedConfig, pool, secret, async () => {})
+      adapter = limited
+      try {
+        expect((await wrongEmailAttempt('192.0.2.1')).status).toBe(401)
+        const throttled = await wrongEmailAttempt('192.0.2.2')
+        expect(throttled.status).toBe(429)
+        await expect(throttled.json()).resolves.toMatchObject({ code: 'cloud/capacity', retry: 'after-status-check' })
+        expect(throttled.headers.getSetCookie()).toHaveLength(0)
+      } finally { adapter = current; await limited.close() }
+      const behindProxy = await BetterAuthAccess.create({ ...limitedConfig, trustedProxyAddresses: ['127.0.0.1'] },
+        pool, secret, async () => {})
+      adapter = behindProxy
+      try {
+        expect((await wrongEmailAttempt('192.0.2.1')).status).toBe(401)
+        expect((await wrongEmailAttempt('192.0.2.1')).status).toBe(429)
+        expect((await wrongEmailAttempt('192.0.2.2')).status).toBe(401)
+      } finally { adapter = current; await behindProxy.close() }
+      const ordinaryCookies = [cookieA, cookieB]
+      for (const label of ['trial-c', 'trial-d', 'trial-e']) ordinaryCookies.push(await signup(label))
+      const administratorCookie = await signup('trial-administrator')
+      const administrator = await current.authenticate(request(administratorCookie), requestId)
+      current.releasePrincipal(administrator)
+      const trial = await BetterAuthAccess.create({
+        ...config,
+        disableSignUp: true,
+        loginRateLimit: { windowSeconds: 60, maxAttempts: 6 },
+        trustedProxyAddresses: ['127.0.0.1'],
+        accountAdministration: { maxAccounts: 6, maxPageSize: 6, initialAdministratorIds: [administrator.accountId] },
+      }, pool, secret, async () => {})
+      adapter = trial
+      try {
+        await (await trial.planMigrations(requestId)).runMigrations()
+        await trial.initializeAdministrators(() => {})
+        const source = '192.0.2.10'
+        const trialCookies = [...ordinaryCookies, administratorCookie]
+        const logins = await Promise.all(trialCookies.map(cookie =>
+          signIn(emails.get(cookie), source, 'Probe-password-12345!')))
+        expect(logins.map(login => login.status)).toEqual([200, 200, 200, 200, 200, 200])
+        const loginCookies = logins.map(login => login.headers.getSetCookie().map(cookie => cookie.split(';')[0]).join('; '))
+        const bootstraps = await Promise.all(loginCookies.map(cookie =>
+          trial.authenticateForBootstrap(request(cookie), requestId, 128)))
+        expect(new Set(bootstraps.map(({ principal }) => principal.accountId)).size).toBe(6)
+        expect(bootstraps.map(({ account }) => account.role)).toEqual(['user', 'user', 'user', 'user', 'user', 'admin'])
+        expect(bootstraps.at(-1)?.principal.accountId).toBe(administrator.accountId)
+        for (const { principal } of bootstraps) trial.releasePrincipal(principal)
+        const fullBucket = await wrongEmailAttempt(source)
+        expect(fullBucket.status).toBe(429)
+        await expect(fullBucket.json()).resolves.toMatchObject({ code: 'cloud/capacity' })
+        const anotherSource = await signIn(emails.get(cookieB), '192.0.2.11', 'Probe-password-12345!')
+        expect(anotherSource.status).toBe(200)
+        expect(anotherSource.headers.getSetCookie().length).toBeGreaterThan(0)
+        const signedOut = await fetch(`${origin}/cloud/auth/sign-out`, {
+          method: 'POST', headers: { origin, cookie: loginCookies[0] ?? '' },
+        })
+        expect(signedOut.status).toBe(200)
+        await expect(trial.authenticate(request(loginCookies[0]), requestId))
+          .rejects.toMatchObject({ code: 'cloud/unauthenticated', status: 401 })
+        const remainingLogin = await trial.authenticate(request(loginCookies[1]), requestId)
+        expect(remainingLogin.accountId).toBe(principalB.accountId)
+        trial.releasePrincipal(remainingLogin)
+      } finally { adapter = current; await trial.close() }
       const timed = await BetterAuthAccess.create({ ...config, authCheckTimeoutMs: 50 }, pool, secret, async () => {})
       const timedNative = Reflect.get(timed, 'auth') as Auth
       const readAnonymous = timedNative.api.getSession.bind(timedNative.api)
