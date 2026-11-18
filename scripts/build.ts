@@ -72,7 +72,8 @@ export function parseBuildArguments(args: readonly string[]): BuildArguments {
  * Desktop bundle, Client compilation, Client bundle, then Web. The typecheck scope runs Host
  * compilation beside the bundle-free Typert pass, which reads only source, and then Client
  * compilation, which needs both outputs; it writes no bundle. In the complete and typecheck
- * scopes each aggregate check waits only for its own face's package compilation; alone, the
+ * scopes the Host aggregate uses generated Typert declarations and the Client aggregate uses
+ * the compiled Client packages. When run on their own, the
  * checks have no predecessors and read whatever declarations already exist. The typecheck scope
  * checks aggregates in build mode, which skips a program whose tsbuildinfo is current; the other
  * scopes use project mode, which compiles no reference.
@@ -100,6 +101,10 @@ export function buildGates(
     for (const step of contractSteps(root, 'all')) gates.push(libraryGate(step, step.needs, env))
   }
   if (scope !== 'artifacts') {
+    const dependencies = {
+      host: scope === 'typecheck' ? ['host-src', 'host-typert'] : ['host-bundle'],
+      client: ['client-src'],
+    }
     for (const face of ['host', 'client'] as const) {
       gates.push({
         id: `${face}-check`,
@@ -107,9 +112,7 @@ export function buildGates(
         displayCommand: `tsc ${scope === 'typecheck' ? '-b' : '-p'} tsconfig.${face}.json`,
         command: process.execPath,
         args: scope === 'typecheck' ? aggregateBuildArgs(face) : aggregateCheckArgs(face),
-        // No Host aggregate file imports a generated `/typert` or `/remote` subpath, so
-        // host-check never reads what a concurrent host-typert step writes.
-        needs: scope === 'check' ? [] : [`${face}-src`],
+        needs: scope === 'check' ? [] : dependencies[face],
         env,
       })
     }

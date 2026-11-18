@@ -39,7 +39,7 @@ describe('deployment integrity source pins', () => {
     expect(findRepositoryReferences('deploy/upstream/another.json', JSON.stringify(record), commits)).toHaveLength(1)
   })
 
-  it('accepts the top-level provenance pin for the exact Native AMD64 SDK record', () => {
+  it('accepts the top-level sourceCommit field for the exact Native AMD64 SDK record', () => {
     const file = 'packages/cloud/pe-opensandbox/runtime/server/native-amd64-destroy-filter-20261118.json'
     const record = { schema: 'native-amd64-destroy-filter-overlay/v1', sourceCommit: revision }
     expect(findRepositoryReferences(file, JSON.stringify(record), commits)).toEqual([])

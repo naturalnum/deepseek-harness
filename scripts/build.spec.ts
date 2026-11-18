@@ -72,10 +72,10 @@ describe('repository build steps', () => {
     ])
   })
 
-  it('starts each aggregate check after its own package compilation in the complete build', () => {
+  it('waits for generated Host Typert and compiled Client packages in the complete build', () => {
     expect(graph(buildGates(root, 'complete'))).toEqual({
       ...artifactGraph,
-      'host-check': ['host-src'],
+      'host-check': ['host-bundle'],
       'client-check': ['client-src'],
     })
   })
@@ -86,7 +86,7 @@ describe('repository build steps', () => {
       'host-src': [],
       'host-typert': [],
       'client-src': ['host-src', 'host-typert'],
-      'host-check': ['host-src'],
+      'host-check': ['host-src', 'host-typert'],
       'client-check': ['client-src'],
     })
     expect(gates.find(gate => gate.id === 'host-typert')?.args.at(-1)).toBe(resolve(root, 'scripts/generate-typert.ts'))
