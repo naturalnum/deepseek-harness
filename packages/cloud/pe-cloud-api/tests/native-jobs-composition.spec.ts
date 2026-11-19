@@ -134,6 +134,55 @@ it('revokes attached streams and kill when the original Session loses its Projec
   expect(f.ctx.jobs.get(job.id, f.sessionId).status).toBe('running')
 })
 
+it('reconnects the original Session to a still-running Job and resumes both output streams from its byte cursor', async () => {
+  const f = await fixture('job-live-reconnect')
+  const job = startJob(f.ctx, { owner: f.sessionId })
+  const target = { sessionId: f.sessionId, jobId: job.id }
+  const first = await f.open('follow', target)
+  await expect(first.next()).resolves.toMatchObject({ value: { type: 'opened', from: 0, job: { id: job.id, status: 'running' } } })
+  const prefix = '编译中\n'
+  const cursor = Buffer.byteLength(prefix, 'utf8')
+  job.append(prefix, { channel: 'stdout' })
+  await expect(first.next()).resolves.toMatchObject({ value: { type: 'output', next: cursor,
+    chunks: [{ at: 0, channel: 'stdout', text: prefix }] } })
+
+  const interrupted = first.next()
+  void interrupted.catch(() => {})
+  await f.peer.dispose()
+  await expect(interrupted).rejects.toBeDefined()
+  await expect(first.next()).resolves.toMatchObject({ done: true })
+  await expect(f.open('follow', { ...target, from: cursor })).rejects.toBeDefined()
+  await expect(f.kill(target)).rejects.toBeDefined()
+  expect(f.ctx.jobs.get(job.id, f.sessionId).status).toBe('running')
+  const between = 'warning while offline\n'
+  const after = 'compiled\n'
+  job.append(between, { channel: 'stderr' })
+
+  const other = await fixture('job-reconnect-other')
+  expect(other.sessionId).toBe(f.sessionId)
+  await expect(f.open('follow', { ...target, from: cursor }, other.peer)).rejects.toMatchObject({ code: 'cloud/forbidden' })
+  await expect(f.kill(target, other.peer)).rejects.toMatchObject({ code: 'cloud/forbidden' })
+  expect(f.ctx.jobs.get(job.id, f.sessionId).status).toBe('running')
+
+  const reconnected = new Peer(f.ctx, { principal: { kind: 'owner' } })
+  onTestFinished(async () => { await reconnected.dispose() })
+  const roster = await f.open('list', { sessionId: f.sessionId }, reconnected)
+  await expect(roster.next()).resolves.toMatchObject({ value: { type: 'rows',
+    jobs: [{ id: job.id, status: 'running' }] } })
+  await roster.return?.()
+  const output = await f.open('follow', { ...target, from: cursor }, reconnected)
+  await expect(output.next()).resolves.toMatchObject({ value: { type: 'opened', from: cursor, job: { id: job.id, status: 'running' } } })
+  const secondOffset = cursor + Buffer.byteLength(between)
+  await expect(output.next()).resolves.toMatchObject({ value: { type: 'output', next: secondOffset,
+    chunks: [{ at: cursor, channel: 'stderr', text: between }] } })
+  job.append(after, { channel: 'stdout' })
+  await job.settle({ status: 'failed', detail: 'exit code: 23' })
+  await expect(output.next()).resolves.toMatchObject({ value: { type: 'output', next: secondOffset + Buffer.byteLength(after),
+    chunks: [{ at: secondOffset, channel: 'stdout', text: after }] } })
+  await expect(output.next()).resolves.toMatchObject({ value: { type: 'status', job: { id: job.id, status: 'failed', detail: 'exit code: 23' } } })
+  await expect(output.next()).resolves.toMatchObject({ done: true })
+})
+
 it.each(['peer', 'generation', 'loader'] as const)('joins a quiet native follow after %s withdrawal', async (reason) => {
   const f = await fixture('job-revoke-' + reason), job = startJob(f.ctx, { owner: f.sessionId })
   const output = await f.open('follow', { sessionId: f.sessionId, jobId: job.id })
