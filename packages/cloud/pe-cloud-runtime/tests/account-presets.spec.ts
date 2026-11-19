@@ -1,5 +1,5 @@
 /** Real Native registry, Loader compositions, settings transactions and JSONL; not deployed mode acceptance. */
-import { expect, it } from 'vitest'
+import { expect, it, onTestFinished, vi } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -74,6 +74,57 @@ it('admits all four explicitly approved Native compositions and filters the hist
   await expect(graph.ctx.sessionController.create({ agentPreset: 'unapproved' })).rejects.toMatchObject({ code: 'cloud/forbidden' })
   await expect(graph.ctx.agentPresets.readDocument('cloud-text')).resolves.toMatchObject({ agentPreset: 'cloud-text' })
   expect(graph.adapter.calls).toBe(0)
+})
+
+it.each([
+  ['broken', 'row-failure'], ['broken', 'isolate-realm'], ['broken', 'unclassified'],
+  ['conditional', undefined], ['inactive', undefined],
+] as const)('reports bounded %s (%s) historical inventory evidence while refusing normal creation', async (criterion, brokenKind) => {
+  const f = fixture(), graph = await f.start()
+  const presets = graph.ctx.agentPresets
+  const inventory = await presets.compositionInventory()
+  const entryId = 'group:tool', moduleName = 'deepscientist-harness-suite/research'
+  const rowFailures = [
+    `${entryId} (${moduleName}): Cannot find package '@deepseek-ai/dsh-model-key-typert' imported from /owner/private@example.test`,
+    "terminal (cordis:m8z-persona): Cannot find module '@xterm/headless'",
+    'Require stack:',
+    '- /owner/private/stack.cjs',
+    "absolute (cordis:m8z-persona): Cannot find module '/owner/private/secret.cjs'",
+    "relative (cordis:m8z-persona): Cannot find module '../private/secret.cjs'",
+    'provider (cordis:m8z-persona): waiting for logger, workspaceRegistry',
+    ...Array.from({ length: 8 }, (_, index) => `leaf-${index} (cordis:m8z-persona): PRIVATE_VALUE`),
+  ].join('\n')
+  const broken = brokenKind === 'row-failure' ? rowFailures : brokenKind === 'isolate-realm'
+    ? 'Preset services require isolate realms: PRIVATE_VALUE'
+    : 'entry (/owner/private/plugin.js): PRIVATE_VALUE'
+  const logger = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  onTestFinished(() => { logger.mockRestore() })
+  vi.spyOn(presets, 'compositionInventory').mockResolvedValueOnce(inventory.map(row => row.id !== 'cloud-text' ? row
+    : criterion === 'broken' ? { ...row, broken }
+      : { ...row, rows: [{ entryId, moduleName, enabled: criterion === 'conditional' ? 'conditional' : true,
+        condition: 'PRIVATE_VALUE' }] }))
+
+  await expect(graph.guards.sessions.resolveCreate({})).rejects.toMatchObject({
+    code: 'cloud/forbidden', message: 'The account project or Agent preset is not approved.',
+  })
+  expect(graph.ctx.sessions.list()).toEqual([])
+  expect(logger).toHaveBeenCalledTimes(1)
+  const record = logger.mock.calls[0]?.[0]
+  expect(Buffer.byteLength(record)).toBeLessThanOrEqual(4096)
+  expect(record).not.toMatch(/private|PRIVATE_VALUE/)
+  expect(JSON.parse(record)).toEqual({ kind: 'cloud/native-preset-inventory-refused', presetId: 'cloud-text', criterion,
+    ...(brokenKind === undefined ? {} : { brokenKind }),
+    rows: brokenKind === 'row-failure' ? [
+      { entryId, moduleName, state: 'failed', missingPackage: '@deepseek-ai/dsh-model-key-typert' },
+      { entryId: 'terminal', moduleName: 'cordis:m8z-persona', state: 'failed', missingPackage: '@xterm/headless' },
+      { entryId: 'absolute', moduleName: 'cordis:m8z-persona', state: 'failed' },
+      { entryId: 'relative', moduleName: 'cordis:m8z-persona', state: 'failed' },
+      { entryId: 'provider', moduleName: 'cordis:m8z-persona', state: 'pending', missingServices: ['logger', 'workspaceRegistry'] },
+      { entryId: 'leaf-0', moduleName: 'cordis:m8z-persona', state: 'failed' },
+    ] : criterion === 'broken' ? [] : [{ entryId, moduleName, state: criterion }],
+  })
+  await expect(graph.guards.sessions.resolveCreate({})).resolves.toMatchObject({ agentPreset: 'standard' })
+  expect(logger).toHaveBeenCalledTimes(1)
 })
 
 it('uses the native blank switch and projected effective preset through cold recovery, retaining its creation header', async () => {

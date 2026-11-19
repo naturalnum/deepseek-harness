@@ -75,6 +75,64 @@ type ChildPreparation = {
 function refuse(): never { throw new CloudApiError('cloud/forbidden', 'The account project or Agent preset is not approved.') }
 function unavailable(): never { throw new CloudApiError('cloud/account-unavailable', 'The account policy requires its original native providers.') }
 function modelDenied(): never { throw new CloudApiError('cloud/model-not-allowed', 'The model route is not approved and available for this account.') }
+
+type PresetDiagnosticRow = {
+  entryId: string | null
+  moduleName: string
+  state: 'failed' | 'pending' | 'conditional' | 'inactive'
+  missingServices?: string[]
+  missingPackage?: string
+}
+type PresetInventoryRefusal = 'count-mismatch' | 'unapproved' | 'duplicate' | 'broken' | 'default-mismatch'
+  | 'row-limit' | 'conditional' | 'inactive' | 'modules-changed'
+type PresetRefusalEvidence = {
+  rows: readonly PresetDiagnosticRow[]
+  brokenKind?: 'row-failure' | 'isolate-realm' | 'unclassified'
+}
+
+const safePresetEntry = /^[A-Za-z0-9:_-]{1,96}$/
+const safeMissingPackage = /^(@deepseek-ai\/[A-Za-z0-9_-]{1,80}|@xterm\/headless|deepscientist-harness-suite)$/
+
+function safePresetModule(name: string): boolean {
+  return /^@deepseek-ai\/[A-Za-z0-9_-]{1,80}(?:\/[A-Za-z0-9_-]{1,40}){0,3}$/.test(name)
+    || /^cordis:[A-Za-z0-9_-]{1,40}$/.test(name)
+    || name === 'deepscientist-harness-suite/research' || name === 'deepscientist-harness-suite/airalogy'
+}
+
+function presetBrokenEvidence(broken: string): PresetRefusalEvidence {
+  const rows = broken.slice(0, 4096).split('\n').slice(0, 8).flatMap((line): PresetDiagnosticRow[] => {
+    const row = /^(\S+) \((\S+)\): (.*)$/.exec(line)
+    const [, entryId, moduleName, detail] = row ?? []
+    if (entryId === undefined || !safePresetEntry.test(entryId)
+      || moduleName === undefined || !safePresetModule(moduleName) || detail === undefined) return []
+    const waiting = /^waiting for ([A-Za-z0-9_, ]{1,256})$/.exec(detail)?.[1]
+    const missing = /^Cannot find module '([^']{1,96})'$/.exec(detail)?.[1]
+      ?? /^Cannot find package '([^']{1,96})' imported from /.exec(detail)?.[1]
+    const missingPackage = missing !== undefined && safeMissingPackage.test(missing) ? missing : undefined
+    return [{ entryId, moduleName, state: waiting === undefined ? 'failed' : 'pending',
+      ...(waiting === undefined ? {} : { missingServices: waiting.split(', ').slice(0, 8) }),
+      ...(missingPackage === undefined ? {} : { missingPackage }) }]
+  })
+  const brokenKind = broken.startsWith('Preset services require isolate realms: ') ? 'isolate-realm'
+    : rows.length > 0 ? 'row-failure' : 'unclassified'
+  return { rows, brokenKind }
+}
+
+function logPresetRefusal(presetId: string, evidence: PresetRefusalEvidence, criterion?: PresetInventoryRefusal): void {
+  const record = JSON.stringify({ kind: criterion === undefined ? 'cloud/native-preset-unavailable' : 'cloud/native-preset-inventory-refused',
+    ...(safePresetEntry.test(presetId) ? { presetId } : {}), ...(criterion === undefined ? {} : { criterion }), ...evidence })
+  if (Buffer.byteLength(record) <= 4096) {
+    try { console.error(record) }
+    catch (_cause) { /* Operator diagnostics cannot change the original refusal or its cleanup. */ }
+  }
+}
+
+function refusePresetInventory(presetId: string, criterion: PresetInventoryRefusal,
+  evidence: PresetRefusalEvidence = { rows: [] }): never {
+  logPresetRefusal(presetId, evidence, criterion)
+  refuse()
+}
+
 function object(value: unknown): value is object { return value !== null && typeof value === 'object' }
 function original(value: object): object {
   const target: unknown = Reflect.get(value, symbols.original)
@@ -616,41 +674,33 @@ class AccountPolicy {
     control.throwIfAborted()
     this.current()
     if (resolved.id !== selected.id || resolved.broken !== undefined) {
-      // Operator-only bounded diagnosis; account-facing refusal and strict preset admission stay unchanged.
-      if (resolved.broken !== undefined) {
-        // The Native observer suppresses warning text. Emit only bounded declaration ids and missing service names.
-        const rows = resolved.broken.slice(0, 4096).split('\n').slice(0, 8).flatMap((line) => {
-          const row = /^([A-Za-z0-9:_-]{1,96}) \((@deepseek-ai\/[A-Za-z0-9_/-]{1,120}|cordis:[A-Za-z0-9_-]{1,40})\): (.*)$/.exec(line)
-          if (row === null) return []
-          const [, entryId, moduleName, detail] = row
-          if (entryId === undefined || moduleName === undefined || detail === undefined) return []
-          const waiting = /^waiting for ([A-Za-z0-9_, ]{1,256})$/.exec(detail)?.[1]
-          return [{ entryId, moduleName, state: waiting === undefined ? 'failed' : 'pending',
-            ...(waiting === undefined ? {} : { missingServices: waiting.split(', ').slice(0, 8) }) }]
-        })
-        const record = JSON.stringify({ kind: 'cloud/native-preset-unavailable', presetId: selected.id, rows })
-        if (Buffer.byteLength(record) <= 4096) {
-          try { console.error(record) }
-          catch (_cause) { /* Operator diagnostics cannot change the original refusal or its cleanup. */ }
-        }
-      }
+      if (resolved.broken !== undefined) logPresetRefusal(selected.id, presetBrokenEvidence(resolved.broken))
       refuse()
     }
     const inventory = await presets.compositionInventory()
     control.throwIfAborted()
     this.current()
-    if (inventory.length !== this.config.presets.length) refuse()
+    if (inventory.length !== this.config.presets.length) refusePresetInventory(selected.id, 'count-mismatch')
     const nextModules = new Map<string, readonly string[]>()
     for (const row of inventory) {
-      this.approvedPreset(row.id)
-      if (nextModules.has(row.id) || row.broken !== undefined
-        || row.isDefault !== (row.id === presets.defaultId) || row.rows.length > this.maxEntries
-        || row.rows.some(child => child.enabled === 'conditional'
-          || child.enabled && child.fiberState !== FiberState.ACTIVE)) refuse()
+      try { this.approvedPreset(row.id) }
+      catch (error) { logPresetRefusal(row.id, { rows: [] }, 'unapproved'); throw error }
+      if (nextModules.has(row.id)) refusePresetInventory(row.id, 'duplicate')
+      if (row.broken !== undefined) refusePresetInventory(row.id, 'broken', presetBrokenEvidence(row.broken))
+      if (row.isDefault !== (row.id === presets.defaultId)) refusePresetInventory(row.id, 'default-mismatch')
+      if (row.rows.length > this.maxEntries) refusePresetInventory(row.id, 'row-limit')
+      const child = row.rows.find(child => child.enabled === 'conditional'
+        || child.enabled && child.fiberState !== FiberState.ACTIVE)
+      if (child !== undefined) {
+        const state = child.enabled === 'conditional' ? 'conditional' : 'inactive'
+        const entryId = child.entryId !== null && safePresetEntry.test(child.entryId) ? child.entryId : null
+        const rows: PresetDiagnosticRow[] = safePresetModule(child.moduleName) ? [{ entryId, moduleName: child.moduleName, state }] : []
+        refusePresetInventory(row.id, state, { rows })
+      }
       const modules = row.rows.filter(child => child.enabled).map(child => child.moduleName)
       const previous = this.modules.get(row.id)
       if (previous !== undefined && (modules.length !== previous.length
-        || modules.some((name, i) => previous[i] !== name))) refuse()
+        || modules.some((name, i) => previous[i] !== name))) refusePresetInventory(row.id, 'modules-changed')
       nextModules.set(row.id, previous ?? Object.freeze(modules))
     }
     for (const [key, modules] of nextModules) this.modules.set(key, modules)
