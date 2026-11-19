@@ -17,12 +17,15 @@ interface NativeCall<Project> {
   readonly exec: ToolDispatchExecution
   readonly scope: ExecutionScope<Project>
   readonly lifetime: AbortController
+  readonly bashCancellation: AbortController | undefined
+  callerSignal: AbortSignal | null | undefined
   readonly revoked: ReturnType<typeof Promise.withResolvers<void>>
   terminal: boolean
   projected: boolean
   job: NativeCallJob | undefined
   detachAgent: () => void | Promise<void>
   detachAbort: () => void
+  detachCallerAbort: () => void
 }
 
 interface NativeCallJob {
@@ -126,8 +129,9 @@ export class NativeExecutionCalls<Project> {
       capabilities: exec.name === 'dev_service' ? [] : ['argv-collect'],
       lifetime: lifetime.signal })
     const call: NativeCall<Project> = { token: exec.token, exec, scope, lifetime,
+      bashCancellation: exec.name === 'bash' ? new AbortController() : undefined, callerSignal: undefined,
       revoked: Promise.withResolvers<void>(), terminal: false, projected: false, job: undefined,
-      detachAgent: () => {}, detachAbort: () => {} }
+      detachAgent: () => {}, detachAbort: () => {}, detachCallerAbort: () => {} }
     this.calls.set(call.token, call)
     try {
       call.detachAgent = exec.agent.ctx.effect(() => async () => {
@@ -168,7 +172,17 @@ export class NativeExecutionCalls<Project> {
     if (call === undefined || call.projected || this.calls.get(call.token) !== call) this.stale()
     call.scope.agent.ctx.fiber.assertActive()
     this.scopes.assertCurrent(call.scope)
-    return Object.freeze({ scope: call.scope, signal: call.exec.signal })
+    const cancellation = call.bashCancellation, signal = call.exec.signal
+    if (cancellation !== undefined && call.callerSignal !== null && call.callerSignal !== signal) {
+      // Around-dispatch wrappers can replace the signal before the Native tool body runs.
+      call.detachCallerAbort()
+      const forward = (): void => { cancellation.abort(signal.reason) }
+      signal.addEventListener('abort', forward, { once: true })
+      call.callerSignal = signal
+      call.detachCallerAbort = () => { signal.removeEventListener('abort', forward) }
+      if (signal.aborted) forward()
+    }
+    return Object.freeze({ scope: call.scope, signal: cancellation?.signal ?? signal })
   }
 
   /** Original live program whose nested tool owns this scope; serialized identities cannot join its admission.
@@ -313,6 +327,10 @@ export class NativeExecutionCalls<Project> {
       this.scopes.assertCurrent(call.scope)
       call.job = { id: event.job.id, registry, settled: Promise.withResolvers<void>() }
       this.jobs.set(event.job.id, call)
+      // The committed Native Job now owns cancellation of its producer.
+      call.detachCallerAbort()
+      call.detachCallerAbort = () => {}
+      call.callerSignal = null
     } else if (event.type === 'settled') {
       const call = this.jobs.get(event.job.id)
       if (call === undefined || event.job.owner !== call.scope.sessionId) return
@@ -339,6 +357,7 @@ export class NativeExecutionCalls<Project> {
     if (call.job !== undefined) this.jobs.delete(call.job.id)
     call.revoked.resolve()
     call.detachAbort()
+    call.detachCallerAbort()
     this.scopes.release(call.scope)
     call.lifetime.abort(new ExecutionStateError('cloud/stale-generation', 'The original native execution owner was released.'))
     void call.detachAgent()

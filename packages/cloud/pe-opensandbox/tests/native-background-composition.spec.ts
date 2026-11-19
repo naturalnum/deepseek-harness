@@ -143,8 +143,8 @@ async function fixture(suffix = '', slots?: SimulatedRootSlot) {
     cwd: '/host/private/cwd', home: '/host/private/home', startedBundles: [], overlays: [], telemetryDisabledEnv: undefined })
   const producer = await ctx.plugin(ToolBash)
   let sequence = 0
-  const call = (name: string, args: Record<string, unknown>) => ctx.tools.execute({
-    callId: ToolCallId(`native-background-${++sequence}`), name, arguments: args, agent, signal: new AbortController().signal,
+  const call = (name: string, args: Record<string, unknown>, signal = new AbortController().signal) => ctx.tools.execute({
+    callId: ToolCallId(`native-background-${++sequence}`), name, arguments: args, agent, signal,
   })
   const start = async (waitForCommit = true) => {
     const previous = new Set(ctx.jobs.list(agent.id).map(job => job.id))
@@ -235,15 +235,21 @@ it('releases a joined background deadline without reporting Root unknown and adm
   expect(f.capacity).toEqual({ active: 0, resident: 0 })
 })
 
-it('keeps Native background output through tools/result and releases after the registry final drain', async () => {
-  const f = await fixture()
+it('keeps a promoted Native Bash and its natural exit after the original tool caller leaves', async () => {
+  const f = await fixture(), caller = new AbortController()
   let delayedCapture: (() => unknown) | undefined
   f.ctx.on('tools/execute', (_exec, next) => {
     const capture = f.commands.calls.capture(f.ctx)
     delayedCapture = AsyncResource.bind(() => { f.commands.calls.assertCurrent(capture.scope); return f.commands.calls.capture(f.ctx) })
     return next()
   })
-  const job = await f.start()
+  const promoted = await f.call('bash', { command: 'printf original', description: 'Promote original Native Bash', timeoutMs: 300 }, caller.signal)
+  expect(promoted.isError).toBe(false)
+  expect(promoted.value).toMatchObject({ kind: 'promoted' })
+  const job = f.ctx.jobs.list(f.agent.id)[0]!
+  expect(promoted.value).toMatchObject({ jobId: job.id })
+  expect(f.channel.commit).toHaveBeenCalledOnce()
+  caller.abort(new Error('original tool caller left'))
   expect(f.commands.calls.inspect()).toBe(1)
   expect(f.capacity).toEqual({ active: 1, resident: 1 })
   expect(delayedCapture).toBeDefined()
@@ -252,8 +258,9 @@ it('keeps Native background output through tools/result and releases after the r
   await vi.waitFor(() => { expect(f.ctx.jobs.readAt(job.id, 0, f.agent.id).chunks.map(c => c.text).join('')).toContain(f.state.output) })
   expect(f.channel.stop).not.toHaveBeenCalled()
   f.state.output += 'final native drain\n'; f.state.terminal = true
-  await vi.waitFor(() => { expect(f.ctx.jobs.get(job.id, f.agent.id).status).toBe('completed') })
+  await vi.waitFor(() => { expect(f.ctx.jobs.get(job.id, f.agent.id)).toMatchObject({ id: job.id, status: 'completed', detail: 'exit code: 0' }) })
   expect(f.ctx.jobs.readAt(job.id, 0, f.agent.id).chunks.map(c => c.text).join('')).toBe(f.state.output)
+  expect(f.channel.stop).not.toHaveBeenCalled()
   expect(f.commands.calls.inspect()).toBe(0)
   expect(f.capacity).toEqual({ active: 0, resident: 0 })
   expect(f.root.unknown).not.toHaveBeenCalled()

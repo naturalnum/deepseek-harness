@@ -80,10 +80,14 @@ it('separates operation cancellation from the output-owner lifetime and uses the
   const f = fixture(), exec = f.exec(), caller = new AbortController()
   await f.calls.run(exec, async () => {
     const before = f.calls.capture(f.ctx)
-    exec.signal = caller.signal
-    caller.abort(new Error('native operation cancelled'))
+    const upstream = exec.signal
+    exec.signal = AbortSignal.any([upstream, caller.signal])
     const captured = f.calls.capture(f.ctx)
-    expect(captured.signal).toBe(caller.signal)
+    expect(captured.signal).toBe(before.signal)
+    expect(captured.signal.aborted).toBe(false)
+    const reason = new Error('native operation cancelled')
+    caller.abort(reason)
+    expect(captured.signal.reason).toBe(reason)
     expect(captured.scope).toBe(before.scope)
     expect(captured.scope.lifetime.aborted).toBe(false)
     f.calls.release(exec.token)
