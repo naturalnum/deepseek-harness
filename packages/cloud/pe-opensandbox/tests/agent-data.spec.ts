@@ -128,6 +128,8 @@ test('handshake compares original runtime/payload/world/roots/limits rather than
     (v) => { v.pins.agentSourceSha256 = '0'.repeat(64) }, (v) => { v.pins.userWorldArgvSha256 = '0'.repeat(64) },
     (v) => { v.mounts[PROJECT].inode = Number.MAX_SAFE_INTEGER }, (v) => { v.mounts[PROJECT].inode = '18446744073709551614' },
     (v) => { v.limits.runMs = 5001 }, (v) => { v.limits.childFileBytes = 67108864 },
+    (v) => { v.limits.childCpuSeconds = 75 }, (v) => { v.limits.childAddressBytes = 536870912 },
+    (v) => { v.limits.childOpenFiles = 32 }, (v) => { v.limits.childProcesses = 32 },
     (v) => { v.declaredImageId = 'sha256:' + '4'.repeat(64) }]
   for (const change of changes) {
     const { client, transport } = raw(), value = handshakeFixture(); change(value)

@@ -33,7 +33,7 @@ SOURCES = {
     'server.py': ('70a28d4e7011a6e156ba59728d76770773432cc5589e2767819e7b83d883aa32', 19002),
     'stream.py': ('3d74398162ed9ec113c9e5a1b06e878f4aaf42e6533809fc21bfe60ced6db785', 10287),
     'terminal.py': ('e7c3e8e298562a9629f1cefec2f753d34fda1d6285ad14982859c4cd026d8c36', 6830),
-    'wire.py': ('7591d7349e518ec9d4bdbc03c9a3f5c9bad6e9f7142ecc6caff8c080dac98a47', 11323),
+    'wire.py': ('d3bb470972d4ff0782694095771d425c8d79e6bbce2d0130bb5f65d5ca006e79', 11329),
 }
 
 DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW

@@ -2,7 +2,7 @@
 import { BOOTSTRAP_PINS } from './payload-pins.ts'
 
 /** Installation candidate aggregate; Root adoption and target qualification remain required. */
-export const SOURCE_DIGEST = 'e9594c57feb5450324f137a45ebd0547bac779648fc6fe6fe20d9456ed8b7b44'
+export const SOURCE_DIGEST = '9e1744674aa758c8b9b75e64c13aed36d46f90439b0949c96b22532cd3cf5bd5'
 /** Installation candidate source hashes and exact byte lengths, shared with the candidate publisher. */
 export const SOURCES = {
   'guardian.py': ['6b03761b7a000334f92ace6ff8131feccd2a85347a2bbc8dfe99c92c0cc1e54e', 6683],
@@ -12,7 +12,7 @@ export const SOURCES = {
   'server.py': ['70a28d4e7011a6e156ba59728d76770773432cc5589e2767819e7b83d883aa32', 19002],
   'stream.py': ['3d74398162ed9ec113c9e5a1b06e878f4aaf42e6533809fc21bfe60ced6db785', 10287],
   'terminal.py': ['e7c3e8e298562a9629f1cefec2f753d34fda1d6285ad14982859c4cd026d8c36', 6830],
-  'wire.py': ['7591d7349e518ec9d4bdbc03c9a3f5c9bad6e9f7142ecc6caff8c080dac98a47', 11323],
+  'wire.py': ['d3bb470972d4ff0782694095771d425c8d79e6bbce2d0130bb5f65d5ca006e79', 11329],
 } as const
 
 /** The complete eleven-file runtime payload shipped beside lib; no secret configuration is included. */

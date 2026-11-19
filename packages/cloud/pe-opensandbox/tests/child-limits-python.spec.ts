@@ -35,7 +35,6 @@ def set_limit(kind, limits):
         actual(kind, limits)
 resource.setrlimit = set_limit
 guardian.child_limits()
-assert calls[str(resource.RLIMIT_AS)] == [536870912, 536870912]
 with tempfile.TemporaryFile() as f:
     for size in (100 * 1024 * 1024, 128 * 1024 * 1024):
         os.ftruncate(f.fileno(), size)
@@ -54,4 +53,20 @@ print(json.dumps({'file':calls[str(resource.RLIMIT_FSIZE)][0], 'address':calls[s
   })) as { file: number; address: number }
   expect(result.file).toBe(SLICE_LIMITS.childFileBytes)
   expect(result.address).toBe(SLICE_LIMITS.childAddressBytes)
+})
+
+it.skipIf(process.platform !== 'linux' || process.getuid?.() === 0)('applies the fixed limits across Bash exec and children without changing the supervisor', () => {
+  const runtime = fileURLToPath(new URL('../runtime/agent', import.meta.url))
+  const probe = fileURLToPath(new URL('./fixtures/child-resource-limits.py', import.meta.url))
+  const observed = JSON.parse(execFileSync('python3', ['-I', '-S', '-B', probe, runtime], {
+    encoding: 'utf8', timeout: 10000,
+  })) as Record<string, readonly number[]>
+  expect(observed).toEqual({
+    cpu: [SLICE_LIMITS.childCpuSeconds, SLICE_LIMITS.childCpuSeconds],
+    address: [SLICE_LIMITS.childAddressBytes, SLICE_LIMITS.childAddressBytes],
+    files: [SLICE_LIMITS.childFileBytes, SLICE_LIMITS.childFileBytes],
+    descriptors: [SLICE_LIMITS.childOpenFiles, SLICE_LIMITS.childOpenFiles],
+    processes: [SLICE_LIMITS.childProcesses, SLICE_LIMITS.childProcesses],
+    core: [SLICE_LIMITS.childCoreBytes, SLICE_LIMITS.childCoreBytes],
+  })
 })

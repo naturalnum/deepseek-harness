@@ -6,9 +6,17 @@ import { rootDeploymentFixture, sharedPathDeploymentFixture } from './fixtures/r
 
 it('accepts the refreshed source digest and rejects the prior runtime digest', () => {
   const value = sharedPathDeploymentFixture()
-  expect(parseRootDeploymentInput(value).lifecycle.payloadSha256).toBe(SOURCE_DIGEST)
-  value.lifecycle.payloadSha256 = 'deac1aad47774bab0181638a23ae02ce9eaaea4b89db7fcacb20371e27aacc3b'
-  expect(() => parseRootDeploymentInput(value)).toThrow('lifecycle.fixedSelection')
+  value.lifecycle.cpuCores = 0.5
+  value.lifecycle.memoryMiB = 1024
+  expect(parseRootDeploymentInput(value).lifecycle).toMatchObject({
+    payloadSha256: SOURCE_DIGEST, cpuCores: 0.5, memoryMiB: 1024,
+  })
+  for (const prior of ['e9594c57feb5450324f137a45ebd0547bac779648fc6fe6fe20d9456ed8b7b44',
+    'a39c1e2fab3766f4b1f95c165ecc5af0cbe0d371a4dfcb73874e33b3e99146fd',
+    'deac1aad47774bab0181638a23ae02ce9eaaea4b89db7fcacb20371e27aacc3b']) {
+    value.lifecycle.payloadSha256 = prior
+    expect(() => parseRootDeploymentInput(value)).toThrow('lifecycle.fixedSelection')
+  }
 })
 
 it('keeps legacy v1 keeper input distinct from explicit shared-path v2', () => {
