@@ -276,6 +276,18 @@ it('an explicit false single-instance flag retains the original startup refusal 
   expect(deletion).not.toHaveBeenCalled(); expect(f.fetch).not.toHaveBeenCalled()
 })
 
+it.each(['ready', 'stopping'] as const)('keeps a %s possibly renewed allocation outside legacy startup cleanup', async (state) => {
+  const known = startupAllocation('possibly-renewed')
+  const row: SandboxAllocation = { ...known, state, renewalTargetAt: new Date(Date.now() - 1000).toISOString() }
+  const f = startupSweepFixture([row])
+  await expect(f.owner.start()).rejects.toMatchObject({ code: 'cloud/execution-unavailable' })
+  expect(() => f.owner.assertReady()).toThrow(expect.objectContaining({ code: 'cloud/execution-unavailable' }))
+  expect(f.deletion).not.toHaveBeenCalled()
+  expect(f.transition).not.toHaveBeenCalled()
+  expect(f.release).not.toHaveBeenCalled()
+  expect(f.rows.get(row.allocationId)).toEqual(row)
+})
+
 it('startup waits through the shared expiry boundary before releasing an unconfirmed old sandbox', async () => {
   vi.useFakeTimers(); onTestFinished(() => { vi.useRealTimers() })
   const row = { ...startupAllocation('waiting'), createDeadlineAt: new Date(Date.now() + 1000).toISOString() }

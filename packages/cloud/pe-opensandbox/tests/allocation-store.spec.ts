@@ -68,7 +68,40 @@ it('keeps operations closed before atomic migration and declares the required un
   expect(allocationMigrationSql).toContain("WHERE state IN ('creating','ready','uncertain','stopping')")
   expect(allocationMigrationSql).toContain('incompatible pe_sandbox_allocations indexes')
   expect(allocationMigrationSql).toContain('NOT convalidated')
+  expect(allocationMigrationSql).toContain('ALTER TABLE pg_temp._pe_allocation_schema_0001 ADD COLUMN renewal_target_at timestamptz')
+  expect(allocationMigrationSql).not.toMatch(/ALTER\s+TABLE\s+public\.pe_sandbox_allocations/i)
   expect(allocationMigrationSql).not.toMatch(/DROP TABLE|TRUNCATE|DELETE FROM/)
+})
+
+it('reads the exact optional renewal marker while continuing to accept legacy and null projections', async () => {
+  const readyRow = allocation('ready')
+  const target = '2026-10-20T00:11:00.000Z'
+  const f = fixture((_sql, values) => {
+    const allocationId = values[0]
+    const state = allocationId === 'released' ? 'released' : 'ready'
+    const source = { ...readyRow, allocationId, state }
+    const extension = allocationId === 'legacy' ? {} : { renewalTargetAt: allocationId === 'null' ? null : target }
+    return { rows: [{ allocation: { ...source, ...extension } }] }
+  })
+  await f.store.migrate()
+  const scope = (allocationId: string) => ({ ...intent, allocationId: brandString<AllocationId>(allocationId) })
+  for (const id of ['legacy', 'null']) {
+    expect(await f.store.get(scope(id))).not.toHaveProperty('renewalTargetAt')
+  }
+  for (const id of ['ready', 'released']) {
+    expect(await f.store.get(scope(id))).toMatchObject({ state: id, renewalTargetAt: target })
+  }
+})
+
+it.each([
+  { renewalTargetAt: '1900-01-01T00:00:00.000Z' },
+  { renewalTargetAt: 'infinity' },
+  { renewalTargetAt: '2026-10-20T00:11:00.000Z', state: 'uncertain' },
+  { renewalTargetAt: '2026-10-20T00:11:00.000Z', runtimeIdentity: null },
+])('refuses malformed renewal evidence %j', async (corruption) => {
+  const f = fixture(() => ({ rows: [{ allocation: { ...allocation('ready'), ...corruption } }] }))
+  await f.store.migrate()
+  await expect(f.store.get(intent)).rejects.toMatchObject({ code: 'invalid-row' })
 })
 
 it('coalesces identical begin calls into the same actual promise and keeps capacity after an observer leaves', async () => {

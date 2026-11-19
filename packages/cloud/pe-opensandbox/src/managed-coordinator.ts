@@ -312,6 +312,8 @@ export class ManagedCoordinator extends SandboxCoordinator {
     for (;;) {
       for (const allocation of page.allocations) {
         this.assertStartupSweepCurrent()
+        // The legacy expiry fallback cannot settle a possibly renewed writer.
+        if (allocation.renewalTargetAt !== undefined) this.unavailable()
         counts.total++
         let outcome: 'deleted' | 'missing' | 'unknown' = 'unknown'
         if (allocation.sandboxId !== null) outcome = await this.deployment.backend.deleteOriginal(allocation.sandboxId)

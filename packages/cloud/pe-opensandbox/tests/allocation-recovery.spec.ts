@@ -92,6 +92,20 @@ describe('old allocation metadata recovery with complete trusted coverage', () =
     expect(immutable).not.toBe(allocationRecoveryIntentDigest({ ...row, projectMountVersion: 'changed' }))
   })
 
+  it('retains the original row when renewal changes the evidence after capture', async () => {
+    const old = allocation('allocation-1', { state: 'ready', sandboxId: 'sandbox-1', runtimeIdentity: 'runtime-1',
+      executionProtocolVersion: 'exec-v1', executionCapabilities: ['argv-collect'] })
+    const f = await fixture([old])
+    const renewed = { ...old, renewalTargetAt: '2026-10-20T00:11:00.000Z' }
+    await expect(recover(f.store, verifier(async (snapshot) => {
+      f.rows.set(old.allocationId, renewed)
+      return evidence(snapshot)
+    }))).rejects.toMatchObject({ code: 'snapshot-changed' })
+    expect(allocationRecoveryIntentDigest(renewed)).toBe(allocationRecoveryIntentDigest(old))
+    expect(f.mutations).toEqual([])
+    expect(f.rows.get(old.allocationId)).toEqual(renewed)
+  })
+
   it('binds a null-id accepted create, finishes an existing stopping row, and returns coverage for a separate runtime CAS', async () => {
     const f = await fixture([allocation(), allocation('allocation-2', { state: 'stopping', sandboxId: 'sandbox-2' })])
     const report = await recover(f.store, verifier(async (snapshot) => {

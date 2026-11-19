@@ -49,7 +49,9 @@ const projection = `jsonb_build_object(
  'lastActivityAt',to_char(last_activity_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
  'lastCheckedAt',to_char(last_checked_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
  'runtimeIdentity',runtime_identity,'executionProtocolVersion',execution_protocol_version,
- 'executionCapabilities',execution_capabilities,'failureCode',failure_code) AS allocation`
+ 'executionCapabilities',execution_capabilities,'failureCode',failure_code,
+ 'renewalTargetAt',to_char((to_jsonb(pe_sandbox_allocations)->>'renewal_target_at')::timestamptz
+   AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')) AS allocation`
 const exact = 'allocation_id=$1 AND account_id=$2 AND session_id=$3 AND workspace_id=$4 AND epoch=$5::bigint'
 const beginSql = `WITH inserted AS (
  INSERT INTO public.pe_sandbox_allocations (allocation_id,account_id,session_id,workspace_id,epoch,
@@ -450,7 +452,9 @@ export class PostgresAllocationStore {
   private row(input: unknown): SandboxAllocation {
     try {
       const value = this.object(input)
-      if (Object.keys(value).length !== fields.length || fields.some(field => !Object.hasOwn(value, field))) throw new Error('fields')
+      const carriesRenewal = Object.hasOwn(value, 'renewalTargetAt')
+      if (Object.keys(value).length !== fields.length + Number(carriesRenewal)
+        || fields.some(field => !Object.hasOwn(value, field))) throw new Error('fields')
       const text = (key: string): string => {
         const field = value[key]
         if (typeof field !== 'string') throw new Error('text')
@@ -473,8 +477,11 @@ export class PostgresAllocationStore {
         state: state as AllocationState, sandboxId: optional('sandboxId'), lastActivityAt: date('lastActivityAt'),
         lastCheckedAt: date('lastCheckedAt'), runtimeIdentity: optional('runtimeIdentity'),
         executionProtocolVersion: optional('executionProtocolVersion'), executionCapabilities: this.readCapabilities(modes, state === 'ready'),
-        failureCode: optional('failureCode') })
+        failureCode: optional('failureCode'),
+        ...(!carriesRenewal || value['renewalTargetAt'] === null ? {} : { renewalTargetAt: date('renewalTargetAt') }) })
       if (result.createDeadlineAt < result.requestedAt
+        || (result.renewalTargetAt !== undefined && (!['ready', 'stopping', 'released'].includes(state)
+          || result.sandboxId === null || result.runtimeIdentity === null || result.renewalTargetAt <= result.requestedAt))
         || (state === 'ready' && (result.sandboxId === null || result.runtimeIdentity === null
           || result.executionProtocolVersion === null || result.failureCode !== null))
         || (state === 'failed' && (result.sandboxId !== null || result.failureCode === null))) throw new Error('state fields')

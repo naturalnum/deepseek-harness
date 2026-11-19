@@ -132,7 +132,8 @@ function rowValue(row: SandboxAllocation): readonly unknown[] {
   return [row.allocationId, row.accountId, row.sessionId, row.workspaceId, row.epoch,
     row.environmentVersion, row.provider, row.projectMountVersion, row.requestedAt, row.createDeadlineAt,
     row.state, row.sandboxId, row.lastActivityAt, row.lastCheckedAt, row.runtimeIdentity,
-    row.executionProtocolVersion, row.executionCapabilities, row.failureCode]
+    row.executionProtocolVersion, row.executionCapabilities, row.failureCode,
+    ...(row.renewalTargetAt === undefined ? [] : [row.renewalTargetAt])]
 }
 
 function reference(value: unknown, limits: AllocationRecoveryLimits): asserts value is string {

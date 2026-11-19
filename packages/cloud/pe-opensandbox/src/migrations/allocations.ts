@@ -56,6 +56,13 @@ BEGIN
     CONSTRAINT pe_allocation_failed CHECK (state <> 'failed' OR (sandbox_id IS NULL AND failure_code IS NOT NULL))
   ) ON COMMIT DROP;
   CREATE TABLE IF NOT EXISTS public.pe_sandbox_allocations (LIKE pg_temp._pe_allocation_schema_0001 INCLUDING ALL);
+  -- Recognize the optional successor column on read. This version changes only the temporary witness.
+  IF EXISTS (
+    SELECT 1 FROM pg_attribute WHERE attrelid = 'public.pe_sandbox_allocations'::regclass
+      AND attname = 'renewal_target_at' AND attnum > 0 AND NOT attisdropped
+  ) THEN
+    ALTER TABLE pg_temp._pe_allocation_schema_0001 ADD COLUMN renewal_target_at timestamptz;
+  END IF;
   CREATE UNIQUE INDEX IF NOT EXISTS pe_sandbox_allocations_nonterminal
     ON public.pe_sandbox_allocations (account_id, session_id, epoch)
     WHERE state IN ('creating','ready','uncertain','stopping');
@@ -67,12 +74,12 @@ BEGIN
     OR EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'public.pe_sandbox_allocations'::regclass AND NOT tgisinternal)
   THEN RAISE EXCEPTION 'incompatible pe_sandbox_allocations table'; END IF;
   IF (
-    SELECT array_agg(ROW(attname, format_type(atttypid, atttypmod), attnotnull, attcollation,
+    SELECT array_agg(ROW(attname, format_type(atttypid, atttypmod), attnotnull, attcollation, attidentity, attgenerated,
       pg_get_expr(adbin, adrelid))::text ORDER BY attnum)
     FROM pg_attribute LEFT JOIN pg_attrdef ON adrelid = attrelid AND adnum = attnum
     WHERE attrelid = 'public.pe_sandbox_allocations'::regclass AND attnum > 0 AND NOT attisdropped
   ) IS DISTINCT FROM (
-    SELECT array_agg(ROW(attname, format_type(atttypid, atttypmod), attnotnull, attcollation,
+    SELECT array_agg(ROW(attname, format_type(atttypid, atttypmod), attnotnull, attcollation, attidentity, attgenerated,
       pg_get_expr(adbin, adrelid))::text ORDER BY attnum)
     FROM pg_attribute LEFT JOIN pg_attrdef ON adrelid = attrelid AND adnum = attnum
     WHERE attrelid = 'pg_temp._pe_allocation_schema_0001'::regclass AND attnum > 0 AND NOT attisdropped
