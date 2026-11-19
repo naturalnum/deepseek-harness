@@ -259,6 +259,45 @@ it('keeps Native background output through tools/result and releases after the r
   expect(f.root.unknown).not.toHaveBeenCalled()
 })
 
+it('keeps both truncated Native Bash lanes and the original exit through job settlement and reread', async () => {
+  const f = await fixture('-legacy-tail')
+  const job = await f.start()
+  const stdout = 'stdout legacy tail\n'
+  const stderr = 'stderr legacy tail\n'
+  const background: CommandSnapshot = {
+    prepared: true, submitted: true, commitClosed: true, rangeEmpty: true, ioClosed: true,
+    physicalStopRequired: false, providerFailure: false, direct: { exitCode: 19, signal: null },
+    stdout: { bytes: Buffer.from(stdout), observedBytes: 13_003, eof: true },
+    stderr: { bytes: Buffer.from(stderr), observedBytes: 19_003, eof: true },
+  }
+  const chunks = [
+    { at: 0, text: stdout, channel: 'stdout', gapBefore: true },
+    { at: Buffer.byteLength(stdout), text: stderr, channel: 'stderr', gapBefore: true },
+  ]
+  const read = () => f.ctx.jobs.readAt(job.id, 0, f.agent.id)
+  f.channel.poll.mockResolvedValue({ ...background, rangeEmpty: false, ioClosed: false })
+  await vi.waitFor(() => { expect(read().chunks).toEqual(chunks) })
+  expect(f.ctx.jobs.get(job.id, f.agent.id).status).toBe('running')
+  expect(f.capacity.active).toBe(1)
+
+  f.channel.poll.mockResolvedValue(background)
+  await expect(f.ctx.jobs.wait(job.id, 2000, f.agent.id)).resolves.toMatchObject({
+    id: job.id, status: 'completed', detail: 'exit code: 19',
+  })
+  expect(read().chunks).toEqual(chunks)
+  expect(read().next).toBe(Buffer.byteLength(stdout + stderr))
+
+  f.channel.commit.mockResolvedValue({ ...background, direct: { exitCode: 20, signal: null } })
+  const foreground = await f.call('bash', { command: 'printf next', description: 'Read the next foreground result' })
+  expect(foreground.isError).toBe(false)
+  expect(foreground.value).toMatchObject({
+    kind: 'foreground', exitCode: 20, signal: null,
+    stdout: { text: stdout, truncated: true }, stderr: { text: stderr, truncated: true },
+  })
+  expect(f.capacity).toEqual({ active: 0, resident: 0 })
+  expect(f.root.unknown).not.toHaveBeenCalled()
+})
+
 it('uses Native job_kill and returns the original command reservations only after its range ends', async () => {
   const f = await fixture(), job = await f.start()
   const killed = await f.call('job_kill', { job_id: job.id, reason: 'native composition cleanup' })
