@@ -18,6 +18,7 @@ import { SessionAllocationOwner, type AllocationOwnerConfig, type NativeAllocati
 import { AllocationStoreError, PostgresAllocationStore } from './allocation-store.ts'
 import type { AllocationPage, AllocationStoreLimits, SandboxAllocation } from './allocation-types.ts'
 import { allocationDatabase } from './allocation-database.ts'
+import { RootAllocationReceipts } from './root-allocation-receipts.ts'
 import { allocationHistoryReader, type AllocationHistoryReader } from './allocation-history.ts'
 import { SdkLifecycleFailure, type VerifiedExecutionMount } from './lifecycle-types.ts'
 import { BootstrapFailure } from './bootstrap/bootstrap.ts'
@@ -26,6 +27,7 @@ import type { SdkAllocationBackend } from './sdk-lifecycle.ts'
 import type { SkillCommandBorrow, TrustedRuntimeRegistry } from './trusted-runtime.ts'
 import { NativeCommandAccount, type NativeCommandAccountLimits, type NativeCommandReservation, type NativeCommandRoot } from './native-command-account.ts'
 import { CommandWaitQueue, waitForOwnedCommand, type CommandWaitLimits } from './command-wait-queue.ts'
+import type { ManagedCommandOperation } from './command-operation.ts'
 import { CloudShellExecutor, CloudSubprocessRuntime, type NativeExecutionConfig } from './native-providers.ts'
 import { CloudSandboxProvider } from './native-sandbox.ts'
 import { CloudShellEnvRegistry } from './native-shell-env.ts'
@@ -90,9 +92,13 @@ interface SessionRetirement {
   readonly prepared: PreparedSandbox
   readonly actual: Promise<void>
   readonly reopening?: ExecutionScope<Workspace>
+  readonly timedIdle?: true
 }
 
-type ManagedSessionRequest = NativeAllocationRequest<VerifiedExecutionMount> & { readonly session: Session }
+type ManagedSessionRequest = NativeAllocationRequest<VerifiedExecutionMount> & {
+  readonly session: Session
+  idleTimer?: ReturnType<typeof setTimeout>
+}
 
 /** Files refused environment preparation before an allocation intent or SDK request existed. */
 class SessionEnvironmentCapacityError extends ExecutionStateError {
@@ -161,6 +167,16 @@ function executionFailureDetails(cause: unknown, includeCause = true): Record<st
     ...(includeCause && nested !== undefined ? { cause: executionFailureDetails(nested, false) } : {}) }
 }
 
+interface OriginalCommandAllocation {
+  readonly request: ManagedSessionRequest
+  readonly prepared: PreparedSandbox
+}
+
+interface SessionCommandStop extends OriginalCommandAllocation {
+  readonly commands: Set<ManagedCommandOperation>
+  readonly actual: Promise<void>
+}
+
 interface AccountWork {
   readonly binding: AccountBinding
   readonly root: Context
@@ -168,6 +184,7 @@ interface AccountWork {
   readonly authority: NativeAccountExecutionAuthority
   readonly stopId: OperationId
   readonly sessions: Map<SessionId, ManagedSessionRequest>
+  readonly commandStops: Map<SessionId, SessionCommandStop>
   readonly observers: Set<EpochObserver>
   readonly capacity: { active: number; resident: number; bytes: number; requests: number }
   readonly activeCommands: Map<ExecutionScope<Workspace>, { members: number }>
@@ -186,6 +203,7 @@ interface AccountWork {
   allocationsStopping?: Promise<void>
   retiring?: SessionRetirement | undefined
   stopping?: Promise<void>
+  receiptStop?: true
   outcome?: ParticipantReceipt
   preparationFailureObserved?: true
   privateFailure?: {
@@ -241,6 +259,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
   private readonly resources: {
     store?: PostgresAllocationStore
     allocations?: SessionAllocationOwner<VerifiedExecutionMount>
+    receipts?: RootAllocationReceipts
   } = {}
 
   /**
@@ -259,6 +278,10 @@ export class ManagedCoordinator extends SandboxCoordinator {
       if (!Number.isSafeInteger(value) || value < 1
         || value > 2147483647) throw new RangeError('Managed execution requires finite positive limits.')
     }
+    const idleRetireMs = config.allocations.idleRetireMs
+    if (idleRetireMs !== undefined && (!Number.isSafeInteger(idleRetireMs) || idleRetireMs < 1 || idleRetireMs > 2147483647)) {
+      throw new RangeError('Idle retirement requires a finite positive delay.')
+    }
     if (config.maxActiveCommandsPerAccount > config.maxActiveCommands || config.maxResidentCommandsPerAccount > config.maxResidentCommands
       || config.maxResidentBytesPerAccount > config.maxResidentBytes || config.recoveryPageSize > config.store.maxRows) {
       throw new RangeError('Managed execution account or recovery limits exceed Root capacity.')
@@ -268,19 +291,27 @@ export class ManagedCoordinator extends SandboxCoordinator {
       || !Number.isSafeInteger(copies * 2048 + 4096) || copies * 2048 + 4096 > config.maxResidentBytesPerAccount)) {
       throw new RangeError('Working-copy metadata cannot fit the explicit original execution reservation.')
     }
+    if (config.commands.residence !== undefined && !deployment.backend.renewalEnabled) {
+      throw new RangeError('Coordinated residence requires the qualified original SDK renewal policy.')
+    }
     const commandWait = config.commandWaiting === undefined ? undefined
       : new CommandWaitQueue<NativeCommandReservation>(config.commandWaiting)
     super(ctx)
     this.commandWait = commandWait
     runtime.registerDrainParticipant(this)
     const metadata = runtime.controlDatabase(this)
-    this.resources.store = new PostgresAllocationStore(allocationDatabase(metadata), config.store)
+    const driver = allocationDatabase(metadata)
+    this.resources.store = new PostgresAllocationStore(driver, config.store, deployment.backend.renewalEnabled)
+    if (deployment.backend.usesDeletionReceipts === true) {
+      this.resources.receipts = new RootAllocationReceipts(driver, this.store, deployment.backend, () => deployment.assertCurrent())
+    }
     this.readHistory = allocationHistoryReader(metadata, config.store.maxPendingQueries)
     this.resources.allocations = new SessionAllocationOwner(this.store, {
       create: (intent, mount) => deployment.backend.create(intent, mount),
       prepare: async (created, mount, until) => deployment.runtimes.bindPrepared(await deployment.backend.prepare(created, mount, until)),
       stop: (created, prepared) => deployment.backend.stop(created, prepared),
-    }, config.allocations)
+      reconcileStopReceipt: (created, prepared) => deployment.backend.reconcileStopReceipt(created, prepared),
+    }, config.allocations, this.resources.receipts)
     ctx.effect(() => () => this.closeRoot(), 'pe-opensandbox: retain Root execution until actual cleanup')
   }
 
@@ -292,12 +323,16 @@ export class ManagedCoordinator extends SandboxCoordinator {
     return this.state.starting ??= (async () => {
       this.deployment.assertCurrent()
       await this.store.migrate()
+      await this.resources.receipts?.start()
       const retained = await this.store.listNonterminal(null, null, this.config.recoveryPageSize)
       if (this.runtime.singleInstanceActive === true) {
         await this.sweepStartup(retained)
         this.assertStartupSweepCurrent()
+        await this.resources.receipts?.replayPending(() => this.assertStartupSweepCurrent())
       }
-      else if (retained.allocations.length !== 0 || retained.nextCursor !== null) this.unavailable()
+      else if (this.resources.receipts !== undefined || retained.allocations.length !== 0 || retained.nextCursor !== null) {
+        this.unavailable()
+      }
       this.state.recoveryClear = true
       if (!this.state.open) this.unavailable()
       this.deployment.assertCurrent()
@@ -312,9 +347,14 @@ export class ManagedCoordinator extends SandboxCoordinator {
     for (;;) {
       for (const allocation of page.allocations) {
         this.assertStartupSweepCurrent()
-        // The legacy expiry fallback cannot settle a possibly renewed writer.
-        if (allocation.renewalTargetAt !== undefined) this.unavailable()
         counts.total++
+        if (this.resources.receipts !== undefined) {
+          await this.resources.receipts.recover(allocation, () => this.assertStartupSweepCurrent())
+          counts.deleted++
+          continue
+        }
+        // A default-off Root cannot settle a potentially renewed writer by legacy deletion or expiry.
+        if (allocation.renewalTargetAt !== undefined) this.unavailable()
         let outcome: 'deleted' | 'missing' | 'unknown' = 'unknown'
         if (allocation.sandboxId !== null) outcome = await this.deployment.backend.deleteOriginal(allocation.sandboxId)
         if (outcome === 'unknown') {
@@ -401,7 +441,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
     if (work === undefined || this.accounts.get(binding.accountId) !== work || !work.open || binding.lifetime.aborted) return false
     work.assertMountCurrent()
     return work.stopping === undefined && work.allocationsStopping === undefined && work.privateFailure === undefined
-      && work.capacity.active === 0 && work.capacity.requests === 0
+      && work.commandStops.size === 0 && work.capacity.active === 0 && work.capacity.requests === 0
       && work.providers !== undefined && work.providers.commands.isIdle() && this.allocations.isEpochIdle(binding)
   }
 
@@ -415,7 +455,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
     if (this.accounts.size >= this.config.maxBoundAccounts) this.capacity()
     const abort = (): void => { this.beginStop(work) }
     const work: AccountWork = { binding, root: ctx.root, assertMountCurrent: assertCurrent, authority,
-      stopId: brandString<OperationId>(randomUUID()), sessions: new Map(), observers: new Set(),
+      stopId: brandString<OperationId>(randomUUID()), sessions: new Map(), commandStops: new Map(), observers: new Set(),
       capacity: { active: 0, resident: 0, bytes: 0, requests: 0 }, activeCommands: new Map(), open: true, claimed: false,
       detach: () => { binding.lifetime.removeEventListener('abort', abort) } }
     const port = Object.freeze(new ManagedAccountPort(binding, this,
@@ -482,7 +522,8 @@ export class ManagedCoordinator extends SandboxCoordinator {
       ...(this.deployment.skillCopies === undefined ? {}
         : { maxSkillCopiesPerOperation: this.deployment.skillCopies.maxCopiesPerOperation }),
       ...(service === undefined ? {} : { services: {
-        profile: service.profile, operationLimits: configured.commandLimits,
+        profile: service.profile, operationLimits: configured.residence === undefined ? configured.commandLimits
+          : { ...configured.commandLimits, maxLifetimeMs: configured.residence.serviceCommandLifetimeMs },
         ...(service.application === undefined ? {} : { application: {
           maxRequestsPerService: service.application.maxRequestsPerService,
           reserve: (scope, charge) => this.reserveApplication(work, scope, charge),
@@ -495,7 +536,10 @@ export class ManagedCoordinator extends SandboxCoordinator {
         } }),
         assertQualified: (profile) => {
           this.assertPort(port, ctx)
-          if (profile !== service.profile || profile.runMs !== SLICE_LIMITS.serviceRunMs) {
+          const runCap = configured.residence === undefined ? SLICE_LIMITS.runMs
+            : configured.residence.serviceCommandLifetimeMs - SLICE_LIMITS.prepareMs - SLICE_LIMITS.stopMs
+          if (profile !== service.profile || !Number.isSafeInteger(profile.runMs)
+            || profile.runMs < SLICE_LIMITS.serviceRunMs || profile.runMs > runCap) {
             throw new ExecutionStateError('cloud/invalid-config', 'The selected service policy differs from the fixed runtime.')
           }
         },
@@ -506,6 +550,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
         }),
       } }),
     }
+    const commandAllocations = new WeakMap<ManagedCommandOperation, OriginalCommandAllocation>()
     const commandWait = this.commandWait
     const waitForCommand: NativeCommandRoot['waitForCommand'] = commandWait === undefined ? undefined :
       (scope, spec, job, signal) => waitForOwnedCommand(commandWait, job, signal, () => {
@@ -514,7 +559,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
         return { kind: 'reserved', start: () => held, releaseUnstarted: () => { held.releaseActive(); held.releaseResident() } }
       })
     const commands = new NativeCommandAccount(ctx, work.binding, work.authority, commandConfig, {
-      acquire: async (scope, signal, registered) => {
+      acquire: async (scope, signal, operationId, registered, operation) => {
         registered?.assertCurrent()
         const request = await this.request(work, scope, signal).catch((cause: unknown) => {
           this.observePreparationFailure(work, 'request', cause)
@@ -555,14 +600,31 @@ export class ManagedCoordinator extends SandboxCoordinator {
               request.assertCurrent(); registered?.assertCurrent()
             }
             stage = 'runtime-channel'
-            if (registered === undefined) return scope.consumerId === 'run_code'
-              ? this.deployment.runtimes.program(prepared, copies) : this.deployment.runtimes.command(prepared, copies)
-            registered.assertCurrent()
-            if (registered.scope !== scope) this.stale()
-            return this.deployment.runtimes.service(prepared, registered, copies)
+            if (this.resources.receipts !== undefined
+              && (work.commandStops.has(request.sessionId) || work.sessions.get(request.sessionId) !== request)) this.unavailable()
+            const renewWhileActive = this.deployment.backend.activeRenewal(prepared, (intent, targetAt, previousAt) =>
+              this.store.reserveRenewal(intent, prepared.sandboxId, prepared.runtimeIdentity, targetAt, previousAt))
+            registered?.assertCurrent()
+            if (registered !== undefined && registered.scope !== scope) this.stale()
+            const extended = configured.residence
+            const residence = extended === undefined ? undefined : { maxResidentMs: extended.maxResidentMs,
+              runCapMs: registered === undefined ? extended.foregroundRunMs : service?.profile.runMs ?? SLICE_LIMITS.serviceRunMs,
+              confirmedUntil: () => this.deployment.backend.confirmedRenewalUntil(prepared) }
+            const window = extended === undefined && service !== undefined && service.profile.runMs > SLICE_LIMITS.serviceRunMs
+              && renewWhileActive !== undefined ? { runMs: service.profile.runMs,
+                covers: (throughMs: number) => this.deployment.backend.confirmedRenewalCovers(prepared, throughMs) } : undefined
+            const channel = registered !== undefined
+              ? this.deployment.runtimes.service(prepared, registered, copies, operationId, window, residence)
+              : scope.consumerId === 'run_code' ? this.deployment.runtimes.program(prepared, copies, operationId)
+                : this.deployment.runtimes.command(prepared, copies, operationId, residence)
+            if (this.resources.receipts !== undefined) commandAllocations.set(operation, { request, prepared })
+            return renewWhileActive === undefined ? channel : Object.freeze({ ...channel, renewWhileActive })
           } catch (cause) { copies?.release(); throw cause }
         }
         catch (cause) {
+          if (this.resources.receipts !== undefined
+            && (work.commandStops.get(request.sessionId)?.request === request
+              || work.sessions.get(request.sessionId) !== request)) return this.unavailable()
           this.observePreparationFailure(work, stage, cause)
           if (cause instanceof SessionEnvironmentCapacityError || cause instanceof SkillProjectRefusalError) {
             try {
@@ -587,6 +649,12 @@ export class ManagedCoordinator extends SandboxCoordinator {
       },
       unknown: (scope, operation, cause) => {
         this.observePrivateFailure(work, 'command', cause, scope.sessionId)
+        if (this.resources.receipts !== undefined) {
+          const selected = commandAllocations.get(operation)
+          if (selected !== undefined && this.stopUnknownSession(work, selected, operation)) return
+          this.retainPrivateFailure(work, cause)
+          return
+        }
         this.retainPrivateFailure(work, cause)
         const request = work.sessions.get(scope.sessionId)
         if (request === undefined) return
@@ -741,6 +809,23 @@ export class ManagedCoordinator extends SandboxCoordinator {
     })
   }
 
+  /** @param binding Exact installed account already closed to business admission.
+   * @returns Original actual stop, with a read-only reconciliation of late exact provider evidence when available. */
+  override async joinEpochStop(binding: AccountBinding): Promise<ParticipantReceipt> {
+    const work = this.bindings.get(binding)
+    if (!this.state.open || work === undefined || !this.deployment.backend.usesDeletionReceipts) this.stale()
+    if (work.allocationsStopping === undefined) work.receiptStop = true
+    this.beginStop(work)
+    try { await work.stopping } catch (_cause) { /* The original stop retains the failure and emits its unknown receipt. */ }
+    return work.outcome ?? this.receipt(work, false)
+  }
+
+  override canJoinEpochStop(binding: AccountBinding): boolean {
+    const work = this.bindings.get(binding)
+    return this.state.open && this.state.ready && this.deployment.backend.usesDeletionReceipts
+      && work !== undefined && this.accounts.get(binding.accountId) === work && work.open
+  }
+
   /**
    * Fence Root and join account, backend and startup work before checking unresolved metadata.
    * @returns Original actual Root shutdown promise; failure retains participant and Root metadata ownership.
@@ -802,6 +887,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
       if (!work.open || scope.binding !== work.binding) this.stale()
       await this.recoverRetirements(work)
       if (!work.open || scope.binding !== work.binding) this.stale()
+      if (work.commandStops.has(scope.sessionId)) this.unavailable()
       const retiring = work.retiring
       if (retiring?.request.sessionId === scope.sessionId) { await retiring.actual; continue }
       const existing = work.sessions.get(scope.sessionId)
@@ -924,7 +1010,8 @@ export class ManagedCoordinator extends SandboxCoordinator {
   }
 
   private async retirePreparedSession(work: AccountWork,
-    selected: Pick<SessionRetirement, 'request' | 'prepared' | 'reopening'>): Promise<void> {
+    selected: Pick<SessionRetirement, 'request' | 'prepared' | 'reopening' | 'timedIdle'>): Promise<void> {
+    this.cancelIdleRetirement(selected.request)
     const settled = Promise.withResolvers<void>()
     const original: SessionRetirement = { ...selected, actual: settled.promise }
     // Fence only this Session before any await; concurrent admission joins this original retirement.
@@ -951,7 +1038,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
       || work.providers?.commands === undefined
       || this.allocations.preparedForRetirement(original.request) !== original.prepared) this.unavailable()
     if (original.reopening === undefined) {
-      if (!work.providers.commands.isSessionQuiescent(original.request.sessionId)) this.unavailable()
+      if (!work.providers.commands.isSessionQuiescent(original.request.sessionId, original.timedIdle === true)) this.unavailable()
     } else work.providers.commands.assertReopenedSessionRetirement(original.reopening)
     await this.allocations.stop(original.request)
     this.deployment.backend.retireStopped(original.prepared, (selection) => {
@@ -959,6 +1046,78 @@ export class ManagedCoordinator extends SandboxCoordinator {
     })
     if (work.sessions.get(original.request.sessionId) !== original.request) this.stale()
     work.sessions.delete(original.request.sessionId)
+  }
+
+  private cancelIdleRetirement(request: ManagedSessionRequest | undefined): void {
+    if (request?.idleTimer === undefined) return
+    clearTimeout(request.idleTimer)
+    delete request.idleTimer
+  }
+
+  private scheduleIdleRetirement(work: AccountWork, sessionId: SessionId): void {
+    const delay = this.config.allocations.idleRetireMs, request = work.sessions.get(sessionId)
+    if (delay === undefined || request === undefined
+      || work.commandStops.has(sessionId) || !work.open || !this.state.open || work.privateFailure !== undefined) return
+    this.cancelIdleRetirement(request)
+    const timer = setTimeout(() => {
+      void this.retireIdleSession(work, request, timer).catch(() => { /* The original retirement owns and retains failures. */ })
+    }, delay)
+    timer.unref()
+    request.idleTimer = timer
+  }
+
+  private async retireIdleSession(work: AccountWork, request: ManagedSessionRequest,
+    timer: ReturnType<typeof setTimeout>): Promise<void> {
+    try {
+      if (work.retiring !== undefined) await work.retiring.actual
+      if (request.idleTimer !== timer || !work.open || !this.state.open || work.privateFailure !== undefined
+        || work.retiring !== undefined || work.sessions.get(request.sessionId) !== request
+        || work.providers?.commands.isSessionQuiescent(request.sessionId, true) !== true) return
+      this.assertReady()
+      const prepared = this.allocations.preparedForRetirement(request)
+      if (prepared === undefined || !this.deployment.backend.canRetireIdle(prepared)
+        || !this.deployment.runtimes.canRetireIdle(prepared)) return
+      await this.retirePreparedSession(work, { request, prepared, timedIdle: true })
+    } finally {
+      if (request.idleTimer === timer) delete request.idleTimer
+    }
+  }
+
+  private stopUnknownSession(work: AccountWork, selected: OriginalCommandAllocation, operation: ManagedCommandOperation): boolean {
+    const { request, prepared } = selected
+    if (work.sessions.get(request.sessionId) !== request) return false
+    const existing = work.commandStops.get(request.sessionId)
+    if (existing !== undefined) {
+      if (existing.request !== request || existing.prepared !== prepared) return false
+      existing.commands.add(operation)
+      return true
+    }
+    if (this.allocations.preparedForRetirement(request) !== prepared) return false
+    this.cancelIdleRetirement(request)
+    const joined = Promise.withResolvers<void>()
+    const stop = { request, prepared, commands: new Set([operation]), actual: joined.promise }
+    work.commandStops.set(request.sessionId, stop)
+    void this.finishUnknownSession(work, stop).then(joined.resolve, (cause: unknown) => {
+      this.observePrivateFailure(work, 'command-stop', cause, request.sessionId)
+      joined.reject(cause)
+    })
+    void joined.promise.catch(() => { /* Original failed stop stays retained under this Session. */ })
+    return true
+  }
+
+  private async finishUnknownSession(work: AccountWork, stop: SessionCommandStop): Promise<void> {
+    const { request, prepared } = stop
+    await this.allocations.stop(request)
+    while (stop.commands.size !== 0) {
+      const commands = [...stop.commands]
+      stop.commands.clear()
+      for (const operation of commands) operation.acknowledgePhysicalStop()
+      await Promise.all(commands.map(operation => operation.whenEmpty))
+    }
+    if (work.sessions.get(request.sessionId) !== request || work.commandStops.get(request.sessionId) !== stop) this.stale()
+    this.deployment.backend.retireStopped(prepared, (selection) => { this.deployment.runtimes.retireStopped(prepared, selection) })
+    work.sessions.delete(request.sessionId)
+    work.commandStops.delete(request.sessionId)
   }
 
   private reserve(work: AccountWork, scope: ExecutionScope<Workspace>, spec: SubprocessSpawnSpec): NativeCommandReservation {
@@ -971,6 +1130,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
     waitForActive: boolean): NativeCommandReservation | undefined {
     this.assertReady(); work.authority.assertBusinessCurrent()
     if (!work.open || scope.binding !== work.binding) this.stale()
+    if (work.commandStops.has(scope.sessionId)) this.unavailable()
     const stdinBytes = typeof spec.stdio.stdin === 'object' ? Buffer.byteLength(spec.stdio.stdin.data) : 0
     const pipes = spec.stdio.stdout === 'pipe' || spec.stdio.control === 'pipe'
     const outputBytes = pipes ? STREAM_RETAINED_BYTES
@@ -996,11 +1156,13 @@ export class ManagedCoordinator extends SandboxCoordinator {
     group.members++; work.activeCommands.set(scope, group)
     this.state.resident++; this.state.bytes += bytes
     work.capacity.resident++; work.capacity.bytes += bytes
+    this.cancelIdleRetirement(work.sessions.get(scope.sessionId))
     let active = true, resident = true
     return Object.freeze({ releaseActive: () => {
       if (!active) return
       active = false; work.activeCommands.delete(scope)
       if (--group.members === 0) { this.state.active--; work.capacity.active--; this.wakeCommandWaiters() }
+      this.scheduleIdleRetirement(work, scope.sessionId)
     }, releaseResident: () => {
       if (!resident) return
       resident = false; this.state.resident--; work.capacity.resident--; this.state.bytes -= bytes; work.capacity.bytes -= bytes
@@ -1016,6 +1178,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
   private reserveApplication(work: AccountWork, scope: ExecutionScope<Workspace>, charge: HttpRequestCharge): { release(): void } {
     this.assertReady(); work.authority.assertBusinessCurrent()
     if (!work.open || scope.binding !== work.binding || scope.purpose !== 'service') this.stale()
+    if (work.commandStops.has(scope.sessionId)) this.unavailable()
     const application = this.config.commands.services?.application
     if (application === undefined) this.unavailable()
     // Shared logical payload capacity includes request metadata and bounded URL copies, not a V8 RSS quota.
@@ -1034,8 +1197,13 @@ export class ManagedCoordinator extends SandboxCoordinator {
   private stopAllocations(work: AccountWork): Promise<void> {
     work.open = false
     if (work.allocationsStopping !== undefined) return work.allocationsStopping
-    const stops = [...work.sessions.values()].map(request => this.allocations.stop(request))
+    const stops = [...work.sessions.values()].map((request) => {
+      this.cancelIdleRetirement(request)
+      const stop = this.allocations.stop(request)
+      return work.receiptStop === true ? stop.catch(() => this.allocations.reconcileStopReceipt(request)) : stop
+    })
     if (work.retiring !== undefined) stops.push(work.retiring.actual)
+    for (const stopping of work.commandStops.values()) stops.push(stopping.actual)
     return work.allocationsStopping ??= Promise.allSettled(stops).then((results) => {
       const failed = results.find(result => result.status === 'rejected')
       if (failed?.status === 'rejected') throw failed.reason
@@ -1062,6 +1230,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
     })
     void work.stopping.catch(() => { /* The same failed actual stop remains owned and observable. */ })
   }
+
 
   private settle(work: AccountWork, confirmed: boolean): void {
     work.outcome = this.receipt(work, confirmed)

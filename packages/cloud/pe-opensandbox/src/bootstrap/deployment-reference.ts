@@ -72,10 +72,10 @@ export class RootDeploymentLease {
    * Open one protected readonly deployment file, keeping its original descriptor until actual Root cleanup.
    * @param reference Original explicit Root path/SHA.
    * @param maximum Hard byte bound: configuration/export at most128KiB, existing files plan at most256KiB.
-   * @param kind Protected configuration, legacy export manifest or the existing files storage plan.
+   * @param kind Protected configuration, legacy export manifest, files plan or SDK terminal policy.
    */
   constructor(private readonly reference: RootDeploymentReference, private readonly maximum: number,
-    kind: 'configuration' | 'export-manifest' | 'storage-plan') {
+    kind: 'configuration' | 'export-manifest' | 'storage-plan' | 'terminal-policy') {
     need(Number.isSafeInteger(maximum) && maximum > 0 && maximum <= (kind === 'storage-plan' ? 262144 : 131072)
       && reference.path.startsWith('/') && posix.normalize(reference.path) === reference.path && reference.path !== '/'
       && reference.path.length <= 4096 && Buffer.byteLength(reference.path) <= 4096 && !/[\0\\]/.test(reference.path)
@@ -84,9 +84,10 @@ export class RootDeploymentLease {
     this.fd = openSync(reference.path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
     try {
       this.initial = fstatSync(this.fd, { bigint: true })
+      const rootReadablePolicy = kind === 'configuration' || kind === 'terminal-policy'
       const permissions = kind === 'storage-plan' ? (this.initial.mode & 0o022n) === 0n
-        : this.initial.gid === (kind === 'configuration' ? 2000n : 0n)
-          && (this.initial.mode & 0o7777n) === (kind === 'configuration' ? 0o440n : 0o444n)
+        : this.initial.gid === (rootReadablePolicy ? 2000n : 0n)
+          && (this.initial.mode & 0o7777n) === (rootReadablePolicy ? 0o440n : 0o444n)
       need(this.initial.isFile() && this.initial.uid === 0n && this.initial.nlink === 1n && permissions
         && this.initial.size > 0n && this.initial.size <= BigInt(maximum))
       this.originalBytes = bounded(this.fd, maximum)

@@ -21,6 +21,8 @@ export interface ManagedServiceConfig {
 export interface ManagedNativeCommandConfig extends Omit<NativeCommandAccountLimits, 'services'> {
   readonly services?: ManagedServiceConfig
   readonly remoteServers?: true
+  /** Explicit coordinated residence and collected role limits for the paired v1 protocol. */
+  readonly residence?: Readonly<{ maxResidentMs: number; foregroundRunMs: number; serviceCommandLifetimeMs: number }>
   /** Root-selected extra native tool names; original execution-token, Agent and Session checks still apply. */
   readonly additionalTools?: readonly string[]
 }

@@ -158,7 +158,7 @@ async function fixture(kind: Kind) {
   { reserve(scope) {
     const record = { role: scope.purpose, active: vi.fn(), resident: vi.fn() }; reservations.push(record)
     return { releaseActive: record.active, releaseResident: record.resident }
-  }, async acquire(scope, _signal, registration) {
+  }, async acquire(scope, _signal, _operationId, registration) {
     if (scope.purpose === 'service') {
       if (registration === undefined) throw new Error('Missing original service registration')
       expect(registration.scope).toBe(scope)

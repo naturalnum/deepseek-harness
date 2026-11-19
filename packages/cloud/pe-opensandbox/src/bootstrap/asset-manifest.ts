@@ -1,5 +1,7 @@
 /** Fixed nonsecret Python payload pins; mismatches reject before any remote bootstrap work. */
 import { BOOTSTRAP_PINS } from './payload-pins.ts'
+import { RENEWAL_SOURCE_DIGEST, RENEWAL_SOURCES } from './renewal-asset-manifest.ts'
+import { RENEWAL_BOOTSTRAP_PINS } from './renewal-payload-pins.ts'
 
 /** Installation candidate aggregate; Root adoption and target qualification remain required. */
 export const SOURCE_DIGEST = '9e1744674aa758c8b9b75e64c13aed36d46f90439b0949c96b22532cd3cf5bd5'
@@ -20,3 +22,11 @@ export const RUNTIME_ASSET_MANIFEST = Object.freeze([
   ...Object.entries(SOURCES).map(([name, pin]) => Object.freeze({ path: `agent/${name}`, bytes: pin[1], sha256: pin[0] })),
   ...Object.entries(BOOTSTRAP_PINS).map(([name, pin]) => Object.freeze({ path: `bootstrap/${name}`, bytes: pin.bytes, sha256: pin.sha256 })),
 ])
+
+/** Map one protected digest to its fixed local files, never to a caller-supplied directory. */
+export function runtimePayloadPins(digest: string) {
+  if (digest === SOURCE_DIGEST) return { agent: SOURCES, bootstrap: BOOTSTRAP_PINS, directory: 'runtime' }
+  if (digest === RENEWAL_SOURCE_DIGEST) {
+    return { agent: RENEWAL_SOURCES, bootstrap: RENEWAL_BOOTSTRAP_PINS, directory: 'runtime/s08-renewal' }
+  }
+}

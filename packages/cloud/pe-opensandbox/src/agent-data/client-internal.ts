@@ -5,11 +5,14 @@ import { performance } from 'node:perf_hooks'
 import { asciiJSON, preparedDigest, need, record, spec } from './canonical.ts'
 import { parseReply } from './strict-json.ts'
 import { checkOptions, envelope, handshake, operation, ref as checkRef } from './validate.ts'
-import { AGENT_AUTH_HEADER, CARRIER_LIMITS as L } from './constants.ts'
+import { AGENT_AUTH_HEADER, CARRIER_LIMITS as L, RECORD_SETTLEMENT_VERSION, RESIDENCE_LIMITS as R, RESIDENCE_VERSION,
+  SERVICE_WINDOW_VERSION, SLICE_LIMITS } from './constants.ts'
+import { signResidence, signServiceWindow, signSettlement } from './root-role-issuer.ts'
 import { ControlUncertain, RemoteRefusal } from './errors.ts'
 import { ExecutionStream } from './stream.ts'
 import type { AgentDataClient, AgentDataStream, CallOptions, ClientOptions, ExpectedBinding, Handshake, Mutation,
-  OperationRef, OperationSnapshot, OperationSpec, PhysicalStopAck, PipesOperationSpec, PreparedRequest, Responsibility, Route } from './types.ts'
+  OperationRef, OperationSnapshot, OperationSpec, PhysicalStopAck, PipesOperationSpec, PreparedRequest,
+  ResidenceOffer, ResidenceReceipt, Responsibility, Route } from './types.ts'
 import type { OwnedTransport, WireEvents } from './transport.ts'
 
 interface RefRecord { ref: OperationRef
@@ -18,19 +21,25 @@ interface RefRecord { ref: OperationRef
   prepared?: boolean
   pipes?: PipesOperationSpec
   attachAttempted?: boolean
+  terminal?: boolean
+  activeCollect?: boolean
   stream?: ExecutionStream }
-interface Flight { actual: Promise<void>; bodyBytes: number; stream?: boolean; abort(): void }
+interface Flight { actual: Promise<void>; bodyBytes: number; row?: RefRecord; stream?: boolean; abort(): void }
 
 /** Internal constructor permits exclusive fake transport ownership for units. Public factory always owns a fresh Pool. */
 export class DataClient implements AgentDataClient {
   readonly #expected: ExpectedBinding
   readonly #token: string
   readonly #transport: OwnedTransport
-  readonly #expires = performance.now() + L.localLifetimeMs
+  readonly #legacyExpires = performance.now() + L.localLifetimeMs
+  #expires = this.#legacyExpires
+  #residenceSequence = 0
+  #publishedResidenceSequence = 0
+  #residenceVerified = false
   readonly #records = new Map<string, RefRecord>()
   readonly #active = new Set<Flight>()
   #verified = false; #fenced = false; #closing = false; #physicalAck = false; #physicalRequired = false
-  #streamVerified = false
+  #streamVerified = false; #settlementVerified = false; #serviceWindowVerified = false; #seenSequence = 0
   #attempts = 0; #sent = 0; #allowance = 0; #buffered = 0; #received = 0; #sealAttempted = false
   #closed = false; #closePending = 0; #cleanupFailure = false; #cleanupDone = false
   #cleanup?: Promise<void>; #destroy?: Promise<void>; #releaseTimer?: ReturnType<typeof setTimeout>
@@ -88,19 +97,21 @@ export class DataClient implements AgentDataClient {
     need(!this.#closing && !this.#fenced && !this.#physicalAck && this.#streamVerified, 'stream_admission_fenced')
     need(row !== undefined && row.ref.specHash === reference.specHash
       && asciiJSON(row.ref.authorization) === asciiJSON(reference.authorization) && row.prepared && row.pipes !== undefined
+      && row.ref.recordSequence === reference.recordSequence
+      && reference.recordSequence === undefined
       && !row.attachAttempted && !row.mutations.has('/commit') && reference.authorization.role !== 'service', 'stream_operation_binding')
     need(this.#transport.attach !== undefined, 'stream_transport_unavailable')
-    const now = performance.now(), deadline = Math.min(options.deadlineMs ?? now + L.requestMs, now + L.requestMs, this.#expires)
+    const now = performance.now(), deadline = Math.min(options.deadlineMs ?? now + L.requestMs, now + L.requestMs, this.#legacyExpires)
     need(Number.isFinite(deadline) && deadline > now && !options.signal?.aborted, 'local_deadline_or_cancel')
     need([...this.#active].filter(f => f.stream).length < 2 && this.#attempts < L.attempts, 'carrier_budget')
     row.attachAttempted = true; this.#attempts++
     const stream = row.stream = new ExecutionStream(reference, row.pipes, () => {
       void this.fence(); if (!this.#physicalAck) row.unresolved = true
     })
-    const flight: Flight = { actual: stream.settled, bodyBytes: 0, stream: true, abort: () => { stream.fail() } }
+    const flight: Flight = { actual: stream.settled, bodyBytes: 0, row, stream: true, abort: () => { stream.fail() } }
     this.#active.add(flight)
     const timer = setTimeout(() => { stream.fail() }, Math.max(1, deadline - now))
-    const residence = setTimeout(() => { stream.fail() }, Math.max(1, this.#expires - now))
+    const residence = setTimeout(() => { stream.fail() }, Math.max(1, this.#legacyExpires - now))
     const cancel = () => { stream.fail() }
     options.signal?.addEventListener('abort', cancel, { once: true })
     void stream.ready.then(() => { clearTimeout(timer) }, () => { clearTimeout(timer) })
@@ -112,13 +123,16 @@ export class DataClient implements AgentDataClient {
       const auth = reference.authorization
       stream.bind(this.#transport.attach({ headers: { [AGENT_AUTH_HEADER]: this.#token,
         'x-pe-operation-id': reference.operationId, 'x-pe-spec-hash': reference.specHash,
-        'x-pe-range-role': auth.role, 'x-pe-registration-id': auth.registrationId ?? '-', 'x-pe-role-signature': auth.signature } }, stream.events))
+        'x-pe-range-role': auth.role, 'x-pe-registration-id': auth.registrationId ?? '-', 'x-pe-role-signature': auth.signature,
+        ...reference.recordSequence === undefined ? {} : { 'x-pe-record-sequence': String(reference.recordSequence) },
+      } }, stream.events))
     } catch { stream.events.error(); stream.events.closed() }
     return stream.ready
   }
   joinStream(ref: OperationRef): Promise<void> {
     const reference = checkRef(ref, this.#expected.runtimeIdentity), row = this.#records.get(reference.operationId)
     need(row !== undefined && row.ref.specHash === reference.specHash
+      && row.ref.recordSequence === reference.recordSequence
       && asciiJSON(row.ref.authorization) === asciiJSON(reference.authorization), 'stream_operation_binding')
     return row.stream?.settled ?? Promise.resolve()
   }
@@ -150,6 +164,50 @@ export class DataClient implements AgentDataClient {
    * @returns Original byte coordinates and independent direct/range/IO facts.
    */
   poll(reference: OperationRef, options?: CallOptions): Promise<OperationSnapshot> { return this.#op('/poll', reference, options) }
+  async settle(ref: OperationRef, options?: CallOptions): Promise<void> {
+    const reference = checkRef(ref, this.#expected.runtimeIdentity)
+    const row = this.#records.get(reference.operationId)
+    need(this.#settlementVerified && reference.recordSequence !== undefined && row !== undefined
+      && row.terminal && !row.unresolved && !this.#physicalRequired && !this.#fenced && !this.#cleanupFailure
+      && row.pipes === undefined
+      && ![...this.#active].some(flight => flight.row === row), 'local_record_unsettled')
+    await this.#call('/settle', { ...reference, settlementProof: signSettlement(this.#token, reference) }, reference, options)
+  }
+  async extendService(ref: OperationRef, runMs: number, futurePolls: number, options: CallOptions): Promise<boolean> {
+    const reference = checkRef(ref, this.#expected.runtimeIdentity), row = this.#records.get(reference.operationId)
+    need(this.#serviceWindowVerified && reference.authorization.role === 'service' && row?.activeCollect
+      && !row.mutations.has('/stop') && !row.mutations.has('/cancel')
+      && !this.#fenced && !this.#physicalRequired && !this.#cleanupFailure
+      && ![...this.#active].some(flight => flight.row === row), 'service_window_unavailable')
+    need(Number.isSafeInteger(runMs) && runMs > SLICE_LIMITS.serviceRunMs && runMs <= SLICE_LIMITS.runMs
+      && Number.isSafeInteger(futurePolls) && futurePolls >= 0, 'service_window_budget')
+    const fields = { ...reference, runMs, windowProof: signServiceWindow(this.#token, reference, runMs) }
+    const followups = futurePolls + 2 // Original stop and one seal also need carrier room.
+    const pollBytes = asciiJSON({ ...reference, stdoutOffset: 0, stderrOffset: 0 }).length
+    if (this.#attempts + 1 + followups > L.attempts
+      || this.#sent + asciiJSON(fields).length + followups * pollBytes > L.sentBodyTotal
+      || this.#allowance + (1 + followups) * L.reply > L.replyAllowanceTotal
+      || [...this.#active].filter(flight => !flight.stream).length >= L.concurrent) return false
+    await this.#call('/extend-service', fields, reference, options)
+    return true
+  }
+  async renewResidence(ref: OperationRef, offer: ResidenceOffer, options: CallOptions): Promise<ResidenceReceipt | undefined> {
+    const original = checkRef(ref, this.#expected.runtimeIdentity), row = this.#records.get(original.operationId)
+    need(this.#residenceVerified && row?.activeCollect && !row.mutations.has('/stop') && !row.mutations.has('/cancel')
+      && !this.#fenced && !this.#closing && !this.#physicalRequired && !this.#cleanupFailure
+      && ![...this.#active].some(flight => flight.row === row), 'residence_unavailable')
+    if ([...this.#active].some(flight => flight.stream)) return undefined
+    const leaseSequence = this.#residenceSequence + 1
+    if (leaseSequence > R.grants || this.#attempts + 1 + R.terminalAttempts > L.attempts
+      || this.#sent + (1 + R.terminalAttempts) * R.fixedControlBytes > L.sentBodyTotal
+      || this.#allowance + (1 + R.terminalAttempts) * L.reply > L.replyAllowanceTotal
+      || [...this.#active].filter(flight => !flight.stream).length >= L.concurrent) return undefined
+    const fields = { ...original, ...offer, leaseSequence, residenceProof: signResidence(this.#token, original, offer, leaseSequence) }
+    need(asciiJSON(fields).length <= R.fixedControlBytes && this.#publishedResidenceSequence === leaseSequence - 1,
+      'residence_sequence')
+    this.#residenceSequence = leaseSequence
+    return this.#call('/renew-residence', fields, original, options) as Promise<ResidenceReceipt>
+  }
   seal(options?: CallOptions): Promise<Handshake> {
     void this.fence()
     return this.#call('/seal', {}, undefined, options) as Promise<Handshake>
@@ -162,19 +220,26 @@ export class DataClient implements AgentDataClient {
     const fields = { ...reference, ...(route === '/poll' ? { stdoutOffset: 0, stderrOffset: 0 } : {}) }
     return this.#call(route, fields, reference, options) as Promise<OperationSnapshot>
   }
-  #remember(reference: OperationRef): RefRecord {
+  #remember(reference: OperationRef, route: Route): RefRecord {
     const existing = this.#records.get(reference.operationId)
     if (existing) {
       need(existing.ref.specHash === reference.specHash
+        && existing.ref.recordSequence === reference.recordSequence
         && asciiJSON(existing.ref.authorization) === asciiJSON(reference.authorization), 'local_operation_conflict')
+      need(!existing.mutations.has('/settle'), 'local_settlement_started')
       return existing
     }
     need(this.#records.size < 4, 'local_reference_capacity')
+    if (reference.recordSequence !== undefined) {
+      need(this.#settlementVerified && route === '/prepare'
+        && reference.recordSequence > this.#seenSequence, 'local_operation_sequence')
+      this.#seenSequence = reference.recordSequence
+    }
     const row = { ref: reference, mutations: new Set<Mutation>(), unresolved: !this.#physicalAck }
     this.#records.set(reference.operationId, row); return row
   }
   #call(route: Route, fields: Record<string, unknown>, reference?: OperationRef,
-    options: CallOptions = {}, preparedSpec?: OperationSpec): Promise<Handshake | OperationSnapshot> {
+    options: CallOptions = {}, preparedSpec?: OperationSpec): Promise<Handshake | OperationSnapshot | ResidenceReceipt | undefined> {
     need(!this.#closing && !this.#physicalAck, 'local_carrier_closed')
     if (route === '/prepare' || route === '/commit') need(this.#verified && !this.#fenced, 'local_admission_fenced')
     need(options.deadlineMs === undefined
@@ -185,16 +250,23 @@ export class DataClient implements AgentDataClient {
     need(encoded.length <= L.body, 'body_budget')
     need([...this.#active].filter(f => !f.stream).length < L.concurrent && this.#attempts < L.attempts
       && this.#sent + encoded.length <= L.sentBodyTotal && this.#allowance + L.reply <= L.replyAllowanceTotal, 'carrier_budget')
-    const row = reference ? this.#remember(reference) : undefined
+    const stopping = route === '/stop' || route === '/cancel' || route === '/seal'
+      || route === '/poll' && reference !== undefined && this.#records.get(reference.operationId)?.mutations.has('/stop') === true
+    if (this.#residenceSequence > 0 && !stopping) need(this.#attempts + 1 + R.terminalAttempts <= L.attempts
+      && this.#sent + encoded.length + R.terminalAttempts * R.fixedControlBytes <= L.sentBodyTotal
+      && this.#allowance + (1 + R.terminalAttempts) * L.reply <= L.replyAllowanceTotal, 'residence_terminal_budget')
+    need(reference?.recordSequence === undefined || preparedSpec?.executionKind !== 'pipes', 'settlement_collect_required')
+    const row = reference ? this.#remember(reference, route) : undefined
     if (row !== undefined && preparedSpec?.executionKind === 'pipes') row.pipes = preparedSpec
-    const mutation = route !== '/handshake' && route !== '/poll' && route !== '/stream' ? route : undefined
+    const mutation = route !== '/handshake' && route !== '/poll' && route !== '/stream' && route !== '/renew-residence' ? route : undefined
     if (mutation === '/seal') { need(!this.#sealAttempted, 'mutation_already_attempted'); this.#sealAttempted = true }
     else if (mutation && row) {
       need(!row.mutations.has(mutation), 'mutation_already_attempted'); row.mutations.add(mutation); row.unresolved = true
     }
     this.#attempts++; this.#sent += encoded.length; this.#allowance += L.reply // Lifetime pessimistic body allowances never recycled.
-    let resolve!: (v: Handshake | OperationSnapshot) => void, reject!: (e: unknown) => void, finish!: () => void
-    const result = new Promise<Handshake | OperationSnapshot>((yes, no) => { resolve = yes; reject = no })
+    let resolve!: (v: Handshake | OperationSnapshot | ResidenceReceipt | undefined) => void
+    let reject!: (e: unknown) => void, finish!: () => void
+    const result = new Promise<Handshake | OperationSnapshot | ResidenceReceipt | undefined>((yes, no) => { resolve = yes; reject = no })
     const actual = new Promise<void>((yes) => { finish = yes })
     let terminal = false, delivered = false, aborted = false, abortTransport: (() => void) | undefined
     let status = 0, expectedLength: number | undefined, length = 0, invalid = false
@@ -208,7 +280,8 @@ export class DataClient implements AgentDataClient {
       aborted = true; uncertain()
       try { abortTransport?.() } catch { this.#cleanupFailure = true }
     }
-    const flight: Flight = { actual, bodyBytes: encoded.length, abort }; this.#active.add(flight)
+    const flight: Flight = { actual, bodyBytes: encoded.length, ...row === undefined ? {} : { row }, abort }
+    this.#active.add(flight)
     const timer = setTimeout(abort, Math.max(1, deadline - now))
     const externalCancel = () => { abort() }
     options.signal?.addEventListener('abort', externalCancel, { once: true })
@@ -249,13 +322,64 @@ export class DataClient implements AgentDataClient {
             record(value, ['protocolVersion', 'runtimeIdentity', 'error'])
             need(status >= 400 && status < 500 && typeof value.error === 'string'
               && /^[a-z0-9_-]{1,64}$/.test(value.error), 'unbound_refusal')
+            if (route === '/settle' || route === '/extend-service' || route === '/renew-residence') { uncertain(); return }
             // Never copy arbitrary response text into errors/logs.
             delivered = true; reject(new RemoteRefusal(status, 'remote_refusal')); return
+          }
+          if (route === '/settle') {
+            record(value, ['protocolVersion', 'runtimeIdentity', 'settled'])
+            record(value.settled, ['operationId', 'specHash', 'recordSequence'])
+            need(row !== undefined && !this.#fenced && !this.#closing && !this.#physicalRequired && !this.#cleanupFailure
+              && value.settled.operationId === row.ref.operationId && value.settled.specHash === row.ref.specHash
+              && value.settled.recordSequence === row.ref.recordSequence, 'settlement_reply_binding')
+            this.#records.delete(row.ref.operationId)
+            delivered = true; resolve(undefined); return
+          }
+          if (route === '/extend-service') {
+            record(value, ['protocolVersion', 'runtimeIdentity', 'serviceWindow'])
+            record(value.serviceWindow, ['operationId', 'specHash', 'registrationId', 'runMs'])
+            need(row !== undefined && !this.#fenced && !this.#closing && !this.#physicalRequired && !this.#cleanupFailure
+              && value.serviceWindow.operationId === row.ref.operationId && value.serviceWindow.specHash === row.ref.specHash
+              && value.serviceWindow.registrationId === row.ref.authorization.registrationId
+              && value.serviceWindow.runMs === fields.runMs, 'service_window_reply_binding')
+            delivered = true; resolve(undefined); return
+          }
+          if (route === '/renew-residence') {
+            record(value, ['protocolVersion', 'runtimeIdentity', 'residence'])
+            const reply = value.residence, limit = fields.remainingMs
+            record(reply, ['leaseSequence', 'operationId', 'specHash', 'registrationId', 'residentCapMs', 'runCapMs',
+              'residentRemainingMs', 'runRemainingMs'])
+            const duration = (remaining: unknown): remaining is number | null => remaining === null
+              || typeof remaining === 'number' && Number.isSafeInteger(remaining) && remaining > 0
+              && typeof limit === 'number' && remaining <= limit
+            const { residentRemainingMs, runRemainingMs } = reply
+            need(row !== undefined && !this.#fenced && !this.#closing && !this.#physicalRequired && !this.#cleanupFailure
+              && reply.leaseSequence === this.#residenceSequence && reply.leaseSequence === fields.leaseSequence
+              && reply.operationId === row.ref.operationId && reply.specHash === row.ref.specHash
+              && reply.registrationId === row.ref.authorization.registrationId && reply.residentCapMs === fields.residentCapMs
+              && reply.runCapMs === fields.runCapMs && duration(residentRemainingMs) && duration(runRemainingMs),
+            'residence_reply_binding')
+            const sequence = this.#residenceSequence
+            const publish = (untilMs: number | undefined): void => {
+              need(sequence === this.#residenceSequence && this.#publishedResidenceSequence === sequence - 1
+                && !this.#fenced && !this.#closing && !this.#physicalRequired && !this.#cleanupFailure
+                && performance.now() < deadline && performance.now() < this.#expires, 'residence_publish_closed')
+              if (untilMs !== undefined) {
+                need(residentRemainingMs !== null && Number.isFinite(untilMs) && untilMs <= now + residentRemainingMs
+                  && untilMs <= this.#legacyExpires - L.localLifetimeMs + R.maxMs, 'residence_publish_window')
+                this.#expires = Math.max(this.#expires, untilMs)
+              }
+              this.#publishedResidenceSequence = sequence
+            }
+            delivered = true; resolve(Object.freeze({ residentRemainingMs, runRemainingMs, publish })); return
           }
           let snapshot: Handshake | OperationSnapshot
           if (route === '/handshake' || route === '/seal') {
             snapshot = handshake(value, this.#expected); this.#verified = true
             this.#streamVerified = snapshot.streamLimits !== undefined
+            this.#settlementVerified = snapshot.recordSettlementVersion === RECORD_SETTLEMENT_VERSION
+            this.#serviceWindowVerified = snapshot.serviceWindowVersion === SERVICE_WINDOW_VERSION
+            this.#residenceVerified = snapshot.residenceVersion === RESIDENCE_VERSION
             if (snapshot.sealed) void this.fence()
           } else {
             record(value, ['protocolVersion', 'runtimeIdentity', 'operation'])
@@ -268,8 +392,19 @@ export class DataClient implements AgentDataClient {
               && snapshot.failure === null && snapshot.cleanupFailure === null && !snapshot.stream?.attached
             if (row?.stream !== undefined && route === '/commit' && snapshot.submitted && !snapshot.physicalStopRequired
               && snapshot.firstCause === null && !snapshot.providerFailure) row.stream.noteSubmitted()
-            if (row && snapshot.rangeEmpty && snapshot.ioClosed && !snapshot.physicalStopRequired && !this.#physicalRequired) {
-              row.unresolved = false
+            if (row !== undefined) {
+              if (snapshot.rangeEmpty && snapshot.ioClosed && !snapshot.physicalStopRequired && !this.#physicalRequired) {
+                row.unresolved = false
+              }
+              row.terminal = snapshot.submitted && snapshot.commitAttempted && snapshot.direct !== null
+                && snapshot.rangeEmpty && snapshot.ioClosed && snapshot.streams.stdout.eof && snapshot.streams.stderr.eof
+                && !snapshot.physicalStopRequired && !snapshot.providerFailure
+                && snapshot.failure === null && snapshot.cleanupFailure === null
+              row.activeCollect = reference.authorization.role !== 'program' && row.pipes === undefined
+                && snapshot.submitted && snapshot.commitAttempted
+                && !snapshot.commitClosed && !snapshot.rangeEmpty && !snapshot.ioClosed && snapshot.direct === null
+                && !snapshot.physicalStopRequired && !snapshot.providerFailure && snapshot.firstCause === null
+                && snapshot.failure === null && snapshot.cleanupFailure === null
             }
           }
           if (snapshot.physicalStopRequired && !this.#physicalAck) {

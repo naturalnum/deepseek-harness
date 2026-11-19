@@ -28,6 +28,10 @@ export interface SdkLifecycleConfig {
   readonly cpuCores: number
   readonly memoryMiB: number
   readonly ttlSeconds: number
+  /** Trusted composition only. Requires a provider selected for exact, final DELETE proof. */
+  readonly renewalLeadMs?: number
+  /** Maximum original renewal attempts for this allocation, including an uncertain attempt. */
+  readonly maxRenewalAttempts?: number
   readonly requestTimeoutMs: number
   readonly stopBudgetMs: number
   readonly readyPollIntervalMs: number
@@ -41,6 +45,8 @@ export interface SdkLifecycleConfig {
   readonly maxResponseBytes: number
   readonly maxOperationBytes: number
   readonly maxFieldBytes: number
+  /** Optional exact private provider capability; absence selects the original lifecycle. */
+  readonly deletionReceipts?: Readonly<{ providerGeneration: string; policyDigest: string }>
 }
 
 /** Root's authenticated client must bind the exact sandbox, original mount and fixed expected payload. */

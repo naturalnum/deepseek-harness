@@ -67,7 +67,7 @@ class OriginalDockerView:
         self.policy = decode(raw)
         require(set(self.policy) == {'version', 'generation', 'socket', 'image', 'entrypoint', 'platform',
                                     'apiKeySha256', 'admitCreates', 'historical', 'storageMode'}, 'policy-fields')
-        require(self.policy['version'] == 2 and self.policy['storageMode'] == 'shared-path'
+        require(self.policy['version'] == 2 and self.policy['storageMode'] in ('shared-path', 'project-quota-v1')
                 and type(self.policy['admitCreates']) is bool
                 and len(self.policy['historical']) <= 1, 'policy-bounds')
         require(fixed_recipe(self.policy['image'], self.policy['platform'])
@@ -141,15 +141,15 @@ class OriginalDockerView:
         environment_source = environment.host.path
         environment_pool, environment_leaf = os.path.split(environment_source)
         account_environments = os.path.join(os.path.dirname(project_domain), 'environments')
-        legacy_environment = (environment_source in allowed
-                              and environment_pool == account_environments
-                              and re.fullmatch(r'slot-[01]', environment_leaf))
-        session_environment = (environment_pool in allowed
-                               and os.path.dirname(environment_pool) == account_environments
-                               and re.fullmatch(r'slot-[01]', os.path.basename(environment_pool))
-                               and re.fullmatch(r'[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}', environment_leaf))
-        require((legacy_environment or session_environment)
-                and environment.mount_path == '/opt/session-env', 'host-bind-environment')
+        session_leaf = re.fullmatch(r'[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}', environment_leaf)
+        if self.policy['storageMode'] == 'project-quota-v1':
+            environment_matches = (environment_pool == account_environments and environment_pool in allowed and session_leaf)
+        else:
+            environment_matches = ((environment_source in allowed and environment_pool == account_environments
+                                    and re.fullmatch(r'slot-[01]', environment_leaf))
+                                   or (environment_pool in allowed and os.path.dirname(environment_pool) == account_environments
+                                       and re.fullmatch(r'slot-[01]', os.path.basename(environment_pool)) and session_leaf))
+        require(environment_matches and environment.mount_path == '/opt/session-env', 'host-bind-environment')
         require(len({v.host.path for v in volumes}) == len(volumes)
                 and len({v.mount_path for v in volumes}) == len(volumes)
                 and not (project.mount_path == '/opt/session-env'

@@ -7,15 +7,14 @@ import { open } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { join } from 'node:path'
 import { ConnectionConfig, createDefaultAdapterFactory, type AdapterFactory, type Endpoint } from '@alibaba-group/opensandbox'
-import { BOOTSTRAP_PINS } from './payload-pins.ts'
-import { SOURCE_DIGEST, SOURCES } from './asset-manifest.ts'
+import { runtimePayloadPins, SOURCE_DIGEST, SOURCES } from './asset-manifest.ts'
 import { RootAgentProxyTransport } from './agent-proxy.ts'
 import { createOwnedSdkTransport, type OwnedTransportLimits } from '../sdk-transport.ts'
 import { PrivateSemanticAudit, type SemanticSpan } from '../semantic-audit.ts'
 import { SdkLifecycleFailure, type AgentReadinessBudget, type AgentSelection, type OwnedSdkTransport, type SdkLifecycleConfig } from '../lifecycle-types.ts'
 import type { AgentDataClient, ClientOptions, RootGrant } from '../agent-data/types.ts'
 import { DataClient } from '../agent-data/client-internal.ts'
-import { AGENT_SOURCE_SHA256, digest, expectedWorldHash } from '../agent-data/index.ts'
+import { digest, expectedWorldHash } from '../agent-data/index.ts'
 import { RUNTIME_PROFILES } from './runtime-profiles.ts'
 import { checkOptions } from '../agent-data/validate.ts'
 import { isPinnedWorkloadImageDigest } from './workload-images.ts'
@@ -62,14 +61,18 @@ export interface BootstrapPayload {
  * @param agentDirectory Root-approved eight-file source directory.
  * @returns Fixed, individually verified source bytes; configuration and tokens are never part of this payload.
  */
-export async function loadBootstrapPayload(bootstrapDirectory: string, agentDirectory: string): Promise<BootstrapPayload> {
+export async function loadBootstrapPayload(bootstrapDirectory: string, agentDirectory: string,
+  digest: string = SOURCE_DIGEST): Promise<BootstrapPayload> {
+  const pins = runtimePayloadPins(digest)
+  need(pins !== undefined, 'binding')
+  const { agent, bootstrap } = pins
   const helpers = new Map<string, Buffer>()
-  for (const [name, pin] of Object.entries(BOOTSTRAP_PINS)) {
+  for (const [name, pin] of Object.entries(bootstrap)) {
     const data = await pinnedFile(join(bootstrapDirectory, name), pin.bytes, pin.sha256)
     helpers.set(name, data)
   }
   const uploads: { name: string; data: Uint8Array }[] = []
-  for (const [name, pin] of Object.entries(SOURCES)) {
+  for (const [name, pin] of Object.entries(agent)) {
     const data = await pinnedFile(join(agentDirectory, name), pin[1], pin[0])
     uploads.push({ name, data })
   }
@@ -254,21 +257,24 @@ export class TrustedSdkBootstrap {
     new Headers({ 'X-EXECD-ACCESS-TOKEN': config.execdAccessToken })
     need(config.execdAccessToken.length > 0 && config.execdAccessToken.length <= 1024, 'bounds')
     const selected = config.lifecycle, url = new URL(selected.lifecycleBaseUrl)
-    const sourceDigest = digest(Object.fromEntries(Object.entries(SOURCES).map(([name, pin]) => [name, pin[0]])))
+    const pins = runtimePayloadPins(selected.payloadSha256)
+    need(pins !== undefined, 'binding')
+    const { agent, bootstrap } = pins
+    const sourceDigest = digest(Object.fromEntries(Object.entries(agent).map(([name, pin]) => [name, pin[0]])))
     need(url.protocol === 'http:' && !url.username && !url.password && !url.search && !url.hash
       && isPinnedWorkloadImageDigest(selected.imageDigest, selected.platform)
-      && [selected.payloadSha256, AGENT_SOURCE_SHA256, SOURCE_DIGEST].every(pin => pin === sourceDigest)
+      && selected.payloadSha256 === sourceDigest
       && JSON.stringify(selected.entrypoint) === JSON.stringify(['/usr/bin/tail', '-f', '/dev/null']), 'binding')
-    need(hash(Buffer.from(payload.prep)) === BOOTSTRAP_PINS['prep.py'].sha256
-      && hash(Buffer.from(payload.loader)) === BOOTSTRAP_PINS['loader.py'].sha256 && payload.uploads.length === Object.keys(SOURCES).length + 1, 'binding')
+    need(hash(Buffer.from(payload.prep)) === bootstrap['prep.py'].sha256
+      && hash(Buffer.from(payload.loader)) === bootstrap['loader.py'].sha256 && payload.uploads.length === Object.keys(agent).length + 1, 'binding')
     this.payload = { prep: payload.prep, loader: payload.loader, uploads: payload.uploads.map(({ name, data }) => {
-      const pin = name === 'publisher.py' ? BOOTSTRAP_PINS['publisher.py'] : undefined
-      const source = Object.entries(SOURCES).find(([file]) => file === name)?.[1]
+      const pin = name === 'publisher.py' ? bootstrap['publisher.py'] : undefined
+      const source = Object.entries(agent).find(([file]) => file === name)?.[1]
       need((pin !== undefined && data.length === pin.bytes && hash(data) === pin.sha256)
         || (source !== undefined && data.length === source[1] && hash(data) === source[0]), 'binding')
       return Object.freeze({ name, data: Uint8Array.from(data) })
     }) }
-    need(new Set(this.payload.uploads.map(item => item.name)).size === Object.keys(SOURCES).length + 1, 'binding')
+    need(new Set(this.payload.uploads.map(item => item.name)).size === Object.keys(agent).length + 1, 'binding')
   }
 
   /**
@@ -436,7 +442,8 @@ export class TrustedSdkBootstrap {
         platform: this.config.lifecycle.platform,
         ...skillParent === undefined ? {} : { skillParent },
         projectRoot: grant.project.rootPath, roots: { project: root(grant.project), environment: root(grant.environment) },
-        pins: { bwrapSha256: RUNTIME_PROFILES[this.config.lifecycle.platform].bwrapSha256, agentSourceSha256: AGENT_SOURCE_SHA256,
+        pins: { bwrapSha256: RUNTIME_PROFILES[this.config.lifecycle.platform].bwrapSha256,
+          agentSourceSha256: this.config.lifecycle.payloadSha256,
           userWorldArgvSha256: expectedWorldHash(grant.project.rootPath, skillParent) }, declaredImageId: selection.imageDigest }
       // Validate full lossless grant/config input before the first Root command or upload.
       const origin = new URL(this.config.lifecycle.lifecycleBaseUrl)

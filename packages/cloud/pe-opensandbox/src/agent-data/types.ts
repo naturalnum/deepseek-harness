@@ -3,7 +3,9 @@
  * runtime pins and errors live in dedicated modules.
  */
 import type { SkillParent, SkillWorld } from './skill-world.ts'
+import type { RECORD_SETTLEMENT_VERSION, RESIDENCE_VERSION, SERVICE_WINDOW_VERSION } from './constants.ts'
 import type { NativeFilePolicy } from './file-policy.ts'
+import type { RENEWAL_CHILD_LIMITS } from './constants.ts'
 import type { ROLE_PROTOCOL as PROTOCOL, ROLE_LIMITS as SLICE_LIMITS } from './role-protocol.ts'
 import type { Duplex, Readable, Writable } from 'node:stream'
 
@@ -11,9 +13,9 @@ import type { Duplex, Readable, Writable } from 'node:stream'
  * Fixed HTTP routes of the frozen agent protocol;
  * callers cannot supply arbitrary endpoints.
  */
-export type Route = '/handshake' | '/prepare' | '/commit' | '/cancel' | '/poll' | '/stop' | '/seal' | '/stream'
+export type Route = '/handshake' | '/prepare' | '/commit' | '/cancel' | '/poll' | '/stop' | '/seal' | '/stream' | '/settle' | '/extend-service' | '/renew-residence'
 /** Routes with remote mutation intent, each locally attempted at most once per reference or client seal. */
-export type Mutation = Exclude<Route, '/handshake' | '/poll' | '/stream'>
+export type Mutation = Exclude<Route, '/handshake' | '/poll' | '/stream' | '/renew-residence'>
 /**
  * Root-authorized uint64 quantities as canonical decimal strings;
  * only device permits zero.
@@ -130,6 +132,8 @@ export interface UnsignedOperationRef {
   readonly runtimeIdentity: string
   readonly operationId: string
   readonly specHash: string
+  /** Original Root-issued monotonic sequence, present only for negotiated collect record settlement. */
+  readonly recordSequence?: number
 }
 /** Original reference and Root's exact role authorization; later calls cannot relabel it. */
 export interface OperationRef extends UnsignedOperationRef {
@@ -225,10 +229,14 @@ export interface Handshake {
   readonly capabilities: readonly ['argv', 'stdin-ignore', 'stdin-batch', 'collect']
     | readonly ['argv', 'stdin-ignore', 'stdin-batch', 'collect', 'stdin-pipe', 'pipes', 'control-pipe']
   readonly streamLimits?: StreamLimits
+  readonly recordSettlementVersion?: typeof RECORD_SETTLEMENT_VERSION
+  readonly serviceWindowVersion?: typeof SERVICE_WINDOW_VERSION
+  readonly residenceVersion?: typeof RESIDENCE_VERSION
   readonly pins: ExpectedBinding['pins']
   readonly declaredImageId: string
   readonly mounts: Readonly<Record<string, MountFact>>
-  readonly limits: typeof SLICE_LIMITS
+  readonly limits: { readonly [K in keyof typeof SLICE_LIMITS]:
+    K extends keyof typeof RENEWAL_CHILD_LIMITS ? (typeof SLICE_LIMITS)[K] | (typeof RENEWAL_CHILD_LIMITS)[K] : (typeof SLICE_LIMITS)[K] }
   readonly newOperationsAccepted: boolean
   readonly recordCount: number
   readonly activeRangeCount: number
@@ -273,6 +281,20 @@ export interface Responsibility {
   readonly physicalStopRequired: boolean
 }
 /** Bounded transport and fact API for Root operation broker; it owns no allocation, Session or job lifecycle. */
+/** Fixed total caps and a shorter provider-covered duration for one sequenced grant. */
+export interface ResidenceOffer {
+  readonly residentCapMs: number
+  readonly runCapMs: number
+  readonly remainingMs: number
+}
+/** Receipt from the same bound guest operation after the original request has joined. */
+export interface ResidenceReceipt {
+  readonly residentRemainingMs: number | null
+  readonly runRemainingMs: number | null
+  /** Publish this original accepted receipt once, before its previous carrier deadline. */
+  publish(untilMs: number | undefined): void
+}
+
 export interface AgentDataClient {
   /**
    * Read and verify the original Root binding before opening prepare/commit admission.
@@ -328,6 +350,30 @@ export interface AgentDataClient {
    * @returns Non-consuming tails with original byte coordinates and independent lifecycle facts.
    */
   poll(ref: OperationRef, options?: CallOptions): Promise<OperationSnapshot>
+  /**
+   * Request retirement of one locally joined, confirmed original foreground collect operation.
+   * @param ref Exact negotiated and signed original reference.
+   * @param options Earlier original command deadline or observer cancellation.
+   * @returns Fulfillment after the exact remote settlement receipt and local request join.
+   */
+  settle?(ref: OperationRef, options?: CallOptions): Promise<void>
+  /**
+   * Attempt one signed service grant while the old window remains open.
+   * @param ref Exact original service operation and registration.
+   * @param runMs Explicit total guest run time measured from its original commit.
+   * @param futurePolls Estimated original paced reads through the requested stop window.
+   * @param options Earlier original cutoff; a lost receipt retains the original range.
+   * @returns True only after the exact receipt, false for a local traffic budget refusal before sending.
+   */
+  extendService?(ref: OperationRef, runMs: number, futurePolls: number, options: CallOptions): Promise<boolean>
+  /**
+   * Attempt the next sequenced grant on the original collected operation.
+   * @param ref Original operation, role and runtime.
+   * @param offer Fixed resident/run caps and current bounded provider-covered interval.
+   * @param options Original earlier monotonic cutoff.
+   * @returns A receipt before local publication, or undefined when the local control budget would be exceeded.
+   */
+  renewResidence?(ref: OperationRef, offer: ResidenceOffer, options: CallOptions): Promise<ResidenceReceipt | undefined>
   /**
    * Fence local submission synchronously and attempt remote seal once.
    * @param options - Earlier deadline or observer cancellation.

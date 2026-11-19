@@ -24,7 +24,7 @@ export interface RootSdkExecutionOwner {
  * @throws Before any HTTP request when assets or configuration fail validation. This does not authenticate a runtime or enable a recipe.
  */
 export async function createRootSdkExecutionOwner(config: RootSdkBootstrapConfig): Promise<RootSdkExecutionOwner> {
-  const payload = await loadPackagedBootstrapPayload()
+  const payload = await loadPackagedBootstrapPayload(config.lifecycle.payloadSha256)
   config.assertDeploymentCurrent()
   const bootstrap = new TrustedSdkBootstrap(config, payload)
   const lifecycleBaseUrl = config.lifecycle.lifecycleBaseUrl, apiKey = config.lifecycle.apiKey
@@ -33,7 +33,7 @@ export async function createRootSdkExecutionOwner(config: RootSdkBootstrapConfig
       assertCurrent: () => { config.assertDeploymentCurrent() } }, target, owner))
   const transport = createOwnedSdkTransport(config.transport)
   try {
-    const backend = new SdkAllocationBackend(config.lifecycle, runtimes, transport)
+    const backend = new SdkAllocationBackend(config.lifecycle, runtimes, transport, () => { config.assertDeploymentCurrent() })
     return Object.freeze({ backend, runtimes, assertCurrent: () => { config.assertDeploymentCurrent() } })
   } catch (cause) {
     try { await transport.close() }

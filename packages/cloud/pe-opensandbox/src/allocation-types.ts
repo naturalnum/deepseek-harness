@@ -64,7 +64,7 @@ export interface SandboxAllocation extends AllocationCreateIntent {
   readonly executionProtocolVersion: string | null
   readonly executionCapabilities: readonly ExecutionCapability[]
   readonly failureCode: string | null
-  /** Possible provider renewal retained when reading a database that previously enabled renewal. */
+  /** A durable possible renewal of this exact writer. Its value authorizes no release. */
   readonly renewalTargetAt?: string
 }
 

@@ -13,6 +13,7 @@ import { NATIVE_WORKLOAD_IMAGE_DIGEST, REMOTE_CLIENT_WORKLOAD_IMAGE_DIGEST, OFFI
   NATIVE_AMD64_WORKLOAD_IMAGE_DIGEST, NATIVE_AMD64_SERVER_IMAGE_DIGEST,
   OFFICE_RESEARCH_GIT_SSH_AMD64_WORKLOAD_IMAGE_DIGEST, OFFICE_RESEARCH_GIT_SSH_AMD64_SERVER_IMAGE_DIGEST,
   qualifiedSupplierTuples, isPinnedWorkloadImageDigest, isSessionDirectoryServerImageDigest } from '../src/bootstrap/qualified-suppliers.ts'
+import { RENEWAL_SOURCE_DIGEST } from '../src/bootstrap/renewal-asset-manifest.ts'
 import { RUNTIME_PROFILES } from '../src/bootstrap/runtime-profiles.ts'
 import { rootDeploymentFixture, sharedPathDeploymentFixture } from './fixtures/root-deployment.ts'
 
@@ -105,6 +106,46 @@ const suppliers = [...previousSuppliers, {
   sessionDirectories: true,
 }] as const
 
+const armRenewalSupplier = {
+  ...priorContentSuppliers[11],
+  serverImageDigest: 'sha256:ebc458db7922f1f7c73032ce4899ef22f8b41d49c36e7441eb228c20d5d4747e',
+} as const
+const receiptPins = { providerGeneration: '1'.repeat(64), policyDigest: '2'.repeat(64) }
+const renewal = { leadMs: 20000, maxAttempts: 20,
+  terminalPolicy: { path: '/run/protected/terminal.json', sha256: receiptPins.policyDigest } }
+
+function armRenewalInput() {
+  const base = sharedPathDeploymentFixture()
+  return { ...base, renewal,
+    lifecycle: { ...base.lifecycle, ttlSeconds: 60, payloadSha256: RENEWAL_SOURCE_DIGEST,
+      imageDigest: armRenewalSupplier.workloadImageDigest, deletionReceipts: receiptPins },
+    selection: { ...base.selection, serverImageDigest: armRenewalSupplier.serverImageDigest,
+      execdImageDigest: armRenewalSupplier.execdImageDigest } }
+}
+
+it('pairs only the exact ARM renewal guest and protected receipt policy', async () => {
+  const enabled = armRenewalInput(), { renewal: _renewal, ...withoutRenewal } = enabled
+  const { deletionReceipts: _receipts, ...withoutReceipts } = enabled.lifecycle
+  const input = parseRootDeploymentInput(enabled)
+  expect(input).toMatchObject({ renewal, lifecycle: { deletionReceipts: receiptPins } })
+  expect(() => parseRootDeploymentInput(withoutRenewal)).toThrow('renewal.terminalPolicy')
+  expect(() => parseRootDeploymentInput({ ...enabled, lifecycle: withoutReceipts })).toThrow('lifecycle.deletionReceipts')
+  expect(() => parseRootDeploymentInput({ ...enabled, lifecycle: { ...enabled.lifecycle,
+    payloadSha256: sharedPathDeploymentFixture().lifecycle.payloadSha256 } })).toThrow('lifecycle.fixedSelection')
+  expect(() => parseRootDeploymentInput({ ...enabled,
+    renewal: { ...renewal, terminalPolicy: { ...renewal.terminalPolicy, sha256: '3'.repeat(64) } } }))
+    .toThrow('renewal.terminalPolicy.digest')
+  expect(() => parseRootDeploymentInput({ ...enabled, storage: { ...enabled.storage, mode: 'project-quota-v1' } }))
+    .toThrow('storage.mode')
+  const runtime = fileURLToPath(new URL('../runtime/', import.meta.url))
+  const pinned = await loadBootstrapPayload(join(runtime, 's08-renewal/bootstrap'), join(runtime, 's08-renewal/agent'), RENEWAL_SOURCE_DIGEST)
+  const legacy = await loadBootstrapPayload(join(runtime, 'bootstrap'), join(runtime, 'agent'))
+  const config = { ...input.bootstrap, lifecycle: input.lifecycle, assertDeploymentCurrent() {} }
+  const noTransport = () => { throw new Error('Construction must not create a transport') }
+  expect(() => new TrustedSdkBootstrap(config, pinned, noTransport)).not.toThrow()
+  expect(() => new TrustedSdkBootstrap(config, legacy, noTransport)).toThrow()
+})
+
 it('retains the original suppliers and permits only the exact built v2 superset pairs', () => {
   expect(qualifiedSupplierTuples.slice(0, 5)).toEqual(existing)
   expect(qualifiedSupplierTuples.slice(0, 7)).toEqual(previous)
@@ -114,7 +155,7 @@ it('retains the original suppliers and permits only the exact built v2 superset 
   expect(qualifiedSupplierTuples.slice(0, 11)).toEqual(priorManifestSuppliers)
   expect(qualifiedSupplierTuples.slice(0, 12)).toEqual(priorContentSuppliers)
   expect(qualifiedSupplierTuples.slice(0, 13)).toEqual(previousSuppliers)
-  expect(qualifiedSupplierTuples).toEqual(suppliers)
+  expect(qualifiedSupplierTuples).toEqual([...suppliers, armRenewalSupplier])
   expect(NATIVE_AMD64_WORKLOAD_IMAGE_DIGEST).toBe(suppliers[8].workloadImageDigest)
   expect(NATIVE_AMD64_SERVER_IMAGE_DIGEST).toBe(suppliers[8].serverImageDigest)
   expect(OFFICE_RESEARCH_GIT_SSH_AMD64_WORKLOAD_IMAGE_DIGEST).toBe(suppliers[9].workloadImageDigest)
@@ -156,7 +197,7 @@ for (const schema of ['pe-opensandbox-root-deployment-v1', 'pe-opensandbox-root-
   }
 }
 
-it('uses one fixed bootstrap payload for every exact reviewed supplier', async () => {
+it('retains the fixed 1161 bootstrap payload for the original reviewed suppliers', async () => {
   const runtime = fileURLToPath(new URL('../runtime/', import.meta.url))
   const payload = await loadBootstrapPayload(join(runtime, 'bootstrap'), join(runtime, 'agent'))
   for (const row of suppliers) {

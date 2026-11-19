@@ -34,6 +34,9 @@ export const OFFICE_RESEARCH_GIT_GETRANDOM_ARM64_OCI_WORKLOAD_IMAGE_DIGEST = 'sh
 /** Selector-only guarded server for that exact ARM64 manifest; all closed-audit predecessors remain. */
 export const OFFICE_RESEARCH_GIT_GETRANDOM_ARM64_OCI_SERVER_IMAGE_DIGEST = 'sha256:a8b6fcac0077db9073389583162d85cb78c4aa6da1846a2cdca30f72985100f0'
 
+/** ARM64 shared-path supplier with the bound renewal and durable ACK owner. */
+export const NATIVE_ARM64_DURABLE_RENEWAL_SERVER_IMAGE_DIGEST = 'sha256:ebc458db7922f1f7c73032ce4899ef22f8b41d49c36e7441eb228c20d5d4747e'
+
 /** Complete migrated report packages on the unchanged ARM64 Office/research dependency layers. */
 export const REPORT_CONTENT_ARM64_WORKLOAD_IMAGE_DIGEST = 'sha256:3ec6ba073f482c4c39d2ad0e03fde8f841373a0bd30c53a2660e9cbd10b2f202'
 /** Original guarded server selecting only the exact migrated-content workload for new creation. */
@@ -113,6 +116,9 @@ export const qualifiedSupplierTuples: readonly QualifiedSupplierTuple[] = Object
   Object.freeze({ schema: 'pe-opensandbox-root-deployment-v2', workloadImageDigest: NATIVE_AMD64_REBUILD_20261115_WORKLOAD_IMAGE_DIGEST,
     platform: 'amd64', execdImageDigest: RUNTIME_PROFILES.amd64.execdImageDigest,
     serverImageDigest: NATIVE_AMD64_DESTROY_FILTER_SERVER_IMAGE_DIGEST, sessionDirectories: true }),
+  Object.freeze({ schema: 'pe-opensandbox-root-deployment-v2', workloadImageDigest: OFFICE_RESEARCH_GIT_GETRANDOM_ARM64_OCI_WORKLOAD_IMAGE_DIGEST,
+    platform: 'arm64', execdImageDigest: 'sha256:b6dc1290091b2d4c5b51e0776e718d275069224110ae07a07dad14d249447b4e',
+    serverImageDigest: NATIVE_ARM64_DURABLE_RENEWAL_SERVER_IMAGE_DIGEST, sessionDirectories: true }),
 ])
 
 /**

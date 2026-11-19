@@ -8,7 +8,8 @@ import type { PreparedSandbox } from './allocation-owner.ts'
 import type { AgentHandshake, AgentSelection, AgentReadinessBudget, FencedAgentRequests, TrustedAgentLifecycle } from './lifecycle-types.ts'
 import type { CommandChannel, CommandSnapshot } from './command-operation.ts'
 import { ExecutionStateError } from './errors.ts'
-import { createAgentDataClient, makePrepared, PROTOCOL, SLICE_LIMITS } from './agent-data/index.ts'
+import { CARRIER_LIMITS, createAgentDataClient, makePrepared, PROTOCOL, RECORD_SETTLEMENT_VERSION, RESIDENCE_LIMITS, RESIDENCE_VERSION,
+  SERVICE_WINDOW_VERSION, SLICE_LIMITS } from './agent-data/index.ts'
 import type { AgentDataClient, ClientOptions, OperationSnapshot, PreparedRequest } from './agent-data/types.ts'
 import { createForegroundIssuer, createProgramIssuer, createRegisteredServiceIssuer, type RoleIssuer } from './agent-data/root-role-issuer.ts'
 import type { NativeRegisteredService } from './native-command-account.ts'
@@ -44,10 +45,28 @@ export interface TrustedAgentBootstrap {
   retireStopped?(selection: AgentSelection): void
 }
 
+interface ServiceWindowPolicy {
+  readonly runMs: number
+  covers(throughMs: number): boolean
+}
+
+/** Root's selected finite shape and original SDK writer proof for one collected operation. */
+export interface ResidencePolicy {
+  readonly maxResidentMs: number
+  readonly runCapMs: number
+  confirmedUntil(): number | undefined
+}
+
 interface RuntimeRecord {
   readonly selection: AgentSelection
-  readonly residentDeadlineAtMs: number
+  readonly residentStartedAtMs: number
+  residentDeadlineAtMs: number
+  residenceEnabled?: boolean
+  residencePending?: boolean
   commands: number
+  recordSequence: number
+  settlementEnabled?: boolean
+  serviceWindowEnabled?: boolean
   fenced: boolean
   preparation?: Promise<AgentHandshake>
   handshake?: AgentHandshake
@@ -165,6 +184,16 @@ export class TrustedRuntimeRegistry implements TrustedAgentLifecycle {
     return true
   }
 
+  /** Check the existing carrier and operation responsibilities without fencing or obtaining a new channel. */
+  canRetireIdle(prepared: PreparedSandbox): boolean {
+    const record = this.ready.get(prepared)
+    if (record === undefined || record.client === undefined || record.fenced || record.physicalStopped
+      || record.failure !== undefined) return false
+    const facts = record.client.responsibility()
+    return facts.inFlight === 0 && facts.closeMethodsPending === 0 && facts.remoteUnresolved.length === 0
+      && !facts.cleanupFailure && !facts.closing && !facts.fenced && !facts.dispatcherClosed && !facts.physicalStopRequired
+  }
+
   /**
    * Drop only a known stopped original record after SDK stop and allocation release have fulfilled.
    * @param prepared Exact bound SDK result; copied projections never authorize retirement.
@@ -191,34 +220,39 @@ export class TrustedRuntimeRegistry implements TrustedAgentLifecycle {
    * Reserve one immutable operation reference before the first remote command mutation.
    * @param prepared Original Root allocation result previously bound by the SDK wrapper.
    * @param copies Optional retained files-issued working copies matching this allocation's skills parent.
+   * @param operationId The earlier reserved identity when called by an installed Native operation owner.
    * @returns One command channel; no request is sent until prepare, and mutation failures are never retried.
    * The command owner acknowledges range closure only after its original allocation stop also joins local I/O.
    */
-  command(prepared: PreparedSandbox, copies?: SkillCommandBorrow): CommandChannel {
-    return this.channel(prepared, record => record.foreground ?? unavailable(), copies)
+  command(prepared: PreparedSandbox, copies?: SkillCommandBorrow, operationId?: string, residence?: ResidencePolicy): CommandChannel {
+    return this.channel(prepared, record => record.foreground ?? unavailable(), copies, operationId, true, undefined, residence)
   }
 
   /** Sign only an original Native run_code program in the existing second range.
    * @param prepared Original allocation.
    * @param copies Original retained skill borrow.
+   * @param operationId The earlier reserved Native operation identity.
    * @returns Program-only channel.
    */
-  program(prepared: PreparedSandbox, copies?: SkillCommandBorrow): CommandChannel {
-    return this.channel(prepared, record => record.program ?? unavailable(), copies)
+  program(prepared: PreparedSandbox, copies?: SkillCommandBorrow, operationId?: string): CommandChannel {
+    return this.channel(prepared, record => record.program ?? unavailable(), copies, operationId)
   }
 
   /** Bind one service operation to its current registration and original physical allocation.
    * @param prepared Original Root preparation result already bound to this registry.
    * @param registration Original account work row’s service capability.
    * @param copies Optional original retained skill copies.
+   * @param operationId The earlier reserved Native operation identity.
+   * @param window Explicit bound and exact original SDK renewal check, when configured.
    * @returns Service-only channel retaining its original cleanup reference.
    */
-  service(prepared: PreparedSandbox, registration: NativeRegisteredService, copies?: SkillCommandBorrow): CommandChannel {
+  service(prepared: PreparedSandbox, registration: NativeRegisteredService, copies?: SkillCommandBorrow,
+    operationId?: string, window?: ServiceWindowPolicy, residence?: ResidencePolicy): CommandChannel {
     return this.channel(prepared, (record) => {
       const issue = record.service?.(registration) ?? unavailable()
       registration.bindAllocation(record.selection.intent.allocationId)
       return issue
-    }, copies)
+    }, copies, operationId, false, window === undefined ? undefined : { window, registration }, residence)
   }
 
   /**
@@ -235,7 +269,8 @@ export class TrustedRuntimeRegistry implements TrustedAgentLifecycle {
     if (factory === undefined || record === undefined) unavailable()
     const assertCurrent = (): void => {
       this.assertUnfenced(record); registration.assertCurrent()
-      if (record.physicalStopped || record.handshake === undefined || record.client === undefined) unavailable()
+      if (record.physicalStopped || record.handshake === undefined || record.client === undefined
+        || record.failure !== undefined) unavailable()
       if (performance.now() >= record.residentDeadlineAtMs) unavailable()
       const { intent, mount } = record.selection, scope = registration.scope
       if (scope.purpose !== 'service' || scope.consumerId !== 'dev_service' || scope.binding !== mount.grant.binding
@@ -264,7 +299,9 @@ export class TrustedRuntimeRegistry implements TrustedAgentLifecycle {
   }
 
   private channel(prepared: PreparedSandbox, authorize: (record: RuntimeRecord) => RoleIssuer,
-    copies?: SkillCommandBorrow): CommandChannel {
+    copies: SkillCommandBorrow | undefined, operationId: string = randomUUID(), foreground = false,
+    service?: { readonly window: ServiceWindowPolicy; readonly registration: NativeRegisteredService },
+    residence?: ResidencePolicy): CommandChannel {
     const record = this.ready.get(prepared), client = record?.client
     if (record === undefined || client === undefined || record.fenced || record.physicalStopped) unavailable()
     const issue = authorize(record)
@@ -278,14 +315,19 @@ export class TrustedRuntimeRegistry implements TrustedAgentLifecycle {
       throw new ExecutionStateError('cloud/capacity', 'The selected sandbox reached its finite command-record capacity.')
     }
     record.commands++
-    const operationId = randomUUID()
+    const settle = foreground && record.settlementEnabled ? client.settle?.bind(client) : undefined
+    const extend = record.serviceWindowEnabled && service !== undefined ? client.extendService?.bind(client) : undefined
+    const renew = record.residenceEnabled && residence !== undefined ? client.renewResidence?.bind(client) : undefined
+    let collect = false
     let request: PreparedRequest | undefined
+    let settlementAttempted = false, extensionAttempted = false
     let firstCause: string | null = null
     const selected = (): PreparedRequest => {
       if (request === undefined) unavailable()
       return request
     }
     const run = async (work: () => Promise<OperationSnapshot>): Promise<CommandSnapshot> => {
+      if (settlementAttempted) unavailable()
       try {
         const value = await work()
         if (firstCause !== null && value.firstCause !== firstCause) {
@@ -297,6 +339,69 @@ export class TrustedRuntimeRegistry implements TrustedAgentLifecycle {
       catch (cause) { record.failure ??= { cause }; return unavailable() }
     }
     return Object.freeze<CommandChannel>({
+      ...settle === undefined ? {} : { settle: async (deadlineMs) => {
+        const ref = selected().ref
+        if (ref.recordSequence === undefined) return
+        if (settlementAttempted || record.failure !== undefined || record.fenced || record.physicalStopped) unavailable()
+        settlementAttempted = true
+        try { await settle(ref, { deadlineMs }) }
+        catch (cause) { record.failure ??= { cause }; unavailable() }
+        if (record.failure !== undefined || record.fenced || record.physicalStopped) unavailable()
+        record.commands--
+      } },
+      ...extend === undefined || service === undefined ? {} : { extendServiceWindow: async (original) => {
+        const now = performance.now(), { runMs } = service.window
+        const through = original.submittedByMs + runMs + SLICE_LIMITS.stopMs
+        const cutoff = original.commitStartedAtMs + SLICE_LIMITS.serviceRunMs
+        if (extensionAttempted || record.fenced || record.physicalStopped || record.failure !== undefined
+          || now >= cutoff || through > record.residentDeadlineAtMs || through > original.commandDeadlineAtMs
+          || !original.stillActive() || !service.window.covers(through)) return undefined
+        service.registration.assertCurrent(); record.selection.mount.assertCurrent()
+        const polls = Math.ceil((through - now) / original.pollIntervalMs)
+        extensionAttempted = true
+        try {
+          const applied = await extend(selected().ref, runMs, polls, { deadlineMs: Math.min(cutoff, now + SLICE_LIMITS.stopMs) })
+          return applied ? runMs : undefined
+        } catch (cause) { record.failure ??= { cause }; return unavailable() }
+      } },
+      ...renew === undefined || residence === undefined ? {} : { renewResidence: async (original, priorRunUntilMs) => {
+        if (!collect || record.residencePending || record.fenced || record.physicalStopped || record.failure !== undefined) return undefined
+        const now = performance.now(), providerUntil = residence.confirmedUntil()
+        const base = selected().ref.authorization.role === 'service' ? SLICE_LIMITS.serviceRunMs : SLICE_LIMITS.runMs
+        const currentRunUntil = priorRunUntilMs ?? original.commitStartedAtMs + base
+        const cutoff = Math.min(currentRunUntil, record.residentDeadlineAtMs, original.commandDeadlineAtMs)
+        const residentCap = record.residentStartedAtMs + residence.maxResidentMs
+        const runCap = Math.min(residence.runCapMs,
+          Math.floor(original.commandDeadlineAtMs - original.submittedByMs - SLICE_LIMITS.stopMs))
+        if (providerUntil === undefined || now >= cutoff || runCap < base || !original.stillActive()) return undefined
+        const remaining = Math.floor(Math.min(providerUntil - now - SLICE_LIMITS.stopMs - RESIDENCE_LIMITS.clockMarginMs,
+          residentCap - now, RESIDENCE_LIMITS.segmentMs))
+        const projectedRun = Math.min(now + remaining - SLICE_LIMITS.stopMs, original.commitStartedAtMs + runCap)
+        if (remaining <= SLICE_LIMITS.stopMs || now + remaining <= record.residentDeadlineAtMs + 2 * RESIDENCE_LIMITS.clockMarginMs
+          && projectedRun <= currentRunUntil + 2 * RESIDENCE_LIMITS.clockMarginMs) return undefined
+        original.assertCurrent(); record.selection.mount.assertCurrent()
+        record.residencePending = true
+        try {
+          const receipt = await renew(selected().ref, { residentCapMs: residence.maxResidentMs, runCapMs: runCap, remainingMs: remaining },
+            { deadlineMs: Math.min(cutoff, now + SLICE_LIMITS.stopMs) })
+          if (receipt === undefined) return undefined
+          const received = performance.now(), confirmed = residence.confirmedUntil()
+          const runUpper = receipt.runRemainingMs === null ? 0 : receipt.runRemainingMs + SLICE_LIMITS.stopMs
+          const upper = Math.max(receipt.residentRemainingMs ?? 0, runUpper)
+          if (record.fenced || record.failure !== undefined || received >= cutoff || confirmed === undefined
+            || received + upper + RESIDENCE_LIMITS.clockMarginMs > confirmed) unavailable()
+          if (!original.stillActive()) { receipt.publish(undefined); return undefined }
+          original.assertCurrent(); record.selection.mount.assertCurrent()
+          const localDeadline = receipt.residentRemainingMs === null ? undefined
+            : Math.min(residentCap, now + receipt.residentRemainingMs - RESIDENCE_LIMITS.clockMarginMs)
+          receipt.publish(localDeadline)
+          if (localDeadline !== undefined) record.residentDeadlineAtMs = Math.max(record.residentDeadlineAtMs, localDeadline)
+          return receipt.runRemainingMs === null ? undefined : Math.max(currentRunUntil,
+            Math.min(now + receipt.runRemainingMs - RESIDENCE_LIMITS.clockMarginMs,
+              original.commitStartedAtMs + runCap, original.commandDeadlineAtMs - SLICE_LIMITS.stopMs))
+        } catch (cause) { record.failure ??= { cause }; void client.fence(); return unavailable() }
+        finally { delete record.residencePending }
+      } },
       ...copies === undefined ? {} : { release: () => { copies.release() } },
       prepare: (spec, policy) => run(() => {
         if (request !== undefined || record.fenced) unavailable()
@@ -304,7 +409,12 @@ export class TrustedRuntimeRegistry implements TrustedAgentLifecycle {
         const fixed = copies === undefined ? undefined : copyFacts(copies.value, copies.maxCopies)
         const selectedPolicy = policy === undefined ? undefined : normalizeFilePolicy(policy)
         guardianEncodedBudget(record.selection.mount.grant.project.rootPath, spec, fixed, selectedPolicy)
-        request = issue(makePrepared(prepared.runtimeIdentity, operationId, spec, fixed, selectedPolicy))
+        collect = spec.executionKind !== 'pipes'
+        const normalized = makePrepared(prepared.runtimeIdentity, operationId, spec, fixed, selectedPolicy)
+        if (settle !== undefined && collect) {
+          if (record.recordSequence >= CARRIER_LIMITS.attempts) unavailable()
+          request = issue({ ...normalized, ref: { ...normalized.ref, recordSequence: ++record.recordSequence } })
+        } else request = issue(normalized)
         return client.prepare(request)
       }),
       attach: () => client.attach(selected().ref),
@@ -396,6 +506,9 @@ export class TrustedRuntimeRegistry implements TrustedAgentLifecycle {
     this.assertUnfenced(record)
     if (facts.sealed || !facts.newOperationsAccepted || facts.physicalStopRequired
       || facts.recordCount !== 0 || facts.activeRangeCount !== 0) unavailable()
+    record.settlementEnabled = facts.recordSettlementVersion === RECORD_SETTLEMENT_VERSION
+    record.serviceWindowEnabled = facts.serviceWindowVersion === SERVICE_WINDOW_VERSION
+    record.residenceEnabled = facts.residenceVersion === RESIDENCE_VERSION
     record.handshake = Object.freeze({ sandboxId: selection.sandboxId, runtimeIdentity: facts.runtimeIdentity,
       protocolVersion: facts.protocolVersion, capabilities: Object.freeze(['argv-collect'] as const),
       payloadSha256: selection.payloadSha256, imageDigest: selection.imageDigest, deploymentIdentity: selection.deploymentIdentity })
@@ -414,8 +527,9 @@ export class TrustedRuntimeRegistry implements TrustedAgentLifecycle {
     }
     if (this.records.size >= this.maxRecords) throw new ExecutionStateError('cloud/capacity', 'Trusted runtime record capacity is exhausted.')
     // This original Root record precedes fresh bootstrap and Manager construction; elapsed bootstrap consumes the projection.
-    const record: RuntimeRecord = { selection, residentDeadlineAtMs: performance.now() + SLICE_LIMITS.residentMs,
-      commands: 0, fenced: false, physicalStopped: false }
+    const residentStartedAtMs = performance.now()
+    const record: RuntimeRecord = { selection, residentStartedAtMs, residentDeadlineAtMs: residentStartedAtMs + SLICE_LIMITS.residentMs,
+      commands: 0, recordSequence: 0, fenced: false, physicalStopped: false }
     this.records.set(selection.intent.allocationId, record)
     return record
   }

@@ -2,7 +2,7 @@
 import { skillParent, type SkillParent } from './skill-world.ts'
 import { isIP } from 'node:net'
 import { absolute, base64, digest, hex, need, record, text, u64 } from './canonical.ts'
-import { AGENT_SOURCE_SHA256 } from './constants.ts'
+import { AGENT_SOURCE_SHA256, CARRIER_LIMITS, RECORD_SETTLEMENT_VERSION, RENEWAL_AGENT_SOURCE_SHA256, RENEWAL_CHILD_LIMITS, RESIDENCE_VERSION, SERVICE_WINDOW_VERSION } from './constants.ts'
 import { isRuntimePlatform, RUNTIME_PROFILES } from '../bootstrap/runtime-profiles.ts'
 import { authorization, ROLE_PROTOCOL as PROTOCOL, ROLE_LIMITS as SLICE_LIMITS, STREAM_LIMITS } from './role-protocol.ts'
 import type { ClientOptions, ExpectedBinding, FailureFact, Handshake, MountFact, OperationRef, OperationSnapshot, RawTail } from './types.ts'
@@ -70,7 +70,9 @@ export function checkOptions(options: ClientOptions): { origin: string; expected
   need(e.roots.project.device !== e.roots.environment.device, 'independent_domains_required')
   record(e.pins, ['bwrapSha256', 'agentSourceSha256', 'userWorldArgvSha256'])
   Object.values(e.pins).forEach(hex)
-  need(e.pins.bwrapSha256 === RUNTIME_PROFILES[platform].bwrapSha256 && e.pins.agentSourceSha256 === AGENT_SOURCE_SHA256
+  const sourceSha256 = e.pins.agentSourceSha256
+  need(e.pins.bwrapSha256 === RUNTIME_PROFILES[platform].bwrapSha256
+    && (sourceSha256 === AGENT_SOURCE_SHA256 || sourceSha256 === RENEWAL_AGENT_SOURCE_SHA256)
     && e.pins.userWorldArgvSha256 === expectedWorldHash(e.projectRoot, parent), 'unexpected_frozen_payload')
   need(typeof e.declaredImageId === 'string' && /^sha256:[0-9a-f]{64}$/.test(e.declaredImageId), 'invalid_declared_image')
   // Copy trusted inputs: later caller mutation cannot rebind this carrier.
@@ -90,10 +92,17 @@ export function checkOptions(options: ClientOptions): { origin: string; expected
  * @returns An immutable original operation reference.
  */
 export function ref(value: OperationRef, runtime: string): OperationRef {
-  record(value, ['runtimeIdentity', 'operationId', 'specHash', 'authorization']); hex(value.runtimeIdentity); hex(value.specHash)
+  record(value, ['runtimeIdentity', 'operationId', 'specHash', 'authorization',
+    ...value?.recordSequence === undefined ? [] : ['recordSequence']])
+  hex(value.runtimeIdentity); hex(value.specHash)
   need(value.runtimeIdentity === runtime && typeof value.operationId === 'string'
     && /^[A-Za-z0-9_-]{1,64}$/.test(value.operationId), 'operation_binding')
-  return Object.freeze({ ...value, authorization: authorization(value.authorization) })
+  const grant = authorization(value.authorization)
+  if (value.recordSequence !== undefined) {
+    count(value.recordSequence, 1, CARRIER_LIMITS.attempts)
+    need(grant.role === 'foreground', 'settlement_role')
+  }
+  return Object.freeze({ ...value, authorization: grant })
 }
 /**
  * Require the fixed protocol and original runtime before trusting any reply fields.
@@ -126,9 +135,23 @@ function literal<T extends string | number>(value: unknown, expected: T): T {
 export function handshake(value: unknown, e: ExpectedBinding): Handshake {
   record(value, ['protocolVersion', 'runtimeIdentity', 'capabilities', 'pins', 'declaredImageId', 'mounts', 'limits',
     'newOperationsAccepted', 'recordCount', 'activeRangeCount', 'rangeRoles', 'sealed', 'sealReason', 'physicalStopRequired',
-    ...value !== null && typeof value === 'object' && 'streamLimits' in value ? ['streamLimits'] : []])
+    ...value !== null && typeof value === 'object' && 'streamLimits' in value ? ['streamLimits'] : [],
+    ...value !== null && typeof value === 'object' && 'recordSettlementVersion' in value ? ['recordSettlementVersion'] : [],
+    ...value !== null && typeof value === 'object' && 'serviceWindowVersion' in value ? ['serviceWindowVersion'] : [],
+    ...value !== null && typeof value === 'object' && 'residenceVersion' in value ? ['residenceVersion'] : []])
   envelope(value, e.runtimeIdentity)
+  const renewalGuest = e.pins.agentSourceSha256 === RENEWAL_AGENT_SOURCE_SHA256
+  const childLimits = renewalGuest ? RENEWAL_CHILD_LIMITS : SLICE_LIMITS
   const streaming = value.streamLimits !== undefined
+  const recordSettlementVersion = value.recordSettlementVersion === undefined ? undefined
+    : literal(value.recordSettlementVersion, RECORD_SETTLEMENT_VERSION)
+  const serviceWindowVersion = value.serviceWindowVersion === undefined ? undefined
+    : literal(value.serviceWindowVersion, SERVICE_WINDOW_VERSION)
+  const residenceVersion = value.residenceVersion === undefined ? undefined : literal(value.residenceVersion, RESIDENCE_VERSION)
+  need(renewalGuest
+    ? recordSettlementVersion !== undefined && serviceWindowVersion !== undefined && residenceVersion !== undefined
+    : recordSettlementVersion === undefined && serviceWindowVersion === undefined && residenceVersion === undefined,
+  'payload_extensions')
   const capabilities: Handshake['capabilities'] = streaming
     ? ['argv', 'stdin-ignore', 'stdin-batch', 'collect', 'stdin-pipe', 'pipes', 'control-pipe']
     : ['argv', 'stdin-ignore', 'stdin-batch', 'collect']
@@ -157,7 +180,8 @@ export function handshake(value: unknown, e: ExpectedBinding): Handshake {
       grant: { maximumBytes: item.grant.maximumBytes, maximumInodes: item.grant.maximumInodes } }
   }
   record(value.limits, Object.keys(SLICE_LIMITS))
-  for (const [key, limit] of Object.entries(SLICE_LIMITS)) need(value.limits[key] === limit, 'slice_limit_mismatch')
+  const sliceLimits = renewalGuest ? { ...SLICE_LIMITS, ...RENEWAL_CHILD_LIMITS } : SLICE_LIMITS
+  for (const [key, limit] of Object.entries(sliceLimits)) need(value.limits[key] === limit, 'slice_limit_mismatch')
   const records = count(value.recordCount, 0, 4), activeRanges = count(value.activeRangeCount, 0, 2)
   record(value.rangeRoles, ['foreground', 'service', ...streaming ? ['program'] : []])
   const program = streaming ? count(value.rangeRoles.program, 0, 1) : 0
@@ -170,6 +194,9 @@ export function handshake(value: unknown, e: ExpectedBinding): Handshake {
   need(newOperationsAccepted === (!sealed && records < 4), 'admission_facts')
   return { protocolVersion: literal(value.protocolVersion, PROTOCOL), runtimeIdentity: value.runtimeIdentity,
     capabilities, ...streaming ? { streamLimits: STREAM_LIMITS } : {},
+    ...recordSettlementVersion === undefined ? {} : { recordSettlementVersion },
+    ...serviceWindowVersion === undefined ? {} : { serviceWindowVersion },
+    ...residenceVersion === undefined ? {} : { residenceVersion },
     pins: { bwrapSha256: value.pins.bwrapSha256, agentSourceSha256: value.pins.agentSourceSha256,
       userWorldArgvSha256: value.pins.userWorldArgvSha256 }, declaredImageId: value.declaredImageId, mounts,
     limits: { lifetimeOperations: literal(value.limits.lifetimeOperations, SLICE_LIMITS.lifetimeOperations),
@@ -182,11 +209,11 @@ export function handshake(value: unknown, e: ExpectedBinding): Handshake {
       serviceRunMs: literal(value.limits.serviceRunMs, SLICE_LIMITS.serviceRunMs),
       stopMs: literal(value.limits.stopMs, SLICE_LIMITS.stopMs),
       residentMs: literal(value.limits.residentMs, SLICE_LIMITS.residentMs),
-      childCpuSeconds: literal(value.limits.childCpuSeconds, SLICE_LIMITS.childCpuSeconds),
-      childAddressBytes: literal(value.limits.childAddressBytes, SLICE_LIMITS.childAddressBytes),
+      childCpuSeconds: literal(value.limits.childCpuSeconds, childLimits.childCpuSeconds),
+      childAddressBytes: literal(value.limits.childAddressBytes, childLimits.childAddressBytes),
       childFileBytes: literal(value.limits.childFileBytes, SLICE_LIMITS.childFileBytes),
-      childOpenFiles: literal(value.limits.childOpenFiles, SLICE_LIMITS.childOpenFiles),
-      childProcesses: literal(value.limits.childProcesses, SLICE_LIMITS.childProcesses),
+      childOpenFiles: literal(value.limits.childOpenFiles, childLimits.childOpenFiles),
+      childProcesses: literal(value.limits.childProcesses, childLimits.childProcesses),
       childCoreBytes: literal(value.limits.childCoreBytes, SLICE_LIMITS.childCoreBytes) },
     newOperationsAccepted, recordCount: records, activeRangeCount: activeRanges, rangeRoles, sealed, sealReason, physicalStopRequired }
 }
@@ -220,8 +247,10 @@ export function operation(value: unknown, expected: OperationRef): OperationSnap
   const pipes = value !== null && typeof value === 'object' && 'executionKind' in value
   record(value, ['operationId', 'specHash', 'role', 'registrationId', 'primitiveStarted', 'prepared', 'commitAttempted', 'commitClosed', 'submitted',
     'firstCause', 'direct', 'directNotObserved', 'rangeEmpty', 'ioClosed', 'physicalStopRequired', 'failure', 'cleanupFailure',
-    'providerFailure', 'streams', ...pipes ? ['executionKind', 'stream'] : []])
-  need(value.operationId === expected.operationId && value.specHash === expected.specHash, 'operation_reply_binding')
+    'providerFailure', 'streams', ...pipes ? ['executionKind', 'stream'] : [],
+    ...expected.recordSequence === undefined ? [] : ['recordSequence']])
+  need(value.operationId === expected.operationId && value.specHash === expected.specHash
+    && value.recordSequence === expected.recordSequence, 'operation_reply_binding')
   need(value.role === expected.authorization.role && value.registrationId === expected.authorization.registrationId,
     'operation_role_binding')
   const primitiveStarted = bool(value.primitiveStarted), prepared = bool(value.prepared), commitAttempted = bool(value.commitAttempted)

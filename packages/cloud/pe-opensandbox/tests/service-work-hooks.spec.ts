@@ -103,7 +103,7 @@ async function fixture(next: () => ReturnType<typeof channel> = channel) {
     if (failReserve) throw new Error('fixture capacity refusal')
     const record = { active: vi.fn(), resident: vi.fn() }; reservations.push(record)
     return { releaseActive: record.active, releaseResident: record.resident }
-  }), acquire: vi.fn<NativeCommandRoot['acquire']>(async (scope, _signal, registration) => {
+  }), acquire: vi.fn<NativeCommandRoot['acquire']>(async (scope, _signal, _operationId, registration) => {
     if (scope.purpose === 'service') { expect(registration?.scope).toBe(scope); registration?.assertCurrent() }
     else expect(registration).toBeUndefined()
     const entry = next(); entries.push({ entry, ...(registration === undefined ? {} : { registration }) }); return entry.value

@@ -8,7 +8,8 @@ import { asciiJSON, digest, makePrepared, record } from '../src/agent-data/canon
 import { createForegroundIssuer } from '../src/agent-data/root-role-issuer.ts'
 import { parseReply } from '../src/agent-data/strict-json.ts'
 import { expectedWorldHash, worldArgv } from '../src/agent-data/validate.ts'
-import { AGENT_AUTH_HEADER, AGENT_SOURCE_SHA256, BWRAP_SHA256, CARRIER_LIMITS, PROTOCOL, SLICE_LIMITS } from '../src/agent-data/constants.ts'
+import { AGENT_AUTH_HEADER, AGENT_SOURCE_SHA256, BWRAP_SHA256, CARRIER_LIMITS, PROTOCOL,
+  RENEWAL_AGENT_SOURCE_SHA256, RENEWAL_CHILD_LIMITS, SLICE_LIMITS } from '../src/agent-data/constants.ts'
 import { ControlUncertain, LocalRefusal, RemoteRefusal } from '../src/agent-data/errors.ts'
 import type { ClientOptions, MountFact, OperationSpec, PreparedRequest } from '../src/agent-data/types.ts'
 import type { OwnedTransport, WireEvents, WireRequest } from '../src/agent-data/transport.ts'
@@ -136,6 +137,29 @@ test('handshake compares original runtime/payload/world/roots/limits rather than
     const pending = client.handshake(); transport.reply(0, value)
     await assert.rejects(pending, ControlUncertain); assert.equal(client.responsibility().fenced, true)
     assert.throws(() => client.prepare(prepared()), LocalRefusal); await release(client)
+  }
+})
+test('requires the selected guest child limits and authenticated handshake extensions', async () => {
+  const extensions = { recordSettlementVersion: 1, serviceWindowVersion: 1, residenceVersion: 1 }
+  const config = options()
+  config.expected.pins.agentSourceSha256 = RENEWAL_AGENT_SOURCE_SHA256
+  const limits = { ...SLICE_LIMITS, ...RENEWAL_CHILD_LIMITS }
+  const transport = new FakeTransport(), client = new DataClient(config, transport)
+  const handshake = client.handshake()
+  transport.reply(0, handshakeFixture(config, { limits, ...extensions }))
+  assert.deepEqual((await handshake).limits, limits)
+  await release(client)
+
+  for (const [expected, changes] of [
+    [config, { ...extensions, limits: { ...limits, childCpuSeconds: limits.childCpuSeconds + 1 } }],
+    [config, { limits }],
+    [options(), extensions],
+  ] as const) {
+    const wire = new FakeTransport(), rejected = new DataClient(expected, wire)
+    const pending = rejected.handshake()
+    wire.reply(0, handshakeFixture(expected, changes))
+    await assert.rejects(pending, ControlUncertain)
+    await release(rejected)
   }
 })
 test('prepare needs validated handshake; encoded body/auth and Root binding survive caller mutation', async () => {

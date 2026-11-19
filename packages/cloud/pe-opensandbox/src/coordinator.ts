@@ -81,4 +81,12 @@ export abstract class SandboxCoordinator extends Service implements DrainPartici
    * @returns confirmed only after all ranges, I/O and late starts have stopped; otherwise unknown.
    */
   abstract stopEpoch(binding: AccountBinding, deadlineAtMs: number): Promise<ParticipantReceipt>
+
+  /** @param binding Original account generation observed before Access revokes logins.
+   * @returns Whether the original execution owner can settle this generation by authenticated receipts. */
+  canJoinEpochStop?(binding: AccountBinding): boolean
+
+  /** @param binding Original admission-closed generation for online recovery.
+   * @returns Actual stop receipt where the selected implementation supports exact provider receipts. */
+  joinEpochStop?(binding: AccountBinding): Promise<ParticipantReceipt>
 }

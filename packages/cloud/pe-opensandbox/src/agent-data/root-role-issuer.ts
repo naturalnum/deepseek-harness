@@ -4,10 +4,31 @@ import { filePolicy } from './file-policy.ts'
 import { createHmac } from 'node:crypto'
 import { asciiJSON, preparedDigest, hex, need, spec } from './canonical.ts'
 import { ROLE_DOMAIN, ROLE_PROTOCOL } from './role-protocol.ts'
-import type { PreparedRequest, RangeAuthorization, UnsignedPreparedRequest } from './types.ts'
+import { RECORD_SETTLEMENT_VERSION, RESIDENCE_VERSION, SERVICE_WINDOW_VERSION } from './constants.ts'
+import type { OperationRef, PreparedRequest, RangeAuthorization, ResidenceOffer, UnsignedPreparedRequest } from './types.ts'
 
 /** Fixed-role authorizer captured by the original Root operation owner before any HTTP mutation. */
 export type RoleIssuer = (request: UnsignedPreparedRequest) => PreparedRequest
+
+function signAction(token: string, payload: object): string {
+  const key = createHmac('sha256', Buffer.from(token, 'hex')).update(ROLE_DOMAIN, 'ascii').digest()
+  return createHmac('sha256', key).update(asciiJSON({ ...payload, protocolVersion: ROLE_PROTOCOL }), 'ascii').digest('hex')
+}
+
+/** Bind the post-join settlement mutation separately from the initial role grant. */
+export function signSettlement(token: string, ref: OperationRef): string {
+  return signAction(token, { ...ref, recordSettlementVersion: RECORD_SETTLEMENT_VERSION, action: '/settle' })
+}
+
+/** Sign one fixed window for the original live service under the protected Root carrier. */
+export function signServiceWindow(token: string, ref: OperationRef, runMs: number): string {
+  return signAction(token, { ...ref, runMs, serviceWindowVersion: SERVICE_WINDOW_VERSION, action: '/extend-service' })
+}
+
+/** Bind a single grant to the original operation, caps and monotonic sequence. */
+export function signResidence(token: string, ref: OperationRef, offer: ResidenceOffer, leaseSequence: number): string {
+  return signAction(token, { ...ref, ...offer, leaseSequence, residenceVersion: RESIDENCE_VERSION, action: '/renew-residence' })
+}
 
 function issuer(token: string, runtimeIdentity: string, role: RangeAuthorization['role'],
   registration: () => string | null): RoleIssuer {
@@ -25,7 +46,9 @@ function issuer(token: string, runtimeIdentity: string, role: RangeAuthorization
     const policy = request.filePolicy === undefined ? undefined : filePolicy(request.filePolicy)
     need(preparedDigest(normalized, fixed, policy) === ref.specHash, 'spec_hash_mismatch')
     const signature = createHmac('sha256', key).update(asciiJSON({ protocolVersion: ROLE_PROTOCOL, runtimeIdentity,
-      operationId: ref.operationId, specHash: ref.specHash, role, registrationId }), 'ascii').digest('hex')
+      operationId: ref.operationId, specHash: ref.specHash, role, registrationId,
+      ...ref.recordSequence === undefined ? {} : { recordSequence: ref.recordSequence,
+        recordSettlementVersion: RECORD_SETTLEMENT_VERSION } }), 'ascii').digest('hex')
     return Object.freeze({ ref: Object.freeze({ ...ref, authorization: Object.freeze({ role, registrationId, signature }) }),
       spec: normalized, ...fixed === undefined ? {} : { skillWorld: fixed }, ...policy === undefined ? {} : { filePolicy: policy } })
   }

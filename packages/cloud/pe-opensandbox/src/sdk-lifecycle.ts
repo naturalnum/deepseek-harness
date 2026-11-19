@@ -5,7 +5,11 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { createDefaultAdapterFactory, SandboxApiException, SandboxException, type AdapterFactory, type CreateSandboxRequest, type SandboxInfo } from '@alibaba-group/opensandbox'
 import type { AllocationBackend, CreatedSandbox, PreparedSandbox } from './allocation-owner.ts'
 import type { AllocationCreateIntent } from './allocation-types.ts'
+import type { AllocationDeletionReceipt, OriginalDeletionBinding } from './allocation-receipt-outbox.ts'
 import { BoundedLifecycleConnection, type WireBudget } from './sdk-transport.ts'
+import { readSdkAllocationBinding } from './sdk-allocation-binding.ts'
+import { readSdkTerminalReceipt } from './sdk-terminal-receipt.ts'
+import { createSdkReceiptTransport } from './sdk-receipt-transport.ts'
 import { PrivateSemanticAudit, type SemanticSpan } from './semantic-audit.ts'
 import { SdkLifecycleFailure, type AgentHandshake, type AgentSelection, type OriginalResourceObservation,
   type OwnedSdkTransport, type SdkLifecycleConfig, type TrustedAgentLifecycle, type VerifiedExecutionMount } from './lifecycle-types.ts'
@@ -19,10 +23,19 @@ interface AllocationRecord {
   created?: CreatedSandbox
   preparation?: Promise<PreparedSandbox>
   prepared?: AgentHandshake
+  providerExpiry?: { readonly wallAtMs: number; readonly monotonicAtMs: number }
+  latestProviderExpiryMs?: number
+  renewal?: Promise<void>
+  renewalAttempts?: number
+  confirmedRenewalAt?: string
   phase: 'active' | 'stopping' | 'stopped' | 'stop-unknown'
   stopActual?: Promise<void>
   deletionRetry?: { assertDeploymentCurrent(): void }
   expiryCheck?: Promise<void>
+  receiptRetry?: () => void
+  receiptCheck?: Promise<void>
+  providerBinding?: OriginalDeletionBinding
+  terminalReceipt?: AllocationDeletionReceipt
 }
 
 type CloseResult = { readonly ok: true } | { readonly ok: false; readonly cause: unknown }
@@ -72,8 +85,10 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
 
   /** @param config Explicit Root-selected deployment and bounds. @param agent Original Root private client callbacks.
    * @param transport Dedicated owned transport; Root calls createOwnedSdkTransport with finite limits.
+   * @param assertReceiptDeployment Original protected lease check for a receipt-enabled deployment.
    */
-  constructor(config: SdkLifecycleConfig, private readonly agent: TrustedAgentLifecycle, transport: OwnedSdkTransport) {
+  constructor(config: SdkLifecycleConfig, private readonly agent: TrustedAgentLifecycle, transport: OwnedSdkTransport,
+    private readonly assertReceiptDeployment?: () => void) {
     const { cpuCores, entrypoint } = config
     for (const value of [config.memoryMiB, config.ttlSeconds, config.requestTimeoutMs, config.stopBudgetMs,
       config.readyPollIntervalMs, config.maxReadyPolls, config.pageSize, config.maxPages, config.maxItems,
@@ -83,7 +98,20 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
       && config.maxItems >= config.pageSize && config.maxOperationBytes >= config.maxResponseBytes
       && config.maxInflightOperations >= config.maxRecords && config.apiKey.length > 0
       && /(?:@sha256:|^sha256:)[a-f0-9]{64}$/.test(config.imageDigest) && /^[a-f0-9]{64}$/.test(config.payloadSha256), 'sdk/bounds')
-    this.config = Object.freeze({ ...config, entrypoint: Object.freeze([...entrypoint]) })
+    if (config.renewalLeadMs !== undefined) {
+      check(Number.isSafeInteger(config.renewalLeadMs) && config.renewalLeadMs > config.requestTimeoutMs
+        && config.ttlSeconds >= 60 && config.ttlSeconds <= 600 && config.renewalLeadMs <= config.ttlSeconds * 500, 'sdk/bounds')
+    }
+    if (config.maxRenewalAttempts !== undefined) {
+      check(config.renewalLeadMs !== undefined && Number.isSafeInteger(config.maxRenewalAttempts)
+        && config.maxRenewalAttempts >= 1 && config.maxRenewalAttempts <= 32, 'sdk/bounds')
+    }
+    const pins = config.deletionReceipts
+    if (pins !== undefined) check(assertReceiptDeployment !== undefined
+      && [pins.providerGeneration, pins.policyDigest].every(value => value.length === 64 && !/[^0-9a-f]/u.test(value)),
+    'sdk/selection')
+    this.config = Object.freeze({ ...config, entrypoint: Object.freeze([...entrypoint]),
+      ...(pins === undefined ? {} : { deletionReceipts: Object.freeze({ ...pins }) }) })
     this.checkFields([config.lifecycleBaseUrl, config.apiKey, config.deploymentIdentity, config.environmentVersion,
       config.provider, config.imageDigest, ...entrypoint])
     this.recipe = labelHash(JSON.stringify([config.imageDigest, config.payloadSha256, entrypoint, config.platform,
@@ -91,6 +119,101 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
     this.connection = new BoundedLifecycleConnection(this.config, transport)
     this.sandboxes = createDefaultAdapterFactory().createLifecycleStack({ connectionConfig: this.connection,
       lifecycleBaseUrl: this.config.lifecycleBaseUrl }).sandboxes
+  }
+
+  /** The trusted SDK selection opts in before the matching durable migration. */
+  get renewalEnabled(): boolean { return this.config.renewalLeadMs !== undefined }
+
+  /** A pending or uncertain renewal still belongs to the original allocation. */
+  canRetireIdle(prepared: PreparedSandbox): boolean {
+    const record = [...this.records.values()].find(value => value.prepared === prepared)
+    return this.admission && record?.phase === 'active' && record.renewal === undefined && record.observations.size === 0
+  }
+
+  /** @returns Whether the protected selection requires positive provider receipts for all managed allocations. */
+  get usesDeletionReceipts(): boolean { return this.config.deletionReceipts !== undefined }
+
+  /** @returns Current authenticated receipt capability; an older or unpinned server keeps startup closed. */
+  verifyDeletionReceiptDeployment(): Promise<void> {
+    this.assertAdmission()
+    const pins = this.config.deletionReceipts
+    if (pins === undefined) throw new SdkLifecycleFailure('sdk/selection')
+    return this.own(async () => {
+      this.assertReceiptDeployment?.()
+      const path = '/deletion-receipts'
+      const budget = this.budget(Date.now() + this.config.requestTimeoutMs)
+      const response = await this.connection.run(budget, 'GET', path, 200, () =>
+        this.connection.fetch(`${this.connection.getBaseUrl()}${path}`, {
+          headers: { 'OPEN-SANDBOX-API-KEY': this.config.apiKey }, redirect: 'error',
+        }))
+      if (response.status !== 200 || response.headers.get('content-type') !== 'application/json') {
+        throw new SdkLifecycleFailure('sdk/selection')
+      }
+      const value: unknown = await response.json()
+      check(typeof value === 'object' && value !== null && Object.keys(value).length === 2
+        && Object.hasOwn(value, 'providerGeneration') && Object.hasOwn(value, 'policyDigest')
+        && (value as typeof pins).providerGeneration === pins.providerGeneration
+        && (value as typeof pins).policyDigest === pins.policyDigest,
+      'sdk/selection')
+      this.assertReceiptDeployment?.()
+    })
+  }
+
+  /** @param created Original handle retained before the provider observed its complete binding.
+   * @returns Original identity if it was positively captured before loss of admission.
+   */
+  originalDeletionBinding(created: CreatedSandbox): OriginalDeletionBinding | undefined { return this.record(created).providerBinding }
+
+  /** @param created Original handle retained through actual local and provider stop.
+   * @returns Exact provider terminal evidence only after the original local work settled.
+   */
+  finishedDeletionReceipt(created: CreatedSandbox): AllocationDeletionReceipt {
+    const record = this.record(created)
+    if (record.phase !== 'stopped' || record.terminalReceipt === undefined) throw new SdkLifecycleFailure('sdk/stop-unknown')
+    return record.terminalReceipt
+  }
+
+  /** @param intent Original persisted creation intent.
+   * @param binding Original persisted provider binding, after independent startup writer fencing.
+   * @returns Exact positive terminal receipt; wire absence alone never completes the operation.
+   */
+  finishRecoveredDeletion(intent: AllocationCreateIntent, binding: OriginalDeletionBinding): Promise<AllocationDeletionReceipt> {
+    this.assertAdmission()
+    this.verifyReceiptBinding(binding, intent)
+    return this.own(async () => {
+      const budget = this.budget(Date.now() + this.config.stopBudgetMs)
+      this.assertReceiptDeployment?.()
+      try {
+        await this.connection.run(budget, 'DELETE', this.path(binding.sandboxId), 204,
+          () => this.sandboxes.deleteSandbox(binding.sandboxId))
+      } catch { /* Only the independent exact receipt can resolve the original outcome. */ }
+      return readSdkTerminalReceipt(this.connection, this.config, { intent, binding, budget,
+        assertCurrent: () => { this.assertReceiptDeployment?.() } })
+    })
+  }
+
+  /** @param intent Exact original durable creation scope.
+   * @param receipt The application's independently read released receipt.
+   * @returns Exact acknowledged evidence through the same real shutdown and request owner.
+   */
+  acknowledgePersistedDeletion(intent: AllocationCreateIntent, receipt: AllocationDeletionReceipt): Promise<AllocationDeletionReceipt> {
+    this.assertAdmission()
+    this.verifyReceiptBinding(receipt, intent)
+    const budget = this.budget(Date.now() + this.config.requestTimeoutMs)
+    const transport = createSdkReceiptTransport(this.connection, this.config, {
+      withOriginalReceipt: (_scope, run) => this.own(() => run({ intent, receipt, budget,
+        assertCurrent: () => { this.assertReceiptDeployment?.() } })),
+    })
+    return transport.acknowledge(receipt)
+  }
+
+  private verifyReceiptBinding(binding: OriginalDeletionBinding, intent: AllocationCreateIntent): void {
+    const pins = this.config.deletionReceipts
+    check(pins !== undefined && binding.providerGeneration === pins.providerGeneration && binding.policyDigest === pins.policyDigest
+      && binding.allocationId === intent.allocationId && binding.accountId === intent.accountId && binding.epoch === intent.epoch
+      && binding.sessionId === intent.sessionId && binding.workspaceId === intent.workspaceId
+      && binding.sandboxId.length === 36 && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u.test(binding.sandboxId)
+      && binding.containerId.length === 64 && !/[^0-9a-f]/u.test(binding.containerId), 'sdk/selection')
   }
 
   /** Single actual create; repeated calls with the original inputs observe the same sticky promise, including unknown.
@@ -118,8 +241,10 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
         const request = this.request(record)
         const created = await this.connection.run(budget, 'POST', '/sandboxes', 202, () => this.sandboxes.createSandbox(request))
         this.checkFields([created.id])
-        check(created.status.state === 'Running' && created.expiresAt instanceof Date && Number.isFinite(created.expiresAt.getTime())
-          && this.matchesLabels(created.metadata, labels), 'sdk/create-unknown')
+        const expiresAt = created.expiresAt
+        if (!(expiresAt instanceof Date) || !Number.isFinite(expiresAt.getTime())) throw new SdkLifecycleFailure('sdk/create-unknown')
+        check(created.status.state === 'Running' && this.matchesLabels(created.metadata, labels), 'sdk/create-unknown')
+        this.observeExpiry(record, expiresAt)
         const handle = Object.freeze({ sandboxId: created.id })
         record.created = handle; this.handles.set(handle, record)
         return handle
@@ -150,11 +275,19 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
         const info = await this.connection.run(budget, 'GET', this.path(created.sandboxId), 200, () => this.sandboxes.getSandbox(created.sandboxId))
         check(info.id === created.sandboxId, 'sdk/selection')
         this.checkInfo(info, record.intent)
+        if (info.expiresAt !== null) this.observeExpiry(record, info.expiresAt)
         if (info.status.state === 'Running') { ready = true; break }
         check(['Creating', 'Pending', 'Resuming'].includes(info.status.state), 'sdk/ready-unconfirmed')
         await delay(Math.min(this.config.readyPollIntervalMs, Math.max(0, budget.deadlineAtMs - Date.now())))
       }
       check(ready, 'sdk/ready-unconfirmed'); this.assertPreparing(record, budget)
+      const pins = this.config.deletionReceipts
+      if (pins !== undefined) {
+        record.providerBinding = await readSdkAllocationBinding(this.connection, this.config, {
+          ...pins, intent: record.intent, sandboxId: created.sandboxId, budget,
+          assertCurrent: () => { this.assertPreparing(record, budget); this.assertReceiptDeployment?.() },
+        })
+      }
       const prepared = await this.agent.handshake(this.selection(record), this.control(budget.deadlineAtMs), Object.freeze({
         remainingPolls, intervalMs: this.config.readyPollIntervalMs, deadlineAtMs: budget.deadlineAtMs,
         chargeReplyBytes: (bytes: number): void => {
@@ -177,6 +310,90 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
       () => ({ intent: record.intent, sandboxId: created.sandboxId, runtimeIdentity: record.prepared?.runtimeIdentity }))
   }
 
+  private observeExpiry(record: AllocationRecord, value: Date): void {
+    const wallAtMs = value.getTime()
+    const monotonicAtMs = performance.now() + Math.max(0, wallAtMs - Date.now())
+    record.latestProviderExpiryMs = Math.max(record.latestProviderExpiryMs ?? wallAtMs, wallAtMs)
+    if (record.providerExpiry === undefined || monotonicAtMs < record.providerExpiry.monotonicAtMs) {
+      record.providerExpiry = { wallAtMs, monotonicAtMs }
+    }
+  }
+
+  /**
+   * Reserve a bounded sequence of renewals for an authenticated submitted operation with a live range.
+   * The caller supplies the exact durable ready-row CAS and the original operation's active check.
+   * @param prepared Original ready handle, with its immutable sandbox and guest identities.
+   * @param reserve Persist this fixed timestamp with the prior confirmed target before sending any request.
+   * @returns An original observation callback that rechecks operation admission after the durable write.
+   */
+  activeRenewal(prepared: PreparedSandbox,
+    reserve: (intent: AllocationCreateIntent, targetAt: string, previousAt?: string) => Promise<boolean>):
+    ((stillActive: () => boolean) => void) | undefined {
+    const lead = this.config.renewalLeadMs
+    if (lead === undefined) return undefined
+    const record = [...this.records.values()].find(value => value.prepared === prepared)
+    if (record === undefined) throw new SdkLifecycleFailure('sdk/selection')
+    return (stillActive) => {
+      const expiry = record.providerExpiry
+      const attempts = record.renewalAttempts ?? 0
+      if (!this.admission || record.phase !== 'active' || record.renewal !== undefined || expiry === undefined
+        || attempts >= (this.config.maxRenewalAttempts ?? 1) || this.inflight.size >= this.config.maxInflightOperations) return
+      const remaining = expiry.monotonicAtMs - performance.now()
+      const now = Date.now()
+      if (remaining > lead || remaining <= 0 || now >= expiry.wallAtMs || !stillActive()) return
+      const targetMs = now + this.config.ttlSeconds * 1000
+      if (targetMs <= (record.latestProviderExpiryMs ?? expiry.wallAtMs)) return
+      const expiresAt = new Date(targetMs).toISOString()
+      const monotonicTargetAtMs = performance.now() + (targetMs - now)
+      const work = Promise.withResolvers<void>()
+      record.renewalAttempts = attempts + 1
+      record.renewal = work.promise
+      void work.promise.catch(() => { /* The original ready record retains the possible provider mutation. */ })
+      void this.own(async () => {
+        if (!await reserve(record.intent, expiresAt, record.confirmedRenewalAt)) return
+        if (!this.admission || record.phase !== 'active' || performance.now() >= expiry.monotonicAtMs
+          || Date.now() >= expiry.wallAtMs || !stillActive()) return
+        this.assertMount(record.intent, record.mount)
+        const budget = this.budget(Math.min(expiry.wallAtMs, Date.now() + this.config.requestTimeoutMs))
+        const result = await this.connection.run(budget, 'POST', `${this.path(prepared.sandboxId)}/renew-expiration`, 200,
+          () => this.sandboxes.renewSandboxExpiration(prepared.sandboxId, { expiresAt }))
+        check(result.expiresAt?.getTime() === targetMs && Date.now() < expiry.wallAtMs
+          && performance.now() < expiry.monotonicAtMs, 'sdk/selection')
+        record.providerExpiry = { wallAtMs: targetMs,
+          monotonicAtMs: Math.min(monotonicTargetAtMs, performance.now() + Math.max(0, targetMs - Date.now())) }
+        record.latestProviderExpiryMs = targetMs
+        record.confirmedRenewalAt = expiresAt
+        delete record.renewal
+      }).then(work.resolve, work.reject)
+    }
+  }
+
+  /**
+   * Check only the acknowledged renewal of this exact prepared writer, in both clocks.
+   * @param prepared Original object bound to this SDK allocation.
+   * @param throughMs Latest required finish in Root's monotonic coordinate.
+   * @returns Whether a current exact renewal covers the requested bound without another supplier call.
+   */
+  confirmedRenewalCovers(prepared: PreparedSandbox, throughMs: number): boolean {
+    const until = this.confirmedRenewalUntil(prepared)
+    return until !== undefined && Number.isFinite(throughMs) && throughMs > performance.now() && until >= throughMs
+  }
+
+  /**
+   * Return the shorter of the two current clocks only for the original confirmed writer.
+   * @param prepared Exact original ready object retained by this owner.
+   * @returns A protected local monotonic deadline for a new grant, or undefined when authority is unconfirmed.
+   */
+  confirmedRenewalUntil(prepared: PreparedSandbox): number | undefined {
+    const record = [...this.records.values()].find(value => value.prepared === prepared)
+    const expiry = record?.providerExpiry
+    if (!this.admission || record?.phase !== 'active' || record.confirmedRenewalAt === undefined
+      || record.renewal !== undefined || expiry === undefined) return undefined
+    const now = performance.now()
+    const until = Math.min(expiry.monotonicAtMs, now + expiry.wallAtMs - Date.now())
+    return until > now ? until : undefined
+  }
+
   /** @param created Original known-successful create handle.
    * @param prepared Original handshake when published; omission uses retained startup state.
    * @returns Synchronous fence, authenticated deletion or 404 absence, then actual local/preparation/observation settlement.
@@ -186,11 +403,37 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
   stop(created: CreatedSandbox, prepared: PreparedSandbox | undefined): Promise<void> {
     const record = this.record(created)
     check(prepared === undefined || prepared === record.prepared, 'sdk/selection')
-    if (this.admission && record.phase === 'stop-unknown' && record.deletionRetry !== undefined
+    if (this.admission && record.phase === 'stop-unknown' && record.deletionRetry !== undefined && record.renewalAttempts === undefined
       && Date.now() >= this.deletionExpiresAt(record.intent.createDeadlineAt)) {
       return record.expiryCheck ??= this.confirmExpiredStop(record).finally(() => { delete record.expiryCheck })
     }
     return this.stopRecord(record)
+  }
+
+  /** Observe late terminal evidence for one retained, previously fenced provider stop.
+   * @param created Original successful create handle.
+   * @param prepared Original prepared handshake, if published.
+   * @returns Actual exact terminal evidence and local physical-stop acknowledgement. No DELETE is replayed.
+   */
+  reconcileStopReceipt(created: CreatedSandbox, prepared: PreparedSandbox | undefined): Promise<void> {
+    const record = this.record(created)
+    check(prepared === undefined || prepared === record.prepared, 'sdk/selection')
+    if (record.phase === 'stopped' && record.terminalReceipt !== undefined) return Promise.resolve()
+    const current = record.receiptRetry, binding = record.providerBinding
+    if (!this.admission || record.phase !== 'stop-unknown' || current === undefined || binding === undefined) {
+      throw new SdkLifecycleFailure('sdk/stop-unknown')
+    }
+    return record.receiptCheck ??= this.own(async () => {
+      current()
+      const receipt = await readSdkTerminalReceipt(this.connection, this.config, { intent: record.intent, binding,
+        budget: this.budget(Date.now() + this.config.requestTimeoutMs), assertCurrent: current })
+      current()
+      this.agent.acknowledgePhysicalStop(this.selection(record), record.prepared)
+      record.terminalReceipt = receipt
+      delete record.receiptRetry
+      record.phase = 'stopped'
+      record.stopActual = Promise.resolve()
+    }, true).finally(() => { delete record.receiptCheck })
   }
 
   /**
@@ -259,15 +502,17 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
 
   /** Delete an old process's original sandbox once, without constructing a live allocation handle.
    * @param sandboxId Original durable sandbox id selected by single-instance startup reconciliation.
-   * @returns Deleted for204, missing for404 or one confirming GET404, otherwise unknown.
+   * @param requireTerminal A durable renewal marker requires the supplier's final DELETE receipt.
+   * @returns Deleted for204, or missing for qualified legacy absence. Other results remain unknown.
    */
-  async deleteOriginal(sandboxId: string): Promise<'deleted' | 'missing' | 'unknown'> {
+  async deleteOriginal(sandboxId: string, requireTerminal = false): Promise<'deleted' | 'missing' | 'unknown'> {
     this.assertAdmission(); this.checkFields([sandboxId])
     try {
       await this.own(() => this.connection.run(this.budget(Date.now() + this.config.stopBudgetMs),
         'DELETE', this.path(sandboxId), 204, () => this.sandboxes.deleteSandbox(sandboxId)))
       return 'deleted'
     } catch (cause) {
+      if (requireTerminal) return 'unknown'
       if (cause instanceof SandboxApiException && cause.statusCode === 404) return 'missing'
       return await this.isMissing(sandboxId, Date.now() + this.config.requestTimeoutMs) ? 'missing' : 'unknown'
     }
@@ -337,10 +582,12 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
           fenced.whenJoined, fenced.whenPrivilegedStartsJoined, record.preparation ?? Promise.resolve(),
         ] as const)
         let physicalFailure: { readonly cause: unknown } | undefined
+        let missedReceipt: (() => void) | undefined
         try {
           check(fenced.sandboxId === selection.sandboxId
             && fenced.deploymentIdentity === this.config.deploymentIdentity, 'sdk/stop-unknown')
           await fenced.whenPrivilegedStartsJoined
+          await record.renewal?.catch(() => { /* Join actual work; only the provider terminal can settle a possible renewal. */ })
           fenced.assertDeploymentCurrent()
           const created = record.created
           if (created === undefined) throw new SdkLifecycleFailure('sdk/stop-unknown')
@@ -348,10 +595,24 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
             await this.connection.run(budget, 'DELETE', this.path(created.sandboxId), 204, () => this.sandboxes.deleteSandbox(created.sandboxId))
           } catch (cause) {
             this.observeStopFailure(record, cause); observedFailure = { cause }
-            const absent = cause instanceof SandboxApiException && cause.statusCode === 404
-              || await this.queryMissing(created.sandboxId, Date.now() + this.config.requestTimeoutMs)
-            this.observeDeletionOutcome(record, absent ? 'confirmed-absent' : 'unknown')
-            if (!absent) throw cause
+            if (!this.usesDeletionReceipts) {
+              const absent = record.renewalAttempts === undefined && (cause instanceof SandboxApiException && cause.statusCode === 404
+                || await this.queryMissing(created.sandboxId, Date.now() + this.config.requestTimeoutMs))
+              this.observeDeletionOutcome(record, absent ? 'confirmed-absent' : 'unknown')
+              if (!absent) throw cause
+            }
+          }
+          if (this.usesDeletionReceipts) {
+            const binding = record.providerBinding
+            if (binding === undefined) throw new SdkLifecycleFailure('sdk/stop-unknown')
+            const assertCurrent = (): void => { this.assertReceiptDeployment?.(); fenced.assertDeploymentCurrent() }
+            try {
+              record.terminalReceipt = await readSdkTerminalReceipt(this.connection, this.config, {
+                intent: record.intent, binding, budget, assertCurrent })
+            } catch (cause) {
+              missedReceipt = () => { this.assertAdmission(); assertCurrent() }
+              throw cause
+            }
           }
           fenced.assertDeploymentCurrent()
           this.agent.acknowledgePhysicalStop(selection, record.prepared)
@@ -359,7 +620,9 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
         const [joined, privileged, preparation] = await settled
         while (record.observations.size) await Promise.allSettled([...record.observations])
         if (physicalFailure !== undefined) {
-          if (observedFailure !== undefined && physicalFailure.cause === observedFailure.cause
+          if (missedReceipt !== undefined && joined.status === 'fulfilled'
+            && privileged.status === 'fulfilled' && preparation.status === 'fulfilled') record.receiptRetry = missedReceipt
+          if (!this.usesDeletionReceipts && observedFailure !== undefined && physicalFailure.cause === observedFailure.cause
             && joined.status === 'fulfilled' && privileged.status === 'fulfilled' && preparation.status === 'fulfilled') {
             record.deletionRetry = { assertDeploymentCurrent: () => { fenced.assertDeploymentCurrent() } }
           }

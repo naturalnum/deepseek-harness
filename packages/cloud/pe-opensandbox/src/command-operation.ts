@@ -1,9 +1,11 @@
 /** One Root-owned command; native direct completion and actual range settlement remain separate facts. */
+import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import { posix } from 'node:path'
 import { SubprocessOutputLimitError, type SubprocessHandle, type SubprocessOutcome, type SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { CollectedOutputFailure, CollectedOutputMirror } from './collected-output.ts'
 import { PrivateSemanticAudit, type SemanticFacts } from './semantic-audit.ts'
+import { SLICE_LIMITS } from './agent-data/constants.ts'
 import type { NativeFilePolicy } from './agent-data/file-policy.ts'
 import type { AgentDataStream, OperationSpec } from './agent-data/types.ts'
 import { CommandStreams } from './command-streams.ts'
@@ -53,6 +55,16 @@ class CommandOperationFailure extends Error {
   }
 }
 
+/** Root's bounded local observations, never passed to a guest as clock coordinates. */
+interface ActiveServiceWindow {
+  readonly commitStartedAtMs: number
+  readonly submittedByMs: number
+  readonly commandDeadlineAtMs: number
+  readonly pollIntervalMs: number
+  stillActive(): boolean
+  assertCurrent(): void
+}
+
 /** One immutable operation selection. Mutation methods each submit at most once, including lost replies. */
 export interface CommandChannel {
   prepare(spec: OperationSpec, filePolicy?: NativeFilePolicy): Promise<CommandSnapshot>
@@ -62,6 +74,26 @@ export interface CommandChannel {
   whenLocallySettled?(): Promise<void>
   /** End the original retained files borrow only after actual range and local request settlement. */
   release?(): void
+  /**
+   * Return the original record after terminal facts, range and local joins and files release.
+   * @param deadlineMs Original command's monotonic deadline.
+   */
+  settle?(deadlineMs: number): Promise<void>
+  /** A trusted allocation owner may maintain an already submitted and still active original range. */
+  renewWhileActive?(stillActive: () => boolean): void
+  /**
+   * Request the exact extended run budget for an original live service.
+   * @param window Original controller observations and active check.
+   * @returns A confirmed total run budget, or undefined before a qualified request is sent.
+   */
+  extendServiceWindow?(window: ActiveServiceWindow): Promise<number | undefined>
+  /**
+   * Publish a confirmed run deadline in the original controller clock.
+   * @param window Original controller coordinates and active check.
+   * @param priorRunUntilMs Earlier confirmed run grant, if any.
+   * @returns New safe local deadline or undefined when no additional run time was granted.
+   */
+  renewResidence?(window: ActiveServiceWindow, priorRunUntilMs: number | undefined): Promise<number | undefined>
   commit(): Promise<CommandSnapshot>
   poll(): Promise<CommandSnapshot>
   stop(): Promise<CommandSnapshot>
@@ -94,7 +126,7 @@ export interface CommandOperationAuthority {
   readonly lifetime: AbortSignal
   assertCurrent(): void
   /** Cancellation bounds this allocation observer; the separate allocation owner retains any late create. */
-  acquire(signal: AbortSignal): Promise<CommandChannel>
+  acquire(signal: AbortSignal, operationId: string): Promise<CommandChannel>
   /** Notify the same owner only after a validated original snapshot confirms submitted. Must not throw. */
   onSubmitted?(): void
   /** Fence the allocation and request actual physical stop; failure never releases this command's reservation. */
@@ -117,6 +149,8 @@ export type CommandDirectStatus = { readonly direct: 'pending' | 'failed' }
  * Stop or protocol uncertainty still notifies the original physical cleanup owner.
  */
 export class ManagedCommandOperation {
+  /** Original private operation identity, reserved before allocation acquisition or guest prepare. */
+  readonly operationId: string = randomUUID()
   private readonly audit = new PrivateSemanticAudit()
   private readonly completion = Promise.withResolvers<SubprocessOutcome>()
   private readonly preparation = Promise.withResolvers<void>()
@@ -157,8 +191,12 @@ export class ManagedCommandOperation {
   private grace: ReturnType<typeof setTimeout> | undefined
   private drainDeadlineAtMs: number | undefined
   private lifetime: ReturnType<typeof setTimeout> | undefined
+  private recordSettlement: 'pending' | 'unknown' | undefined
   private lifetimeDeadlineAtMs: number | undefined
   private commitStartedAtMs: number | undefined
+  private submittedByMs: number | undefined
+  private serviceWindowMs: number | undefined
+  private residenceRunUntilMs: number | undefined
 
   /** Private preparation observer and actual complete-range latch; neither rechecks revoked public admission. */
   readonly prepared: Promise<void>
@@ -359,7 +397,10 @@ export class ManagedCommandOperation {
    */
   remainingExecutionMs(runMs: number): number {
     if (this.lifetimeDeadlineAtMs === undefined || this.commitStartedAtMs === undefined) return 0
-    return Math.max(0, Math.floor(Math.min(this.lifetimeDeadlineAtMs, this.commitStartedAtMs + runMs) - performance.now()))
+    const admitted = Math.min(runMs, this.serviceWindowMs ?? SLICE_LIMITS.serviceRunMs)
+    const until = this.residenceRunUntilMs === undefined ? this.commitStartedAtMs + admitted
+      : Math.min(this.residenceRunUntilMs, this.commitStartedAtMs + runMs)
+    return Math.max(0, Math.floor(Math.min(this.lifetimeDeadlineAtMs, until) - performance.now()))
   }
 
   /** Revoke public access immediately; actual cleanup and retained storage remain Root-owned. */
@@ -398,7 +439,7 @@ export class ManagedCommandOperation {
     let attach: (() => Promise<AgentDataStream>) | undefined, joinAttachment: (() => Promise<void>) | undefined
     let attachmentAttempted = false, runDeadline = false
     try {
-      const channel = await this.authority.acquire(this.allocationWait.signal)
+      const channel = await this.authority.acquire(this.allocationWait.signal, this.operationId)
       this.channel = channel
       const beforePreparation = this.stopRequest()
       if (beforePreparation !== undefined) throw beforePreparation.reason
@@ -463,6 +504,27 @@ export class ManagedCommandOperation {
         }
         if (snapshot.commitClosed && !snapshot.submitted && stopped === undefined) {
           throw new Error('The original remote command commit gate closed before submission.')
+        }
+        if (stopped === undefined && snapshot.submitted && !snapshot.rangeEmpty && snapshot.direct === undefined) {
+          const stillActive = (): boolean => this.stopRequest() === undefined && !this.rangeConfirmed && !this.localSettled
+            && snapshot.submitted && !snapshot.rangeEmpty && snapshot.direct === undefined
+            && !snapshot.providerFailure && !snapshot.physicalStopRequired
+          const commitStartedAtMs = this.commitStartedAtMs, submittedByMs = this.submittedByMs
+          const commandDeadlineAtMs = this.lifetimeDeadlineAtMs
+          if (!snapshot.commitClosed && commitStartedAtMs !== undefined && submittedByMs !== undefined
+            && commandDeadlineAtMs !== undefined) {
+            const window = { commitStartedAtMs, submittedByMs, commandDeadlineAtMs, pollIntervalMs: this.limits.pollIntervalMs,
+              stillActive, assertCurrent: () => { this.authority.assertCurrent() } }
+            if (channel.renewResidence !== undefined) {
+              const granted = await channel.renewResidence(window, this.residenceRunUntilMs)
+              if (granted !== undefined && stillActive()) this.residenceRunUntilMs = granted
+            } else if (channel.extendServiceWindow !== undefined && this.serviceWindowMs === undefined) {
+              const granted = await channel.extendServiceWindow(window)
+              if (granted !== undefined && stillActive()) this.serviceWindowMs = granted
+            }
+            if (this.stopRequest() !== undefined) continue
+          }
+          channel.renewWhileActive?.(stillActive)
         }
         await delay(this.limits.pollIntervalMs)
         if (this.isRangeConfirmed()) break
@@ -556,6 +618,7 @@ export class ManagedCommandOperation {
     if (snapshot.rangeEmpty && snapshot.ioClosed) this.rangeConfirmed = true
     if (snapshot.submitted && !this.submittedObserved) {
       this.submittedObserved = true
+      this.submittedByMs = performance.now()
       this.authority.onSubmitted?.()
     }
   }
@@ -594,12 +657,29 @@ export class ManagedCommandOperation {
   }
 
   private finishEmpty(): void {
-    if (!this.localSettled || !this.rangeConfirmed || this.borrowReleaseFailure !== undefined) return
+    if (!this.localSettled || !this.rangeConfirmed || this.borrowReleaseFailure !== undefined
+      || this.recordSettlement === 'pending' || this.recordSettlement === 'unknown' && !this.physicalStopAcknowledged) return
     const channel = this.channel
     try { channel?.release?.() } catch (cause) {
       this.borrowReleaseFailure = { cause }; this.fail(cause); this.reportUnknown(cause); return
     }
     this.channel = undefined
+    const settle = channel?.settle?.bind(channel), deadline = this.lifetimeDeadlineAtMs
+    if (settle !== undefined && this.streams === undefined
+      && this.completedDirect !== undefined && this.submittedObserved
+      && !this.unknownReported && !this.physicalStopAcknowledged && deadline !== undefined && deadline > performance.now()) {
+      this.recordSettlement = 'pending'
+      void Promise.resolve().then(() => settle(deadline)).then(() => {
+        this.recordSettlement = undefined
+        this.finishEmpty()
+      }, (cause: unknown) => {
+        this.recordSettlement = 'unknown'
+        this.fail(cause)
+        this.reportUnknown(cause)
+        this.finishEmpty()
+      })
+      return
+    }
     if (this.lifetime !== undefined) { clearTimeout(this.lifetime); this.lifetime = undefined }
     if (this.grace !== undefined) { clearTimeout(this.grace); this.grace = undefined }
     this.empty.resolve()
@@ -612,7 +692,10 @@ export class ManagedCommandOperation {
   }
 
   private waitForExit(signal?: AbortSignal): Promise<boolean> {
-    if (this.localSettled && this.rangeConfirmed && this.borrowReleaseFailure === undefined) return Promise.resolve(true)
+    if (this.localSettled && this.rangeConfirmed && this.borrowReleaseFailure === undefined
+      && (this.recordSettlement === undefined || this.recordSettlement === 'unknown' && this.physicalStopAcknowledged)) {
+      return Promise.resolve(true)
+    }
     if (signal?.aborted) return Promise.resolve(false)
     // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- Preserve the original native cancellation or provider reason.
     if (this.failed !== undefined) return Promise.reject(this.failed.cause)

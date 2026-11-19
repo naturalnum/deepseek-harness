@@ -126,7 +126,7 @@ async function fixture(options: { application?: boolean; bind?: boolean; maximum
     } }
   })
   const unknown = vi.fn<NativeCommandRoot['unknown']>((_scope, operation, cause) => { operation.requestStop(cause) })
-  const acquire = vi.fn<NativeCommandRoot['acquire']>(async (_scope, _signal, registration) => {
+  const acquire = vi.fn<NativeCommandRoot['acquire']>(async (_scope, _signal, _operationId, registration) => {
     if (registration !== undefined && options.bind !== false) {
       registration.bindAllocation(brandString<ServicePreviewIdentity['allocationId']>('allocation-original'))
     }

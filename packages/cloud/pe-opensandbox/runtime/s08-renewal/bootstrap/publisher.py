@@ -1,0 +1,176 @@
+"""Fixed Root-only bootstrap publisher; never accepts a path, command or environment input."""
+import hashlib
+import os
+import stat
+import subprocess
+import sys
+import time
+
+ROOT_UID = ROOT_GID = 0
+PRIVATE = '/root-secret'
+TRUSTED = '/trusted'
+STAGE = '.bootstrap'
+CLAIM = b's4-bootstrap/1\n'
+def bwrap_profile(machine):
+    """Select only the original release bytes for the current kernel architecture."""
+    if machine in ('aarch64', 'arm64'):
+        return ('0fc274e60c4b606db202dc9e82db60b4d944ba74bab8b6af2cd95ea28c4f8b2d', 814328, 183)
+    if machine in ('x86_64', 'amd64'):
+        return ('2eac825be98626a3a7e8daf17afdedcb65560951cb26ffaecea261f5686acb28', 734864, 62)
+    raise RuntimeError('unsupported isolation binary architecture')
+
+
+def fixed_elf(data, machine):
+    """Require the pinned Linux ELF64 little-endian machine header."""
+    return (len(data) >= 20 and data[:6] == b'\x7fELF\x02\x01'
+            and int.from_bytes(data[18:20], 'little') == machine)
+
+SOURCES = {
+    'guardian.py': ('6b03761b7a000334f92ace6ff8131feccd2a85347a2bbc8dfe99c92c0cc1e54e', 6683),
+    'launcher.py': ('769697b5c39639f6ce8b38e53c4a9dae0e8f6bbaf38e88aec25c16f853566b38', 24053),
+    'manager.py': ('a122c28b5c52c5853ef974f7db247bcd38bb734577ee70dc774be0d2994ef998', 20368),
+    'paths.py': ('32eee56d10be1c13cc3d4615e614888abcf26e1ad8e102db801d81fd084e858b', 10067),
+    'server.py': ('cbe8542c93105ad0e7873995f4d3a0ca5f09bdff4ea55ea15bad0cd79cb00901', 19462),
+    'stream.py': ('e1ccec8f85755f20bdaa457d2b28777b24e7a33a20cd8ca35e1de52874210e38', 10399),
+    'terminal.py': ('e7c3e8e298562a9629f1cefec2f753d34fda1d6285ad14982859c4cd026d8c36', 6830),
+    'wire.py': ('023781dee5665f1fee6cdbedda9a21c0d1623cf35fd826ac1c5b23be89d3b0f9', 15686),
+}
+
+DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
+READ = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
+WRITE_NEW = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW
+
+
+def require(value):
+    if not value:
+        raise RuntimeError('fixed bootstrap refused')
+
+
+def directory(name, parent, mode):
+    fd = os.open(name, DIRECTORY, dir_fd=parent)
+    try:
+        item = os.fstat(fd)
+        require(stat.S_ISDIR(item.st_mode) and item.st_uid == ROOT_UID and item.st_gid == ROOT_GID
+                and stat.S_IMODE(item.st_mode) == mode)
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def read_file(parent, name, maximum, mode, pin=None):
+    fd = os.open(name, READ, dir_fd=parent)
+    try:
+        before = os.fstat(fd)
+        require(stat.S_ISREG(before.st_mode) and before.st_uid == ROOT_UID and before.st_gid == ROOT_GID
+                and stat.S_IMODE(before.st_mode) == mode and before.st_nlink == 1 and before.st_size <= maximum)
+        chunks, size = [], 0
+        while True:
+            chunk = os.read(fd, min(65536, maximum + 1 - size))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            size += len(chunk)
+            require(size <= maximum)
+        data = b''.join(chunks)
+        after = os.fstat(fd)
+        require((before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns)
+                == (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns)
+                and len(data) == before.st_size)
+        if pin is not None:
+            require(len(data) == pin[1] and hashlib.sha256(data).hexdigest() == pin[0])
+        return data
+    finally:
+        os.close(fd)
+
+
+def publish(parent, name, data, mode):
+    fd = os.open(name, WRITE_NEW, mode, dir_fd=parent)
+    try:
+        os.fchmod(fd, mode)
+        item = os.fstat(fd)
+        require(stat.S_ISREG(item.st_mode) and item.st_uid == ROOT_UID and item.st_gid == ROOT_GID
+                and item.st_nlink == 1 and stat.S_IMODE(item.st_mode) == mode)
+        offset = 0
+        while offset < len(data):
+            written = os.write(fd, data[offset:])
+            require(written > 0)
+            offset += written
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    os.fsync(parent)
+
+
+def main():
+    require(os.getuid() == os.geteuid() == ROOT_UID and os.getgid() == os.getegid() == ROOT_GID)
+    require(len(sys.argv) == 1 and __debug__)
+    os.umask(0o077)
+    root = directory('/', None, 0o755)
+    private = directory('root-secret', root, 0o700)
+    staging = directory(STAGE, private, 0o700)
+    try:
+        require(read_file(private, 's4-bootstrap.claimed', len(CLAIM), 0o600) == CLAIM)
+        require(set(os.listdir(private)) == {STAGE, 's4-bootstrap.claimed'})
+        require(set(os.listdir(staging)) == {*SOURCES, 'publisher.py', 'agent.stage'})
+        data = {name: read_file(staging, name, pin[1], 0o600, pin) for name, pin in SOURCES.items()}
+        config_data = read_file(staging, 'agent.stage', 4096, 0o600)
+        # The installed isolation binary is fixed by Root's selected image/deployment; never downloaded.
+        opt = directory('opt', root, 0o755)
+        try:
+            installed = directory('opensandbox', opt, 0o755)
+            try:
+                bwrap = bwrap_profile(os.uname().machine)
+                binary = read_file(installed, 'bwrap', bwrap[1], 0o755, bwrap[:2])
+                require(fixed_elf(binary, bwrap[2]))
+            finally:
+                os.close(installed)
+        finally:
+            os.close(opt)
+        os.mkdir('trusted', 0o755, dir_fd=root)
+        os.chmod('trusted', 0o755, dir_fd=root, follow_symlinks=False)
+        trusted = directory('trusted', root, 0o755)
+        try:
+            os.mkdir('bwrap-revision', 0o755, dir_fd=trusted)
+            os.chmod('bwrap-revision', 0o755, dir_fd=trusted, follow_symlinks=False)
+            source = directory('bwrap-revision', trusted, 0o755)
+            try:
+                for name, content in data.items():
+                    publish(source, name, content, 0o644)
+            finally:
+                os.close(source)
+            publish(trusted, 'bwrap', binary, 0o755)
+        finally:
+            os.close(trusted)
+        sys.path.insert(0, TRUSTED + '/bwrap-revision')
+        import server
+        config = server.checked_configuration(server.loads(config_data))
+        server.mount_facts(config)
+        publish(private, 'agent.json', config_data, 0o600)
+        server.configuration(PRIVATE + '/agent.json')
+        # No inherited SSE pipe, token in argv/env, or arbitrary pass_fds survives this launch.
+        process = subprocess.Popen(['/usr/local/bin/python3', '-I', '-S', '-B',
+                                    TRUSTED + '/bwrap-revision/server.py', PRIVATE + '/agent.json'],
+                                   stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                   cwd='/', env={'PATH': '/usr/local/bin:/usr/bin:/bin', 'LANG': 'C.UTF-8'},
+                                   close_fds=True, start_new_session=True, user=0, group=0, extra_groups=[])
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            require(process.poll() is None)
+            try:
+                marker = read_file(private, 's4-agent.started', 64, 0o600)
+            except FileNotFoundError:
+                time.sleep(0.01)
+                continue
+            require(marker == config['runtimeIdentity'].encode('ascii'))
+            print('s4-bootstrap-started', flush=True)
+            return
+        raise RuntimeError('fixed bootstrap startup unconfirmed')
+    finally:
+        os.close(staging)
+        os.close(private)
+        os.close(root)
+
+
+if __name__ == '__main__':
+    main()

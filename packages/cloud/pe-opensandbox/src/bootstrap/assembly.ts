@@ -4,7 +4,7 @@ import { createRetainedExecutionExports, createSharedPathExecutionExports, type 
 import { ExecutionStateError } from '../errors.ts'
 import { adoptExportKeeperLive, type ExportKeeperLive, type ExportKeeperLiveInput } from './keeper-live.ts'
 import { readRootDeploymentReference, RootDeploymentLease, type RootDeploymentReference } from './deployment-reference.ts'
-import { parseRootDeploymentInput } from './deployment-input.ts'
+import { assertRenewalTerminalPolicy, parseRootDeploymentInput } from './deployment-input.ts'
 import { createRootSdkExecutionOwner, type RootSdkExecutionOwner } from './factory.ts'
 import type { SharedStorageAccountResolver } from '../shared-mounts.ts'
 import { BootstrapFailure } from './bootstrap.ts'
@@ -50,6 +50,7 @@ export async function assembleRootExecutionDeployment(reference: RootDeploymentR
   const state: {
     selection?: RootDeploymentLease
     storageFile?: RootDeploymentLease
+    terminalPolicy?: RootDeploymentLease
     keeper?: ExportKeeperLive
     exports?: RetainedExecutionExports
     owner?: RootSdkExecutionOwner
@@ -65,6 +66,7 @@ export async function assembleRootExecutionDeployment(reference: RootDeploymentR
       if (state.exports !== undefined && state.exports.retainedShares !== 0) unavailable()
       // Root invokes this only after actual coordinator close; no cleanup lease is withdrawn on unknown stops/shares.
       await state.keeper?.closeObserver()
+      state.terminalPolicy?.close()
       state.storageFile?.close()
       state.selection?.close()
     }
@@ -88,10 +90,14 @@ export async function assembleRootExecutionDeployment(reference: RootDeploymentR
       await keeper.ready
       state.exports = createRetainedExecutionExports(bytes, input.exports.manifest.sha256, keeper, input.exports.limits)
     } else {
+      if (input.renewal !== undefined) {
+        state.terminalPolicy = new RootDeploymentLease(input.renewal.terminalPolicy, 16384, 'terminal-policy')
+        assertRenewalTerminalPolicy(state.terminalPolicy.value(), input.lifecycle, input.storage.mode)
+      }
       state.storageFile = new RootDeploymentLease(input.storage.plan, input.storage.limits.maxPlanBytes, 'storage-plan')
       const plan = state.storageFile
       // Publication bytes only; share admission separately checks original files grants and live source mounts.
-      const planCurrent = (): void => { selection.assertCurrent(); plan.assertCurrent() }
+      const planCurrent = (): void => { selection.assertCurrent(); plan.assertCurrent(); state.terminalPolicy?.assertCurrent() }
       state.exports = createSharedPathExecutionExports(plan.bytes(), input.storage.plan.sha256, planCurrent,
         input.storage.limits, input.selection.serverImageDigest, resolveSharedAccount)
       state.exports.assertCurrent()
@@ -99,9 +105,12 @@ export async function assembleRootExecutionDeployment(reference: RootDeploymentR
     const storageFile = state.storageFile
     const storageCurrent = (): void => { selection.assertCurrent(); storageFile.assertCurrent() }
     const exports = state.exports
-    state.owner = await createRootSdkExecutionOwner({ ...input.bootstrap, lifecycle: input.lifecycle,
-      // Original selection/policy only. Business/keeper loss must not revoke physical-stop authority.
-      assertDeploymentCurrent: () => { selection.assertCurrent() } })
+    const renewal = input.schema === 'pe-opensandbox-root-deployment-v2' ? input.renewal : undefined
+    const lifecycle = renewal === undefined ? input.lifecycle
+      : { ...input.lifecycle, renewalLeadMs: renewal.leadMs, maxRenewalAttempts: renewal.maxAttempts }
+    state.owner = await createRootSdkExecutionOwner({ ...input.bootstrap, lifecycle,
+      // The original protected selection and terminal policy remain valid across business/keeper loss.
+      assertDeploymentCurrent: () => { selection.assertCurrent(); state.terminalPolicy?.assertCurrent() } })
     const owner = state.owner
     const deployment: ManagedExecutionDeployment = Object.freeze({ backend: owner.backend, runtimes: owner.runtimes,
       share: exports.share, assertEpochReleased: exports.assertEpochReleased,

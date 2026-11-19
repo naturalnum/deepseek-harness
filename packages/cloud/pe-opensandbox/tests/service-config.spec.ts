@@ -212,3 +212,19 @@ it('plans argument limits but still relies on the actual complete guardian argv/
     expect(() => parseManagedCoordinatorConfig(invalid)).toThrow(field)
   }
 })
+
+it('bounds explicit collected residence under the original cumulative carrier limits', () => {
+  const base = enabled()
+  const input = { ...base, commands: { ...base.commands,
+    commandLimits: { ...base.commands.commandLimits, pollIntervalMs: 2000, maxLifetimeMs: 200000 },
+    services: { ...base.commands.services, profile: { ...base.commands.services.profile, runMs: 610000 } },
+    residence: { maxResidentMs: 660000, foregroundRunMs: 185000, serviceCommandLifetimeMs: 635000 } } }
+  const parsed = parseManagedCoordinatorConfig(input)
+  expect(parsed.commands.services?.profile.runMs).toBe(610000)
+  expect(parsed.commands.residence).toEqual(input.commands.residence)
+  input.commands.commandLimits.pollIntervalMs = 1000
+  expect(() => parseManagedCoordinatorConfig(input)).toThrow('pollIntervalMs')
+  input.commands.commandLimits.pollIntervalMs = 2000
+  input.commands.residence.maxResidentMs = 900001
+  expect(() => parseManagedCoordinatorConfig(input)).toThrow('maxResidentMs')
+})

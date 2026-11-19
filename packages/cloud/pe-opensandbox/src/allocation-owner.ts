@@ -27,6 +27,20 @@ export interface AllocationBackend<Mount> {
   prepare(created: CreatedSandbox, mount: Mount, deadlineAtMs: number): Promise<PreparedSandbox>
   /** Fence starts and join real managed work, provider destruction and all adapter I/O before fulfilling. */
   stop(created: CreatedSandbox, prepared: PreparedSandbox | undefined): Promise<void>
+  /** Read exact new evidence of the original stopped workload without issuing another mutation. */
+  reconcileStopReceipt?(created: CreatedSandbox, prepared: PreparedSandbox | undefined): Promise<void>
+}
+
+/** Receipt-enabled Root's exact persistence path for the same original allocation. */
+export interface AllocationReceiptPersistence {
+  /** @param expected Original creating row. @param created Original provider handle.
+   * @param prepared Original authenticated preparation. @returns Durable ready and original container identity.
+   */
+  publishReady(expected: SandboxAllocation, created: CreatedSandbox, prepared: PreparedSandbox): Promise<SandboxAllocation>
+  /** @param expected Original stopping row. @param created Original provider handle after actual stop.
+   * @returns Durable release with exact provider evidence and an ACK outbox entry.
+   */
+  releaseStopped(expected: SandboxAllocation, created: CreatedSandbox): Promise<SandboxAllocation>
 }
 
 /** Existing files-owner grant reservation; release is not a compute stop or environment reset. */
@@ -84,6 +98,8 @@ export interface AllocationOwnerConfig {
   readonly maxAllocationsPerAccount: number
   readonly maxWaiters: number
   readonly maxWaitersPerAllocation: number
+  /** Optional compute retirement delay after the last owned active range settles. */
+  readonly idleRetireMs?: number
 }
 
 /**
@@ -100,11 +116,13 @@ export class SessionAllocationOwner<Mount> {
    * @param store Original Root-borrowed bounded allocation store, already migrated.
    * @param backend Fixed verified lifecycle and process adapter.
    * @param config Required capacities and immutable image/environment recipe identity.
+   * @param receipts Receipt-enabled Root's exclusive allocation transaction owner, if selected.
    */
   constructor(
     private readonly store: Pick<PostgresAllocationStore, 'begin' | 'transition' | 'failNotCreated' | 'releaseStopped' | 'reconcileCommitted'>,
     private readonly backend: AllocationBackend<Mount>,
     private readonly config: AllocationOwnerConfig,
+    private readonly receipts?: AllocationReceiptPersistence,
   ) {
     for (const value of [config.createBudgetMs, config.maxAllocations, config.maxAllocationsPerAccount,
       config.maxWaiters, config.maxWaitersPerAllocation]) {
@@ -188,6 +206,31 @@ export class SessionAllocationOwner<Mount> {
     return this.stopWork(work).then(() => work.id)
   }
 
+  /** Join one original deletion and recheck only its exact terminal receipt, then persist and release it.
+   * @param request Original owned request, including an already closed account generation.
+   * @returns Actual release, or an error retaining the allocation and mount. This never repeats DELETE or create.
+   */
+  async reconcileStopReceipt(request: NativeAllocationRequest<Mount>): Promise<void> {
+    const work = this.work.get(this.key(request))
+    if (work === undefined) return
+    if (work.request !== request) this.stale()
+    await (work.reconcile ??= this.finishReceiptStop(work).finally(() => { work.reconcile = undefined }))
+  }
+
+  private async finishReceiptStop(work: AllocationWork<Mount>): Promise<void> {
+    await work.stop?.catch(() => { /* Inspect the actual settled stop before doing any further work. */ })
+    if (work.released) return
+    if (this.receipts === undefined || work.created === undefined || work.row?.state !== 'stopping'
+      || work.stopFailure === undefined || this.backend.reconcileStopReceipt === undefined) this.unavailable()
+    if (!work.backendStopped) {
+      await this.backend.reconcileStopReceipt(work.created, work.prepared)
+      work.backendStopped = true
+    }
+    work.stop = undefined
+    work.stopFailure = undefined
+    await this.stopWork(work)
+  }
+
   /**
    * Finish only metadata for a range whose original backend stop already fulfilled.
    * @param request Original native selection; user admission may already be revoked.
@@ -241,7 +284,7 @@ export class SessionAllocationOwner<Mount> {
   private async finishReconcile(work: AllocationWork<Mount>): Promise<void> {
     await work.stop?.catch(() => { /* Reconciliation inspects only the settled original stop. */ })
     if (!work.backendStopped || work.row === undefined || work.stopFailure === undefined) this.unavailable()
-    if (!(work.stopFailure instanceof AllocationQueryNotSubmittedError)) {
+    if (this.receipts === undefined && !(work.stopFailure instanceof AllocationQueryNotSubmittedError)) {
       work.row = await this.store.reconcileCommitted(work.row)
     }
     work.stop = undefined
@@ -341,9 +384,11 @@ export class SessionAllocationOwner<Mount> {
     if (prepared.sandboxId !== work.created.sandboxId) this.stale()
     this.checkStart(work)
     mount.assertCurrent()
-    work.row = await this.store.transition(work.row, { to: 'ready', sandboxId: prepared.sandboxId,
-      runtimeIdentity: prepared.runtimeIdentity, executionProtocolVersion: prepared.protocolVersion,
-      executionCapabilities: prepared.capabilities })
+    work.row = this.receipts === undefined
+      ? await this.store.transition(work.row, { to: 'ready', sandboxId: prepared.sandboxId,
+        runtimeIdentity: prepared.runtimeIdentity, executionProtocolVersion: prepared.protocolVersion,
+        executionCapabilities: prepared.capabilities })
+      : await this.receipts.publishReady(work.row, work.created, prepared)
     this.checkStart(work)
     mount.assertCurrent()
     return prepared
@@ -356,8 +401,12 @@ export class SessionAllocationOwner<Mount> {
 
   private async finishStop(work: AllocationWork<Mount>): Promise<void> {
     await work.actual.catch(() => { /* Stop still owns the original metadata and late physical resource. */ })
-    const row = work.row
+    let row = work.row
     if (work.created !== undefined) {
+      if (this.receipts !== undefined && row !== undefined && row.state !== 'stopping' && row.state !== 'released') {
+        row = await this.store.transition(row, { to: 'stopping', sandboxId: work.created.sandboxId })
+        work.row = row
+      }
       if (!work.backendStopped) {
         await this.backend.stop(work.created, work.prepared)
         work.backendStopped = true
@@ -367,7 +416,8 @@ export class SessionAllocationOwner<Mount> {
         const stopping = row.state === 'stopping' ? row
           : await this.store.transition(row, { to: 'stopping', sandboxId: work.created.sandboxId })
         work.row = stopping
-        work.row = await this.store.releaseStopped(stopping)
+        work.row = this.receipts === undefined ? await this.store.releaseStopped(stopping)
+          : await this.receipts.releaseStopped(stopping, work.created)
       }
     } else if (row !== undefined) {
       // No created reply cannot distinguish a never-submitted create from an unknown provider outcome.

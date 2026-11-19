@@ -1,0 +1,45 @@
+{
+  "schema": "native-arm64-durable-renewal-overlay/v1",
+  "platform": "linux/arm64",
+  "deploymentSchema": "pe-opensandbox-root-deployment-v2",
+  "storageMode": "shared-path",
+  "server": {
+    "manifest": "sha256:ebc458db7922f1f7c73032ce4899ef22f8b41d49c36e7441eb228c20d5d4747e",
+    "config": "sha256:a8826c1d566095e98442504b8644ef8bdba64f1be6fe73a70d1967aceec4271c",
+    "archiveSha256": "1117038fe4b5e2a397307e3b3d75fa2f6e4f570ff39f791f9cc5ad5c57eb9d8c",
+    "archiveBytes": 404500480
+  },
+  "inputServerManifest": "sha256:8b6b86e3196159f6a41483bb586af3df934d1beb6f684c03efa77b07db04c6e7",
+  "workloadManifest": "sha256:214323fe18dce90360b499cf069412efb8adf889ad02c94cef43fb87b8f42b9e",
+  "execdManifest": "sha256:b6dc1290091b2d4c5b51e0776e718d275069224110ae07a07dad14d249447b4e",
+  "guestPayloadSha256": "12c3fbda33481dbaba289859315c3c069b8230b96dae6bc8233a6599bd3b2ddf",
+  "sourcePins": {
+    "main.py": "04307375be9b137ad06413125e9cfc9beda9bb53732e9e848f9d377cf84f2faa",
+    "middleware/auth.py": "ea0298f6d91e3b66d55a7f4f93e38c19a609dc142fb0d1f58a2f200c95da0731",
+    "services/docker/allocation_binding_http.py": "395070a6585f9af993e7dc81f4846fd7e58dd3a8e7e799aa3932ab496003992a",
+    "services/docker/completion_view.py": "3e9def0a643addba1d1915aaaee0b9a998f0ed9c5b61cff9f4ba48509f608f5c",
+    "services/docker/deletion_ack_http.py": "728eeb1cbbf4e6a9c0310879a2bc58b00d08d8c79e0ef0ff6eddecb86d45e60f",
+    "services/docker/deletion_acknowledgement.py": "684c6685d5a546ab3f9b3b1a12c5c2be49f53c1523a6f1fd79712a4b7bd499f9",
+    "services/docker/deletion_completion.py": "96496b09fdb4b5bf094cb34c96b24671f2ae2679a9e06234a50ad85a6ebc35a4",
+    "services/docker/deletion_terminal_http.py": "2bf978f845cb4275e80d00c1ae66cad20f01757cdb4ddb27e7929f525440a3a5",
+    "services/docker/docker_service.py": "c336d6cea1107d2f9f351713a1ed48a4b353859906b4ebda3500e895260eb9b3",
+    "services/docker/receipt_startup.py": "60a0cc1a40b55db37ebe871d06f0a3a3115b7d12404b6b73b8dc7eb6f751f9c7",
+    "config.py": "aa59b60b3a65a83a6877c82c02cf8db380ea51b388ea47fcdfa4534f08a4fc42",
+    "services/docker/container_ops.py": "7f1cb5e0309fb568528ea6e86ba88f639c3e8cd6253d19fbb2129f59eca4602b"
+  },
+  "startupVerifierSha256": "cc9484f0ee72844e9bede062a2e91038baef0ca3ab9126a71c91bbb200c01569",
+  "receiptWork": {
+    "filesystem": "ext4",
+    "backingBytes": 38027264,
+    "usableBytes": 33554432,
+    "inodes": 1024,
+    "mountRootInode": 2,
+    "mode": "0700",
+    "mountPath": "/work",
+    "uuidMarker": ".s08-volume-uuid",
+    "recordDirectories": [
+      "deletion-completions",
+      "deletion-acknowledgements"
+    ]
+  }
+}

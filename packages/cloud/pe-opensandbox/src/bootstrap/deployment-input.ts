@@ -1,4 +1,5 @@
 /** Root-only JSON selection for the fixed SDK/bootstrap and an explicit storage deployment. */
+import { createHash } from 'node:crypto'
 import { posix } from 'node:path'
 import { ExecutionStateError } from '../errors.ts'
 import type { SdkLifecycleConfig } from '../lifecycle-types.ts'
@@ -7,8 +8,10 @@ import type { ExecutionExportLimits } from '../export-share.ts'
 import type { BootstrapConfig } from './bootstrap.ts'
 import type { RootDeploymentReference } from './deployment-reference.ts'
 import { SOURCE_DIGEST } from './asset-manifest.ts'
+import { RENEWAL_SOURCE_DIGEST } from './renewal-asset-manifest.ts'
 import { isRuntimePlatform } from './runtime-profiles.ts'
-import { isPinnedWorkloadImageDigest, isQualifiedServerImageDigest, isQualifiedSupplierPair } from './qualified-suppliers.ts'
+import { isPinnedWorkloadImageDigest, isQualifiedServerImageDigest, isQualifiedSupplierPair,
+  NATIVE_ARM64_DURABLE_RENEWAL_SERVER_IMAGE_DIGEST } from './qualified-suppliers.ts'
 export { SESSION_DIRECTORY_SERVER_IMAGE_DIGEST, REMOTE_CLIENT_SERVER_IMAGE_DIGEST, OFFICE_SERVER_IMAGE_DIGEST,
   OFFICE_RESEARCH_SERVER_IMAGE_DIGEST, isSessionDirectoryServerImageDigest } from './qualified-suppliers.ts'
 
@@ -34,7 +37,8 @@ export type RootDeploymentInput = RootDeploymentFields & (
   | { readonly schema: 'pe-opensandbox-root-deployment-v1'
     readonly exports: Readonly<{ manifest: RootDeploymentReference; limits: ExecutionExportLimits }> }
   | { readonly schema: 'pe-opensandbox-root-deployment-v2'
-    readonly storage: Readonly<{ mode: 'shared-path'; plan: RootDeploymentReference; limits: SharedPathStorageLimits }> }
+    readonly storage: Readonly<{ mode: 'shared-path'; plan: RootDeploymentReference; limits: SharedPathStorageLimits }>
+    readonly renewal?: Readonly<{ leadMs: number; maxAttempts: number; terminalPolicy: RootDeploymentReference }> }
 )
 function need(value: boolean, field: string): asserts value {
   if (!value) throw new ExecutionStateError('cloud/invalid-config', `Root deployment field ${field} is absent, unsupported or out of bounds.`)
@@ -57,12 +61,21 @@ const lifecycleKeys = ['lifecycleBaseUrl', 'apiKey', 'deploymentIdentity', 'envi
   'readyPollIntervalMs', 'maxReadyPolls', 'pageSize', 'maxPages', 'maxItems', 'maxRecords', 'maxInflightOperations',
   'maxRequestBytes', 'maxResponseBytes', 'maxOperationBytes', 'maxFieldBytes'] as const
 function lifecycle(value: unknown): SdkLifecycleConfig {
-  const v = object(value, lifecycleKeys, 'lifecycle')
+  const hasReceipts = value !== null && typeof value === 'object' && Object.hasOwn(value, 'deletionReceipts')
+  const v = object(value, hasReceipts ? [...lifecycleKeys, 'deletionReceipts'] : lifecycleKeys, 'lifecycle')
+  let deletionReceipts: SdkLifecycleConfig['deletionReceipts']
+  if (hasReceipts) {
+    const pins = object(v.deletionReceipts, ['providerGeneration', 'policyDigest'], 'lifecycle.deletionReceipts')
+    const providerGeneration = text(pins.providerGeneration, 'deletionReceipts.providerGeneration', 64)
+    const policyDigest = text(pins.policyDigest, 'deletionReceipts.policyDigest', 64)
+    need([providerGeneration, policyDigest].every(pin => pin.length === 64 && !/[^0-9a-f]/u.test(pin)), 'lifecycle.deletionReceipts')
+    deletionReceipts = Object.freeze({ providerGeneration, policyDigest })
+  }
   const endpoint = text(v.lifecycleBaseUrl, 'lifecycle.lifecycleBaseUrl', 2048), url = new URL(endpoint)
   need(url.protocol === 'http:' && url.pathname === '/v1' && !url.username && !url.password && !url.search && !url.hash
     && url.href === endpoint, 'lifecycle.lifecycleBaseUrl')
   need(isPinnedWorkloadImageDigest(v.imageDigest)
-    && v.payloadSha256 === SOURCE_DIGEST && isRuntimePlatform(v.platform)
+    && (v.payloadSha256 === SOURCE_DIGEST || v.payloadSha256 === RENEWAL_SOURCE_DIGEST) && isRuntimePlatform(v.platform)
     && Array.isArray(v.entrypoint) && JSON.stringify(v.entrypoint) === '["/usr/bin/tail","-f","/dev/null"]', 'lifecycle.fixedSelection')
   need(typeof v.cpuCores === 'number' && Number.isFinite(v.cpuCores) && v.cpuCores > 0 && v.cpuCores <= 2147483647, 'lifecycle.cpuCores')
   const limits = Object.fromEntries(lifecycleKeys.filter(key => !['lifecycleBaseUrl', 'apiKey', 'deploymentIdentity', 'environmentVersion',
@@ -80,7 +93,9 @@ function lifecycle(value: unknown): SdkLifecycleConfig {
     maxItems: integer(limits.maxItems, 'lifecycle.maxItems'), maxRecords: integer(limits.maxRecords, 'lifecycle.maxRecords'),
     maxInflightOperations: integer(limits.maxInflightOperations, 'lifecycle.maxInflightOperations'),
     maxRequestBytes: integer(limits.maxRequestBytes, 'lifecycle.maxRequestBytes'), maxResponseBytes: integer(limits.maxResponseBytes, 'lifecycle.maxResponseBytes'),
-    maxOperationBytes: integer(limits.maxOperationBytes, 'lifecycle.maxOperationBytes'), maxFieldBytes: integer(limits.maxFieldBytes, 'lifecycle.maxFieldBytes', 4096) }
+    maxOperationBytes: integer(limits.maxOperationBytes, 'lifecycle.maxOperationBytes'),
+    maxFieldBytes: integer(limits.maxFieldBytes, 'lifecycle.maxFieldBytes', 4096),
+    ...(deletionReceipts === undefined ? {} : { deletionReceipts }) }
   need(result.maxItems >= result.pageSize && result.maxInflightOperations >= result.maxRecords
     && result.maxOperationBytes >= result.maxResponseBytes, 'lifecycle.capacities')
   return Object.freeze(result)
@@ -136,7 +151,8 @@ export function parseRootDeploymentInput(value: unknown): RootDeploymentInput {
   need(schema === 'pe-opensandbox-root-deployment-v1' || schema === 'pe-opensandbox-root-deployment-v2', 'schema')
   const fields = ['schema', 'selection', 'lifecycle', 'bootstrap', schema === 'pe-opensandbox-root-deployment-v1' ? 'exports' : 'storage']
   const hasCopies = Object.hasOwn(value, 'skillCopies')
-  const v = object(value, hasCopies ? [...fields, 'skillCopies'] : fields, 'configuration')
+  const hasRenewal = schema === 'pe-opensandbox-root-deployment-v2' && Object.hasOwn(value, 'renewal')
+  const v = object(value, [...fields, ...(hasCopies ? ['skillCopies'] : []), ...(hasRenewal ? ['renewal'] : [])], 'configuration')
   const life = lifecycle(v.lifecycle), boot = bootstrap(v.bootstrap)
   const s = object(v.selection, ['serverImageDigest', 'execdImageDigest', 'apiKeyDeploymentIdentity'], 'selection')
   const serverImage = text(s.serverImageDigest, 'selection.serverImageDigest', 71)
@@ -144,6 +160,10 @@ export function parseRootDeploymentInput(value: unknown): RootDeploymentInput {
     && typeof s.execdImageDigest === 'string'
     && s.apiKeyDeploymentIdentity === life.deploymentIdentity, 'selection.originalPolicy')
   need(isQualifiedSupplierPair(schema, life.imageDigest, serverImage, life.platform, s.execdImageDigest), 'selection.workloadImagePair')
+  const armRenewalServer = serverImage === NATIVE_ARM64_DURABLE_RENEWAL_SERVER_IMAGE_DIGEST
+  need(life.payloadSha256 === (armRenewalServer ? RENEWAL_SOURCE_DIGEST : SOURCE_DIGEST), 'lifecycle.fixedSelection')
+  need((life.deletionReceipts !== undefined) === armRenewalServer, 'lifecycle.deletionReceipts')
+  need(hasRenewal === armRenewalServer, 'renewal.terminalPolicy')
   need(life.ttlSeconds >= 60 && life.ttlSeconds <= 600, 'lifecycle.ttlSeconds')
   need(boot.maxRecords >= life.maxRecords, 'bootstrap.maxRecords')
   let copies: RootDeploymentInput['skillCopies']
@@ -155,7 +175,19 @@ export function parseRootDeploymentInput(value: unknown): RootDeploymentInput {
     selection: Object.freeze({ serverImageDigest: serverImage, execdImageDigest: s.execdImageDigest,
       apiKeyDeploymentIdentity: s.apiKeyDeploymentIdentity }), lifecycle: life, bootstrap: boot }
   if (schema === 'pe-opensandbox-root-deployment-v2') {
-    return Object.freeze({ ...common, schema, storage: sharedStorage(v.storage) })
+    const storage = sharedStorage(v.storage)
+    if (!hasRenewal) return Object.freeze({ ...common, schema, storage })
+    const policy = object(v.renewal, ['leadMs', 'maxAttempts', 'terminalPolicy'], 'renewal')
+    const leadMs = integer(policy.leadMs, 'renewal.leadMs', life.ttlSeconds * 500)
+    need(leadMs > life.requestTimeoutMs, 'renewal.leadMs')
+    const maxAttempts = integer(policy.maxAttempts, 'renewal.maxAttempts', 32)
+    const reference = object(policy.terminalPolicy, ['path', 'sha256'], 'renewal.terminalPolicy')
+    const path = text(reference.path, 'renewal.terminalPolicy.path', 4096), sha256 = text(reference.sha256, 'renewal.terminalPolicy.sha256', 64)
+    need(/^\/(?!\/)/.test(path) && posix.normalize(path) === path && path !== '/' && !path.endsWith('/') && !path.includes('\\')
+      && /^[a-f0-9]{64}$/.test(sha256), 'renewal.terminalPolicy')
+    need(sha256 === life.deletionReceipts?.policyDigest, 'renewal.terminalPolicy.digest')
+    return Object.freeze({ ...common, schema, storage, renewal: Object.freeze({ leadMs, maxAttempts,
+      terminalPolicy: Object.freeze({ path, sha256 }) }) })
   }
   const e = object(v.exports, ['manifest', 'limits'], 'exports'), m = object(e.manifest, ['path', 'sha256'], 'exports.manifest')
   const limits = object(e.limits, ['maxManifestBytes', 'maxMountInfoBytes', 'maxPathBytes', 'maxShares', 'maxResidentBytes'], 'exports.limits')
@@ -164,4 +196,25 @@ export function parseRootDeploymentInput(value: unknown): RootDeploymentInput {
       limits: Object.freeze({ maxManifestBytes: integer(limits.maxManifestBytes, 'exports.maxManifestBytes', 131072),
         maxMountInfoBytes: integer(limits.maxMountInfoBytes, 'exports.maxMountInfoBytes', 4194304), maxPathBytes: integer(limits.maxPathBytes, 'exports.maxPathBytes', 4096),
         maxShares: integer(limits.maxShares, 'exports.maxShares'), maxResidentBytes: integer(limits.maxResidentBytes, 'exports.maxResidentBytes', Number.MAX_SAFE_INTEGER) }) }) })
+}
+
+/** Verify the original protected terminal policy from the paired SDK deployment before enabling renewal. */
+export function assertRenewalTerminalPolicy(value: unknown, life: SdkLifecycleConfig,
+  storageMode: 'shared-path' = 'shared-path'): void {
+  const policy = object(value, ['version', 'generation', 'socket', 'image', 'entrypoint', 'platform',
+    'apiKeySha256', 'admitCreates', 'historical', 'storageMode'], 'renewal.terminalPolicy')
+  const generation = object(policy.generation, ['backendId', 'pid', 'startTicks', 'mountNamespace'], 'renewal.terminalPolicy.generation')
+  const socket = object(policy.socket, ['path', 'device', 'inode'], 'renewal.terminalPolicy.socket')
+  const apiKeySha256 = createHash('sha256').update(life.apiKey).digest('hex')
+  need(policy.version === 2 && policy.image === life.imageDigest && policy.platform === life.platform
+    && JSON.stringify(policy.entrypoint) === JSON.stringify(life.entrypoint)
+    && policy.apiKeySha256 === apiKeySha256 && policy.storageMode === storageMode && policy.admitCreates === true
+    && typeof generation.backendId === 'string' && /^[a-f0-9]{64}$/.test(generation.backendId)
+    && typeof generation.pid === 'number' && Number.isSafeInteger(generation.pid) && generation.pid > 1
+    && typeof generation.startTicks === 'string' && /^\d{1,20}$/.test(generation.startTicks)
+    && typeof generation.mountNamespace === 'string' && /^mnt:\[\d{1,20}\]$/.test(generation.mountNamespace)
+    && socket.path === '/run/backend/docker.sock' && typeof socket.device === 'number' && Number.isSafeInteger(socket.device) && socket.device >= 0
+    && typeof socket.inode === 'number' && Number.isSafeInteger(socket.inode) && socket.inode > 0
+    && Array.isArray(policy.historical) && policy.historical.length <= 1,
+  'renewal.originalTerminalPolicy')
 }

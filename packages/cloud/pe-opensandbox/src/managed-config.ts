@@ -6,7 +6,7 @@ import type { AllocationStoreLimits } from './allocation-types.ts'
 import type { ManagedNativeCommandConfig, ManagedServiceConfig } from './service-config.ts'
 import type { CommandOperationLimits } from './command-operation.ts'
 import type { NativeExecutionConfig } from './native-providers.ts'
-import { SLICE_LIMITS, CARRIER_LIMITS } from './agent-data/constants.ts'
+import { CARRIER_LIMITS, RESIDENCE_LIMITS, SLICE_LIMITS } from './agent-data/constants.ts'
 import { STREAM_RETAINED_BYTES } from './agent-data/role-protocol.ts'
 import { allocationMigrationSql } from './migrations/allocations.ts'
 import { ExecutionStateError } from './errors.ts'
@@ -79,12 +79,14 @@ function storeLimits(value: unknown): AllocationStoreLimits {
 }
 
 function allocationLimits(value: unknown, store: AllocationStoreLimits): AllocationOwnerConfig {
-  const row = object(value, allocationKeys, 'allocations')
+  const hasIdleRetirement = value !== null && typeof value === 'object' && Object.hasOwn(value, 'idleRetireMs')
+  const row = object(value, hasIdleRetirement ? [...allocationKeys, 'idleRetireMs'] : allocationKeys, 'allocations')
   const limits: AllocationOwnerConfig = Object.freeze({ environmentVersion: token(row, 'environmentVersion', store.maxFieldBytes),
     provider: token(row, 'provider', store.maxFieldBytes), createBudgetMs: integer(row, 'createBudgetMs', 'allocations'),
     maxAllocations: integer(row, 'maxAllocations', 'allocations'),
     maxAllocationsPerAccount: integer(row, 'maxAllocationsPerAccount', 'allocations'),
-    maxWaiters: integer(row, 'maxWaiters', 'allocations'), maxWaitersPerAllocation: integer(row, 'maxWaitersPerAllocation', 'allocations') })
+    maxWaiters: integer(row, 'maxWaiters', 'allocations'), maxWaitersPerAllocation: integer(row, 'maxWaitersPerAllocation', 'allocations'),
+    ...(hasIdleRetirement ? { idleRetireMs: integer(row, 'idleRetireMs', 'allocations') } : {}) })
   requireLimit(limits.maxAllocationsPerAccount <= limits.maxAllocations, 'allocations.maxAllocationsPerAccount')
   requireLimit(limits.maxWaitersPerAllocation <= limits.maxWaiters, 'allocations.maxWaitersPerAllocation')
   return limits
@@ -110,7 +112,8 @@ function applicationLimits(value: unknown, limits: CommandOperationLimits, servi
   return Object.freeze({ maxRequests, maxRequestsPerAccount, maxRequestsPerService, transport })
 }
 
-function serviceLimits(value: unknown, limits: CommandOperationLimits): ManagedServiceConfig {
+function serviceLimits(value: unknown, limits: CommandOperationLimits,
+  maxRunMs: number = SLICE_LIMITS.runMs): ManagedServiceConfig {
   const hasApplication = value !== null && typeof value === 'object' && Object.hasOwn(value, 'application')
   const path = 'commands.services'
   const row = object(value, ['profile', 'maxOutputBytes', 'graceMs', ...(hasApplication ? ['application'] : [])], path)
@@ -122,7 +125,7 @@ function serviceLimits(value: unknown, limits: CommandOperationLimits): ManagedS
   const graceMs = integer(row, 'graceMs', path, limits.maxLifetimeMs)
   const profile = Object.freeze({ kind, port,
     startWaitMs: integer(raw, 'startWaitMs', `${path}.profile`, limits.maxLifetimeMs),
-    runMs: integer(raw, 'runMs', `${path}.profile`),
+    runMs: integer(raw, 'runMs', `${path}.profile`, maxRunMs, SLICE_LIMITS.serviceRunMs),
     stopWaitMs: integer(raw, 'stopWaitMs', `${path}.profile`, limits.maxLifetimeMs),
     maxLogReadBytes: integer(raw, 'maxLogReadBytes', `${path}.profile`),
     maxReplyBytes: integer(raw, 'maxReplyBytes', `${path}.profile`),
@@ -130,8 +133,7 @@ function serviceLimits(value: unknown, limits: CommandOperationLimits): ManagedS
     maxArgs: integer(raw, 'maxArgs', `${path}.profile`, limits.maxArgvEntries),
     maxArgBytes: integer(raw, 'maxArgBytes', `${path}.profile`, limits.maxArgvBytes),
     maxArgsBytes: integer(raw, 'maxArgsBytes', `${path}.profile`, limits.maxArgvBytes) })
-  requireLimit(profile.runMs === SLICE_LIMITS.serviceRunMs, `${path}.profile.runMs`)
-  requireLimit(limits.maxLifetimeMs >= SLICE_LIMITS.prepareMs + SLICE_LIMITS.serviceRunMs + SLICE_LIMITS.stopMs,
+  requireLimit(limits.maxLifetimeMs >= SLICE_LIMITS.prepareMs + profile.runMs + SLICE_LIMITS.stopMs,
     'commands.commandLimits.maxLifetimeMs')
   // UTF-8 replacement can expand each retained raw byte to three bytes. JSON control escapes can use six.
   requireLimit(profile.maxLogReadBytes >= 3 * maxOutputBytes, `${path}.profile.maxLogReadBytes`)
@@ -147,7 +149,7 @@ function serviceLimits(value: unknown, limits: CommandOperationLimits): ManagedS
     replyBytes('log', { text: '', nextOffset: limits.maxObservedBytes, lossy: false }) + 6 * maxOutputBytes)
   requireLimit(profile.maxReplyBytes >= minimumReply, `${path}.profile.maxReplyBytes`)
   // Presence records a bounded policy only. Root's reviewed registration/factory/HTTP gates still decide availability.
-  const application = hasApplication ? applicationLimits(row['application'], limits, profile.runMs) : undefined
+  const application = hasApplication ? applicationLimits(row['application'], limits, SLICE_LIMITS.serviceRunMs) : undefined
   return Object.freeze({ profile, maxOutputBytes, graceMs, ...(application === undefined ? {} : { application }) })
 }
 
@@ -157,7 +159,10 @@ function commandLimits(value: unknown): ManagedNativeCommandConfig {
   const hasRemote = value !== null && typeof value === 'object' && Object.hasOwn(value, 'remoteServers')
   const hasPipes = value !== null && typeof value === 'object' && Object.hasOwn(value, 'pipes')
   const hasAdditional = value !== null && typeof value === 'object' && Object.hasOwn(value, 'additionalTools')
-  const row = object(value, ['allowedTools', 'maxScopes', 'commandLimits', ...(hasAdditional ? ['additionalTools'] : []), ...(hasServices ? ['services'] : []), ...(hasPipes ? ['pipes'] : []), ...(hasRemote ? ['remoteServers'] : [])], 'commands')
+  const hasResidence = value !== null && typeof value === 'object' && Object.hasOwn(value, 'residence')
+  const row = object(value, ['allowedTools', 'maxScopes', 'commandLimits', ...(hasAdditional ? ['additionalTools'] : []),
+    ...(hasServices ? ['services'] : []), ...(hasPipes ? ['pipes'] : []), ...(hasRemote ? ['remoteServers'] : []),
+    ...(hasResidence ? ['residence'] : [])], 'commands')
   const tools = row['allowedTools']
   if (hasRemote && row['remoteServers'] !== true) refuse('commands.remoteServers')
   const builtInTools = ['bash', 'dev_service', 'run_code', 'terminal_open', 'remote_exec', 'remote_server_info']
@@ -198,15 +203,33 @@ function commandLimits(value: unknown): ManagedNativeCommandConfig {
   requireLimit(limits.pollIntervalMs <= limits.maxLifetimeMs, `${path}.pollIntervalMs`)
   // Include pending preparation, user run and stop observation; leave one handshake and one seal attempt for the runtime.
   const pollWindow = Math.min(limits.maxLifetimeMs, SLICE_LIMITS.prepareMs + SLICE_LIMITS.runMs) + limits.stopWaitMs
-  const attempts = 2 + SLICE_LIMITS.lifetimeOperations * (3 + Math.ceil(pollWindow / limits.pollIntervalMs))
+  const residencePath = 'commands.residence'
+  const configuredResidence = hasResidence
+    ? object(row['residence'], ['maxResidentMs', 'foregroundRunMs', 'serviceCommandLifetimeMs'], residencePath) : undefined
+  const maxResidentMs = configuredResidence === undefined ? SLICE_LIMITS.residentMs
+    : integer(configuredResidence, 'maxResidentMs', residencePath, RESIDENCE_LIMITS.maxMs, SLICE_LIMITS.residentMs + 1)
+  const residence = configuredResidence === undefined ? undefined : Object.freeze({ maxResidentMs,
+    foregroundRunMs: integer(configuredResidence, 'foregroundRunMs', residencePath,
+      limits.maxLifetimeMs - SLICE_LIMITS.prepareMs - SLICE_LIMITS.stopMs, SLICE_LIMITS.runMs),
+    serviceCommandLifetimeMs: integer(configuredResidence, 'serviceCommandLifetimeMs', residencePath, maxResidentMs,
+      SLICE_LIMITS.prepareMs + SLICE_LIMITS.serviceRunMs + SLICE_LIMITS.stopMs) })
+  const serviceLimitsInput = residence === undefined ? limits : { ...limits, maxLifetimeMs: residence.serviceCommandLifetimeMs }
+  const serviceCap = residence === undefined ? SLICE_LIMITS.serviceRunMs
+    : serviceLimitsInput.maxLifetimeMs - SLICE_LIMITS.prepareMs - SLICE_LIMITS.stopMs
+  const services = hasServices ? serviceLimits(row['services'], serviceLimitsInput, serviceCap) : undefined
+  const attempts = residence === undefined
+    ? 2 + SLICE_LIMITS.lifetimeOperations * (3 + Math.ceil(pollWindow / limits.pollIntervalMs))
+    : 10 + RESIDENCE_LIMITS.grants + RESIDENCE_LIMITS.terminalAttempts
+      + Math.ceil((limits.maxLifetimeMs + (services === undefined ? 0 : serviceLimitsInput.maxLifetimeMs)) / limits.pollIntervalMs)
   requireLimit(attempts <= CARRIER_LIMITS.attempts, `${path}.pollIntervalMs`)
-  // This is the sole services resolve point. Absence produces no service policy or dev_service consumer.
-  const services = hasServices ? serviceLimits(row['services'], limits) : undefined
+  requireLimit(residence === undefined || limits.pollIntervalMs >= RESIDENCE_LIMITS.minPollMs, `${path}.pollIntervalMs`)
   const rawPipes = hasPipes ? object(row['pipes'], ['controlInputBytes', 'controlOutputBytes'], 'commands.pipes') : undefined
   const pipes = rawPipes === undefined ? undefined : Object.freeze({ controlInputBytes: integer(rawPipes, 'controlInputBytes', 'commands.pipes', 8388608),
     controlOutputBytes: integer(rawPipes, 'controlOutputBytes', 'commands.pipes', 8388608) })
   return Object.freeze({ ...hasAdditional ? { additionalTools: Object.freeze(additionalTools) } : {}, ...hasRemote ? { remoteServers: true as const } : {}, ...pipes === undefined ? {} : { pipes }, allowedTools: Object.freeze(expectedTools), maxScopes: integer(row, 'maxScopes', 'commands'),
-    commandLimits: limits, ...(services === undefined ? {} : { services }) })
+    commandLimits: limits,
+    ...(services === undefined ? {} : { services }),
+    ...(residence === undefined ? {} : { residence }) })
 }
 
 function shellLimits(value: unknown, commands: CommandOperationLimits): NativeExecutionConfig {

@@ -1,7 +1,11 @@
 /** Private allocation DDL; no backend resources or caller-selected schema are involved. */
 
-/** Atomic idempotent DDL; incompatible columns, constraints or indexes reject without resetting data. */
-export const allocationMigrationSql = String.raw`DO $migration$
+/** Atomic DDL. Recognize the original layout and the optional durable renewal marker. */
+function migration(enableRenewal: boolean): string {
+  const addRenewalColumn = enableRenewal
+    ? '  ALTER TABLE public.pe_sandbox_allocations ADD COLUMN IF NOT EXISTS renewal_target_at timestamptz;\n'
+    : ''
+  return String.raw`DO $migration$
 BEGIN
   PERFORM pg_advisory_xact_lock(hashtextextended('pe-opensandbox/allocations/0001', 0));
   CREATE TEMP TABLE pg_temp._pe_allocation_schema_0001 (
@@ -56,7 +60,7 @@ BEGIN
     CONSTRAINT pe_allocation_failed CHECK (state <> 'failed' OR (sandbox_id IS NULL AND failure_code IS NOT NULL))
   ) ON COMMIT DROP;
   CREATE TABLE IF NOT EXISTS public.pe_sandbox_allocations (LIKE pg_temp._pe_allocation_schema_0001 INCLUDING ALL);
-  -- Recognize the optional successor column on read. This version changes only the temporary witness.
+${addRenewalColumn}  -- Recognize the optional successor column on read. This version changes only the temporary witness.
   IF EXISTS (
     SELECT 1 FROM pg_attribute WHERE attrelid = 'public.pe_sandbox_allocations'::regclass
       AND attname = 'renewal_target_at' AND attnum > 0 AND NOT attisdropped
@@ -107,3 +111,9 @@ BEGIN
   ) THEN RAISE EXCEPTION 'incompatible pe_sandbox_allocations indexes'; END IF;
 END
 $migration$;`
+}
+
+/** Old deployments keep their original layout. After opt-in, new readers retain the marker even when opt-in is removed. */
+export const allocationMigrationSql = migration(false)
+/** Used only by the trusted composition that enables external renewal. */
+export const allocationRenewalMigrationSql = migration(true)

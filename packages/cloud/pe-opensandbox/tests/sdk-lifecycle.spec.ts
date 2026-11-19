@@ -75,6 +75,10 @@ class FakeTransport implements OwnedSdkTransport {
   deleteEntered = Promise.withResolvers<undefined>()
   onDelete: (() => void) | undefined
   postEntered = Promise.withResolvers<undefined>()
+  renewalEntered = Promise.withResolvers<undefined>()
+  renewalGate: Promise<void> | undefined
+  renewFailure = false
+  renewedExpiry: string | undefined
   closeEntered = Promise.withResolvers<undefined>()
   getState = 'Running'
   getStatus = 200
@@ -83,6 +87,13 @@ class FakeTransport implements OwnedSdkTransport {
   readonly fetch: typeof fetch = async (input, init) => {
     const request = new Request(input, init), url = new URL(request.url)
     this.calls.push({ method: request.method, url }); this.phases.push(request.method)
+    if (url.pathname.endsWith('/renew-expiration')) {
+      const body = await request.json() as { expiresAt: string }
+      this.renewedExpiry = body.expiresAt
+      this.renewalEntered.resolve(undefined); await this.renewalGate
+      if (this.renewFailure) throw new Error('synthetic reply loss after renewal was applied')
+      return Response.json(body)
+    }
     if (request.method === 'POST') {
       this.body = JSON.parse(await request.text()) as CreateSandboxRequest
       this.postEntered.resolve(undefined); await this.postGate
@@ -120,6 +131,151 @@ function agent(transport: FakeTransport): TrustedAgentLifecycle {
     assertDeploymentCurrent() { transport.phases.push('selected-deployment-current') } } },
   acknowledgePhysicalStop() { transport.phases.push('physical-stop-ack'); return undefined } }
 }
+
+test.each([false, true])('joins one persisted SDK renewal and demands positive removal after receipt loss=%s', async (lost) => {
+  const epoch = Date.now()
+  let elapsed = 0
+  const wall = vi.spyOn(Date, 'now').mockImplementation(() => epoch + elapsed)
+  const mono = vi.spyOn(performance, 'now').mockImplementation(() => elapsed)
+  onTestFinished(() => { wall.mockRestore(); mono.mockRestore() })
+  const transport = new FakeTransport(), { intent, mount } = selection()
+  transport.renewFailure = lost
+  transport.deleteStatus = lost ? 404 : 204
+  const backend = new SdkAllocationBackend({ ...config, renewalLeadMs: 20000 }, agent(transport), transport)
+  const created = await backend.create(intent, mount), prepared = await backend.prepare(created, mount, Date.now() + 10000)
+  const persisted = Promise.withResolvers<boolean>(), reply = Promise.withResolvers<undefined>()
+  transport.renewalGate = reply.promise
+  const reserve = vi.fn(() => persisted.promise)
+  const observe = backend.activeRenewal(prepared, reserve)!
+  assert.equal(backend.renewalEnabled, true)
+  assert.equal(backend.canRetireIdle(prepared), true)
+  observe(() => true)
+  assert.equal(reserve.mock.calls.length, 0)
+  elapsed = 110000
+  observe(() => false)
+  assert.equal(reserve.mock.calls.length, 0)
+  observe(() => true); observe(() => true)
+  const target = new Date(epoch + 230000).toISOString()
+  assert.deepEqual(reserve.mock.calls, [[intent, target, undefined]])
+  assert.equal(transport.renewedExpiry, undefined)
+  persisted.resolve(true)
+  await transport.renewalEntered.promise
+  assert.equal(transport.renewedExpiry, target)
+  assert.equal(backend.canRetireIdle(prepared), false)
+  const stopped = backend.stop(created, prepared)
+  await Promise.resolve()
+  assert.ok(!transport.calls.some(call => call.method === 'DELETE'))
+  reply.resolve(undefined)
+  if (lost) {
+    await assert.rejects(stopped, { code: 'sdk/stop-unknown' })
+    elapsed = 300000
+    assert.equal(backend.stop(created, prepared), stopped)
+    assert.ok(!transport.phases.includes('physical-stop-ack'))
+    await assert.rejects(backend.closeRootActual(), { code: 'sdk/close-unconfirmed' })
+  } else {
+    await stopped
+    assert.ok(transport.phases.includes('physical-stop-ack'))
+    await backend.closeRootActual()
+  }
+  assert.deepEqual(transport.calls.map(call => call.method), ['POST', 'GET', 'POST', 'DELETE'])
+})
+
+test('withholds SDK renewal when the original operation cancels during durable reservation', async () => {
+  const epoch = Date.now()
+  let elapsed = 0
+  const wall = vi.spyOn(Date, 'now').mockImplementation(() => epoch + elapsed)
+  const mono = vi.spyOn(performance, 'now').mockImplementation(() => elapsed)
+  onTestFinished(() => { wall.mockRestore(); mono.mockRestore() })
+  const transport = new FakeTransport(), { intent, mount } = selection()
+  const backend = new SdkAllocationBackend({ ...config, renewalLeadMs: 20000 }, agent(transport), transport)
+  const created = await backend.create(intent, mount), prepared = await backend.prepare(created, mount, Date.now() + 10000)
+  const reserved = Promise.withResolvers<boolean>()
+  let active = true
+  elapsed = 110000
+  backend.activeRenewal(prepared, () => reserved.promise)?.(() => active)
+  active = false
+  reserved.resolve(true)
+  await Promise.resolve()
+  await backend.stop(created, prepared)
+  assert.deepEqual(transport.calls.map(call => call.method), ['POST', 'GET', 'DELETE'])
+  await backend.closeRootActual()
+})
+
+test('a late provider reply never supplies coverage for the original service window', async () => {
+  const epoch = Date.now()
+  let wallElapsed = 0, monotonicElapsed = 0
+  const wall = vi.spyOn(Date, 'now').mockImplementation(() => epoch + wallElapsed)
+  const mono = vi.spyOn(performance, 'now').mockImplementation(() => monotonicElapsed)
+  onTestFinished(() => { wall.mockRestore(); mono.mockRestore() })
+  const transport = new FakeTransport(), { intent, mount } = selection()
+  const backend = new SdkAllocationBackend({ ...config, renewalLeadMs: 20000 }, agent(transport), transport)
+  const created = await backend.create(intent, mount), prepared = await backend.prepare(created, mount, Date.now() + 10000)
+  assert.equal(backend.confirmedRenewalCovers(prepared, 137000), false)
+  const late = Promise.withResolvers<undefined>()
+  transport.renewalGate = late.promise
+  wallElapsed = monotonicElapsed = 110000
+  backend.activeRenewal(prepared, async () => true)?.(() => true)
+  await transport.renewalEntered.promise
+  assert.equal(backend.confirmedRenewalCovers(prepared, 137000), false)
+  monotonicElapsed = 121000
+  late.resolve(undefined)
+  await new Promise<void>(resolve => setImmediate(resolve))
+  assert.equal(backend.confirmedRenewalCovers(prepared, 137000), false)
+  transport.deleteStatus = 404
+  await assert.rejects(backend.stop(created, prepared), { code: 'sdk/stop-unknown' })
+  assert.equal(backend.confirmedRenewalCovers(prepared, 137000), false)
+  assert.equal(transport.phases.includes('physical-stop-ack'), false)
+  assert.equal(transport.calls.filter(entry => entry.method === 'DELETE').length, 1)
+  await assert.rejects(backend.closeRootActual(), { code: 'sdk/close-unconfirmed' })
+
+})
+
+test('requires positive deletion for the old SDK id when a new process reads a renewal marker', async () => {
+  const transport = new FakeTransport(), backend = new SdkAllocationBackend(config, agent(transport), transport)
+  transport.deleteStatus = 404
+  assert.equal(await backend.deleteOriginal('sandbox-one', true), 'unknown')
+  transport.deleteStatus = 204
+  assert.equal(await backend.deleteOriginal('sandbox-one', true), 'deleted')
+  assert.deepEqual(transport.calls.map(call => call.method), ['DELETE', 'DELETE'])
+  await backend.closeRootActual()
+})
+
+test('continues one original SDK allocation across three bounded renewals using the last acknowledged target', async () => {
+  const epoch = Date.now()
+  let elapsed = 0
+  const wall = vi.spyOn(Date, 'now').mockImplementation(() => epoch + elapsed)
+  const mono = vi.spyOn(performance, 'now').mockImplementation(() => elapsed)
+  onTestFinished(() => { wall.mockRestore(); mono.mockRestore() })
+  const transport = new FakeTransport(), { intent, mount } = selection()
+  const backend = new SdkAllocationBackend({ ...config, renewalLeadMs: 20000, maxRenewalAttempts: 3 }, agent(transport), transport)
+  const created = await backend.create(intent, mount), prepared = await backend.prepare(created, mount, Date.now() + 10000)
+  let durable: string | undefined
+  const reserve = vi.fn(async (selected: Intent, future: string, previous?: string) => {
+    assert.equal(selected, intent)
+    assert.equal(previous, durable)
+    durable = future
+    return true
+  })
+  const active = backend.activeRenewal(prepared, reserve)!
+  const targets: string[] = []
+  for (const time of [110000, 220000, 330000]) {
+    elapsed = time
+    const target = new Date(epoch + time + 120000).toISOString()
+    await vi.waitFor(() => {
+      active(() => true)
+      assert.equal(transport.renewedExpiry, target)
+    })
+    targets.push(target)
+  }
+  elapsed = 440000
+  await vi.waitFor(() => { assert.equal(backend.canRetireIdle(prepared), true) })
+  active(() => true)
+  await backend.stop(created, prepared)
+  await backend.closeRootActual()
+  assert.deepEqual(reserve.mock.calls.map(([, target, previous]) => [target, previous]),
+    [[targets[0], undefined], [targets[1], targets[0]], [targets[2], targets[1]]])
+  assert.deepEqual(transport.calls.map(call => call.method), ['POST', 'GET', 'POST', 'POST', 'POST', 'DELETE'])
+})
 
 test('actual public SDK keeps one create, fixed payload/resources/exports and synchronous fence before positive204 and ack', async () => {
   const transport = new FakeTransport(), selected = selection(), backend = new SdkAllocationBackend(config, agent(transport), transport)

@@ -33,6 +33,9 @@
     "lib/*.js",
     "runtime/agent/*.py",
     "runtime/bootstrap/*.py",
+    "runtime/s08-renewal/agent/*.py",
+    "runtime/s08-renewal/bootstrap/*.py",
+    "runtime/server/native-arm64-durable-renewal-20261119.json",
     "assets",
     "lib/types/**/*.d.ts"
   ],

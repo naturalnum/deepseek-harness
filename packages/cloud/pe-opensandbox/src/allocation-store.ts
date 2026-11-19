@@ -3,7 +3,7 @@ import { Buffer } from 'node:buffer'
 import type { AccountId, OwnerEpoch } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
-import { allocationMigrationSql } from './migrations/allocations.ts'
+import { allocationMigrationSql, allocationRenewalMigrationSql } from './migrations/allocations.ts'
 import type {
   AllocationBeginResult, AllocationChange, AllocationCreateIntent, AllocationEpochScope, AllocationExpectation,
   AllocationId, AllocationPage, AllocationQuery, AllocationScope, AllocationState, AllocationStoreLimits, SandboxAllocation,
@@ -71,6 +71,12 @@ const updateSql = `UPDATE public.pe_sandbox_allocations SET state=$7,
  last_activity_at=CASE WHEN $7='ready' THEN statement_timestamp() ELSE last_activity_at END
  WHERE ${exact} AND state=$6 AND (sandbox_id IS NULL OR $8::text IS NULL OR sandbox_id=$8)
  RETURNING ${projection}`
+const reserveRenewalSql = `UPDATE public.pe_sandbox_allocations SET renewal_target_at=$8::timestamptz
+ WHERE ${exact} AND state='ready' AND sandbox_id=$6 AND runtime_identity=$7
+ AND renewal_target_at IS NOT DISTINCT FROM $9::timestamptz
+ AND $8::timestamptz > requested_at
+ AND ($9::timestamptz IS NULL OR $8::timestamptz > $9::timestamptz) AND $8::timestamptz > statement_timestamp()
+ RETURNING ${projection}`
 const fields = ['allocationId', 'accountId', 'sessionId', 'workspaceId', 'epoch', 'environmentVersion', 'provider', 'state',
   'sandboxId', 'projectMountVersion', 'requestedAt', 'createDeadlineAt', 'lastActivityAt', 'lastCheckedAt',
   'runtimeIdentity', 'executionProtocolVersion', 'executionCapabilities', 'failureCode']
@@ -100,8 +106,9 @@ export class PostgresAllocationStore {
   /**
    * @param driver - real single-statement adapter, whose promise includes actual driver settlement.
    * @param limits - explicit finite serialized-byte, result-row and pending/unknown capacities.
+   * @param enableRenewal Trusted Root permission to add and reserve the durable renewal marker.
    */
-  constructor(private readonly driver: AllocationQuery, limits: AllocationStoreLimits) {
+  constructor(private readonly driver: AllocationQuery, limits: AllocationStoreLimits, private readonly enableRenewal = false) {
     const names: readonly (keyof AllocationStoreLimits)[] = ['maxFieldBytes', 'maxInputBytes', 'maxRowBytes', 'maxResultBytes',
       'maxRows', 'maxCapabilities', 'maxPendingQueries', 'maxMutationResponsibilities', 'maxRetainedBytes']
     for (const name of names) {
@@ -120,7 +127,8 @@ export class PostgresAllocationStore {
    * @returns the same actual migration promise; only trusted never-submitted failure permits another attempt.
    */
   migrate(): Promise<void> {
-    this.state.migration ??= this.write('migration', allocationMigrationSql, [], 0, (rows) => {
+    const sql = this.enableRenewal ? allocationRenewalMigrationSql : allocationMigrationSql
+    this.state.migration ??= this.write('migration', sql, [], 0, (rows) => {
       if (rows.length !== 0) throw new AllocationStoreError('invalid-row')
       this.state.migrated = true
     }).catch((error: unknown) => {
@@ -259,6 +267,34 @@ export class PostgresAllocationStore {
       change.to === 'ready' ? change.executionProtocolVersion : null,
       change.to === 'ready' ? this.readCapabilities(change.executionCapabilities, true) : null,
       change.to === 'ready' ? null : change.failureCode ?? null)
+  }
+
+  /**
+   * Persist one new possible renewal after the prior confirmed target, before any external mutation. An unconfirmed database
+   * response grants no request. The marker remains through release and old-row replay.
+   * @param scope Exact original durable allocation scope.
+   * @param sandboxId Provider id of the ready row.
+   * @param runtimeIdentity Original authenticated guest.
+   * @param targetAt One fixed UTC target timestamp.
+   * @param previousAt Last confirmed target for the same allocation, absent on the first renewal.
+   * @returns Whether the original ready row acquired this renewal reservation.
+   */
+  reserveRenewal(scope: AllocationScope, sandboxId: string, runtimeIdentity: string, targetAt: string,
+    previousAt?: string): Promise<boolean> {
+    this.assertMigrated()
+    if (!this.enableRenewal) throw new AllocationStoreError('unavailable')
+    const original = this.copyScope(scope), identity = this.scopeValues(original)
+    const target = this.date(targetAt), sandbox = this.token(sandboxId), runtime = this.token(runtimeIdentity)
+    const previous = previousAt === undefined ? null : this.date(previousAt)
+    return this.write(this.key(original), reserveRenewalSql, [...identity, sandbox, runtime, target, previous], 1, (rows) => {
+      const row = this.single(rows, identity)
+      if (row === undefined) return false
+      if (row.renewalTargetAt !== target || row.sandboxId !== sandbox
+        || row.runtimeIdentity !== runtime || row.state !== 'ready') throw new AllocationStoreError('invalid-row')
+      return true
+    }, Object.freeze({ scope: original, fields: Object.freeze({
+      state: 'ready', sandboxId: sandbox, runtimeIdentity: runtime, renewalTargetAt: target,
+    }) }))
   }
 
   /**

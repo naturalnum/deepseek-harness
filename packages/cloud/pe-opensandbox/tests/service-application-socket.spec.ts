@@ -215,7 +215,7 @@ async function fixture(name: string, handler: (request: IncomingMessage, respons
       assertQualified(value) { expect(value).toBe(profile) },
       serviceSpec(scope, _profile, start) { return { argv: ['/opt/session-env/venv/bin/python', '-B', '/project/' + start.script], cwd: '/project',
         stdio: { stdin: 'ignore', stdout: { maxBytes: 64 }, stderr: { maxBytes: 64 } }, graceMs: 100, signal: scope.lifetime } } } },
-  { acquire: async (_scope, _signal, registration) => {
+  { acquire: async (_scope, _signal, _operationId, registration) => {
     registration?.bindAllocation(brandString<RegisteredApplicationService['scope']['allocationId']>('worker6-loopback-allocation'))
     const item = command(); entries.push({ command: item, ...(registration === undefined ? {} : { registration }) }); return item.value
   }, unknown, reserve: () => ({ releaseActive: processReservation.active, releaseResident: processReservation.resident }),

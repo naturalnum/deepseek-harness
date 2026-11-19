@@ -9,6 +9,7 @@ import { NativeTerminalHandle } from './native-terminal.ts'
 import type { SubprocessTerminalHandle, SubprocessTerminalSpawnSpec, SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import type { ToolExecutionSuccess } from '@deepseek-ai/dsh-tools'
 import { guardianEncodedBudget, guardianWorkingCopiesBudget } from './agent-data/encoded-budget.ts'
+import { SLICE_LIMITS } from './agent-data/constants.ts'
 import { assertInstalledExecutionBinding } from './account-port.ts'
 import type { AllocationId } from './allocation-types.ts'
 import type { NativeAccountExecutionAuthority } from './coordinator.ts'
@@ -47,8 +48,10 @@ export interface NativeRegisteredService {
 
 /** Root callbacks preserve the original allocation and reservation owners. */
 export interface NativeCommandRoot {
-  /** Service is absent for ordinary commands; service channels must use this exact registered capability. */
-  acquire(scope: ExecutionScope<Workspace>, signal: AbortSignal, service?: NativeRegisteredService): Promise<CommandChannel>
+  /** Service is absent for ordinary commands. Root binds the issued channel to this exact operation. */
+  acquire(scope: ExecutionScope<Workspace>, signal: AbortSignal, operationId: string,
+    service: NativeRegisteredService | undefined,
+    operation: ManagedCommandOperation): Promise<CommandChannel>
   unknown(scope: ExecutionScope<Workspace>, operation: ManagedCommandOperation, cause: unknown): void
   reserve(scope: ExecutionScope<Workspace>, spec: SubprocessSpawnSpec): NativeCommandReservation
   waitForCommand?(scope: ExecutionScope<Workspace>, spec: SubprocessSpawnSpec, job: RegisteredNativeJobAdmission,
@@ -86,6 +89,8 @@ export interface NativeCommandAccountLimits {
   readonly services?: NativeServiceAccountConfig
 }
 
+const EXTENDED_PREVIEW_STARTS_PER_SECOND = 16
+
 interface ServiceApplicationRequest {
   readonly controller: AbortController
   readonly settled: Promise<void>
@@ -100,6 +105,7 @@ interface ServiceRow {
   readonly submitted: ReturnType<typeof Promise.withResolvers<void>>
   readonly work: OriginalDevServiceWork<Workspace>
   readonly requests: Set<ServiceApplicationRequest>
+  recentPreviewStarts?: number[]
   readonly empty: ReturnType<typeof Promise.withResolvers<void>>
   requestsClosed: boolean
   retireRequested: boolean
@@ -191,15 +197,19 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
   }
 
   /**
-   * Observe one Session with no invocation, retained output, service or application request.
+   * Observe one Session with no invocation or unsettled range or application request.
    * @param sessionId Exact Session considered by its Root-owned compute cache.
+   * @param keepSettledOutput Allow definitively settled records to retain their original output.
    * @returns Whether no native owner remains; the caller must separately fence and stop its allocation.
    */
-  isSessionQuiescent(sessionId: SessionId): boolean {
+  isSessionQuiescent(sessionId: SessionId, keepSettledOutput = false): boolean {
     if (!this.state.open || this.state.closing !== undefined || this.binding.lifetime.aborted
       || this.ctx.fiber.state !== FiberState.ACTIVE || this.ctx.get('peAccount') !== this.binding
       || this.calls.hasSessionCall(sessionId) || this.active.has(sessionId)) return false
-    for (const record of this.records.values()) if (record.scope.sessionId === sessionId) return false
+    for (const record of this.records.values()) {
+      if (record.scope.sessionId === sessionId && (!keepSettledOutput || !record.activeReleased || record.unknownReported
+        || record.privateFailure !== undefined || (record.service?.requests.size ?? 0) !== 0)) return false
+    }
     return true
   }
 
@@ -301,6 +311,12 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
         if (service.requests.size >= application.maxRequestsPerService) throw new PreviewHttpError('cloud/capacity')
         timeoutMs = Math.min(input.charge.timeoutMs, deadlineAtMs - Date.now(), remainingMs())
         if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw new PreviewHttpError('cloud/account-unavailable')
+        if (service.profile.runMs > SLICE_LIMITS.serviceRunMs) {
+          const now = performance.now()
+          const recent = service.recentPreviewStarts?.filter(at => now - at < 1000) ?? []
+          if (recent.length >= EXTENDED_PREVIEW_STARTS_PER_SECOND) throw new PreviewHttpError('cloud/capacity')
+          recent.push(now); service.recentPreviewStarts = recent
+        }
       } catch (cause) { reservation.release(); throw cause }
       const joined = Promise.withResolvers<void>()
       void joined.promise.catch((_cause: unknown) => { /* Rejected actual cleanup remains on the original finite request set. */ })
@@ -558,12 +574,12 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
         ? (spec.signal === undefined || spec.signal === signal ? signal : AbortSignal.any([signal, spec.signal])) : scope.lifetime }
     let record: CommandRecord | undefined, reservation: NativeCommandReservation | undefined
     // Constructor validation still precedes ordinary Root reservation, as on the original command path.
-    const operation = new ManagedCommandOperation(input, this.limits, {
+    const operation: ManagedCommandOperation = new ManagedCommandOperation(input, this.limits, {
       lifetime: scope.lifetime, assertCurrent: () => { this.calls.assertCurrent(scope) },
-      acquire: async (cancelled) => {
+      acquire: async (cancelled, operationId) => {
         cancelled.throwIfAborted(); this.calls.assertCurrent(scope)
         if (record === undefined) throw this.failure()
-        return this.protectChannel(record, await this.root.acquire(scope, cancelled))
+        return this.protectChannel(record, await this.root.acquire(scope, cancelled, operationId, undefined, operation))
       }, unknown: (cause) => { if (record !== undefined) this.reportUnknown(record, cause) },
       retired: () => {
         if (record !== undefined) this.retire(record)
@@ -625,14 +641,13 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
   }
 
   private makeOperation(record: CommandRecord, input: SubprocessSpawnSpec, limits: CommandOperationLimits): ManagedCommandOperation {
-    return new ManagedCommandOperation(input, limits, { lifetime: record.scope.lifetime,
+    const operation: ManagedCommandOperation = new ManagedCommandOperation(input, limits, { lifetime: record.scope.lifetime,
       assertCurrent: () => { this.calls.assertCurrent(record.scope) },
-      acquire: async (cancelled) => {
+      acquire: async (cancelled, operationId) => {
         cancelled.throwIfAborted(); this.calls.assertCurrent(record.scope)
         const registration = record.service?.registration
         registration?.assertCurrent()
-        const channel = registration === undefined ? await this.root.acquire(record.scope, cancelled)
-          : await this.root.acquire(record.scope, cancelled, registration)
+        const channel = await this.root.acquire(record.scope, cancelled, operationId, registration, operation)
         return this.protectChannel(record, channel)
       }, onSubmitted: () => {
         const service = record.service
@@ -640,6 +655,7 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
         service.submittedConfirmed = true; service.detachStart()
         if (service.startFailure === undefined) service.submitted.resolve()
       }, unknown: (cause) => { this.reportUnknown(record, cause) }, retired: () => { this.retire(record) } })
+    return operation
   }
   private watchEmpty(record: CommandRecord, operation: ManagedCommandOperation): void {
     void operation.whenEmpty.then(async () => {
@@ -851,9 +867,15 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
       catch (cause) { record.privateFailure ??= { cause }; throw this.failure() }
     }
     const attach = channel.attach?.bind(channel), join = channel.whenLocallySettled?.bind(channel)
+    const settle = channel.settle?.bind(channel), extendWindow = channel.extendServiceWindow?.bind(channel)
+    const renewResidence = channel.renewResidence?.bind(channel)
     return { ...(attach === undefined ? {} : { attach: () => observe(attach) }),
       ...(join === undefined ? {} : { whenLocallySettled: join }),
+      ...(settle === undefined ? {} : { settle: deadlineMs => observe(() => settle(deadlineMs)) }),
+      ...(extendWindow === undefined ? {} : { extendServiceWindow: window => observe(() => extendWindow(window)) }),
+      ...(renewResidence === undefined ? {} : { renewResidence: (window, prior) => observe(() => renewResidence(window, prior)) }),
       ...(channel.release === undefined ? {} : { release: () => channel.release?.() }),
+      ...(channel.renewWhileActive === undefined ? {} : { renewWhileActive: channel.renewWhileActive }),
       prepare: spec => observe(() => {
         if (this.config.enforceSessionFilePolicy === true && record.filePolicy === undefined) throw this.failure()
         return record.filePolicy === undefined ? channel.prepare(spec) : channel.prepare(spec, record.filePolicy)
