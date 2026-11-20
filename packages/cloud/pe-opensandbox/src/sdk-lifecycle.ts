@@ -129,6 +129,9 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
   /** The trusted SDK selection opts in before the matching durable migration. */
   get renewalEnabled(): boolean { return this.config.renewalLeadMs !== undefined }
 
+  /** Whether confirmed active renewals can cover the sustained rolling policy. */
+  get sustainedRenewalEnabled(): boolean { return this.config.sustainedTtlSeconds !== undefined }
+
   /** A pending or uncertain renewal still belongs to the original allocation. */
   canRetireIdle(prepared: PreparedSandbox): boolean {
     const record = [...this.records.values()].find(value => value.prepared === prepared)

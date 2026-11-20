@@ -369,7 +369,7 @@ it('keeps foreground admission on the original active service after verified gue
   try {
     const ready = registry.bindPrepared(await registry.handshake(f.selected, signal, readinessBudget()))
     const service = registry.service(ready, registeredService(f.selected).registration, undefined, 'live-service',
-      undefined, { maxResidentMs: 660_000, runCapMs: 610_000, confirmedUntil: () => providerUntil })
+      undefined, { maxResidentMs: 660_000, runCapMs: 610_000, deferRunOnlyExtension: true, confirmedUntil: () => providerUntil })
     await service.prepare({ argv: ['/bin/sh', '-c', 'sleep 600'], cwd: '/project', stdin: { mode: 'ignore' } })
     now = 36_000
     await service.commit()
@@ -394,6 +394,38 @@ it('keeps foreground admission on the original active service after verified gue
     expect(publish).toHaveBeenCalledTimes(2)
     await registry.fenceRequests(f.selected, undefined, signal).whenJoined
     expect(() => registry.needsContinuation(ready)).toThrow('unconfirmed')
+  } finally { clock.mockRestore() }
+})
+
+it('defers run-only grants until the current execution deadline is near', async () => {
+  let now = 0
+  const clock = vi.spyOn(performance, 'now').mockImplementation(() => now), f = fixture()
+  const publish = vi.fn(), signal = new AbortController().signal
+  const refresh = vi.fn<NonNullable<AgentDataClient['renewResidence']>>(async () => ({
+    residentRemainingMs: null, runRemainingMs: 185_000 - now, publish,
+  }))
+  const client = { ...f.client, renewResidence: refresh } satisfies AgentDataClient
+  f.client.handshake.mockResolvedValue({ ...f.handshake, residenceVersion: 1 })
+  const registry = new TrustedRuntimeRegistry(f.bootstrap, 1, () => client)
+  try {
+    const ready = registry.bindPrepared(await registry.handshake(f.selected, signal, readinessBudget()))
+    const command = registry.command(ready, undefined, 'ordinary-command', {
+      maxResidentMs: 660_000, runCapMs: 185_000, deferRunOnlyExtension: true, confirmedUntil: () => 220_000,
+    })
+    await command.prepare({ argv: ['/bin/true'], cwd: '/project', stdin: { mode: 'ignore' } })
+    await command.commit()
+    const window = { commitStartedAtMs: 0, submittedByMs: 0, commandDeadlineAtMs: 200_000,
+      pollIntervalMs: 2_000, stillActive: () => true, assertCurrent() {} }
+    for (const age of [40_000, 143_499]) {
+      now = age
+      expect(await command.renewResidence?.(window, undefined)).toBeUndefined()
+    }
+    expect(refresh).not.toHaveBeenCalled()
+    now = 143_500
+    expect(await command.renewResidence?.(window, undefined)).toBe(184_750)
+    expect(refresh).toHaveBeenCalledOnce()
+    expect(publish).toHaveBeenCalledWith(undefined)
+    await registry.fenceRequests(f.selected, undefined, signal).whenJoined
   } finally { clock.mockRestore() }
 })
 

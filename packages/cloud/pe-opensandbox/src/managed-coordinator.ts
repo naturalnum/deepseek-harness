@@ -609,6 +609,7 @@ export class ManagedCoordinator extends SandboxCoordinator {
             const extended = configured.residence
             const residence = extended === undefined ? undefined : { maxResidentMs: extended.maxResidentMs,
               runCapMs: registered === undefined ? extended.foregroundRunMs : service?.profile.runMs ?? SLICE_LIMITS.serviceRunMs,
+              deferRunOnlyExtension: this.deployment.backend.sustainedRenewalEnabled,
               confirmedUntil: () => this.deployment.backend.confirmedRenewalUntil(prepared) }
             const window = extended === undefined && service !== undefined && service.profile.runMs > SLICE_LIMITS.serviceRunMs
               && renewWhileActive !== undefined ? { runMs: service.profile.runMs,

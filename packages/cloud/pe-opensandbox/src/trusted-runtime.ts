@@ -53,6 +53,8 @@ interface ServiceWindowPolicy {
 
 /** Root's selected finite shape and original SDK writer proof for one collected operation. */
 export interface ResidencePolicy {
+  /** Leave an operation-only extension until it is close to its current run deadline. */
+  readonly deferRunOnlyExtension?: boolean
   readonly maxResidentMs: number
   readonly runCapMs: number
   confirmedUntil(): number | undefined
@@ -377,8 +379,12 @@ export class TrustedRuntimeRegistry implements TrustedAgentLifecycle {
         const remaining = Math.floor(Math.min(providerUntil - now - SLICE_LIMITS.stopMs - RESIDENCE_LIMITS.clockMarginMs,
           residentCap - now, RESIDENCE_LIMITS.segmentMs))
         const projectedRun = Math.min(now + remaining - SLICE_LIMITS.stopMs, original.commitStartedAtMs + runCap)
-        if (remaining <= SLICE_LIMITS.stopMs || now + remaining <= record.residentDeadlineAtMs + 2 * RESIDENCE_LIMITS.clockMarginMs
-          && projectedRun <= currentRunUntil + 2 * RESIDENCE_LIMITS.clockMarginMs) return undefined
+        const margin = 2 * RESIDENCE_LIMITS.clockMarginMs
+        const advancesResidence = now + remaining > record.residentDeadlineAtMs + margin
+        const runLeadMs = 2 * original.pollIntervalMs + SLICE_LIMITS.stopMs + margin
+        const advancesRun = projectedRun > currentRunUntil + margin
+          && (!residence.deferRunOnlyExtension || currentRunUntil - now <= runLeadMs)
+        if (remaining <= SLICE_LIMITS.stopMs || (!advancesResidence && !advancesRun)) return undefined
         original.assertCurrent(); record.selection.mount.assertCurrent()
         record.residencePending = true
         try {
