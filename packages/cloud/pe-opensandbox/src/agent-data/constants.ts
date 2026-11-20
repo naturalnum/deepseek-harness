@@ -27,7 +27,13 @@ export const SLICE_LIMITS = Object.freeze({ lifetimeOperations: 4, activeRanges:
 /** Full guest time needed to start an ordinary operation without retiring the original allocation. */
 export const CONTINUATION_WINDOW_MS = SLICE_LIMITS.prepareMs + SLICE_LIMITS.runMs + SLICE_LIMITS.stopMs
 
-/** Whether a bounded provider renewal leaves room for another full operation during the next refresh. */
+/**
+ * Check whether the provider's renewal period leaves time for another full operation.
+ * @param seconds - Proposed provider lease duration after an active renewal.
+ * @param createSeconds - Original provider lease duration at creation.
+ * @param requestTimeoutMs - Local timeout for a provider renewal request.
+ * @returns Whether the renewed lease covers the next full operation and the renewal margins.
+ */
 export function sustainedRenewalFits(seconds: number, createSeconds: number, requestTimeoutMs: number): boolean {
   return Number.isSafeInteger(seconds) && seconds > createSeconds && seconds <= 600
     && seconds * 500 > CONTINUATION_WINDOW_MS + requestTimeoutMs + 2 * RESIDENCE_LIMITS.clockMarginMs

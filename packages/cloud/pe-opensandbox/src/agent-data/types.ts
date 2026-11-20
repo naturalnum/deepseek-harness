@@ -253,8 +253,10 @@ export interface PhysicalStopAck {
   readonly stopAckId: string
   readonly processesGone: true
 }
+/** Root-selected rolling accounting for an original authenticated carrier. */
 export type CarrierBudgetMode = 'rolling-v1'
 
+/** Request attempts, encoded request bytes and permitted reply bytes charged to a carrier. */
 export interface CarrierWireUsage {
   readonly attempts: number
   readonly sentBodyBytes: number
