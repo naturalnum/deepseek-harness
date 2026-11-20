@@ -272,6 +272,8 @@ export interface Responsibility extends CarrierWireUsage {
   readonly cleanupFailure: boolean
   /** Current rolling charges on explicitly selected carriers. Inherited totals always cover the entire client lifetime. */
   readonly carrierWindow?: CarrierWireUsage
+  /** Unspent rolling capacity held for the current original service's progress requests. */
+  readonly carrierServiceReserve?: CarrierWireUsage
   /** Current logical reservation for at most four in-flight 16KiB reply buffers; never cumulative traffic. */
   readonly replyBuffersReservedBytes: number
   /** Encoded request bodies owned by current in-flight calls, excluding transport/internal copies. */

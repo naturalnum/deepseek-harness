@@ -5,12 +5,12 @@ import { readFileSync } from 'node:fs'
 import { performance } from 'node:perf_hooks'
 import { DataClient } from '../src/agent-data/client-internal.ts'
 import { asciiJSON, digest, makePrepared, record } from '../src/agent-data/canonical.ts'
-import { createForegroundIssuer } from '../src/agent-data/root-role-issuer.ts'
+import { createForegroundIssuer, createRegisteredServiceIssuer } from '../src/agent-data/root-role-issuer.ts'
 import { parseReply } from '../src/agent-data/strict-json.ts'
 import { expectedWorldHash, worldArgv } from '../src/agent-data/validate.ts'
 import { AGENT_AUTH_HEADER, AGENT_SOURCE_SHA256, BWRAP_SHA256, CARRIER_LIMITS, PROTOCOL,
   RENEWAL_AGENT_SOURCE_SHA256, RENEWAL_CHILD_LIMITS, RESIDENCE_LIMITS, SLICE_LIMITS } from '../src/agent-data/constants.ts'
-import { ControlUncertain, LocalRefusal, RemoteRefusal } from '../src/agent-data/errors.ts'
+import { CarrierPrepareCapacityError, ControlUncertain, LocalRefusal, RemoteRefusal } from '../src/agent-data/errors.ts'
 import type { CarrierBudgetMode, ClientOptions, MountFact, OperationSpec, PreparedRequest } from '../src/agent-data/types.ts'
 import type { OwnedTransport, WireEvents, WireRequest } from '../src/agent-data/transport.ts'
 import { guardianEncodedBudget } from '../src/agent-data/encoded-budget.ts'
@@ -283,7 +283,9 @@ async function renewalCarrier(mode?: CarrierBudgetMode) {
     return issue({ ...made, ref: { ...made.ref, recordSequence: sequence } })
   }
   const operation = (prepared: PreparedRequest, changes: Record<string, unknown> = {}) =>
-    operationFixture(prepared.ref, { recordSequence: prepared.ref.recordSequence, ...changes })
+    operationFixture(prepared.ref, {
+      ...(prepared.ref.recordSequence === undefined ? {} : { recordSequence: prepared.ref.recordSequence }), ...changes,
+    })
   const active = (prepared: PreparedRequest) => operation(prepared, { submitted: true, commitAttempted: true })
   const start = async (prepared: PreparedRequest): Promise<void> => {
     await reply(client.prepare(prepared), operation(prepared))
@@ -389,6 +391,48 @@ test('only the selected carrier crosses the old attempts and reply totals after 
     assert.throws(() => rolling.client.prepare(first), { code: 'local_operation_sequence' })
     await release(legacy.client)
     await release(rolling.client)
+  } finally { clock.mockRestore() }
+})
+
+test('rolling foreground traffic leaves progress and stop capacity for the same admitted service', async () => {
+  let now = 1
+  const clock = vi.spyOn(performance, 'now').mockImplementation(() => now)
+  try {
+    const f = await renewalCarrier('rolling-v1'), { client, transport, reply } = f
+    const service = createRegisteredServiceIssuer(TOKEN, RUNTIME, 'trial-preview', id => id)(
+      makePrepared(RUNTIME, 'preview-service', { argv: ['/bin/sleep', '1'], cwd: PROJECT, stdin: { mode: 'ignore' } }))
+    assert.equal(client.responsibility().carrierServiceReserve, undefined)
+    await f.start(service)
+    const reserved = client.responsibility().carrierServiceReserve
+    assert.ok(reserved && reserved.attempts > 150)
+    let admitted = 0
+    for (let i = 1; i <= 80; i++) {
+      const operation = f.request(i)
+      const before = transport.requests.length
+      try { await f.start(operation) } catch (cause) {
+        assert.ok(cause instanceof CarrierPrepareCapacityError)
+        assert.equal(transport.requests.length, before)
+        break
+      }
+      await f.finish(operation); await f.settle(operation)
+      admitted++
+    }
+    assert.ok(admitted > 20 && admitted < 70)
+    assert.equal(client.responsibility().remoteUnresolved[0]?.operationId, 'preview-service')
+    assert.equal(client.responsibility().remoteUnresolved.length, 1)
+    assert.equal(client.responsibility().fenced, false)
+    for (let i = 0; i < 150; i++) {
+      now = 1 + i * RESIDENCE_LIMITS.minPollMs
+      await reply(client.poll(service.ref), f.active(service))
+    }
+    const facts = client.responsibility()
+    assert.equal(facts.carrierServiceReserve?.attempts, reserved.attempts - 150)
+    assert.ok(facts.carrierWindow!.sentBodyBytes <= CARRIER_LIMITS.sentBodyTotal
+      - RESIDENCE_LIMITS.terminalAttempts * RESIDENCE_LIMITS.fixedControlBytes)
+    await f.finish(service, true)
+    assert.equal(client.responsibility().carrierServiceReserve, undefined)
+    assert.equal(client.responsibility().remoteUnresolved.length, 0)
+    await release(client)
   } finally { clock.mockRestore() }
 })
 

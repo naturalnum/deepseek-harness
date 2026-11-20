@@ -1,5 +1,11 @@
 /** Secret-free data-carrier failures; physical cleanup authority remains with Root. */
 import type { OperationRef, Route } from './types.ts'
+import { ExecutionStateError } from '../errors.ts'
+
+/** The rolling budget refused this prepare before registering or submitting its operation. */
+export class CarrierPrepareCapacityError extends ExecutionStateError {
+  constructor() { super('cloud/capacity', 'The rolling carrier has no room for another operation yet.') }
+}
 
 /** Local validation or admission refusal; no remote execution outcome is implied. */
 export class LocalRefusal extends Error {

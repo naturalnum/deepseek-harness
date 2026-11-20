@@ -9,6 +9,7 @@ import type { PreparedSandbox } from './allocation-owner.ts'
 import type { AgentHandshake, AgentSelection, AgentReadinessBudget, FencedAgentRequests, TrustedAgentLifecycle } from './lifecycle-types.ts'
 import type { CommandChannel, CommandSnapshot } from './command-operation.ts'
 import { ExecutionStateError } from './errors.ts'
+import { CarrierPrepareCapacityError } from './agent-data/errors.ts'
 import { CARRIER_LIMITS, createAgentDataClient, makePrepared, PROTOCOL, RECORD_SETTLEMENT_VERSION, RESIDENCE_LIMITS, RESIDENCE_VERSION,
   SERVICE_WINDOW_VERSION, SLICE_LIMITS } from './agent-data/index.ts'
 import type { AgentDataClient, ClientOptions, OperationSnapshot, PreparedRequest } from './agent-data/types.ts'
@@ -328,7 +329,7 @@ export class TrustedRuntimeRegistry implements TrustedAgentLifecycle {
       if (request === undefined) unavailable()
       return request
     }
-    const run = async (work: () => Promise<OperationSnapshot>): Promise<CommandSnapshot> => {
+    const run = async (work: () => Promise<OperationSnapshot>, preparing = false): Promise<CommandSnapshot> => {
       if (settlementAttempted) unavailable()
       try {
         const value = await work()
@@ -338,7 +339,13 @@ export class TrustedRuntimeRegistry implements TrustedAgentLifecycle {
         firstCause ??= value.firstCause
         return snapshot(value)
       }
-      catch (cause) { record.failure ??= { cause }; return unavailable() }
+      catch (cause) {
+        if (preparing && cause instanceof CarrierPrepareCapacityError) {
+          record.commands--
+          throw cause
+        }
+        record.failure ??= { cause }; return unavailable()
+      }
     }
     return Object.freeze<CommandChannel>({
       ...settle === undefined ? {} : { settle: async (deadlineMs) => {
@@ -422,7 +429,7 @@ export class TrustedRuntimeRegistry implements TrustedAgentLifecycle {
           request = issue({ ...normalized, ref: { ...normalized.ref, recordSequence: ++record.recordSequence } })
         } else request = issue(normalized)
         return client.prepare(request)
-      }),
+      }, true),
       attach: () => client.attach(selected().ref),
       whenLocallySettled: () => client.joinStream(selected().ref),
       commit: () => run(() => { copies?.assertCurrent(); return client.commit(selected().ref) }),

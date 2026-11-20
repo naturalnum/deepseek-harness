@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { channel } from 'node:diagnostics_channel'
 import type { SemanticAuditEvent } from '../src/semantic-audit.ts'
 import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
+import { CarrierPrepareCapacityError } from '../src/agent-data/errors.ts'
 import { ManagedCommandOperation, type CommandChannel, type CommandSnapshot, type CommandOperationLimits } from '../src/command-operation.ts'
 
 const initial = (): CommandSnapshot => ({ prepared: true, submitted: false, commitClosed: false,
@@ -108,6 +109,20 @@ it('preserves NUL and UTF-8 batch stdin bytes independently of executable argume
   f.op.publish(); f.op.begin(); await f.op.prepared
   expect(f.channel.prepare).toHaveBeenCalledWith(expect.objectContaining({ stdin: { mode: 'batch', base64: 'YQDlsL4=' } }))
   f.poll.resolve(complete()); await f.op.whenEmpty
+})
+
+it('settles a rolling capacity refusal without preparing or stopping another remote range', async () => {
+  const f = fixture(), refusal = new CarrierPrepareCapacityError()
+  f.channel.prepare.mockRejectedValue(refusal)
+  const done = expect(f.op.handle.done).rejects.toBe(refusal)
+  f.op.publish(); f.op.begin()
+  await done
+  await f.op.whenEmpty
+  expect(f.authority.unknown).not.toHaveBeenCalled()
+  expect(f.channel.commit).not.toHaveBeenCalled()
+  expect(f.channel.stop).not.toHaveBeenCalled()
+  f.op.release()
+  expect(f.authority.retired).toHaveBeenCalledOnce()
 })
 
 it('cancels only the allocation observer and submits no remote prepare or commit after cancellation', async () => {

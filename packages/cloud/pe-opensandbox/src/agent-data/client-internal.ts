@@ -3,13 +3,13 @@ import { skillWorld, assertSkillParent } from './skill-world.ts'
 import { filePolicy } from './file-policy.ts'
 import { performance } from 'node:perf_hooks'
 import { asciiJSON, preparedDigest, need, record, spec } from './canonical.ts'
-import { canSpend, canSpendWithStopReserve, emptyUsage, RollingCarrierBudget } from './carrier-budget.ts'
+import { canSpend, canSpendWithStopReserve, emptyUsage, RollingCarrierBudget, ServiceProgressBudget } from './carrier-budget.ts'
 import { parseReply } from './strict-json.ts'
 import { checkOptions, envelope, handshake, operation, ref as checkRef } from './validate.ts'
 import { AGENT_AUTH_HEADER, CARRIER_LIMITS as L, RECORD_SETTLEMENT_VERSION, RENEWAL_AGENT_SOURCE_SHA256,
   RESIDENCE_LIMITS as R, RESIDENCE_VERSION, SERVICE_WINDOW_VERSION, SLICE_LIMITS } from './constants.ts'
 import { signResidence, signServiceWindow, signSettlement } from './root-role-issuer.ts'
-import { ControlUncertain, RemoteRefusal } from './errors.ts'
+import { CarrierPrepareCapacityError, ControlUncertain, RemoteRefusal } from './errors.ts'
 import { ExecutionStream } from './stream.ts'
 import type { AgentDataClient, AgentDataStream, CallOptions, CarrierBudgetMode, CarrierWireUsage, ClientOptions, ExpectedBinding, Handshake, Mutation,
   OperationRef, OperationSnapshot, OperationSpec, PhysicalStopAck, PipesOperationSpec, PreparedRequest,
@@ -34,6 +34,7 @@ export class DataClient implements AgentDataClient {
   readonly #token: string
   readonly #transport: OwnedTransport
   readonly #rolling?: RollingCarrierBudget
+  #service: { readonly row: RefRecord; readonly budget: ServiceProgressBudget } | undefined
   readonly #legacyExpires = performance.now() + L.localLifetimeMs
   #expires = this.#legacyExpires
   #residenceSequence = 0
@@ -70,6 +71,7 @@ export class DataClient implements AgentDataClient {
       localSettled: this.#closing && this.#cleanupDone && this.#active.size === 0 && this.#closePending === 0 && this.#closed,
       attempts: this.#attempts, sentBodyBytes: this.#sent, replyBodyAllowance: this.#allowance,
       ...(this.#rolling === undefined ? {} : { carrierWindow: Object.freeze(this.#rolling.usage(performance.now())) }),
+      ...(this.#service === undefined ? {} : { carrierServiceReserve: Object.freeze(this.#service.budget.remaining(performance.now())) }),
       replyBuffersReservedBytes: [...this.#active].filter(f => !f.stream).length * L.reply,
       inFlightRequestBodyBytes: [...this.#active].reduce((bytes, flight) => bytes + flight.bodyBytes, 0),
       bufferedReplyBytes: this.#buffered, receivedReplyBodyBytes: this.#received,
@@ -83,6 +85,7 @@ export class DataClient implements AgentDataClient {
       && processesGone === true && typeof ack.stopAckId === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(ack.stopAckId), 'stop_ack_binding')
     // Caller is the trusted Root broker/backend. This is not a remote HTTP acknowledgement or a proof this client can create.
     void this.fence(); this.#physicalAck = true; this.#physicalRequired = false
+    this.#service = undefined
     for (const row of this.#records.values()) row.unresolved = false
   }
   handshake(options?: CallOptions): Promise<Handshake> { return this.#call('/handshake', {}, undefined, options) as Promise<Handshake> }
@@ -114,7 +117,9 @@ export class DataClient implements AgentDataClient {
     need(Number.isFinite(deadline) && deadline > now && !options.signal?.aborted, 'local_deadline_or_cancel')
     const usage = this.#usage(now, row)
     need([...this.#active].filter(f => f.stream).length < 2 && canSpend(usage, 1, 0, 0), 'carrier_budget')
-    if (this.#rolling !== undefined) need(canSpendWithStopReserve(usage, 0, 0), 'residence_terminal_budget')
+    if (this.#rolling !== undefined) {
+      need(canSpendWithStopReserve(usage, 0, 0, this.#service?.budget.remaining(now)), 'residence_terminal_budget')
+    }
     row.attachAttempted = true
     this.#charge(now, row, 0, 0)
     const stream = row.stream = new ExecutionStream(reference, row.pipes, () => {
@@ -196,9 +201,9 @@ export class DataClient implements AgentDataClient {
     const fields = { ...reference, runMs, windowProof: signServiceWindow(this.#token, reference, runMs) }
     const followups = futurePolls + 2 // Original stop and one seal also need carrier room.
     const pollBytes = asciiJSON({ ...reference, stdoutOffset: 0, stderrOffset: 0 }).length
-    const usage = this.#usage(performance.now(), row), bytes = asciiJSON(fields).length
+    const now = performance.now(), usage = this.#usage(now, row), bytes = asciiJSON(fields).length
     if (!canSpend(usage, 1 + followups, bytes + followups * pollBytes, (1 + followups) * L.reply)
-      || this.#rolling !== undefined && !canSpendWithStopReserve(usage, bytes, L.reply)
+      || this.#rolling !== undefined && !this.#canProgress(now, row, usage, bytes)
       || [...this.#active].filter(flight => !flight.stream).length >= L.concurrent) return false
     await this.#call('/extend-service', fields, reference, options)
     return true
@@ -210,7 +215,8 @@ export class DataClient implements AgentDataClient {
       && ![...this.#active].some(flight => flight.row === row), 'residence_unavailable')
     if ([...this.#active].some(flight => flight.stream)) return undefined
     const leaseSequence = this.#residenceSequence + 1
-    if (leaseSequence > R.grants || !canSpendWithStopReserve(this.#usage(performance.now(), row), R.fixedControlBytes, L.reply)
+    const now = performance.now()
+    if (leaseSequence > R.grants || !this.#canProgress(now, row, this.#usage(now, row), R.fixedControlBytes)
       || [...this.#active].filter(flight => !flight.stream).length >= L.concurrent) return undefined
     const fields = { ...original, ...offer, leaseSequence, residenceProof: signResidence(this.#token, original, offer, leaseSequence) }
     need(asciiJSON(fields).length <= R.fixedControlBytes && this.#publishedResidenceSequence === leaseSequence - 1,
@@ -287,6 +293,13 @@ export class DataClient implements AgentDataClient {
     }
   }
 
+  #canProgress(now: number, row: RefRecord, usage: CarrierWireUsage, sent: number): boolean {
+    const service = this.#service
+    return service?.row === row
+      ? canSpendWithStopReserve(usage, sent, L.reply) && service.budget.canSpend(now, sent, L.reply)
+      : canSpendWithStopReserve(usage, sent, L.reply, service?.budget.remaining(now))
+  }
+
   #call(route: Route, fields: Record<string, unknown>, reference?: OperationRef,
     options: CallOptions = {}, preparedSpec?: OperationSpec): Promise<Handshake | OperationSnapshot | ResidenceReceipt | undefined> {
     need(!this.#closing && !this.#physicalAck, 'local_carrier_closed')
@@ -299,13 +312,27 @@ export class DataClient implements AgentDataClient {
     need(encoded.length <= L.body, 'body_budget')
     const existing = reference === undefined ? undefined : this.#records.get(reference.operationId)
     const usage = this.#usage(now, existing)
-    need([...this.#active].filter(f => !f.stream).length < L.concurrent
-      && canSpend(usage, 1, encoded.length, L.reply), 'carrier_budget')
+    const service = this.#service
+    const startsService = this.#rolling !== undefined && route === '/prepare' && reference?.authorization.role === 'service'
+      && existing === undefined
+    if (startsService && service !== undefined) throw new CarrierPrepareCapacityError()
+    const newService = startsService ? new ServiceProgressBudget(asciiJSON({ ...reference, stdoutOffset: 0, stderrOffset: 0 }).length) : undefined
+    const progress = service !== undefined && existing === service.row
+      && (route === '/commit' || route === '/poll' || route === '/renew-residence' || route === '/extend-service')
     const stopping = route === '/stop' || route === '/cancel' || route === '/seal'
       || route === '/poll' && existing?.mutations.has('/stop') === true
     if (!stopping && (this.#residenceSequence > 0 || this.#rolling !== undefined)) {
-      need(canSpendWithStopReserve(usage, encoded.length, L.reply), 'residence_terminal_budget')
+      const reserved = (newService ?? service?.budget)?.remaining(now)
+      const fits = progress && existing !== undefined
+        ? this.#canProgress(now, existing, usage, encoded.length)
+        : canSpendWithStopReserve(usage, encoded.length, L.reply, reserved)
+      if (!fits && this.#rolling !== undefined && route === '/prepare' && existing === undefined) {
+        throw new CarrierPrepareCapacityError()
+      }
+      need(fits, 'residence_terminal_budget')
     }
+    need([...this.#active].filter(f => !f.stream).length < L.concurrent
+      && canSpend(usage, 1, encoded.length, L.reply), 'carrier_budget')
     need(reference?.recordSequence === undefined || preparedSpec?.executionKind !== 'pipes', 'settlement_collect_required')
     const row = reference ? this.#remember(reference, route) : undefined
     if (row !== undefined && preparedSpec?.executionKind === 'pipes') row.pipes = preparedSpec
@@ -314,6 +341,8 @@ export class DataClient implements AgentDataClient {
     else if (mutation && row) {
       need(!row.mutations.has(mutation), 'mutation_already_attempted'); row.mutations.add(mutation); row.unresolved = true
     }
+    if (newService !== undefined && row !== undefined) this.#service = { row, budget: newService }
+    if (progress && !stopping) service.budget.charge(now, encoded.length, L.reply)
     this.#charge(now, row, encoded.length, L.reply)
     let resolve!: (v: Handshake | OperationSnapshot | ResidenceReceipt | undefined) => void
     let reject!: (e: unknown) => void, finish!: () => void
@@ -450,6 +479,8 @@ export class DataClient implements AgentDataClient {
             if (row !== undefined) {
               if (snapshot.rangeEmpty && snapshot.ioClosed && !snapshot.physicalStopRequired && !this.#physicalRequired) {
                 row.unresolved = false
+                if (this.#service?.row === row && !snapshot.providerFailure
+                  && snapshot.failure === null && snapshot.cleanupFailure === null) this.#service = undefined
               }
               row.terminal = snapshot.submitted && snapshot.commitAttempted && snapshot.direct !== null
                 && snapshot.rangeEmpty && snapshot.ioClosed && snapshot.streams.stdout.eof && snapshot.streams.stderr.eof

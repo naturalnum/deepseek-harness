@@ -1,4 +1,5 @@
 /** One Root-owned command; native direct completion and actual range settlement remain separate facts. */
+import { CarrierPrepareCapacityError } from './agent-data/errors.ts'
 import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import { posix } from 'node:path'
@@ -451,7 +452,13 @@ export class ManagedCommandOperation {
         attach = channel.attach.bind(channel); joinAttachment = channel.whenLocallySettled.bind(channel)
       }
       this.remoteAttempted = true
-      let snapshot = await channel.prepare(this.spec), committed = false, stopAt: number | undefined
+      let snapshot: CommandSnapshot
+      try { snapshot = await channel.prepare(this.spec) }
+      catch (cause) {
+        if (cause instanceof CarrierPrepareCapacityError) this.remoteAttempted = false
+        throw cause
+      }
+      let committed = false, stopAt: number | undefined
       for (;;) {
         if (this.isRangeConfirmed()) break
         if (!committed && (snapshot.submitted || snapshot.direct !== undefined)) {

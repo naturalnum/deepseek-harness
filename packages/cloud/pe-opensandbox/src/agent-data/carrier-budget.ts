@@ -9,9 +9,36 @@ export function canSpend(usage: CarrierWireUsage, attempts: number, sent: number
     && usage.replyBodyAllowance + reply <= L.replyAllowanceTotal
 }
 
-export function canSpendWithStopReserve(usage: CarrierWireUsage, sent: number, reply: number): boolean {
-  return canSpend(usage, 1 + R.terminalAttempts, sent + R.terminalAttempts * R.fixedControlBytes,
-    reply + R.terminalAttempts * L.reply)
+export function canSpendWithStopReserve(usage: CarrierWireUsage, sent: number, reply: number, reserved = emptyUsage()): boolean {
+  return canSpend(usage, 1 + R.terminalAttempts + reserved.attempts,
+    sent + R.terminalAttempts * R.fixedControlBytes + reserved.sentBodyBytes,
+    reply + R.terminalAttempts * L.reply + reserved.replyBodyAllowance)
+}
+
+/** Keep one rolling window of the original service's poll cadence, startup checks and signed grants. */
+export class ServiceProgressBudget {
+  private readonly spent = new RollingCarrierBudget()
+  private readonly limit: CarrierWireUsage
+
+  constructor(pollBytes: number) {
+    const polls = Math.ceil(L.localLifetimeMs / R.minPollMs) + 4
+    const attempts = polls + R.grants
+    this.limit = { attempts, sentBodyBytes: polls * pollBytes + R.grants * R.fixedControlBytes,
+      replyBodyAllowance: attempts * L.reply }
+  }
+
+  remaining(now: number): CarrierWireUsage {
+    const spent = this.spent.usage(now)
+    return { attempts: this.limit.attempts - spent.attempts, sentBodyBytes: this.limit.sentBodyBytes - spent.sentBodyBytes,
+      replyBodyAllowance: this.limit.replyBodyAllowance - spent.replyBodyAllowance }
+  }
+
+  canSpend(now: number, sent: number, reply: number): boolean {
+    const left = this.remaining(now)
+    return left.attempts >= 1 && left.sentBodyBytes >= sent && left.replyBodyAllowance >= reply
+  }
+
+  charge(now: number, sent: number, reply: number): void { this.spent.charge(now, sent, reply) }
 }
 
 interface Charge { readonly at: number; readonly sent: number; readonly reply: number }
