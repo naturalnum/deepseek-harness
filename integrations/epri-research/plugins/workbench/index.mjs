@@ -9,7 +9,7 @@ export function conversationId(exec) {
   return id;
 }
 export function apply(ctx) {
-  ctx.inject(['webServer','connection'], owner => owner.effect(() => registerWorkbenchRoute(owner)));
+  ctx.inject(['webServer','connection','agents','sessionPersistence'], owner => owner.effect(() => registerWorkbenchRoute(owner)));
   // Capture deliveries only for the executing conversation's research preset.
   ctx.on('tools/post-execute', async (exec, result, next) => {
     const decision = await next();

@@ -1,14 +1,16 @@
 import http from 'node:http';
 import {connection} from '../../src/server/client.mjs';
 import {publicConfiguration} from '../../src/public-addresses.mjs';
+import {readRounds} from './round-request.mjs';
 
 // The local Host authenticates its browser; research credentials never leave the Host.
 export function registerWorkbenchRoute(ctx) {
   const config = publicConfiguration(process.env);
   const publicUrls = {harnessUrl:config.harnessUrl || '/',workbenchUrl:config.workbenchUrl || '/research/',platformIdentity:true};
   ctx.on('webserver/index-inject', rows => rows.push({kind:'global',name:'__DS_RESEARCH_PUBLIC__',value:publicUrls}));
-  return ctx.webServer.register({kind:'prefix',path:'/research',handler(req,res) {
+  return ctx.webServer.register({kind:'prefix',path:'/research',async handler(req,res) {
     const send = (status,error) => {res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify({error}));};
+    const sendResult = (status,value) => {res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(value));};
     const admission = ctx.connection.admit(req);
     if (admission.rejection) return send(admission.rejection,'请先登录平台后继续。');
     if (admission.peer !== ctx.connection.browserPeer || admission.peer.principal.kind !== 'owner') return send(403,'科研页面仅供已认证的平台浏览器使用。');
@@ -17,12 +19,29 @@ export function registerWorkbenchRoute(ctx) {
     const url = new URL(req.url,'http://internal');
     if (url.pathname === '/research') {res.writeHead(308,{Location:'research/'+url.search});res.end();return;}
     const path = url.pathname.slice('/research'.length);
-    if (!['GET','POST'].includes(req.method) || !['/','/app.js','/app.css','/public-config.js','/api','/auth','/health'].includes(path)) return send(404,'Not found');
+    if (!['GET','POST'].includes(req.method) || !['/','/app.js','/app.css','/public-config.js','/api','/auth','/health','/discovery'].includes(path)) return send(404,'Not found');
     if (path === '/auth') return send(403,'账号与权限由平台统一管理，无需单独登录科研空间。');
-    if (req.method !== (path === '/api' ? 'POST' : 'GET')) return send(405,'Method not allowed');
+    if (req.method !== (path === '/api'||path==='/discovery' ? 'POST' : 'GET')) return send(405,'Method not allowed');
     // No external browser origin may borrow this gateway's same-origin position.
     const allowed = new Set([ctx.webServer.getOrigin(),...Object.values(config).filter(x=>/^https?:/.test(x)).map(x=>new URL(x).origin)]);
     if (req.headers.origin && !allowed.has(req.headers.origin)) return send(403,'Origin rejected');
+    if(path==='/discovery') {
+      let body='';
+      try {
+        let size=0;
+        for await(const chunk of req) {size+=chunk.length;if(size>32768){req.resume();return send(413,'请求内容过大。');}body+=chunk;}
+      } catch {return send(400,'请求内容无效。');}
+      let payload;
+      try {payload=JSON.parse(body);} catch {return send(400,'请求内容不是有效 JSON。');}
+      try {
+        const result=await readRounds(ctx,payload);
+        return sendResult(200,result);
+      } catch(error) {
+        const status=Number.isInteger(error.status)?error.status:500;
+        if(status>=500)ctx.logger.warn('DeepScientist discovery request failed: '+error.message);
+        return send(status,status<500?error.message:'持续科研服务暂不可用，请稍后重试。');
+      }
+    }
     if (path === '/public-config.js' && req.method === 'GET') {
       res.writeHead(200,{'Content-Type':'text/javascript','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
       res.end('window.__DS_RESEARCH_PUBLIC__='+JSON.stringify(publicUrls).replaceAll('<','\\u003c')+';');return;

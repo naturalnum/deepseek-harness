@@ -1,3 +1,4 @@
+import RoundHistory from './RoundHistory';
 import React, { useEffect, useRef, useState } from 'react';
 import { api, sessionId } from './adapters/api';
 import { downloadTextContent } from './adapters/download';
@@ -129,6 +130,7 @@ export default function ConversationWorkbench() {
     <div className="research-detail-content">{error?<p role="alert" className="compact-error">{error}</p>:preview?previewBody:<p role="status">正在载入成果…</p>}</div>
   </section>;
   return <div className="conversation-workbench">
+    <RoundHistory session={sessionId||''} compact={new URLSearchParams(location.search).get('view')==='compact'}/>
     <div className="workbench-actions"><div className="workbench-tabs">{[['all','全部','当前对话的全部成果'],['file','文件','文档、代码、数据表和其他附件'],['chart','图片与图表','图片文件和工作台生成的图表'],['record','实验记录','按 Airalogy 协议填写的实验数据、步骤和复核结果']].map(([id,label,hint]) => <button key={id} title={hint} aria-pressed={filter === id} onClick={() => setFilter(id)}>{label} <small>{items.filter(a => id === 'all' || artifactCategory(a) === id).length}</small></button>)}</div><label className="upload-button">＋ 添加文件<input type="file" disabled={busy} aria-label="添加成果文件" onChange={e => {const f=e.target.files?.[0];e.target.value='';if(f) void task(() => upload(f));}} /></label><a className="workbench-progress" href={fullUrl()+'&tab=science'} target={embedded?undefined:'_blank'} rel="noreferrer" onClick={e=>openLink(e,{tab:'science'})}>研究进展 →</a><span className="workbench-export"><button disabled={busy} onClick={() => void task(async () => {const a=await api('workspace_export');saveBytes(decode(a.contentBase64),a.name);})}>导出 .aira</button><small>Airalogy 格式</small></span><button disabled={busy} onClick={() => void task(async () => setHistory(await api('history_list')))}>历史成果</button></div>
     {error && <p className="compact-error" role="alert">{error}</p>}
     {state.tasks?.length>0&&<button className="workbench-task-link" onClick={()=>openWorkbench({tab:'engine',task:state.tasks[0].id})}>研究任务：{state.tasks[0].objective} <span>继续 →</span></button>}

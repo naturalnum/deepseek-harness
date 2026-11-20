@@ -103,7 +103,9 @@ function ResearchFrame({researchSessionId, target={}, compact=false, openTarget,
 }
 export function openResearchTarget(actions,target={}) {
   if(!target||typeof target!=='object')return;
-  if(target.view==='detail') {
+  if(target.view==='rounds') {
+    actions.openTab('research-workbench',{params:{view:'rounds',...(typeof target.item==='string'&&/^\d{1,16}$/.test(target.item)?{item:target.item}:{})}});
+  } else if(target.view==='detail') {
     if(!['file','chart','record'].includes(target.kind)||typeof target.item!=='string'||!target.item||target.item.length>200)return;
     actions.openTab('research-detail',{params:{view:'detail',kind:target.kind,item:target.item,title:typeof target.title==='string'?target.title.slice(0,200):'成果详情'}});
   } else if (target.record || ['overview','deliverables','science','engine','archives','protocols','records','literature','artifacts'].includes(target.tab) || !Object.keys(target).length) {

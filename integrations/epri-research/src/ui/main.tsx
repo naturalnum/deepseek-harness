@@ -14,6 +14,7 @@ import "@arco-design/web-react/dist/css/arco.css";
 import Workspace from "../reused/protocol/AimdProtocolWorkspace";
 import { downloadTextContent } from "./adapters/download";
 import { api, sessionId } from "./adapters/api";
+import RoundHistory from './RoundHistory';
 import ConversationWorkbench, { artifactCategory } from "./ConversationWorkbench";
 import ScienceWorkspace from './ScienceWorkspace';
 import "./style.css";
@@ -676,4 +677,4 @@ function App() {
 const compactView = ['compact','detail'].includes(new URLSearchParams(location.search).get('view') || '');
 if (compactView) document.documentElement.dataset.researchCompact = '';
 if (embedded) document.documentElement.dataset.researchEmbedded = '';
-createRoot(document.getElementById("root")!).render(compactView ? <ConversationWorkbench /> : <App />);
+createRoot(document.getElementById("root")!).render(new URLSearchParams(location.search).get('view')==='rounds' ? <RoundHistory session={new URLSearchParams(location.search).get('session')||''} item={new URLSearchParams(location.search).get('item')||undefined}/> : compactView ? <ConversationWorkbench /> : <App />);
