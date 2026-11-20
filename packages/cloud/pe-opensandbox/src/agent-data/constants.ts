@@ -29,8 +29,7 @@ export const SLICE_LIMITS = Object.freeze({ lifetimeOperations: 4, activeRanges:
 export const RENEWAL_CHILD_LIMITS = Object.freeze({
   childCpuSeconds: 600, childAddressBytes: 17179869184, childOpenFiles: 256, childProcesses: 2048,
 })
-/** Fixed carrier limits. Reply allowance bounds lifetime traffic; it is neither retained bytes nor a process RSS limit. */
-// Keep the original lifetime total. Sequenced references and settle requests pay their full encoded bytes.
+/** Fixed per-request and carrier ceilings. Reply allowance is charged independently of actual or retained reply bytes. */
 export const CARRIER_LIMITS = Object.freeze({ body: 12288, reply: 16384, headers: 4096,
   concurrent: 4, httpConcurrent: 2, attempts: 640, sentBodyTotal: 352133, replyAllowanceTotal: 10485760,
   requestMs: 6000, localLifetimeMs: 300000, releaseMs: 2000 })

@@ -1,12 +1,16 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { createHash } from 'node:crypto'
 import type { BootstrapConfig } from '../src/bootstrap/bootstrap.ts'
+import { NATIVE_ARM64_DURABLE_RENEWAL_SERVER_IMAGE_DIGEST, qualifiedSupplierTuples } from '../src/bootstrap/qualified-suppliers.ts'
+import { RENEWAL_SOURCE_DIGEST } from '../src/bootstrap/renewal-asset-manifest.ts'
 import { rootDeploymentFixture as input, sharedPathDeploymentFixture, managedDeploymentFixture } from './fixtures/root-deployment.ts'
 import { BootstrapFailure } from '../src/bootstrap/bootstrap.ts'
 
 const state = vi.hoisted(() => ({
-  input: {} as Record<string, unknown>, events: [] as string[], retained: 0,
+  input: {} as Record<string, unknown>, terminalPolicy: {} as Record<string, unknown>, events: [] as string[], retained: 0,
   ready: Promise.withResolvers<undefined>(), adopted: Promise.withResolvers<undefined>(), sdkClose: Promise.withResolvers<undefined>(),
-  guard: (): void => {}, sdkCreated: vi.fn(), epoch: vi.fn(), sandboxCreate: vi.fn(), keeperClosed: vi.fn(),
+  guard: (): void => {}, sdkCreated: vi.fn<(config: BootstrapConfig) => void>(),
+  epoch: vi.fn(), sandboxCreate: vi.fn(), keeperClosed: vi.fn(),
   sharedCreated: vi.fn(), planCurrent: true, sharedAvailable: true,
   keeperAdopted: vi.fn(),
 }))
@@ -18,9 +22,12 @@ vi.mock('../src/bootstrap/deployment-reference.ts', () => {
       state.events.push(this.reference.path.endsWith('config.json') ? 'selection-current' : plan ? 'plan-current' : 'manifest-current')
       if (plan && !state.planCurrent) throw new Error('Synthetic plan revoked.')
     }
-    value(): unknown { return this.reference.path.endsWith('config.json') ? state.input : {
-      schema: 'root-daemon-exports-v1', runId: '1'.repeat(32),
-      liveness: { kind: 'inherited-fifo-v1', frameBytes: 128, nonce: '2'.repeat(64), device: '3', inode: '4' } } }
+    value(): unknown {
+      if (this.reference.path.endsWith('terminal.json')) return state.terminalPolicy
+      return this.reference.path.endsWith('config.json') ? state.input : {
+        schema: 'root-daemon-exports-v1', runId: '1'.repeat(32),
+        liveness: { kind: 'inherited-fifo-v1', frameBytes: 128, nonce: '2'.repeat(64), device: '3', inode: '4' } }
+    }
     bytes(): Buffer { return Buffer.from('{}') }
     close(): void { state.events.push(this.reference.path.endsWith('config.json') ? 'selection-close'
       : this.reference.path.endsWith('storage-plan.json') ? 'plan-close' : 'manifest-close') }
@@ -45,7 +52,7 @@ vi.mock('../src/export-share.ts', () => ({ createRetainedExecutionExports: () =>
     get retainedShares() { return state.retained }, assertCurrent(): void { args[2](); state.events.push('shared-current') } }
 } }))
 vi.mock('../src/bootstrap/factory.ts', () => ({ createRootSdkExecutionOwner: (config: BootstrapConfig) => {
-  state.sdkCreated(); state.guard = () => { config.assertDeploymentCurrent() }
+  state.sdkCreated(config); state.guard = () => { config.assertDeploymentCurrent() }
   return Promise.resolve({ backend: { create: state.sandboxCreate,
     closeRootActual(): Promise<void> { state.events.push('sdk-close'); config.assertDeploymentCurrent(); return state.sdkClose.promise } },
   runtimes: {}, assertCurrent: () => { config.assertDeploymentCurrent() } })
@@ -56,7 +63,7 @@ import { parseRootDeploymentInput } from '../src/bootstrap/deployment-input.ts'
 const limits = managedDeploymentFixture()
 
 beforeEach(() => {
-  state.input = input(); state.events.length = 0; state.retained = 0
+  state.input = input(); state.terminalPolicy = {}; state.events.length = 0; state.retained = 0
   state.ready = Promise.withResolvers<undefined>(); state.adopted = Promise.withResolvers<undefined>()
   state.sdkClose = Promise.withResolvers<undefined>()
   state.sdkCreated.mockClear(); state.epoch.mockClear(); state.sandboxCreate.mockClear(); state.keeperClosed.mockClear()
@@ -71,6 +78,33 @@ beforeEach(() => {
   } }))
 })
 afterEach(() => { vi.unstubAllGlobals() })
+
+it.each([undefined, 'rolling-v1'] as const)('passes the protected renewal carrier budget %s to the original SDK owner', async (mode) => {
+  const supplier = qualifiedSupplierTuples.find(row => row.serverImageDigest === NATIVE_ARM64_DURABLE_RENEWAL_SERVER_IMAGE_DIGEST)
+  if (supplier === undefined) throw new Error('Missing exact ARM renewal supplier.')
+  const base = sharedPathDeploymentFixture()
+  const lifecycle = { ...base.lifecycle, imageDigest: supplier.workloadImageDigest,
+    payloadSha256: RENEWAL_SOURCE_DIGEST, deletionReceipts: { providerGeneration: '1'.repeat(64), policyDigest: '2'.repeat(64) } }
+  state.input = {
+    ...base, lifecycle, selection: { ...base.selection,
+      serverImageDigest: supplier.serverImageDigest, execdImageDigest: supplier.execdImageDigest },
+    renewal: { leadMs: 20_000, maxAttempts: 20, terminalPolicy: { path: '/root-private/terminal.json', sha256: '2'.repeat(64) },
+      ...(mode === undefined ? {} : { carrierBudget: mode }) },
+  }
+  state.terminalPolicy = { version: 2, generation: { backendId: '3'.repeat(64), pid: 2, startTicks: '1', mountNamespace: 'mnt:[3]' },
+    socket: { path: '/run/backend/docker.sock', device: 1, inode: 2 },
+    image: lifecycle.imageDigest, entrypoint: lifecycle.entrypoint, platform: lifecycle.platform,
+    apiKeySha256: createHash('sha256').update(lifecycle.apiKey).digest('hex'),
+    admitCreates: true, historical: [], storageMode: 'shared-path' }
+  const assembly = await assembleRootExecutionDeployment({ path: '/root-private/config.json', sha256: '4'.repeat(64) }, limits)
+  expect(state.sdkCreated).toHaveBeenCalledOnce()
+  const [config] = state.sdkCreated.mock.calls[0]!
+  expect(Object.hasOwn(config, 'carrierBudget')).toBe(mode !== undefined)
+  expect(config.carrierBudget).toBe(mode)
+  expect(state.sandboxCreate).not.toHaveBeenCalled()
+  state.sdkClose.resolve(undefined)
+  await assembly.closeActual()
+})
 
 it('awaits original keeper readiness, preserves epoch-release function and closes SDK before observer/selection', async () => {
   const pending = assembleRootExecutionDeployment({ path: '/root-private/config.json', sha256: '4'.repeat(64) }, limits)

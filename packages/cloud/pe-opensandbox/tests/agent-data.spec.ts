@@ -1,5 +1,5 @@
 /** Focused Vitest evidence for bounded fake transport and pinned pure Python values. */
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { performance } from 'node:perf_hooks'
@@ -9,9 +9,9 @@ import { createForegroundIssuer } from '../src/agent-data/root-role-issuer.ts'
 import { parseReply } from '../src/agent-data/strict-json.ts'
 import { expectedWorldHash, worldArgv } from '../src/agent-data/validate.ts'
 import { AGENT_AUTH_HEADER, AGENT_SOURCE_SHA256, BWRAP_SHA256, CARRIER_LIMITS, PROTOCOL,
-  RENEWAL_AGENT_SOURCE_SHA256, RENEWAL_CHILD_LIMITS, SLICE_LIMITS } from '../src/agent-data/constants.ts'
+  RENEWAL_AGENT_SOURCE_SHA256, RENEWAL_CHILD_LIMITS, RESIDENCE_LIMITS, SLICE_LIMITS } from '../src/agent-data/constants.ts'
 import { ControlUncertain, LocalRefusal, RemoteRefusal } from '../src/agent-data/errors.ts'
-import type { ClientOptions, MountFact, OperationSpec, PreparedRequest } from '../src/agent-data/types.ts'
+import type { CarrierBudgetMode, ClientOptions, MountFact, OperationSpec, PreparedRequest } from '../src/agent-data/types.ts'
 import type { OwnedTransport, WireEvents, WireRequest } from '../src/agent-data/transport.ts'
 import { guardianEncodedBudget } from '../src/agent-data/encoded-budget.ts'
 
@@ -264,6 +264,166 @@ test('concurrency, lifetime byte allowances, references and serialized body budg
   assert.throws(() => third.client.prepare(huge), LocalRefusal)
   assert.equal(third.transport.requests.length, 1); await release(third.client)
 })
+
+async function renewalCarrier(mode?: CarrierBudgetMode) {
+  const config = options(), transport = new FakeTransport()
+  config.expected.pins.agentSourceSha256 = RENEWAL_AGENT_SOURCE_SHA256
+  const client = new DataClient(config, transport, mode)
+  const facts = handshakeFixture(config, { limits: { ...SLICE_LIMITS, ...RENEWAL_CHILD_LIMITS },
+    recordSettlementVersion: 1, serviceWindowVersion: 1, residenceVersion: 1 })
+  const reply = <T>(pending: Promise<T>, value: object): Promise<T> => {
+    transport.reply(transport.requests.length - 1, value)
+    return pending
+  }
+  await reply(client.handshake(), facts)
+  const issue = createForegroundIssuer(TOKEN, RUNTIME, () => {})
+  const request = (sequence: number, bytes = 4096) => {
+    const made = makePrepared(RUNTIME, 'budget-' + sequence, { argv: ['/bin/wc', '-c'], cwd: PROJECT,
+      stdin: { mode: 'batch', base64: Buffer.alloc(bytes).toString('base64') } })
+    return issue({ ...made, ref: { ...made.ref, recordSequence: sequence } })
+  }
+  const operation = (prepared: PreparedRequest, changes: Record<string, unknown> = {}) =>
+    operationFixture(prepared.ref, { recordSequence: prepared.ref.recordSequence, ...changes })
+  const active = (prepared: PreparedRequest) => operation(prepared, { submitted: true, commitAttempted: true })
+  const start = async (prepared: PreparedRequest): Promise<void> => {
+    await reply(client.prepare(prepared), operation(prepared))
+    await reply(client.commit(prepared.ref), active(prepared))
+  }
+  const finish = async (prepared: PreparedRequest, stopped = false): Promise<void> => {
+    const end = operation(prepared, { submitted: true, commitAttempted: true, direct: { waitStatus: 0, returncode: 0 },
+      directNotObserved: false, rangeEmpty: true, ioClosed: true })
+    end.operation.streams.stdout.eof = end.operation.streams.stderr.eof = true
+    await reply(stopped ? client.stop(prepared.ref) : client.poll(prepared.ref), end)
+  }
+  const settle = async (prepared: PreparedRequest): Promise<void> => {
+    const { operationId, specHash, recordSequence } = prepared.ref
+    await reply(client.settle(prepared.ref), { protocolVersion: PROTOCOL, runtimeIdentity: RUNTIME,
+      settled: { operationId, specHash, recordSequence } })
+  }
+  const grant = async (prepared: PreparedRequest): Promise<void> => {
+    const offer = { residentCapMs: 660_000, runCapMs: 185_000, remainingMs: 600_000 }
+    const receipt = await reply(client.renewResidence(prepared.ref, offer, {}), {
+      protocolVersion: PROTOCOL, runtimeIdentity: RUNTIME, residence: { leaseSequence: 1,
+        operationId: prepared.ref.operationId, specHash: prepared.ref.specHash, registrationId: null,
+        residentCapMs: offer.residentCapMs, runCapMs: offer.runCapMs,
+        residentRemainingMs: offer.remainingMs, runRemainingMs: null },
+    })
+    assert.ok(receipt)
+    receipt.publish(performance.now() + offer.remainingMs)
+  }
+  return { client, transport, reply, facts, request, start, finish, settle, grant, active }
+}
+
+test('only the selected carrier crosses the old attempts and reply totals after the rolling interval', async () => {
+  let now = 0
+  const clock = vi.spyOn(performance, 'now').mockImplementation(() => now)
+  try {
+    const legacy = await renewalCarrier(), rolling = await renewalCarrier('rolling-v1')
+    const first = rolling.request(1, 32), old = legacy.request(1, 32)
+    for (const [fixture, operation] of [[legacy, old], [rolling, first]] as const) {
+      await fixture.start(operation)
+      await fixture.grant(operation)
+      await fixture.finish(operation)
+      await fixture.settle(operation)
+    }
+    now = 1
+    const ordinaryCap = CARRIER_LIMITS.attempts - RESIDENCE_LIMITS.terminalAttempts
+    for (let i = rolling.client.responsibility().attempts; i < ordinaryCap; i++) {
+      await rolling.reply(rolling.client.handshake(), rolling.facts)
+      await legacy.reply(legacy.client.handshake(), legacy.facts)
+    }
+    now = CARRIER_LIMITS.localLifetimeMs - 1
+    for (const fixture of [legacy, rolling]) {
+      assert.throws(() => fixture.client.handshake(), { code: 'residence_terminal_budget' })
+      assert.equal(fixture.transport.requests.length, ordinaryCap)
+    }
+    now = CARRIER_LIMITS.localLifetimeMs
+    assert.equal(rolling.client.responsibility().carrierWindow?.attempts, ordinaryCap - 6)
+    await rolling.reply(rolling.client.handshake(), rolling.facts)
+    assert.equal(rolling.client.responsibility().carrierWindow?.attempts, ordinaryCap - 5)
+    assert.throws(() => legacy.client.handshake(), { code: 'residence_terminal_budget' })
+    assert.equal(legacy.client.responsibility().carrierWindow, undefined)
+    now++
+    for (let i = 0; i < 25; i++) await rolling.reply(rolling.client.handshake(), rolling.facts)
+    const totals = rolling.client.responsibility()
+    assert.ok(totals.attempts > CARRIER_LIMITS.attempts && totals.replyBodyAllowance > CARRIER_LIMITS.replyAllowanceTotal)
+    assert.equal(totals.carrierWindow?.attempts, 26)
+    assert.throws(() => rolling.client.prepare(first), { code: 'local_operation_sequence' })
+    await release(legacy.client)
+    await release(rolling.client)
+  } finally { clock.mockRestore() }
+})
+
+test('settled commands cross the old sent body total with every rolling window charged individually', async () => {
+  let now = 0
+  const clock = vi.spyOn(performance, 'now').mockImplementation(() => now)
+  try {
+    const fixture = await renewalCarrier('rolling-v1')
+    const { client, request, start, finish, settle, grant } = fixture
+    const first = request(1)
+    await start(first); await grant(first); await finish(first); await settle(first)
+    for (let seq = 2; seq <= 64; seq++) {
+      if (seq === 33) now = CARRIER_LIMITS.localLifetimeMs
+      const operation = request(seq)
+      await start(operation); await finish(operation); await settle(operation)
+      const facts = client.responsibility()
+      assert.ok(facts.carrierWindow && facts.carrierWindow.sentBodyBytes < CARRIER_LIMITS.sentBodyTotal)
+      assert.equal(facts.remoteUnresolved.length, 0)
+    }
+    assert.ok(client.responsibility().sentBodyBytes > CARRIER_LIMITS.sentBodyTotal)
+    assert.throws(() => client.prepare(first), { code: 'local_operation_sequence' })
+    await release(client)
+  } finally { clock.mockRestore() }
+})
+
+test('an unresolved operation retains its charges after the carrier rolls and can spend stop reserve', async () => {
+  let now = 0
+  const clock = vi.spyOn(performance, 'now').mockImplementation(() => now)
+  try {
+    const { client, transport, reply, facts, request, start, finish, settle, grant, active } = await renewalCarrier('rolling-v1')
+    const work = request(1, 32)
+    await start(work); await grant(work)
+    const ordinaryCap = CARRIER_LIMITS.attempts - RESIDENCE_LIMITS.terminalAttempts
+    for (let i = 4; i < ordinaryCap; i++) await reply(client.poll(work.ref), active(work))
+    now = CARRIER_LIMITS.localLifetimeMs
+    assert.equal(client.responsibility().carrierWindow?.attempts, 0)
+    assert.equal(client.responsibility().remoteUnresolved.length, 1)
+    await reply(client.poll(work.ref), active(work))
+    const before = transport.requests.length
+    assert.throws(() => client.poll(work.ref), { code: 'residence_terminal_budget' })
+    assert.equal(transport.requests.length, before)
+    await reply(client.handshake(), facts)
+    await finish(work, true)
+    assert.equal(client.responsibility().remoteUnresolved.length, 0)
+    await release(client)
+    assert.equal(client.responsibility().localSettled, true)
+    await assert.rejects(settle(work))
+  } finally { clock.mockRestore() }
+})
+
+test('rolling admission retains the original concurrent requests and rejects the legacy guest', async () => {
+  assert.throws(() => new DataClient(options(), new FakeTransport(), 'rolling-v1'), { code: 'rolling_carrier_guest' })
+  const { client, transport, facts } = await renewalCarrier('rolling-v1')
+  const pending = Array.from({ length: CARRIER_LIMITS.concurrent }, () => client.handshake())
+  assert.throws(() => client.handshake(), { code: 'carrier_budget' })
+  for (let i = 0; i < pending.length; i++) transport.reply(i + 1, facts)
+  await Promise.all(pending)
+  await release(client)
+})
+
+test('a rolling carrier cannot outlive its original deadline without a confirmed residence grant', async () => {
+  let now = 0
+  const clock = vi.spyOn(performance, 'now').mockImplementation(() => now)
+  try {
+    const { client, transport } = await renewalCarrier('rolling-v1')
+    now = CARRIER_LIMITS.localLifetimeMs
+    assert.equal(client.responsibility().carrierWindow?.attempts, 0)
+    assert.throws(() => client.handshake(), { code: 'local_deadline_or_cancel' })
+    assert.equal(transport.requests.length, 1)
+    await release(client)
+  } finally { clock.mockRestore() }
+})
+
 test('deadline/public cancel retains actual request until terminal callback and release never clears remote range', async () => {
   const { client, transport } = await ready(), reference = prepared().ref
   transport.autoAbort = false; transport.closeGate = deferred(); transport.destroyGate = deferred()

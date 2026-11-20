@@ -128,6 +128,13 @@ it('pairs only the exact ARM renewal guest and protected receipt policy', async 
   const { deletionReceipts: _receipts, ...withoutReceipts } = enabled.lifecycle
   const input = parseRootDeploymentInput(enabled)
   expect(input).toMatchObject({ renewal, lifecycle: { deletionReceipts: receiptPins } })
+  expect(Object.hasOwn(input.renewal!, 'carrierBudget')).toBe(false)
+  expect(parseRootDeploymentInput({ ...enabled, renewal: { ...renewal, carrierBudget: 'rolling-v1' } }))
+    .toMatchObject({ renewal: { ...renewal, carrierBudget: 'rolling-v1' } })
+  expect(() => parseRootDeploymentInput({ ...enabled, renewal: { ...renewal, carrierBudget: 'unknown' } }))
+    .toThrow('renewal.carrierBudget')
+  expect(() => parseRootDeploymentInput({ ...enabled, bootstrap: { ...enabled.bootstrap, carrierBudget: 'rolling-v1' } }))
+    .toThrow('bootstrap')
   expect(() => parseRootDeploymentInput(withoutRenewal)).toThrow('renewal.terminalPolicy')
   expect(() => parseRootDeploymentInput({ ...enabled, lifecycle: withoutReceipts })).toThrow('lifecycle.deletionReceipts')
   expect(() => parseRootDeploymentInput({ ...enabled, lifecycle: { ...enabled.lifecycle,

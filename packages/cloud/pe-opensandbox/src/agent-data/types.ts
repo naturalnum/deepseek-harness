@@ -253,11 +253,16 @@ export interface PhysicalStopAck {
   readonly stopAckId: string
   readonly processesGone: true
 }
-/**
- * Local transport settlement and tracked remote uncertainty;
- * no allocation deletion or global empty-scope proof.
- */
-export interface Responsibility {
+export type CarrierBudgetMode = 'rolling-v1'
+
+export interface CarrierWireUsage {
+  readonly attempts: number
+  readonly sentBodyBytes: number
+  readonly replyBodyAllowance: number
+}
+
+/** Local transport settlement and tracked remote uncertainty. Inherited usage covers the client lifetime. */
+export interface Responsibility extends CarrierWireUsage {
   readonly fenced: boolean
   readonly closing: boolean
   readonly inFlight: number
@@ -265,9 +270,8 @@ export interface Responsibility {
   readonly localSettled: boolean
   readonly closeMethodsPending: number
   readonly cleanupFailure: boolean
-  readonly attempts: number
-  readonly sentBodyBytes: number
-  readonly replyBodyAllowance: number
+  /** Current rolling charges on explicitly selected carriers. Inherited totals always cover the entire client lifetime. */
+  readonly carrierWindow?: CarrierWireUsage
   /** Current logical reservation for at most four in-flight 16KiB reply buffers; never cumulative traffic. */
   readonly replyBuffersReservedBytes: number
   /** Encoded request bodies owned by current in-flight calls, excluding transport/internal copies. */

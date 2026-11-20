@@ -2,6 +2,7 @@
 import { createHash } from 'node:crypto'
 import { posix } from 'node:path'
 import { ExecutionStateError } from '../errors.ts'
+import type { CarrierBudgetMode } from '../agent-data/types.ts'
 import type { SdkLifecycleConfig } from '../lifecycle-types.ts'
 import type { OwnedTransportLimits } from '../sdk-transport.ts'
 import type { ExecutionExportLimits } from '../export-share.ts'
@@ -27,7 +28,7 @@ export interface SharedPathStorageLimits {
 interface RootDeploymentFields {
   readonly selection: Readonly<{ serverImageDigest: string; execdImageDigest: string; apiKeyDeploymentIdentity: string }>
   readonly lifecycle: SdkLifecycleConfig
-  readonly bootstrap: Omit<BootstrapConfig, 'lifecycle' | 'assertDeploymentCurrent'>
+  readonly bootstrap: Omit<BootstrapConfig, 'lifecycle' | 'assertDeploymentCurrent' | 'carrierBudget'>
   /** Optional explicit original-owner count bound; omission leaves copy execution disabled. */
   readonly skillCopies?: Readonly<{ maxCopiesPerOperation: number }>
 }
@@ -38,7 +39,8 @@ export type RootDeploymentInput = RootDeploymentFields & (
     readonly exports: Readonly<{ manifest: RootDeploymentReference; limits: ExecutionExportLimits }> }
   | { readonly schema: 'pe-opensandbox-root-deployment-v2'
     readonly storage: Readonly<{ mode: 'shared-path'; plan: RootDeploymentReference; limits: SharedPathStorageLimits }>
-    readonly renewal?: Readonly<{ leadMs: number; maxAttempts: number; terminalPolicy: RootDeploymentReference }> }
+    readonly renewal?: Readonly<{ leadMs: number; maxAttempts: number; terminalPolicy: RootDeploymentReference
+      carrierBudget?: CarrierBudgetMode }> }
 )
 function need(value: boolean, field: string): asserts value {
   if (!value) throw new ExecutionStateError('cloud/invalid-config', `Root deployment field ${field} is absent, unsupported or out of bounds.`)
@@ -177,7 +179,11 @@ export function parseRootDeploymentInput(value: unknown): RootDeploymentInput {
   if (schema === 'pe-opensandbox-root-deployment-v2') {
     const storage = sharedStorage(v.storage)
     if (!hasRenewal) return Object.freeze({ ...common, schema, storage })
-    const policy = object(v.renewal, ['leadMs', 'maxAttempts', 'terminalPolicy'], 'renewal')
+    const hasCarrierBudget = v.renewal !== null && typeof v.renewal === 'object' && Object.hasOwn(v.renewal, 'carrierBudget')
+    const policy = object(v.renewal,
+      ['leadMs', 'maxAttempts', 'terminalPolicy', ...(hasCarrierBudget ? ['carrierBudget'] : [])], 'renewal')
+    const carrierBudget = policy.carrierBudget
+    need(!hasCarrierBudget || carrierBudget === 'rolling-v1', 'renewal.carrierBudget')
     const leadMs = integer(policy.leadMs, 'renewal.leadMs', life.ttlSeconds * 500)
     need(leadMs > life.requestTimeoutMs, 'renewal.leadMs')
     const maxAttempts = integer(policy.maxAttempts, 'renewal.maxAttempts', 32)
@@ -187,7 +193,8 @@ export function parseRootDeploymentInput(value: unknown): RootDeploymentInput {
       && /^[a-f0-9]{64}$/.test(sha256), 'renewal.terminalPolicy')
     need(sha256 === life.deletionReceipts?.policyDigest, 'renewal.terminalPolicy.digest')
     return Object.freeze({ ...common, schema, storage, renewal: Object.freeze({ leadMs, maxAttempts,
-      terminalPolicy: Object.freeze({ path, sha256 }) }) })
+      terminalPolicy: Object.freeze({ path, sha256 }),
+      ...(carrierBudget === 'rolling-v1' ? { carrierBudget } : {}) }) })
   }
   const e = object(v.exports, ['manifest', 'limits'], 'exports'), m = object(e.manifest, ['path', 'sha256'], 'exports.manifest')
   const limits = object(e.limits, ['maxManifestBytes', 'maxMountInfoBytes', 'maxPathBytes', 'maxShares', 'maxResidentBytes'], 'exports.limits')

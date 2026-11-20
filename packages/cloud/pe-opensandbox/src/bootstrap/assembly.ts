@@ -109,6 +109,7 @@ export async function assembleRootExecutionDeployment(reference: RootDeploymentR
     const lifecycle = renewal === undefined ? input.lifecycle
       : { ...input.lifecycle, renewalLeadMs: renewal.leadMs, maxRenewalAttempts: renewal.maxAttempts }
     state.owner = await createRootSdkExecutionOwner({ ...input.bootstrap, lifecycle,
+      ...(renewal?.carrierBudget === undefined ? {} : { carrierBudget: renewal.carrierBudget }),
       // The original protected selection and terminal policy remain valid across business/keeper loss.
       assertDeploymentCurrent: () => { selection.assertCurrent(); state.terminalPolicy?.assertCurrent() } })
     const owner = state.owner

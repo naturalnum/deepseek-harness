@@ -12,7 +12,7 @@ import { RootAgentProxyTransport } from './agent-proxy.ts'
 import { createOwnedSdkTransport, type OwnedTransportLimits } from '../sdk-transport.ts'
 import { PrivateSemanticAudit, type SemanticSpan } from '../semantic-audit.ts'
 import { SdkLifecycleFailure, type AgentReadinessBudget, type AgentSelection, type OwnedSdkTransport, type SdkLifecycleConfig } from '../lifecycle-types.ts'
-import type { AgentDataClient, ClientOptions, RootGrant } from '../agent-data/types.ts'
+import type { AgentDataClient, CarrierBudgetMode, ClientOptions, RootGrant } from '../agent-data/types.ts'
 import { DataClient } from '../agent-data/client-internal.ts'
 import { digest, expectedWorldHash } from '../agent-data/index.ts'
 import { RUNTIME_PROFILES } from './runtime-profiles.ts'
@@ -85,6 +85,7 @@ export async function loadBootstrapPayload(bootstrapDirectory: string, agentDire
 /** Root-selected finite startup limits and original deployment lease assertion, never account configuration. */
 export interface BootstrapConfig {
   readonly lifecycle: SdkLifecycleConfig
+  readonly carrierBudget?: CarrierBudgetMode
   readonly execdAccessToken: string
   readonly transport: OwnedTransportLimits
   readonly bootstrapTimeoutMs: number
@@ -308,7 +309,7 @@ export class TrustedSdkBootstrap {
     this.config.assertDeploymentCurrent()
     current()
     selected.record.clientTaken = true
-    return new DataClient(options, new RootAgentProxyTransport(selected.endpoint, selected.headers))
+    return new DataClient(options, new RootAgentProxyTransport(selected.endpoint, selected.headers), this.config.carrierBudget)
   }
 
   /**

@@ -3,14 +3,15 @@ import { skillWorld, assertSkillParent } from './skill-world.ts'
 import { filePolicy } from './file-policy.ts'
 import { performance } from 'node:perf_hooks'
 import { asciiJSON, preparedDigest, need, record, spec } from './canonical.ts'
+import { canSpend, canSpendWithStopReserve, emptyUsage, RollingCarrierBudget } from './carrier-budget.ts'
 import { parseReply } from './strict-json.ts'
 import { checkOptions, envelope, handshake, operation, ref as checkRef } from './validate.ts'
-import { AGENT_AUTH_HEADER, CARRIER_LIMITS as L, RECORD_SETTLEMENT_VERSION, RESIDENCE_LIMITS as R, RESIDENCE_VERSION,
-  SERVICE_WINDOW_VERSION, SLICE_LIMITS } from './constants.ts'
+import { AGENT_AUTH_HEADER, CARRIER_LIMITS as L, RECORD_SETTLEMENT_VERSION, RENEWAL_AGENT_SOURCE_SHA256,
+  RESIDENCE_LIMITS as R, RESIDENCE_VERSION, SERVICE_WINDOW_VERSION, SLICE_LIMITS } from './constants.ts'
 import { signResidence, signServiceWindow, signSettlement } from './root-role-issuer.ts'
 import { ControlUncertain, RemoteRefusal } from './errors.ts'
 import { ExecutionStream } from './stream.ts'
-import type { AgentDataClient, AgentDataStream, CallOptions, ClientOptions, ExpectedBinding, Handshake, Mutation,
+import type { AgentDataClient, AgentDataStream, CallOptions, CarrierBudgetMode, CarrierWireUsage, ClientOptions, ExpectedBinding, Handshake, Mutation,
   OperationRef, OperationSnapshot, OperationSpec, PhysicalStopAck, PipesOperationSpec, PreparedRequest,
   ResidenceOffer, ResidenceReceipt, Responsibility, Route } from './types.ts'
 import type { OwnedTransport, WireEvents } from './transport.ts'
@@ -23,7 +24,8 @@ interface RefRecord { ref: OperationRef
   attachAttempted?: boolean
   terminal?: boolean
   activeCollect?: boolean
-  stream?: ExecutionStream }
+  stream?: ExecutionStream
+  wire?: CarrierWireUsage }
 interface Flight { actual: Promise<void>; bodyBytes: number; row?: RefRecord; stream?: boolean; abort(): void }
 
 /** Internal constructor permits exclusive fake transport ownership for units. Public factory always owns a fresh Pool. */
@@ -31,6 +33,7 @@ export class DataClient implements AgentDataClient {
   readonly #expected: ExpectedBinding
   readonly #token: string
   readonly #transport: OwnedTransport
+  readonly #rolling?: RollingCarrierBudget
   readonly #legacyExpires = performance.now() + L.localLifetimeMs
   #expires = this.#legacyExpires
   #residenceSequence = 0
@@ -48,9 +51,14 @@ export class DataClient implements AgentDataClient {
    * Bind protected Root expectations and transfer exclusive local dispatcher ownership.
    * @param options - Original fixed endpoint, runtime, token and expected facts.
    * @param transport - Exclusively owned transport; fake transfer is private test support only.
+   * @param mode - Optional protected Root selection for the paired renewal guest.
    */
-  constructor(options: ClientOptions, transport: OwnedTransport) {
+  constructor(options: ClientOptions, transport: OwnedTransport, mode?: CarrierBudgetMode) {
     this.#expected = checkOptions(options).expected; this.#token = options.token; this.#transport = transport
+    if (mode !== undefined) {
+      need(this.#expected.pins.agentSourceSha256 === RENEWAL_AGENT_SOURCE_SHA256, 'rolling_carrier_guest')
+      this.#rolling = new RollingCarrierBudget()
+    }
   }
   fence(): Promise<void> {
     this.#fenced = true
@@ -61,6 +69,7 @@ export class DataClient implements AgentDataClient {
       dispatcherClosed: this.#closed, closeMethodsPending: this.#closePending, cleanupFailure: this.#cleanupFailure,
       localSettled: this.#closing && this.#cleanupDone && this.#active.size === 0 && this.#closePending === 0 && this.#closed,
       attempts: this.#attempts, sentBodyBytes: this.#sent, replyBodyAllowance: this.#allowance,
+      ...(this.#rolling === undefined ? {} : { carrierWindow: Object.freeze(this.#rolling.usage(performance.now())) }),
       replyBuffersReservedBytes: [...this.#active].filter(f => !f.stream).length * L.reply,
       inFlightRequestBodyBytes: [...this.#active].reduce((bytes, flight) => bytes + flight.bodyBytes, 0),
       bufferedReplyBytes: this.#buffered, receivedReplyBodyBytes: this.#received,
@@ -103,8 +112,11 @@ export class DataClient implements AgentDataClient {
     need(this.#transport.attach !== undefined, 'stream_transport_unavailable')
     const now = performance.now(), deadline = Math.min(options.deadlineMs ?? now + L.requestMs, now + L.requestMs, this.#legacyExpires)
     need(Number.isFinite(deadline) && deadline > now && !options.signal?.aborted, 'local_deadline_or_cancel')
-    need([...this.#active].filter(f => f.stream).length < 2 && this.#attempts < L.attempts, 'carrier_budget')
-    row.attachAttempted = true; this.#attempts++
+    const usage = this.#usage(now, row)
+    need([...this.#active].filter(f => f.stream).length < 2 && canSpend(usage, 1, 0, 0), 'carrier_budget')
+    if (this.#rolling !== undefined) need(canSpendWithStopReserve(usage, 0, 0), 'residence_terminal_budget')
+    row.attachAttempted = true
+    this.#charge(now, row, 0, 0)
     const stream = row.stream = new ExecutionStream(reference, row.pipes, () => {
       void this.fence(); if (!this.#physicalAck) row.unresolved = true
     })
@@ -184,9 +196,9 @@ export class DataClient implements AgentDataClient {
     const fields = { ...reference, runMs, windowProof: signServiceWindow(this.#token, reference, runMs) }
     const followups = futurePolls + 2 // Original stop and one seal also need carrier room.
     const pollBytes = asciiJSON({ ...reference, stdoutOffset: 0, stderrOffset: 0 }).length
-    if (this.#attempts + 1 + followups > L.attempts
-      || this.#sent + asciiJSON(fields).length + followups * pollBytes > L.sentBodyTotal
-      || this.#allowance + (1 + followups) * L.reply > L.replyAllowanceTotal
+    const usage = this.#usage(performance.now(), row), bytes = asciiJSON(fields).length
+    if (!canSpend(usage, 1 + followups, bytes + followups * pollBytes, (1 + followups) * L.reply)
+      || this.#rolling !== undefined && !canSpendWithStopReserve(usage, bytes, L.reply)
       || [...this.#active].filter(flight => !flight.stream).length >= L.concurrent) return false
     await this.#call('/extend-service', fields, reference, options)
     return true
@@ -198,9 +210,7 @@ export class DataClient implements AgentDataClient {
       && ![...this.#active].some(flight => flight.row === row), 'residence_unavailable')
     if ([...this.#active].some(flight => flight.stream)) return undefined
     const leaseSequence = this.#residenceSequence + 1
-    if (leaseSequence > R.grants || this.#attempts + 1 + R.terminalAttempts > L.attempts
-      || this.#sent + (1 + R.terminalAttempts) * R.fixedControlBytes > L.sentBodyTotal
-      || this.#allowance + (1 + R.terminalAttempts) * L.reply > L.replyAllowanceTotal
+    if (leaseSequence > R.grants || !canSpendWithStopReserve(this.#usage(performance.now(), row), R.fixedControlBytes, L.reply)
       || [...this.#active].filter(flight => !flight.stream).length >= L.concurrent) return undefined
     const fields = { ...original, ...offer, leaseSequence, residenceProof: signResidence(this.#token, original, offer, leaseSequence) }
     need(asciiJSON(fields).length <= R.fixedControlBytes && this.#publishedResidenceSequence === leaseSequence - 1,
@@ -238,6 +248,30 @@ export class DataClient implements AgentDataClient {
     const row = { ref: reference, mutations: new Set<Mutation>(), unresolved: !this.#physicalAck }
     this.#records.set(reference.operationId, row); return row
   }
+
+  #usage(now: number, row?: RefRecord): CarrierWireUsage {
+    if (this.#rolling === undefined) {
+      return { attempts: this.#attempts, sentBodyBytes: this.#sent, replyBodyAllowance: this.#allowance }
+    }
+    const carrier = this.#rolling.usage(now), operation = row?.wire
+    if (operation === undefined) return carrier
+    // Expiring carrier charges cannot increase the lifetime allowance of an unsettled operation.
+    return { attempts: Math.max(carrier.attempts, operation.attempts),
+      sentBodyBytes: Math.max(carrier.sentBodyBytes, operation.sentBodyBytes),
+      replyBodyAllowance: Math.max(carrier.replyBodyAllowance, operation.replyBodyAllowance) }
+  }
+
+  #charge(now: number, row: RefRecord | undefined, sent: number, reply: number): void {
+    this.#attempts++; this.#sent += sent; this.#allowance += reply
+    if (this.#rolling === undefined) return
+    this.#rolling.charge(now, sent, reply)
+    if (row !== undefined) {
+      const operation = row.wire ?? emptyUsage()
+      row.wire = { attempts: operation.attempts + 1, sentBodyBytes: operation.sentBodyBytes + sent,
+        replyBodyAllowance: operation.replyBodyAllowance + reply }
+    }
+  }
+
   #call(route: Route, fields: Record<string, unknown>, reference?: OperationRef,
     options: CallOptions = {}, preparedSpec?: OperationSpec): Promise<Handshake | OperationSnapshot | ResidenceReceipt | undefined> {
     need(!this.#closing && !this.#physicalAck, 'local_carrier_closed')
@@ -248,13 +282,15 @@ export class DataClient implements AgentDataClient {
     need(Number.isFinite(deadline) && deadline > now && !options.signal?.aborted, 'local_deadline_or_cancel')
     const encoded = Buffer.from(asciiJSON({ ...fields, runtimeIdentity: this.#expected.runtimeIdentity }), 'ascii')
     need(encoded.length <= L.body, 'body_budget')
-    need([...this.#active].filter(f => !f.stream).length < L.concurrent && this.#attempts < L.attempts
-      && this.#sent + encoded.length <= L.sentBodyTotal && this.#allowance + L.reply <= L.replyAllowanceTotal, 'carrier_budget')
+    const existing = reference === undefined ? undefined : this.#records.get(reference.operationId)
+    const usage = this.#usage(now, existing)
+    need([...this.#active].filter(f => !f.stream).length < L.concurrent
+      && canSpend(usage, 1, encoded.length, L.reply), 'carrier_budget')
     const stopping = route === '/stop' || route === '/cancel' || route === '/seal'
-      || route === '/poll' && reference !== undefined && this.#records.get(reference.operationId)?.mutations.has('/stop') === true
-    if (this.#residenceSequence > 0 && !stopping) need(this.#attempts + 1 + R.terminalAttempts <= L.attempts
-      && this.#sent + encoded.length + R.terminalAttempts * R.fixedControlBytes <= L.sentBodyTotal
-      && this.#allowance + (1 + R.terminalAttempts) * L.reply <= L.replyAllowanceTotal, 'residence_terminal_budget')
+      || route === '/poll' && existing?.mutations.has('/stop') === true
+    if (!stopping && (this.#residenceSequence > 0 || this.#rolling !== undefined)) {
+      need(canSpendWithStopReserve(usage, encoded.length, L.reply), 'residence_terminal_budget')
+    }
     need(reference?.recordSequence === undefined || preparedSpec?.executionKind !== 'pipes', 'settlement_collect_required')
     const row = reference ? this.#remember(reference, route) : undefined
     if (row !== undefined && preparedSpec?.executionKind === 'pipes') row.pipes = preparedSpec
@@ -263,7 +299,7 @@ export class DataClient implements AgentDataClient {
     else if (mutation && row) {
       need(!row.mutations.has(mutation), 'mutation_already_attempted'); row.mutations.add(mutation); row.unresolved = true
     }
-    this.#attempts++; this.#sent += encoded.length; this.#allowance += L.reply // Lifetime pessimistic body allowances never recycled.
+    this.#charge(now, row, encoded.length, L.reply)
     let resolve!: (v: Handshake | OperationSnapshot | ResidenceReceipt | undefined) => void
     let reject!: (e: unknown) => void, finish!: () => void
     const result = new Promise<Handshake | OperationSnapshot | ResidenceReceipt | undefined>((yes, no) => { resolve = yes; reject = no })
