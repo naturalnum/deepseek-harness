@@ -216,7 +216,22 @@ export class DataClient implements AgentDataClient {
     need(asciiJSON(fields).length <= R.fixedControlBytes && this.#publishedResidenceSequence === leaseSequence - 1,
       'residence_sequence')
     this.#residenceSequence = leaseSequence
-    return this.#call('/renew-residence', fields, original, options) as Promise<ResidenceReceipt>
+    const receipt = await (this.#call('/renew-residence', fields, original, options) as Promise<ResidenceReceipt | undefined>)
+    if (receipt !== undefined) return receipt
+    try {
+      // The pinned renewal guest refuses a closed operation before advancing its sequence.
+      // The refusal alone grants neither a lease nor proof that the range finished.
+      const terminal = await this.poll(original, options)
+      need(row.terminal === true && terminal.firstCause === null && !this.#fenced && !this.#closing
+        && this.#records.get(original.operationId) === row && this.#residenceSequence === leaseSequence
+        && this.#publishedResidenceSequence === leaseSequence - 1, 'residence_closed_unconfirmed')
+      this.#residenceSequence = this.#publishedResidenceSequence
+      return undefined
+    } catch {
+      if (!this.#physicalAck) row.unresolved = true
+      void this.fence()
+      throw new ControlUncertain('/renew-residence', original)
+    }
   }
   seal(options?: CallOptions): Promise<Handshake> {
     void this.fence()
@@ -358,6 +373,10 @@ export class DataClient implements AgentDataClient {
             record(value, ['protocolVersion', 'runtimeIdentity', 'error'])
             need(status >= 400 && status < 500 && typeof value.error === 'string'
               && /^[a-z0-9_-]{1,64}$/.test(value.error), 'unbound_refusal')
+            if (route === '/renew-residence' && this.#rolling !== undefined
+              && status === 409 && value.error === 'residence_closed') {
+              delivered = true; resolve(undefined); return
+            }
             if (route === '/settle' || route === '/extend-service' || route === '/renew-residence') { uncertain(); return }
             // Never copy arbitrary response text into errors/logs.
             delivered = true; reject(new RemoteRefusal(status, 'remote_refusal')); return

@@ -302,6 +302,7 @@ async function renewalCarrier(mode?: CarrierBudgetMode) {
   }
   const grant = async (prepared: PreparedRequest): Promise<void> => {
     const offer = { residentCapMs: 660_000, runCapMs: 185_000, remainingMs: 600_000 }
+    const offeredAt = performance.now()
     const receipt = await reply(client.renewResidence(prepared.ref, offer, {}), {
       protocolVersion: PROTOCOL, runtimeIdentity: RUNTIME, residence: { leaseSequence: 1,
         operationId: prepared.ref.operationId, specHash: prepared.ref.specHash, registrationId: null,
@@ -309,10 +310,47 @@ async function renewalCarrier(mode?: CarrierBudgetMode) {
         residentRemainingMs: offer.remainingMs, runRemainingMs: null },
     })
     assert.ok(receipt)
-    receipt.publish(performance.now() + offer.remainingMs)
+    receipt.publish(offeredAt + offer.remainingMs)
   }
   return { client, transport, reply, facts, request, start, finish, settle, grant, active }
 }
+
+test.each(['clean-terminal', 'unconfirmed-terminal', 'wrong-refusal'] as const)(
+  'rolling residence grant uses the original authenticated refusal and next exact observation: %s', async (kind) => {
+    const fixture = await renewalCarrier('rolling-v1'), { client, transport } = fixture
+    const first = fixture.request(1, 32), offer = { residentCapMs: 660_000, runCapMs: 185_000, remainingMs: 400_000 }
+    await fixture.start(first)
+    const response = client.renewResidence(first.ref, offer, {}), index = transport.requests.length - 1
+    const outcome = kind === 'clean-terminal' ? response : assert.rejects(response, ControlUncertain)
+    transport.reply(index, { protocolVersion: PROTOCOL, runtimeIdentity: RUNTIME,
+      error: kind === 'wrong-refusal' ? 'residence_sequence' : 'residence_closed' }, 409)
+    if (kind === 'wrong-refusal') {
+      await outcome
+      assert.equal(transport.requests.length, index + 1)
+    } else {
+      await vi.waitFor(() => assert.equal(transport.requests[index + 1]?.request.route, '/poll'))
+      const proof = kind === 'clean-terminal'
+        ? operationFixture(first.ref, { recordSequence: 1, submitted: true, commitAttempted: true,
+            direct: { waitStatus: 0, returncode: 0 }, directNotObserved: false, rangeEmpty: true, ioClosed: true })
+        : fixture.active(first)
+      if (kind === 'clean-terminal') proof.operation.streams.stdout.eof = proof.operation.streams.stderr.eof = true
+      transport.reply(index + 1, proof)
+      assert.equal(await outcome, undefined)
+    }
+    if (kind === 'clean-terminal') {
+      assert.equal(client.responsibility().fenced, false)
+      await fixture.settle(first)
+      const next = fixture.request(2, 32)
+      await fixture.start(next)
+      await fixture.grant(next)
+      assert.equal(client.responsibility().fenced, false)
+    } else {
+      assert.equal(client.responsibility().fenced, true)
+      assert.equal(client.responsibility().remoteUnresolved.length, 1)
+    }
+    await release(client)
+  },
+)
 
 test('only the selected carrier crosses the old attempts and reply totals after the rolling interval', async () => {
   let now = 0
