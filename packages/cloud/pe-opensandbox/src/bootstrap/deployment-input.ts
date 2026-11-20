@@ -2,6 +2,7 @@
 import { createHash } from 'node:crypto'
 import { posix } from 'node:path'
 import { ExecutionStateError } from '../errors.ts'
+import { sustainedRenewalFits } from '../agent-data/constants.ts'
 import type { CarrierBudgetMode } from '../agent-data/types.ts'
 import type { SdkLifecycleConfig } from '../lifecycle-types.ts'
 import type { OwnedTransportLimits } from '../sdk-transport.ts'
@@ -40,7 +41,7 @@ export type RootDeploymentInput = RootDeploymentFields & (
   | { readonly schema: 'pe-opensandbox-root-deployment-v2'
     readonly storage: Readonly<{ mode: 'shared-path'; plan: RootDeploymentReference; limits: SharedPathStorageLimits }>
     readonly renewal?: Readonly<{ leadMs: number; maxAttempts: number; terminalPolicy: RootDeploymentReference
-      carrierBudget?: CarrierBudgetMode }> }
+      carrierBudget?: CarrierBudgetMode; sustainedTtlSeconds?: number }> }
 )
 function need(value: boolean, field: string): asserts value {
   if (!value) throw new ExecutionStateError('cloud/invalid-config', `Root deployment field ${field} is absent, unsupported or out of bounds.`)
@@ -180,13 +181,18 @@ export function parseRootDeploymentInput(value: unknown): RootDeploymentInput {
     const storage = sharedStorage(v.storage)
     if (!hasRenewal) return Object.freeze({ ...common, schema, storage })
     const hasCarrierBudget = v.renewal !== null && typeof v.renewal === 'object' && Object.hasOwn(v.renewal, 'carrierBudget')
+    const hasSustainedTtl = v.renewal !== null && typeof v.renewal === 'object' && Object.hasOwn(v.renewal, 'sustainedTtlSeconds')
     const policy = object(v.renewal,
-      ['leadMs', 'maxAttempts', 'terminalPolicy', ...(hasCarrierBudget ? ['carrierBudget'] : [])], 'renewal')
+      ['leadMs', 'maxAttempts', 'terminalPolicy', ...(hasCarrierBudget ? ['carrierBudget'] : []),
+        ...(hasSustainedTtl ? ['sustainedTtlSeconds'] : [])], 'renewal')
     const carrierBudget = policy.carrierBudget
     need(!hasCarrierBudget || carrierBudget === 'rolling-v1', 'renewal.carrierBudget')
     const leadMs = integer(policy.leadMs, 'renewal.leadMs', life.ttlSeconds * 500)
     need(leadMs > life.requestTimeoutMs, 'renewal.leadMs')
     const maxAttempts = integer(policy.maxAttempts, 'renewal.maxAttempts', 32)
+    const sustainedTtlSeconds = hasSustainedTtl ? integer(policy.sustainedTtlSeconds, 'renewal.sustainedTtlSeconds', 600) : undefined
+    need(sustainedTtlSeconds === undefined || (carrierBudget === 'rolling-v1'
+      && sustainedRenewalFits(sustainedTtlSeconds, life.ttlSeconds, life.requestTimeoutMs)), 'renewal.sustainedTtlSeconds')
     const reference = object(policy.terminalPolicy, ['path', 'sha256'], 'renewal.terminalPolicy')
     const path = text(reference.path, 'renewal.terminalPolicy.path', 4096), sha256 = text(reference.sha256, 'renewal.terminalPolicy.sha256', 64)
     need(/^\/(?!\/)/.test(path) && posix.normalize(path) === path && path !== '/' && !path.endsWith('/') && !path.includes('\\')
@@ -194,6 +200,7 @@ export function parseRootDeploymentInput(value: unknown): RootDeploymentInput {
     need(sha256 === life.deletionReceipts?.policyDigest, 'renewal.terminalPolicy.digest')
     return Object.freeze({ ...common, schema, storage, renewal: Object.freeze({ leadMs, maxAttempts,
       terminalPolicy: Object.freeze({ path, sha256 }),
+      ...(sustainedTtlSeconds === undefined ? {} : { sustainedTtlSeconds }),
       ...(carrierBudget === 'rolling-v1' ? { carrierBudget } : {}) }) })
   }
   const e = object(v.exports, ['manifest', 'limits'], 'exports'), m = object(e.manifest, ['path', 'sha256'], 'exports.manifest')

@@ -11,6 +11,7 @@ import { readSdkAllocationBinding } from './sdk-allocation-binding.ts'
 import { readSdkTerminalReceipt } from './sdk-terminal-receipt.ts'
 import { createSdkReceiptTransport } from './sdk-receipt-transport.ts'
 import { PrivateSemanticAudit, type SemanticSpan } from './semantic-audit.ts'
+import { sustainedRenewalFits } from './agent-data/constants.ts'
 import { SdkLifecycleFailure, type AgentHandshake, type AgentSelection, type OriginalResourceObservation,
   type OwnedSdkTransport, type SdkLifecycleConfig, type TrustedAgentLifecycle, type VerifiedExecutionMount } from './lifecycle-types.ts'
 
@@ -105,6 +106,10 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
     if (config.maxRenewalAttempts !== undefined) {
       check(config.renewalLeadMs !== undefined && Number.isSafeInteger(config.maxRenewalAttempts)
         && config.maxRenewalAttempts >= 1 && config.maxRenewalAttempts <= 32, 'sdk/bounds')
+    }
+    if (config.sustainedTtlSeconds !== undefined) {
+      check(config.renewalLeadMs !== undefined && config.deletionReceipts !== undefined
+        && sustainedRenewalFits(config.sustainedTtlSeconds, config.ttlSeconds, config.requestTimeoutMs), 'sdk/bounds')
     }
     const pins = config.deletionReceipts
     if (pins !== undefined) check(assertReceiptDeployment !== undefined
@@ -329,8 +334,8 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
   activeRenewal(prepared: PreparedSandbox,
     reserve: (intent: AllocationCreateIntent, targetAt: string, previousAt?: string) => Promise<boolean>):
     ((stillActive: () => boolean) => void) | undefined {
-    const lead = this.config.renewalLeadMs
-    if (lead === undefined) return undefined
+    const initialLead = this.config.renewalLeadMs
+    if (initialLead === undefined) return undefined
     const record = [...this.records.values()].find(value => value.prepared === prepared)
     if (record === undefined) throw new SdkLifecycleFailure('sdk/selection')
     return (stillActive) => {
@@ -340,8 +345,10 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
         || attempts >= (this.config.maxRenewalAttempts ?? 1) || this.inflight.size >= this.config.maxInflightOperations) return
       const remaining = expiry.monotonicAtMs - performance.now()
       const now = Date.now()
+      const sustained = this.config.sustainedTtlSeconds
+      const lead = sustained === undefined || record.confirmedRenewalAt === undefined ? initialLead : sustained * 500
       if (remaining > lead || remaining <= 0 || now >= expiry.wallAtMs || !stillActive()) return
-      const targetMs = now + this.config.ttlSeconds * 1000
+      const targetMs = now + (sustained ?? this.config.ttlSeconds) * 1000
       if (targetMs <= (record.latestProviderExpiryMs ?? expiry.wallAtMs)) return
       const expiresAt = new Date(targetMs).toISOString()
       const monotonicTargetAtMs = performance.now() + (targetMs - now)

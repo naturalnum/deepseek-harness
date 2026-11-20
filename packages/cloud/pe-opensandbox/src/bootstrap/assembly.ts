@@ -107,7 +107,8 @@ export async function assembleRootExecutionDeployment(reference: RootDeploymentR
     const exports = state.exports
     const renewal = input.schema === 'pe-opensandbox-root-deployment-v2' ? input.renewal : undefined
     const lifecycle = renewal === undefined ? input.lifecycle
-      : { ...input.lifecycle, renewalLeadMs: renewal.leadMs, maxRenewalAttempts: renewal.maxAttempts }
+      : { ...input.lifecycle, renewalLeadMs: renewal.leadMs, maxRenewalAttempts: renewal.maxAttempts,
+          ...(renewal.sustainedTtlSeconds === undefined ? {} : { sustainedTtlSeconds: renewal.sustainedTtlSeconds }) }
     state.owner = await createRootSdkExecutionOwner({ ...input.bootstrap, lifecycle,
       ...(renewal?.carrierBudget === undefined ? {} : { carrierBudget: renewal.carrierBudget }),
       // The original protected selection and terminal policy remain valid across business/keeper loss.

@@ -352,6 +352,51 @@ it('reports only known quiescent lifetime boundaries without opening another cha
 })
 
 
+it('keeps foreground admission on the original active service after verified guest residence grants', async () => {
+  let now = 0, providerUntil: number | undefined
+  const clock = vi.spyOn(performance, 'now').mockImplementation(() => now), f = fixture()
+  const publish = vi.fn(), signal = new AbortController().signal
+  const refresh = vi.fn<NonNullable<AgentDataClient['renewResidence']>>(async (_ref, offer) => ({
+    residentRemainingMs: offer.remainingMs,
+    runRemainingMs: Math.min(offer.remainingMs - SLICE_LIMITS.stopMs, 36_000 + offer.runCapMs - now),
+    publish,
+  }))
+  const client = { ...f.client, renewResidence: refresh,
+    responsibility: () => ({ ...f.client.responsibility(), fenced: false, closing: false, dispatcherClosed: false,
+      remoteUnresolved: [f.client.prepare.mock.calls[0]![0].ref] }) } satisfies AgentDataClient
+  f.client.handshake.mockResolvedValue({ ...f.handshake, residenceVersion: 1 })
+  const registry = new TrustedRuntimeRegistry(f.bootstrap, 1, () => client)
+  try {
+    const ready = registry.bindPrepared(await registry.handshake(f.selected, signal, readinessBudget()))
+    const service = registry.service(ready, registeredService(f.selected).registration, undefined, 'live-service',
+      undefined, { maxResidentMs: 660_000, runCapMs: 610_000, confirmedUntil: () => providerUntil })
+    await service.prepare({ argv: ['/bin/sh', '-c', 'sleep 600'], cwd: '/project', stdin: { mode: 'ignore' } })
+    now = 36_000
+    await service.commit()
+    const window = { commitStartedAtMs: 36_000, submittedByMs: 36_000, commandDeadlineAtMs: 671_000,
+      pollIntervalMs: 2_000, stillActive: () => true, assertCurrent() {} }
+    now = 40_000
+    expect(await service.renewResidence?.(window, undefined)).toBeUndefined()
+    expect(refresh).not.toHaveBeenCalled()
+    now = 147_500
+    expect(() => registry.needsContinuation(ready)).toThrow('unconfirmed')
+    now = 148_000
+    providerUntil = 460_000
+    const runUntil = await service.renewResidence?.(window, undefined)
+    expect(runUntil).toBeGreaterThan(450_000)
+    expect(registry.needsContinuation(ready)).toBe(false)
+    now = 250_000
+    providerUntil = 670_000
+    await service.renewResidence?.(window, runUntil)
+    now = 307_000
+    expect(registry.needsContinuation(ready)).toBe(false)
+    expect(f.bootstrap.bootstrap).toHaveBeenCalledTimes(1)
+    expect(publish).toHaveBeenCalledTimes(2)
+    await registry.fenceRequests(f.selected, undefined, signal).whenJoined
+    expect(() => registry.needsContinuation(ready)).toThrow('unconfirmed')
+  } finally { clock.mockRestore() }
+})
+
 it('retires only the exact stopped and locally joined runtime and permanently revokes the original intent', async () => {
   const f = fixture(), signal = new AbortController().signal
   const retire = vi.fn(), bootstrap = { ...f.bootstrap, retireStopped: retire }

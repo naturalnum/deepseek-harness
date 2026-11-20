@@ -24,6 +24,14 @@ export const SLICE_LIMITS = Object.freeze({ lifetimeOperations: 4, activeRanges:
   serviceRunMs: 120000, stopMs: 2000, residentMs: 300000, childCpuSeconds: 600, childAddressBytes: 17179869184,
   childFileBytes: 134217728, childOpenFiles: 256, childProcesses: 2048, childCoreBytes: 0 })
 
+/** Full guest time needed to start an ordinary operation without retiring the original allocation. */
+export const CONTINUATION_WINDOW_MS = SLICE_LIMITS.prepareMs + SLICE_LIMITS.runMs + SLICE_LIMITS.stopMs
+
+/** Whether a bounded provider renewal leaves room for another full operation during the next refresh. */
+export function sustainedRenewalFits(seconds: number, createSeconds: number, requestTimeoutMs: number): boolean {
+  return Number.isSafeInteger(seconds) && seconds > createSeconds && seconds <= 600
+    && seconds * 500 > CONTINUATION_WINDOW_MS + requestTimeoutMs + 2 * RESIDENCE_LIMITS.clockMarginMs
+}
 
 /** The measured child limits of the exact bounded renewal guest, under the selected outer sandbox limits. */
 export const RENEWAL_CHILD_LIMITS = Object.freeze({

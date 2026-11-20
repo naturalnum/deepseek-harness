@@ -79,17 +79,28 @@ beforeEach(() => {
 })
 afterEach(() => { vi.unstubAllGlobals() })
 
-it.each([undefined, 'rolling-v1'] as const)('passes the protected renewal carrier budget %s to the original SDK owner', async (mode) => {
+it.each([[undefined, undefined], ['rolling-v1', undefined], ['rolling-v1', 420]] as const)
+('passes protected renewal budget %s and sustained TTL %s to the original SDK owner', async (mode, sustainedTtlSeconds) => {
   const supplier = qualifiedSupplierTuples.find(row => row.serverImageDigest === NATIVE_ARM64_DURABLE_RENEWAL_SERVER_IMAGE_DIGEST)
   if (supplier === undefined) throw new Error('Missing exact ARM renewal supplier.')
   const base = sharedPathDeploymentFixture()
   const lifecycle = { ...base.lifecycle, imageDigest: supplier.workloadImageDigest,
     payloadSha256: RENEWAL_SOURCE_DIGEST, deletionReceipts: { providerGeneration: '1'.repeat(64), policyDigest: '2'.repeat(64) } }
+  const policy = { leadMs: 20_000, maxAttempts: 20, terminalPolicy: { path: '/root-private/terminal.json', sha256: '2'.repeat(64) } }
   state.input = {
     ...base, lifecycle, selection: { ...base.selection,
       serverImageDigest: supplier.serverImageDigest, execdImageDigest: supplier.execdImageDigest },
-    renewal: { leadMs: 20_000, maxAttempts: 20, terminalPolicy: { path: '/root-private/terminal.json', sha256: '2'.repeat(64) },
-      ...(mode === undefined ? {} : { carrierBudget: mode }) },
+    renewal: { ...policy,
+      ...(mode === undefined ? {} : { carrierBudget: mode }),
+      ...(sustainedTtlSeconds === undefined ? {} : { sustainedTtlSeconds }) },
+  }
+  if (sustainedTtlSeconds !== undefined) {
+    expect(() => parseRootDeploymentInput({ ...state.input,
+      renewal: { ...policy, sustainedTtlSeconds } })).toThrow('renewal.sustainedTtlSeconds')
+    for (const invalid of [310, 420.5, 601]) {
+      expect(() => parseRootDeploymentInput({ ...state.input, renewal: { ...policy, carrierBudget: mode,
+        sustainedTtlSeconds: invalid } })).toThrow('renewal.sustainedTtlSeconds')
+    }
   }
   state.terminalPolicy = { version: 2, generation: { backendId: '3'.repeat(64), pid: 2, startTicks: '1', mountNamespace: 'mnt:[3]' },
     socket: { path: '/run/backend/docker.sock', device: 1, inode: 2 },
@@ -101,6 +112,8 @@ it.each([undefined, 'rolling-v1'] as const)('passes the protected renewal carrie
   const [config] = state.sdkCreated.mock.calls[0]!
   expect(Object.hasOwn(config, 'carrierBudget')).toBe(mode !== undefined)
   expect(config.carrierBudget).toBe(mode)
+  expect(Object.hasOwn(config.lifecycle, 'sustainedTtlSeconds')).toBe(sustainedTtlSeconds !== undefined)
+  expect(config.lifecycle.sustainedTtlSeconds).toBe(sustainedTtlSeconds)
   expect(state.sandboxCreate).not.toHaveBeenCalled()
   state.sdkClose.resolve(undefined)
   await assembly.closeActual()

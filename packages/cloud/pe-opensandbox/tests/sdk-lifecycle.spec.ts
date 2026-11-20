@@ -240,6 +240,77 @@ test('requires positive deletion for the old SDK id when a new process reads a r
   await backend.closeRootActual()
 })
 
+test.each([false, true])('renews from the short create lease to the sustained horizon with receipt loss=%s', async (lost) => {
+  const epoch = Date.now()
+  let elapsed = 0
+  const wall = vi.spyOn(Date, 'now').mockImplementation(() => epoch + elapsed)
+  const mono = vi.spyOn(performance, 'now').mockImplementation(() => elapsed)
+  onTestFinished(() => { wall.mockRestore(); mono.mockRestore() })
+  const original = new FakeTransport(), { intent, mount } = selection()
+  const sandboxId = 'abcdefab-cdef-0123-4567-abcdefabcdef'
+  const pins = { providerGeneration: 'a'.repeat(64), policyDigest: 'b'.repeat(64) }
+  const binding = { allocationId: intent.allocationId, accountId: intent.accountId, epoch: intent.epoch,
+    sessionId: intent.sessionId, workspaceId: intent.workspaceId, sandboxId, containerId: 'c'.repeat(64), ...pins }
+  const info = original.info.bind(original)
+  original.info = () => ({ ...info(sandboxId), expiresAt: new Date(epoch + 60_000) })
+  original.renewFailure = lost
+  const transport: OwnedSdkTransport = {
+    close: () => original.close(),
+    fetch: async (input, init) => {
+      const request = new Request(input, init)
+      if (request.url.endsWith('/deletion-receipt/binding')) return Response.json(binding)
+      if (request.url.endsWith('/deletion-receipt')) {
+        assert.ok(original.calls.some(call => call.method === 'DELETE'))
+        return Response.json({ ...binding, receiptDigest: 'd'.repeat(64) })
+      }
+      return original.fetch(request)
+    },
+  }
+  const backend = new SdkAllocationBackend({ ...config, deletionReceipts: pins, ttlSeconds: 60,
+    renewalLeadMs: 20_000, sustainedTtlSeconds: 420, maxRenewalAttempts: 2 }, agent(original), transport, () => {})
+  const created = await backend.create(intent, mount), prepared = await backend.prepare(created, mount, Date.now() + 10_000)
+  assert.equal(original.body?.timeout, 60)
+  assert.equal(backend.confirmedRenewalUntil(prepared), undefined)
+  const ack = Promise.withResolvers<undefined>(), reserve = vi.fn(async () => true)
+  const observe = backend.activeRenewal(prepared, reserve)!
+  original.renewalGate = ack.promise
+  elapsed = 39_999
+  observe(() => true)
+  assert.equal(reserve.mock.calls.length, 0)
+  elapsed = 40_000
+  observe(() => false)
+  assert.equal(reserve.mock.calls.length, 0)
+  observe(() => true)
+  await original.renewalEntered.promise
+  const firstTarget = new Date(epoch + 460_000).toISOString()
+  assert.deepEqual(reserve.mock.calls, [[intent, firstTarget, undefined]])
+  assert.equal(original.renewedExpiry, firstTarget)
+  assert.equal(backend.confirmedRenewalUntil(prepared), undefined)
+  ack.resolve(undefined)
+  if (lost) {
+    await new Promise<void>(resolve => setImmediate(resolve))
+    assert.equal(backend.confirmedRenewalUntil(prepared), undefined)
+    elapsed = 250_000
+    observe(() => true)
+    assert.equal(reserve.mock.calls.length, 1)
+  } else {
+    await vi.waitFor(() => assert.equal(backend.confirmedRenewalUntil(prepared), 460_000))
+    elapsed = 249_999
+    observe(() => true)
+    assert.equal(reserve.mock.calls.length, 1)
+    elapsed = 250_000
+    observe(() => true)
+    await vi.waitFor(() => assert.equal(backend.confirmedRenewalUntil(prepared), 670_000))
+    assert.deepEqual(reserve.mock.calls, [[intent, firstTarget, undefined],
+      [intent, new Date(epoch + 670_000).toISOString(), firstTarget]])
+  }
+  await backend.stop(created, prepared)
+  assert.equal(backend.confirmedRenewalUntil(prepared), undefined)
+  assert.equal(original.calls.filter(call => call.method === 'DELETE').length, 1)
+  assert.equal(backend.finishedDeletionReceipt(created).containerId, binding.containerId)
+  await backend.closeRootActual()
+})
+
 test('continues one original SDK allocation across three bounded renewals using the last acknowledged target', async () => {
   const epoch = Date.now()
   let elapsed = 0

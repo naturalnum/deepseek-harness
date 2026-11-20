@@ -30,6 +30,8 @@ export interface SdkLifecycleConfig {
   readonly ttlSeconds: number
   /** Trusted composition only. Requires a provider selected for exact, final DELETE proof. */
   readonly renewalLeadMs?: number
+  /** Optional bounded provider horizon used only for durable renewals of an active rolling allocation. */
+  readonly sustainedTtlSeconds?: number
   /** Maximum original renewal attempts for this allocation, including an uncertain attempt. */
   readonly maxRenewalAttempts?: number
   readonly requestTimeoutMs: number

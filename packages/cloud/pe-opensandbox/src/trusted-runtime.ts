@@ -1,5 +1,6 @@
 /** Root owns one authenticated agent client per original allocation, independently of account admission. */
 import { guardianEncodedBudget } from './agent-data/encoded-budget.ts'
+import { CONTINUATION_WINDOW_MS } from './agent-data/constants.ts'
 import type { SkillOperationCopies } from './skill-files-types.ts'
 import { copyFacts } from './skill-wire.ts'
 import { randomUUID } from 'node:crypto'
@@ -174,9 +175,8 @@ export class TrustedRuntimeRegistry implements TrustedAgentLifecycle {
     const record = this.ready.get(prepared)
     if (record === undefined || record.client === undefined || record.fenced || record.physicalStopped
       || record.failure !== undefined) unavailable()
-    const operationMs = SLICE_LIMITS.prepareMs + SLICE_LIMITS.runMs + SLICE_LIMITS.stopMs
     const due = record.commands >= SLICE_LIMITS.lifetimeOperations
-      || performance.now() + operationMs >= record.residentDeadlineAtMs
+      || performance.now() + CONTINUATION_WINDOW_MS >= record.residentDeadlineAtMs
     if (!due) return false
     const facts = record.client.responsibility()
     if (facts.inFlight !== 0 || facts.remoteUnresolved.length !== 0 || facts.cleanupFailure
