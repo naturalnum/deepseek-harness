@@ -585,12 +585,17 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
       try { use.assertCurrent() } finally { use.release() }
       return
     }
-    let record = await bindings.reserve(accountId, templateId, operationId)
+    // Access restores an existing assignment without selecting a new template.
+    let record = templateId === '' ? await bindings.refresh(accountId) : await bindings.reserve(accountId, templateId, operationId)
+    if (record === undefined) {
+      throw new AccountRuntimeError('cloud/account-unavailable', 'The account has no existing storage assignment to restore.')
+    }
     if (record.phase === 'stop-unknown') {
       throw new AccountRuntimeError('cloud/stop-unconfirmed', 'The original account stop has not been confirmed.')
     }
-    if (record.phase === 'disabled') control.factory.openAccountAdmission(accountId)
+    const restoring = record.phase === 'disabled'
     if (record.phase !== 'preparing') record = await bindings.transition(record, 'preparing', operationId)
+    if (restoring) control.factory.openAccountAdmission(accountId)
     try {
       const use = await this.acquireStaticAccount(control, accountId)
       try { use.assertCurrent() } finally { use.release() }

@@ -5,8 +5,11 @@ import type { AccountId, RootMetadataDatabase } from '../src/types.ts'
 import { StaticAccountBindings } from '../src/static-account-bindings.ts'
 
 const path = process.env.PE_ACCOUNT_ADMIN_POSTGRES_CONFIG
-const inventory = { sha256: 'a'.repeat(64), maxAccounts: 2,
-  slots: [{ slotId: 'slot-a', templateId: 'standard' }, { slotId: 'slot-b', templateId: 'standard' }] }
+const inventory = { sha256: 'a'.repeat(64), maxAccounts: 3, slots: [
+  { slotId: 'slot-a', templateId: 'standard' },
+  { slotId: 'slot-b', templateId: 'standard' },
+  { slotId: 'slot-c', templateId: 'larger' },
+] }
 
 describe.skipIf(path === undefined)('durable static account assignments', () => {
   it('assigns each real slot once, preserves mapping identity across workflow transitions and reloads after restart', async () => {
@@ -29,6 +32,24 @@ describe.skipIf(path === undefined)('durable static account assignments', () => 
       ])
       expect(first.assignment.slotId).not.toBe(second.assignment.slotId)
       expect((await a.reserve('binding-a' as AccountId, 'standard', 'retry-a')).assignment).toBe(first.assignment)
+      expect((await b.reserve('binding-a' as AccountId, 'standard', 'create-a')).assignment).toEqual(first.assignment)
+      await expect.soft(a.reserve('binding-a' as AccountId, 'larger', 'retry-a')).rejects
+        .toMatchObject({ code: 'cloud/account-unavailable' })
+      await expect(b.seed('binding-b' as AccountId, first.assignment.slotId)).rejects
+        .toMatchObject({ code: 'cloud/account-unavailable' })
+      await expect(a.transition({ ...first, assignment: { ...first.assignment } }, 'preparing', 'copied-assignment')).rejects
+        .toMatchObject({ code: 'cloud/account-unavailable' })
+      // Exercise the write fence with the same workflow revision on a different durable binding generation.
+      await pool.query('UPDATE pe_account_static_bindings SET binding_revision = 2 WHERE account_id = $1', [first.assignment.accountId])
+      try {
+        await expect.soft(a.transition(first, 'failed', 'old-binding')).rejects.toMatchObject({ code: 'cloud/stale-generation' })
+        const durable = await pool.query(`SELECT phase, workflow_revision::text, operation_id, binding_revision::text
+          FROM pe_account_static_bindings WHERE account_id = $1`, [first.assignment.accountId])
+        expect.soft(durable.rows).toEqual([{ phase: 'reserved', workflow_revision: '1', operation_id: 'create-a', binding_revision: '2' }])
+      } finally {
+        await pool.query(`UPDATE pe_account_static_bindings SET binding_revision = 1,
+          phase = 'reserved', workflow_revision = 1, operation_id = 'create-a' WHERE account_id = $1`, [first.assignment.accountId])
+      }
       const preparing = await a.transition(first, 'preparing', 'create-a')
       const ready = await a.transition(preparing, 'ready', 'create-a')
       expect(ready.assignment).toBe(first.assignment)

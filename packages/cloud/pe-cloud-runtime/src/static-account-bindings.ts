@@ -130,7 +130,13 @@ export class StaticAccountBindings {
    * @returns Persistent assignment, idempotent for that same account.
    */
   async reserve(accountId: AccountId, templateId: string, operationId: string): Promise<AccountResourceRecord> {
-    const existing = await this.refresh(accountId)
+    const readAssignment = async (): Promise<AccountResourceRecord | undefined> => {
+      const retained = await this.refresh(accountId)
+      if (retained !== undefined
+        && !this.inventory.slots.some(slot => slot.slotId === retained.assignment.slotId && slot.templateId === templateId)) unavailable()
+      return retained
+    }
+    const existing = await readAssignment()
     if (existing !== undefined) return existing
     const candidates = this.inventory.slots.filter(slot => slot.templateId === templateId)
     if (candidates.length === 0) throw new AccountRuntimeError('cloud/capacity', 'No prepared storage template is available.')
@@ -148,7 +154,7 @@ export class StaticAccountBindings {
         SELECT $1, $3, slot_id, 'reserved', $4 FROM candidate
         WHERE (SELECT count(*) FROM public.pe_account_static_bindings) < $5::integer
         ON CONFLICT DO NOTHING`, [accountId, slots, this.inventory.sha256, operationId, String(this.inventory.maxAccounts)])
-      const record = await this.refresh(accountId)
+      const record = await readAssignment()
       if (record !== undefined) return record
     }
     throw new AccountRuntimeError('cloud/capacity', 'All prepared account storage slots are assigned.')
@@ -179,9 +185,11 @@ export class StaticAccountBindings {
     this.assertCurrent(original.assignment)
     const result = await this.query(`UPDATE public.pe_account_static_bindings SET phase = $3,
       workflow_revision = workflow_revision + 1, operation_id = $4, updated_at = clock_timestamp()
-      WHERE account_id = $1 AND workflow_revision = $2::bigint
+      WHERE account_id = $1 AND workflow_revision = $2::bigint AND inventory_sha256 = $5
+        AND slot_id = $6 AND binding_revision = $7::bigint
       RETURNING account_id, inventory_sha256, slot_id, binding_revision::text, workflow_revision::text, phase, operation_id`,
-    [original.assignment.accountId, original.revision, phase, operationId])
+    [original.assignment.accountId, original.revision, phase, operationId, this.inventory.sha256,
+      original.assignment.slotId, original.assignment.revision])
     if (result.rows.length !== 1) throw new AccountRuntimeError('cloud/stale-generation', 'Account resource status changed during the operation.')
     return this.publish(result.rows[0])
   }
