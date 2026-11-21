@@ -841,8 +841,11 @@ export class ManagedCoordinator extends SandboxCoordinator {
     const accounts = [...this.accounts.values()]
     for (const work of accounts) this.beginStop(work)
     const startupJoined = this.state.starting?.then(() => undefined, () => undefined)
-    const actual = Promise.allSettled([this.resources.allocations?.close(), startupJoined, Promise.allSettled(this.historyReads),
-      this.deployment.backend.closeRootActual(), ...accounts.map(work => work.stopping)])
+    const allocationStop = this.resources.allocations?.close()
+    const receiptWork = this.resources.receipts === undefined ? undefined
+      : Promise.allSettled([allocationStop, startupJoined, ...accounts.map(work => work.allocationsStopping)]).then(() => undefined)
+    const actual = Promise.allSettled([allocationStop, startupJoined, Promise.allSettled(this.historyReads),
+      this.deployment.backend.closeRootActual(receiptWork), ...accounts.map(work => work.stopping)])
     void actual.then((results) => {
       const failed = results.find(result => result.status === 'rejected')
       if (failed?.status === 'rejected') closing.reject(failed.reason)

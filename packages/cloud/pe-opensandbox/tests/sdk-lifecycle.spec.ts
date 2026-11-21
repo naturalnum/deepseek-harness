@@ -132,6 +132,71 @@ function agent(transport: FakeTransport): TrustedAgentLifecycle {
   acknowledgePhysicalStop() { transport.phases.push('physical-stop-ack'); return undefined } }
 }
 
+test.each([false, true])('joins the original SDK ACK across the Root receipt barrier (inflight=%s)', async (inflight) => {
+  const transport = new FakeTransport(), { intent } = selection()
+  const receiptWork = Promise.withResolvers<undefined>()
+  const ackStarted = Promise.withResolvers<undefined>(), ackReply = Promise.withResolvers<undefined>()
+  const pins = { providerGeneration: 'a'.repeat(64), policyDigest: 'b'.repeat(64) }
+  const { allocationId, accountId, epoch, sessionId, workspaceId } = intent
+  const receipt = { allocationId, accountId, epoch, sessionId, workspaceId, ...pins,
+    sandboxId: '00000000-0000-0000-0000-000000000001', containerId: 'c'.repeat(64), receiptDigest: 'd'.repeat(64) }
+  const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+    const request = new Request(input, init)
+    assert.equal(request.method, 'POST')
+    assert.equal(new URL(request.url).pathname, `/v1/sandboxes/${receipt.sandboxId}/deletion-receipt/ack`)
+    assert.deepEqual((await request.json() as { receipt: unknown }).receipt, receipt)
+    ackStarted.resolve(undefined)
+    await ackReply.promise
+    return Response.json(receipt)
+  })
+  const backend = new SdkAllocationBackend({ ...config, deletionReceipts: pins }, agent(transport),
+    { fetch, close: () => transport.close() }, () => {})
+  const closing = backend.closeRootActual(receiptWork.promise)
+  try {
+    assert.throws(() => backend.isMissing(receipt.sandboxId, Date.now() + 1000), { code: 'sdk/closed' })
+    assert.throws(() => backend.acknowledgePersistedDeletion(intent, { ...receipt, policyDigest: 'e'.repeat(64) }),
+      { code: 'sdk/selection' })
+    const acknowledged = backend.acknowledgePersistedDeletion(intent, receipt)
+    await ackStarted.promise
+    assert.equal(transport.closed, false)
+    if (inflight) {
+      receiptWork.resolve(undefined)
+      await vi.waitFor(() => assert.throws(() => backend.acknowledgePersistedDeletion(intent,
+        { ...receipt, policyDigest: 'e'.repeat(64) }), { code: 'sdk/closed' }))
+      assert.throws(() => backend.acknowledgePersistedDeletion(intent, receipt), { code: 'sdk/closed' })
+      assert.equal(transport.closed, false)
+      assert.equal(fetch.mock.calls.length, 1)
+    }
+    ackReply.resolve(undefined)
+    assert.deepEqual(await acknowledged, receipt)
+    if (!inflight) assert.equal(transport.closed, false)
+  } finally {
+    ackReply.resolve(undefined)
+    receiptWork.resolve(undefined)
+    await closing
+  }
+  assert.equal(transport.closed, true)
+  assert.throws(() => backend.acknowledgePersistedDeletion(intent, receipt), { code: 'sdk/closed' })
+  assert.equal(fetch.mock.calls.length, 1)
+})
+
+test('receipt shutdown retains a provider record whose durable owner did not start its stop', async () => {
+  const transport = new FakeTransport(), { intent, mount } = selection()
+  const pins = { providerGeneration: 'a'.repeat(64), policyDigest: 'b'.repeat(64) }
+  const backend = new SdkAllocationBackend({ ...config, deletionReceipts: pins }, agent(transport), transport, () => {})
+  await backend.create(intent, mount)
+  const receiptWork = Promise.withResolvers<undefined>()
+  const closing = backend.closeRootActual(receiptWork.promise)
+  const refused = assert.rejects(closing, { code: 'sdk/close-unconfirmed' })
+  await Promise.resolve(undefined)
+  assert.deepEqual(transport.calls.map(call => call.method), ['POST'])
+  assert.equal(transport.closed, false)
+  receiptWork.resolve(undefined)
+  await refused
+  assert.deepEqual(transport.calls.map(call => call.method), ['POST'])
+  assert.equal(transport.closed, true)
+})
+
 test.each([false, true])('joins one persisted SDK renewal and demands positive removal after receipt loss=%s', async (lost) => {
   const epoch = Date.now()
   let elapsed = 0

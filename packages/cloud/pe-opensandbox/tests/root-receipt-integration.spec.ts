@@ -13,6 +13,8 @@ import { createOwnedSdkTransport } from '../src/sdk-transport.ts'
 
 const pgPath = process.env['DSH_S08_ROOT_PG_FIXTURE']
 const sdkPath = process.env['DSH_S08_ROOT_SDK_FIXTURE']
+const normalClose = process.env['DSH_S08_ROOT_NORMAL_CLOSE_ONLY'] === '1'
+const fixtureAvailable = pgPath !== undefined && sdkPath !== undefined
 const recoverExisting = process.env['DSH_S08_ROOT_RECOVER_ONLY'] === '1'
 const config: ManagedCoordinatorConfig = {
   maxBoundAccounts: 2, maxActiveCommands: 2, maxActiveCommandsPerAccount: 1,
@@ -47,7 +49,7 @@ function originalRequest(index: number, account: AccountBinding, onRelease: () =
     async prepareMount() { return { value, projectMountVersion: 'fixture-mount', release: onRelease, assertCurrent() {} } } }
 }
 
-it.runIf(pgPath !== undefined && sdkPath !== undefined)('starts actual Root and settles original ready, stopping, terminal and replayed ACK', async () => {
+async function exerciseRootReceiptFixture(mode: 'normal-close' | 'recovery') {
   if (pgPath === undefined || sdkPath === undefined) throw new Error('private fixtures required')
   const pg = await realpath(pgPath), sdk = await realpath(sdkPath)
   expect(basename(pg)).toMatch(/^pe-s08-root-pg\.[A-Za-z0-9]+$/u)
@@ -81,7 +83,7 @@ it.runIf(pgPath !== undefined && sdkPath !== undefined)('starts actual Root and 
   }
   const account: AccountBinding = { accountId: 'fixture-account' as AccountBinding['accountId'], epoch: '1' as AccountBinding['epoch'],
     recipeVersion: 'fixture-1', lifetime: new AbortController().signal }
-  let physicalStops = 0, mountReleases = 0, stoppedBeforeProvider = 0
+  let physicalStops = 0, mountReleases = 0, stoppedBeforeProvider = 0, shutdownAcks = 0
   const agent: TrustedAgentLifecycle = {
     async handshake(selection) {
       return { sandboxId: selection.sandboxId, runtimeIdentity: 'fixture-runtime', protocolVersion: 'fixture/1',
@@ -105,6 +107,10 @@ it.runIf(pgPath !== undefined && sdkPath !== undefined)('starts actual Root and 
       bodyTimeoutMs: 1200, keepAliveTimeoutMs: 1000, maxHeaderBytes: 4096, maxRequestBytes: 8192, maxResponseBytes: 8192 })
     let pendingLoss = loseAck
     const wire: OwnedSdkTransport = { close: () => transport.close(), fetch: async (request, options) => {
+      if (mode === 'normal-close' && request instanceof Request && request.url.endsWith('/deletion-receipt/ack')) {
+        expect(await row(executor, 'fixture-session-1')).toMatchObject({ state: 'released', pending_slot: 1 })
+        shutdownAcks++
+      }
       const response = await transport.fetch(request, options)
       if (pendingLoss && request instanceof Request && request.url.endsWith('/deletion-receipt/ack')) {
         pendingLoss = false
@@ -129,6 +135,25 @@ it.runIf(pgPath !== undefined && sdkPath !== undefined)('starts actual Root and 
   }
 
   try {
+    if (mode === 'normal-close') {
+      const request = originalRequest(1, account, () => { mountReleases++ })
+      const owner = startOwner()
+      await owner.coordinator.start()
+      owner.coordinator.assertReady()
+      const prepared = await owner.allocations.prepare(request)
+      expect(await row(executor, request.sessionId)).toMatchObject({ state: 'ready', sandbox_id: prepared.sandboxId })
+
+      await owner.coordinator.closeRoot()
+
+      expect(await row(executor, request.sessionId)).toMatchObject({ state: 'released', sandbox_id: prepared.sandboxId,
+        receipt_digest: expect.stringMatching(/^[0-9a-f]{64}$/u), pending_slot: null })
+      expect((await readFile(join(sdk, 'removes'), 'utf8')).trim().split('\n')).toEqual([prepared.sandboxId])
+      expect(stoppedBeforeProvider).toBe(1)
+      expect(shutdownAcks).toBe(1)
+      expect(physicalStops).toBe(1)
+      expect(mountReleases).toBe(1)
+      return
+    }
     if (recoverExisting) {
       const before = await row(executor, 'fixture-session-2') as { sandbox_id: string }
       expect(before).toMatchObject({ state: 'stopping', receipt_digest: null })
@@ -176,4 +201,10 @@ it.runIf(pgPath !== undefined && sdkPath !== undefined)('starts actual Root and 
     await Promise.allSettled(coordinators.map(owner => owner.closeRoot()))
     await executor.close()
   }
-}, 25000)
+}
+
+it.runIf(fixtureAvailable && normalClose)('settles and acknowledges the original ready allocation during normal Root shutdown',
+  () => exerciseRootReceiptFixture('normal-close'), 25000)
+
+it.runIf(fixtureAvailable && !normalClose)('starts actual Root and settles original ready, stopping, terminal and replayed ACK',
+  () => exerciseRootReceiptFixture('recovery'), 25000)

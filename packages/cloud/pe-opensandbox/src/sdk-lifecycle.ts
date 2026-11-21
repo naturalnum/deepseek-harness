@@ -80,6 +80,7 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
   private readonly inflight = new Set<Promise<unknown>>()
   private readonly recipe: string
   private admission = true
+  private receiptAcknowledgementsOpen = true
   private closing: Promise<void> | undefined
   private closeResult: CloseResult | undefined
   private readonly closeObservers = new Set<(value: CloseResult) => void>()
@@ -205,7 +206,7 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
    * @returns Exact acknowledged evidence through the same real shutdown and request owner.
    */
   acknowledgePersistedDeletion(intent: AllocationCreateIntent, receipt: AllocationDeletionReceipt): Promise<AllocationDeletionReceipt> {
-    this.assertAdmission()
+    check(this.receiptAcknowledgementsOpen, 'sdk/closed')
     this.verifyReceiptBinding(receipt, intent)
     const budget = this.budget(Date.now() + this.config.requestTimeoutMs)
     const transport = createSdkReceiptTransport(this.connection, this.config, {
@@ -549,31 +550,38 @@ export class SdkAllocationBackend implements AllocationBackend<VerifiedExecution
 
   /**
    * Fence and join the original actual shutdown independently of any caller's observation deadline.
+   * @param receiptWork Original Root allocation stops and receipt publication, including ACK after the SDK fence.
    * @returns The same real stops, local joins and dispatcher closure; actual failure remains sticky.
    */
-  closeRootActual(): Promise<void> {
+  closeRootActual(receiptWork?: Promise<void>): Promise<void> {
     this.admission = false
     if (this.closing === undefined) {
+      if (receiptWork === undefined) this.receiptAcknowledgementsOpen = false
       this.audit.point('sdk-root-fence', { fenced: true })
       const deferred = Promise.withResolvers<void>()
       this.closing = deferred.promise
       void this.audit.watch(this.audit.begin('sdk-root-close', { fenced: true }), this.closing)
       void this.closing.then(() => { this.settleClose({ ok: true }) }, (cause: unknown) => { this.settleClose({ ok: false, cause }) })
-      void this.finishClose().then(deferred.resolve, deferred.reject)
+      void this.finishClose(receiptWork).then(deferred.resolve, deferred.reject)
     }
     return this.closing
   }
 
-  private async finishClose(): Promise<void> {
-    const outcomes = await Promise.allSettled([...this.records.values()].map(async (record) => {
-      await record.actual
-      await this.stopRecord(record)
-    }))
+  private async finishClose(receiptWork?: Promise<void>): Promise<void> {
+    // In receipt mode, only the original allocation owner can start a stop after PostgreSQL confirms stopping.
+    const work = receiptWork === undefined
+      ? [...this.records.values()].map(async (record) => { await record.actual; await this.stopRecord(record) })
+      : [receiptWork]
+    const outcomes = await Promise.allSettled(work)
+    this.receiptAcknowledgementsOpen = false
     while (this.inflight.size) await Promise.allSettled([...this.inflight])
+    const retained = receiptWork !== undefined && [...this.records.values()].some(record => record.phase !== 'stopped')
     let closeFailure: unknown
     try { await this.connection.closeTransport() } catch (cause) { closeFailure = cause }
     const failed = outcomes.find(value => value.status === 'rejected')
-    if (failed?.status === 'rejected' || closeFailure !== undefined) throw new SdkLifecycleFailure('sdk/close-unconfirmed', failed?.status === 'rejected' ? failed.reason : closeFailure)
+    if (retained || failed?.status === 'rejected' || closeFailure !== undefined) {
+      throw new SdkLifecycleFailure('sdk/close-unconfirmed', failed?.status === 'rejected' ? failed.reason : closeFailure)
+    }
   }
 
   private stopRecord(record: AllocationRecord): Promise<void> {
