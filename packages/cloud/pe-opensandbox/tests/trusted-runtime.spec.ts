@@ -10,6 +10,8 @@ import type { NativeRegisteredService } from '../src/native-command-account.ts'
 import type { AgentSelection } from '../src/lifecycle-types.ts'
 import { TrustedRuntimeRegistry, type ApplicationHttpFactory } from '../src/trusted-runtime.ts'
 import { AGENT_SOURCE_SHA256, BWRAP_SHA256, PROTOCOL, SLICE_LIMITS, expectedWorldHash } from '../src/agent-data/index.ts'
+import { CARRIER_LIMITS, RECORD_SETTLEMENT_VERSION } from '../src/agent-data/constants.ts'
+import { CarrierPrepareCapacityError } from '../src/agent-data/errors.ts'
 import type { AgentDataClient, ClientOptions, Handshake, OperationSnapshot, PreparedRequest, Responsibility } from '../src/agent-data/types.ts'
 
 function selection(): AgentSelection {
@@ -62,6 +64,7 @@ function fixture(applicationFactory?: ApplicationHttpFactory) {
     joinStream: async () => {},
     handshake: vi.fn(async () => handshake), prepare: vi.fn(async (_request: PreparedRequest) => facts), commit: vi.fn(async () => facts),
     poll: vi.fn(async () => facts), cancel: vi.fn(async () => facts), stop: vi.fn(async () => facts),
+    settle: vi.fn<NonNullable<AgentDataClient['settle']>>(async () => {}),
     seal: vi.fn(async () => handshake), fence: vi.fn(async () => {}), release: vi.fn(async () => responsibility),
     whenLocallySettled: vi.fn(async () => {}), responsibility: () => responsibility, notePhysicalStop: vi.fn(),
   } satisfies AgentDataClient
@@ -94,6 +97,28 @@ function registeredService(selected: AgentSelection) {
 }
 
 describe('Root original trusted runtime registry', () => {
+  it('keeps the original command sequence usable after repeated synchronous rolling prepare refusals', async () => {
+    const f = fixture(), signal = new AbortController().signal
+    f.client.handshake.mockResolvedValue({ ...f.handshake, recordSettlementVersion: RECORD_SETTLEMENT_VERSION })
+    const prepared = f.registry.bindPrepared({ ...await f.registry.handshake(f.selected, signal, readinessBudget()) })
+    const spec = { argv: ['/bin/true'], cwd: '/project', stdin: { mode: 'ignore' as const } }
+    const first = f.registry.command(prepared)
+    await first.prepare(spec)
+    await first.settle?.(1000)
+    const refusal = new CarrierPrepareCapacityError()
+    f.client.prepare.mockImplementation(() => { throw refusal })
+    for (let index = 0; index <= CARRIER_LIMITS.attempts; index++) {
+      await expect(f.registry.command(prepared).prepare(spec)).rejects.toBe(refusal)
+    }
+    f.client.prepare.mockResolvedValue(f.facts)
+    const recovered = f.registry.command(prepared)
+    await recovered.prepare(spec)
+    await recovered.settle?.(1000)
+    expect(f.client.prepare.mock.calls.slice(1).every(([request]) => request.ref.recordSequence === 2)).toBe(true)
+    expect(f.client.settle.mock.calls.map(([ref]) => ref.recordSequence)).toEqual([1, 2])
+    expect(f.client.stop).not.toHaveBeenCalled()
+  })
+
   it.each(['run-deadline', 'owner-stop'])(
     'retains the first nonnull original command cause across replies: %s', async (firstCause) => {
       const f = fixture(), signal = new AbortController().signal

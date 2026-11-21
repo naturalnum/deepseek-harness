@@ -424,11 +424,17 @@ export class TrustedRuntimeRegistry implements TrustedAgentLifecycle {
         guardianEncodedBudget(record.selection.mount.grant.project.rootPath, spec, fixed, selectedPolicy)
         collect = spec.executionKind !== 'pipes'
         const normalized = makePrepared(prepared.runtimeIdentity, operationId, spec, fixed, selectedPolicy)
+        const priorSequence = record.recordSequence
         if (settle !== undefined && collect) {
           if (record.recordSequence >= CARRIER_LIMITS.attempts) unavailable()
           request = issue({ ...normalized, ref: { ...normalized.ref, recordSequence: ++record.recordSequence } })
         } else request = issue(normalized)
-        return client.prepare(request)
+        try { return client.prepare(request) }
+        catch (cause) {
+          // The rolling refusal is synchronous and precedes DataClient recording the signed sequence.
+          if (cause instanceof CarrierPrepareCapacityError) record.recordSequence = priorSequence
+          throw cause
+        }
       }, true),
       attach: () => client.attach(selected().ref),
       whenLocallySettled: () => client.joinStream(selected().ref),

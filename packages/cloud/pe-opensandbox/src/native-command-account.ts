@@ -10,6 +10,7 @@ import type { SubprocessTerminalHandle, SubprocessTerminalSpawnSpec, SubprocessH
 import type { ToolExecutionSuccess } from '@deepseek-ai/dsh-tools'
 import { guardianEncodedBudget, guardianWorkingCopiesBudget } from './agent-data/encoded-budget.ts'
 import { SLICE_LIMITS } from './agent-data/constants.ts'
+import { CarrierPrepareCapacityError } from './agent-data/errors.ts'
 import { assertInstalledExecutionBinding } from './account-port.ts'
 import type { AllocationId } from './allocation-types.ts'
 import type { NativeAccountExecutionAuthority } from './coordinator.ts'
@@ -862,9 +863,13 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
     return JSON.stringify({ argv: spec.argv, cwd: spec.cwd, stdio: spec.stdio, graceMs: spec.graceMs, env: spec.env })
   }
   private protectChannel(record: CommandRecord, channel: CommandChannel): CommandChannel {
-    const observe = async <T>(request: () => Promise<T>): Promise<T> => {
+    const observe = async <T>(request: () => Promise<T>, preparing = false): Promise<T> => {
       try { return await request() }
-      catch (cause) { record.privateFailure ??= { cause }; throw this.failure() }
+      catch (cause) {
+        if (preparing && cause instanceof CarrierPrepareCapacityError) throw cause
+        record.privateFailure ??= { cause }
+        throw this.failure()
+      }
     }
     const attach = channel.attach?.bind(channel), join = channel.whenLocallySettled?.bind(channel)
     const settle = channel.settle?.bind(channel), extendWindow = channel.extendServiceWindow?.bind(channel)
@@ -879,7 +884,7 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
       prepare: spec => observe(() => {
         if (this.config.enforceSessionFilePolicy === true && record.filePolicy === undefined) throw this.failure()
         return record.filePolicy === undefined ? channel.prepare(spec) : channel.prepare(spec, record.filePolicy)
-      }), commit: () => observe(() => channel.commit()),
+      }, true), commit: () => observe(() => channel.commit()),
       poll: () => observe(() => channel.poll()), stop: () => observe(() => channel.stop()) }
   }
   private reportUnknown(record: CommandRecord, cause: unknown): void {

@@ -333,7 +333,7 @@ test.each(['clean-terminal', 'unconfirmed-terminal', 'wrong-refusal'] as const)(
       await vi.waitFor(() => assert.equal(transport.requests[index + 1]?.request.route, '/poll'))
       const proof = kind === 'clean-terminal'
         ? operationFixture(first.ref, { recordSequence: 1, submitted: true, commitAttempted: true,
-            direct: { waitStatus: 0, returncode: 0 }, directNotObserved: false, rangeEmpty: true, ioClosed: true })
+          direct: { waitStatus: 0, returncode: 0 }, directNotObserved: false, rangeEmpty: true, ioClosed: true })
         : fixture.active(first)
       if (kind === 'clean-terminal') proof.operation.streams.stdout.eof = proof.operation.streams.stderr.eof = true
       transport.reply(index + 1, proof)
@@ -482,6 +482,32 @@ test('an unresolved operation retains its charges after the carrier rolls and ca
     await assert.rejects(settle(work))
   } finally { clock.mockRestore() }
 })
+
+test.each(['forbidden', 'remote-capacity', 'transport-loss'] as const)(
+  'keeps an already dispatched rolling prepare out of the local capacity refusal path (%s)', async (fault) => {
+    const { client, transport, request } = await renewalCarrier('rolling-v1')
+    const operation = request(1)
+    if (fault === 'transport-loss') {
+      const dispatch = transport.dispatch.bind(transport)
+      transport.dispatch = (wire, events) => {
+        dispatch(wire, events)
+        throw new CarrierPrepareCapacityError()
+      }
+    }
+    try {
+      const pending = client.prepare(operation)
+      assert.equal(transport.requests.length, 2)
+      const expectedStatus = fault === 'forbidden' ? 401 : 409
+      if (fault !== 'transport-loss') transport.reply(1, {
+        protocolVersion: PROTOCOL, runtimeIdentity: RUNTIME,
+        error: fault === 'remote-capacity' ? 'carrier_budget' : 'authorization_refused',
+      }, expectedStatus)
+      await assert.rejects(pending, fault === 'transport-loss' ? ControlUncertain : { status: expectedStatus, code: 'remote_refusal' })
+      assert.equal(client.responsibility().remoteUnresolved[0]?.operationId, operation.ref.operationId)
+      assert.equal(client.responsibility().fenced, fault === 'transport-loss')
+    } finally { await release(client) }
+  },
+)
 
 test('rolling admission retains the original concurrent requests and rejects the legacy guest', async () => {
   assert.throws(() => new DataClient(options(), new FakeTransport(), 'rolling-v1'), { code: 'rolling_carrier_guest' })

@@ -133,7 +133,7 @@ With a sustained horizon, Root requests a grant that only extends one command's 
 
 If a rolling guest refuses a residence grant because the original command closed, Root queries that same operation. Only a verified natural exit with both streams and the execution range closed lets a later operation request the unused grant sequence. Any unconfirmed outcome retains its original cleanup responsibility.
 
-On the rolling carrier, admitting a service holds capacity for its original commit, status polling and signed grants at the Root cadence. Other traffic leaves room for that capacity and for stop requests within the same hard window. A prepare refused for capacity settles locally before registration and submission.
+On the rolling carrier, admitting a service holds capacity for its original commit, status polling and signed grants at the Root cadence. Other traffic leaves room for that capacity and for stop requests within the same hard window. The rolling carrier’s local prepare refusal returns its capacity error, releases the command slot and preserves the original Session compute and command sequence.
 
 A never-submitted foreground command or development service can replace quiescent compute at the original four-record limit or when the remaining 300-second residence cannot cover the next operation’s existing prepare, run and stop budgets. Root first joins the original physical stop, released metadata and mount release, then obtains a fresh files grant for the same Session environment and starts a fresh runtime. Active services, ranges, application I/O and unknown references block replacement. Confirmed stopped SDK, bootstrap and runtime records can be retired without reopening their original intent objects; unresolved records retain capacity.
 
