@@ -1,6 +1,11 @@
 /** The trusted IP viewer is constant HTML. The selected application contributes only private-renderer PNG bytes. */
 import { FRAME_HEIGHT, FRAME_WIDTH } from './ip-application-renderer.ts'
 
+/**
+ * Create the trusted management viewer document.
+ * @param nonce Server-issued nonce for the viewer's script.
+ * @returns Fixed viewer HTML with the nonce applied.
+ */
 export function ipApplicationViewer(nonce: string): string {
   return `<!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">

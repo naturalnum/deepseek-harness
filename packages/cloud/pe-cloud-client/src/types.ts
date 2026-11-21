@@ -31,8 +31,18 @@ interface CloudServiceApplicationLimits {
 
 /** A DNS content origin or a trusted same-origin IP viewer. */
 export type CloudServiceApplicationPolicy = CloudServiceApplicationLimits & (
-  { readonly contentOrigin: string; readonly mode?: never }
-  | { readonly mode: 'ip-render'; readonly contentOrigin?: never }
+  {
+    /** Exact origin of the DNS-based service content listener. */
+    readonly contentOrigin: string
+    /** Leave omitted for DNS-based previews. */
+    readonly mode?: never
+  }
+  | {
+    /** Select the trusted viewer on the HTTPS IPv4 management origin. */
+    readonly mode: 'ip-render'
+    /** Leave omitted when the viewer uses the management origin. */
+    readonly contentOrigin?: never
+  }
 )
 
 /** Explicit finite UTF-8 budgets; total includes the physical key and serialized envelope. */

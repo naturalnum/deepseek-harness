@@ -166,7 +166,14 @@ export class ServiceApplicationViews {
     await actual
   }
 
-  /** A same-origin viewer may use its own original management login for this exact retained view. */
+  /**
+   * Run one view operation under the same management login that opened the view.
+   * @param id Exact retained view id.
+   * @param login Authenticated management login for this request.
+   * @param requestId Original viewer request id.
+   * @param consume Operation using the retained service binding and its revocation signal.
+   * @returns Settlement of the admitted operation.
+   */
   async withLogin(id: string, login: AuthenticatedPrincipal, requestId: RequestId,
     consume: (selection: ApplicationViewSelection, use: ApplicationViewUse) => Promise<void>,
   ): Promise<void> {
@@ -181,6 +188,7 @@ export class ServiceApplicationViews {
   }
 
   /**
+   * Identify the active service binding for a Close request from the original login.
    * @param id Exact view being closed.
    * @param login Current request's authenticated login.
    * @param requestId Original close request id.
@@ -192,6 +200,7 @@ export class ServiceApplicationViews {
   }
 
   /**
+   * Revoke the original login's view and request retirement of its resources.
    * @param id Exact view being closed.
    * @param login Current request's authenticated login.
    * @param requestId Original close request id.

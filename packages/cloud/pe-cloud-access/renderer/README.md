@@ -1,5 +1,7 @@
 # IP-only service preview
 
+English | [中文](README.zh.md)
+
 PowerEvolve can show a registered Session service in the existing Browser tab when the management origin uses an HTTPS IPv4 address. The tab loads a trusted viewer on the management origin and displays 960 × 640 PNG frames. It sends coordinate clicks, refresh requests and close requests. The private browser runs the service page and can read its same-origin GET resources. Each open view uses a separate Chromium process and context.
 
 Configure `ipApplicationPreview` in `pe-cloud-access/root` with the protected Unix socket path, frame and relay limits, and the normal view and response limits. Select the existing `cloud:serviceApplication` launch exposure for this mode. The inert DNS-specific `/cloud/service-preview` exposure belongs to DNS deployments. The public Cloud Client config needs `serviceApplications.mode: ip-render`, the exact HTTPS IPv4 management origin and the existing request, response and field limits. The older DNS content listener and its client configuration still use the existing `applications` and `contentOrigin` fields.

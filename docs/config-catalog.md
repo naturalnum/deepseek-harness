@@ -2503,12 +2503,26 @@ export interface CloudServicePreviewPolicy {
   readonly maxUrlBytes: number
 }
 
-/** Public inputs for a private POST handoff to one dedicated content origin; supplies no service authority. */
-export interface CloudServiceApplicationPolicy {
+/** A DNS content origin or a trusted same-origin IP viewer. */
+export type CloudServiceApplicationPolicy = CloudServiceApplicationLimits & (
+  {
+    /** Exact origin of the DNS-based service content listener. */
+    readonly contentOrigin: string
+    /** Leave omitted for DNS-based previews. */
+    readonly mode?: never
+  }
+  | {
+    /** Select the trusted viewer on the HTTPS IPv4 management origin. */
+    readonly mode: 'ip-render'
+    /** Leave omitted when the viewer uses the management origin. */
+    readonly contentOrigin?: never
+  }
+)
+
+/** Common public bounds for the original authenticated application launch. */
+interface CloudServiceApplicationLimits {
   /** Exact public origin for authenticated management requests. */
   readonly managementOrigin: string
-  /** Exact public origin for selected content requests. */
-  readonly contentOrigin: string
   /** Finite deadline of each management request in milliseconds. */
   readonly requestTimeoutMs: number
   /** Maximum encoded management request body bytes. */

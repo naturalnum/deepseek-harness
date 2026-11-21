@@ -8,13 +8,18 @@ import type { ApplicationReadLimits } from '@deepseek-ai/dsh-pe-opensandbox/type
 import type { ApplicationViewLimits } from './application-views.ts'
 import type { ServiceApplicationReply } from './application-response.ts'
 
+/** Authenticated management endpoint for the IP preview viewer. */
 export const IP_APPLICATION_VIEW_PATH = '/cloud/service-application-view'
+/** Synthetic browser origin for resources read through the registered-service relay. */
 export const RENDER_ORIGIN = 'https://application-preview.invalid'
+/** Viewport width in pixels, used to validate frames and click coordinates. */
 export const FRAME_WIDTH = 960
+/** Viewport height in pixels, used to validate frames and click coordinates. */
 export const FRAME_HEIGHT = 640
 const FRAME_SIGNATURE = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex')
 const FRAME_END = Buffer.from('0000000049454e44ae426082', 'hex')
 
+/** Protected worker socket and finite budgets for IP service previews. */
 export interface IpApplicationPreviewConfig {
   readonly socketPath: string
   readonly maxFrameBytes: number
@@ -27,6 +32,7 @@ export interface IpApplicationPreviewConfig {
 }
 
 const bytes = () => z.natural().min(1).max(1_048_576).required()
+/** Schema for the private worker socket and per-view request, response and lifetime limits. */
 export const IpApplicationPreviewConfigSchema: z<IpApplicationPreviewConfig> = z.object({
   socketPath: z.string().required(),
   maxFrameBytes: z.natural().min(45).max(4 * 1024 * 1024).required(),
@@ -45,7 +51,12 @@ export const IpApplicationPreviewConfigSchema: z<IpApplicationPreviewConfig> = z
   }).required(),
 })
 
-/** Validate a protected, local Unix pathname and finite view/relay limits. */
+/**
+ * Validate an HTTPS IPv4 management origin, a protected Unix pathname and consistent view and relay limits.
+ * @param config Preview configuration already checked against the schema.
+ * @param publicOrigin Management origin for the viewer.
+ * @returns The validated configuration.
+ */
 export function parseIpApplicationPreviewConfig(config: IpApplicationPreviewConfig, publicOrigin: string): IpApplicationPreviewConfig {
   const origin = new URL(publicOrigin)
   const octets = origin.hostname.split('.')
@@ -59,7 +70,10 @@ export function parseIpApplicationPreviewConfig(config: IpApplicationPreviewConf
   return config
 }
 
-/** The optional preview cannot publish its ingress until the local private endpoint exists. */
+/**
+ * Verify that the private endpoint exists and has the permissions required for preview ingress.
+ * @param socketPath Validated pathname of the private Unix socket.
+ */
 export async function assertIpApplicationRendererSocket(socketPath: string): Promise<void> {
   const [directory, socket] = await Promise.all([lstat(posix.dirname(socketPath)), lstat(socketPath)])
   if (!directory.isDirectory() || (directory.mode & 0o022) !== 0 || !socket.isSocket() || (socket.mode & 0o007) !== 0) {
@@ -67,13 +81,20 @@ export async function assertIpApplicationRendererSocket(socketPath: string): Pro
   }
 }
 
+/** A private render turn that refreshes the frame or applies one viewport click. */
 export type RenderAction = { readonly kind: 'frame' } | {
   readonly kind: 'click'
   readonly x: number
   readonly y: number
 }
+/** The viewer's allowed requests, including closing the retained view. */
 export type ViewAction = RenderAction | { readonly kind: 'close' }
 
+/**
+ * Read a viewer request with the exact expected fields and viewport bounds.
+ * @param input Untrusted request body.
+ * @returns The validated action, or undefined for an invalid request.
+ */
 export function readViewAction(input: unknown): ViewAction | undefined {
   if (input === null || typeof input !== 'object' || Array.isArray(input)) return undefined
   const row = input as Record<string, unknown>, fields = Object.keys(row).length
@@ -164,6 +185,13 @@ export class IpApplicationRenderer {
    */
   constructor(private readonly config: IpApplicationPreviewConfig, private readonly onDisconnect?: () => void) {}
 
+  /**
+   * Run a single admitted worker turn for this view.
+   * @param action Frame refresh or click within the viewport.
+   * @param read Authorized reader for a relative GET on the view's registered service.
+   * @param signal Revocation signal for the current view operation.
+   * @returns Validated PNG bytes for the viewer.
+   */
   async render(action: RenderAction, read: (path: string) => Promise<ServiceApplicationReply>, signal: AbortSignal): Promise<Buffer> {
     if (this.running || this.revoked) throw new Error('Private preview renderer is busy or revoked.')
     signal.throwIfAborted()
