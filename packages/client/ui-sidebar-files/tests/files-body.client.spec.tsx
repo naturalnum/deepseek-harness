@@ -29,19 +29,39 @@ function names(root: HTMLElement): string[] {
 
 describe('FilesBody', () => {
   it.each([
-    ['upload-quota-exceeded', 'not-published', zh.uploadQuotaExceeded],
-    ['upload-disk-full', 'not-published', zh.uploadDiskFull],
-    ['upload-disk-full', 'unknown', zh.transferFailed],
-  ] as const)('reports the localized upload result for %s with %s publication', async (code, outcome, message) => {
-    const upload = vi.fn(async () => { throw Object.assign(new Error('Private response detail'), { code, outcome }) })
+    ['quota-exceeded', 'not-published', zh.storageQuotaExceeded, false],
+    ['disk-full', 'not-published', zh.storageDiskFull, true],
+    ['disk-full', 'unknown', zh.transferFailed, true],
+  ] as const)('reports the localized upload result for %s with %s publication', async (reason, outcome, message, folder) => {
+    const upload = vi.fn(async () => { throw Object.assign(new Error('Private response detail'), { reason, outcome }) })
     const f = mountBody(ROOT, undefined, { upload, download: async () => {}, createDirectory: async () => 'folder' })
     await act(() => f.script.watches.ready(ROOT))
     await act(() => f.script.settle({ ok: true, value: ROOT_LEVEL }))
-    const input = f.view.container.querySelector('input[type=file]')
+    const input = f.view.container.querySelector(folder ? 'input[type=file][webkitdirectory]' : 'input[type=file]')
     if (input === null) throw new Error('Missing workspace file picker')
-    await act(async () => { fireEvent.change(input, { target: { files: [new File(['one'], 'one.txt')] } }) })
+    const file = new File(['one'], 'one.txt'), path = folder ? 'subfolder/one.txt' : 'one.txt'
+    if (folder) Object.defineProperty(file, 'webkitRelativePath', { value: path })
+    await act(async () => { fireEvent.change(input, { target: { files: [file] } }) })
     expect(f.view.getByRole('alert').textContent).toBe(message)
     expect(upload).toHaveBeenCalledOnce()
+    expect(upload).toHaveBeenCalledWith(SESSION, ROOT, [{ file, path }], expect.any(AbortSignal), expect.any(Function))
+  })
+
+  it.each([
+    ['quota-exceeded', 'not-published', zh.storageQuotaExceeded],
+    ['disk-full', 'not-published', zh.storageDiskFull],
+    ['quota-exceeded', 'unknown', zh.folderFailed],
+  ] as const)('reports the localized folder creation result for %s with %s publication', async (reason, outcome, message) => {
+    const createDirectory = vi.fn(async () => { throw Object.assign(new Error('Private response detail'), { reason, outcome }) })
+    const f = mountBody(ROOT, undefined, { createDirectory, download: async () => {}, upload: async () => {} })
+    await act(() => f.script.watches.ready(ROOT))
+    await act(() => f.script.settle({ ok: true, value: ROOT_LEVEL }))
+    fireEvent.click(f.view.getByRole('button', { name: zh.newFolder }))
+    const input = f.view.getByRole('textbox', { name: zh.newFolder })
+    await act(async () => { fireEvent.keyDown(input, { key: 'Enter' }) })
+    expect(f.view.getByRole('alert').textContent).toBe(message)
+    expect(createDirectory).toHaveBeenCalledOnce()
+    expect(f.view.getByRole('textbox', { name: zh.newFolder })).toBe(input)
   })
 
   it('replaces the page and uses the original preview/download entry only after confirmed closure', async () => {

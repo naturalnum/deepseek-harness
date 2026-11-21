@@ -39,6 +39,12 @@ export type FilesBodyProps =
 /** Natural, case-insensitive name order, so `file2` precedes `file10`. */
 const byName = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
 
+function storageFailureLine(t: TranslateNS<'sidebarFiles'>, error: unknown): string | undefined {
+  if (!(error instanceof Error) || !('outcome' in error) || error.outcome !== 'not-published' || !('reason' in error)) return undefined
+  if (error.reason === 'quota-exceeded') return t('storageQuotaExceeded')
+  if (error.reason === 'disk-full') return t('storageDiskFull')
+}
+
 /**
  * Order one level's entries for display: directories first, then everything
  * else, each group by name. The endpoint's order is a listing fact; this is the
@@ -243,7 +249,10 @@ export function FilesBody({
       setDraft(submitted)
       void management.createDirectory(sessionId, draft.parent, draft.name, signal).then(() => {
         setDraft(undefined); refresh(tab.id)
-      }, () => { setDraft(old => old === submitted ? { ...draft, pending: false, error: t('folderFailed') } : old) })
+      }, (error: unknown) => {
+        const failure = storageFailureLine(t, error) ?? t('folderFailed')
+        setDraft(old => old === submitted ? { ...draft, pending: false, error: failure } : old)
+      })
     },
     onToggle: (parent, path) => {
       setDirectory(state.expanded.includes(path) ? undefined : path)
@@ -268,11 +277,7 @@ export function FilesBody({
       setTransfer({ control, completed, total })
     }).catch((error: unknown) => {
       if (signal.aborted) return
-      if (error instanceof Error && 'outcome' in error && error.outcome === 'not-published' && 'code' in error) {
-        if (error.code === 'upload-quota-exceeded') { setFailure(t('uploadQuotaExceeded')); return }
-        if (error.code === 'upload-disk-full') { setFailure(t('uploadDiskFull')); return }
-      }
-      setFailure(t(control.signal.aborted ? 'cancelledUnknown' : 'transferFailed'))
+      setFailure(storageFailureLine(t, error) ?? t(control.signal.aborted ? 'cancelledUnknown' : 'transferFailed'))
     })
       .finally(() => { setTransfer(undefined); refresh(tab.id) })
   }

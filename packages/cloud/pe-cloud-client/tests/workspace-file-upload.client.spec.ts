@@ -245,7 +245,7 @@ it.each([
   const f = fixture()
   await expect(uploadWorkspaceFile({ ...f.input, fetch: async () => Response.json({ ok: false,
     error: { code: 'workspace/upload-rejected', outcome: 'not-published', ...storage } }, { status }) }))
-    .rejects.toMatchObject({ code, outcome: 'not-published' })
+    .rejects.toMatchObject({ code, outcome: 'not-published', reason: status === 507 && 'reason' in storage ? storage.reason : undefined })
   await expect(uploadWorkspaceFile({ ...f.input, fetch: async () => Response.json({ error: 'private server detail' }, { status }) }))
     .rejects.toMatchObject({ code: 'upload-unconfirmed', outcome: 'unknown', message: 'upload-unconfirmed' })
 })

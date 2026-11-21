@@ -55,7 +55,7 @@ When the listing advertises optional directory paging, Browse pages opens one or
 
 A prepared account page can supply `workspaceFileManagement` before native activation. The native tree then renders upload, download and new-folder icon buttons after reload. Upload opens a multiple-file picker directly; its adjacent menu opens a directory picker and retains relative paths. The selected expanded directory is the target, otherwise the tree root. File checkboxes and preview buttons are independent. One selected file downloads the original, several download a ZIP. New folders appear as editable tree nodes with the default name selected; Enter commits and Escape cancels without writing. Failed creation retains editable input. The original `file-upload/complete` event refreshes open trees after conversation uploads, including backends without watches. Progress and failure messages stay outside the fixed toolbar row.
 
-Confirmed quota and disk-space refusals have separate upload messages. When publication is unconfirmed, the file tree directs the user to check the refreshed list.
+Confirmed quota and disk-space refusals have separate upload messages. When publication is unconfirmed, the file tree directs the user to check the refreshed list. Direct folder creation and recursive uploads share the confirmed quota and disk-space notices.
 
 <a id="model-experience"></a>
 ## Model Experience

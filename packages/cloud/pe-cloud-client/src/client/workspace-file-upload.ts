@@ -29,6 +29,9 @@ export interface WorkspaceFileUploadInput {
 
 /** Locally rejected input or an unconfirmed server publication; no operation is automatically retried. */
 export class WorkspaceFileUploadFailure extends Error {
+  /** Storage reason from a confirmed no-publication receipt. */
+  readonly reason: 'quota-exceeded' | 'disk-full' | undefined
+
   /**
    * @param code Local handling discriminator, never server diagnostic text.
    * @param outcome Known no-publication decision or unknown submitted operation.
@@ -40,6 +43,8 @@ export class WorkspaceFileUploadFailure extends Error {
   ) {
     super(code, cause === undefined ? undefined : { cause })
     this.name = 'WorkspaceFileUploadFailure'
+    this.reason = outcome !== 'not-published' ? undefined
+      : code === 'upload-quota-exceeded' ? 'quota-exceeded' : code === 'upload-disk-full' ? 'disk-full' : undefined
   }
 }
 

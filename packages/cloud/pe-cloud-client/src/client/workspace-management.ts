@@ -24,11 +24,19 @@ export function prepareWorkspaceManagement(ctx: Context, fetch: FileUploadFetch,
     return `api/workspace-files/${route}?${params}`
   }
   const createDirectory: WorkspaceFileManagement['createDirectory'] = async (id, directory, name, signal) => {
+    const control = AbortSignal.any([signal, lifetime])
     const response = await fetch(path('directory', id, { directory, name }), {
-      method: 'POST', signal: AbortSignal.any([signal, lifetime]),
+      method: 'POST', signal: control,
     })
-    const data: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await readResponse(response, maxMetadataBytes, signal)))
-    if (!response.ok || typeof data !== 'object' || data === null || !('path' in data) || typeof data.path !== 'string') {
+    const data: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await readResponse(response, maxMetadataBytes, control)))
+    control.throwIfAborted()
+    if (response.status === 507 && typeof data === 'object' && data !== null && 'ok' in data && data.ok === false
+      && 'code' in data && data.code === 'transfer/failed' && 'outcome' in data && data.outcome === 'not-published'
+      && 'reason' in data && (data.reason === 'quota-exceeded' || data.reason === 'disk-full')) {
+      throw Object.assign(new Error('directory-storage-refused'), { outcome: data.outcome, reason: data.reason })
+    }
+    if (!response.ok || typeof data !== 'object' || data === null || ('ok' in data && data.ok !== true)
+      || !('path' in data) || typeof data.path !== 'string') {
       throw new Error('directory-unconfirmed')
     }
     return data.path
