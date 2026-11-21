@@ -1,7 +1,8 @@
 /** Actual Fetch/stream/ZIP registration; external Session/storage admission is a typed fixture. */
 import { Context } from '@deepseek-ai/cordis'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
+import { FdMutationFailure } from '@deepseek-ai/dsh-pe-cloud-files'
 import { unzipSync } from 'fflate'
 import { registerWorkspaceTransfers, type SelectWorkspaceTransfer } from '../src/workspace-transfers.ts'
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
@@ -29,21 +30,63 @@ function fixture(upload = false) {
       return result
     },
   }
+  const createDirectory = vi.fn(async () => 'folder_1')
   const select: SelectWorkspaceTransfer = async (id) => {
     if (id !== SessionId('account-a-session')) throw new Error('foreign-session')
     return { workspace: { path: '/project-a' }, assertCurrent() {},
       ...!upload ? {} : { workspaceUpload: { protocol: 'workspace-upload-v1', root: '/project-a', chunkBytes: 2 } }, files: {
         workspaceContent: async () => backend,
-        createWorkspaceDirectory: async () => 'folder_1',
+        createWorkspaceDirectory: createDirectory,
       } } as never
   }
   const life = new AbortController()
   registerWorkspaceTransfers(ctx, { maxFileBytes: 2 ** 32, maxFiles: 100, maxTotalBytes: 2 ** 34,
     chunkBytes: 2, maxPathBytes: 4096, timeoutMs: 30000 }, select, () => {}, life.signal)
   const request = (path: string, method = 'GET') => routes.get(path.split('?')[0]!)!.fetch(new Request(`http://test${path}`, { method }))
-  return { ctx, request, held, life, ranges,
+  return { ctx, request, held, life, ranges, createDirectory,
     changeVersion: () => { version = '2' }, afterRead: (callback: () => void) => { afterRead = callback } }
 }
+
+const DIRECTORY = '/api/workspace-files/directory?sessionId=account-a-session&directory=.&name=folder'
+
+it.each([['EDQUOT', 'quota-exceeded'], ['ENOSPC', 'disk-full']])(
+  'reports a confirmed directory %s refusal and admits a later creation', async (errno, reason) => {
+    const f = fixture()
+    try {
+      f.createDirectory.mockRejectedValueOnce(new FdMutationFailure('not-published', 'FS_IO_ERROR', errno))
+      const rejected = await f.request(DIRECTORY, 'POST')
+      expect(rejected.status).toBe(507)
+      expect(rejected.headers.get('cache-control')).toBe('no-store')
+      expect(await rejected.json()).toEqual({ ok: false, code: 'transfer/failed', outcome: 'not-published', reason })
+      const accepted = await f.request(DIRECTORY, 'POST')
+      expect(accepted.status).toBe(200)
+      expect(await accepted.json()).toEqual({ ok: true, path: 'folder_1' })
+    } finally { await f.ctx.fiber.dispose() }
+  },
+)
+
+it('keeps an uncertain directory publication unknown even with a capacity error', async () => {
+  const f = fixture()
+  try {
+    f.createDirectory.mockRejectedValueOnce(new FdMutationFailure('unknown', 'FS_IO_ERROR', 'EDQUOT'))
+    const response = await f.request(DIRECTORY, 'POST')
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ ok: false, code: 'transfer/failed', outcome: 'unknown' })
+  } finally { await f.ctx.fiber.dispose() }
+})
+
+it('checks the original directory route again before returning a confirmed refusal', async () => {
+  const f = fixture()
+  try {
+    f.createDirectory.mockImplementationOnce(async () => {
+      f.life.abort()
+      throw new FdMutationFailure('not-published', 'FS_IO_ERROR', 'ENOSPC')
+    })
+    const response = await f.request(DIRECTORY, 'POST')
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ ok: false, code: 'transfer/cancelled-or-unknown', outcome: 'unknown' })
+  } finally { await f.ctx.fiber.dispose() }
+})
 
 it('streams an original file and a ZIP preserving duplicate basenames in distinct directories', async () => {
   const f = fixture()

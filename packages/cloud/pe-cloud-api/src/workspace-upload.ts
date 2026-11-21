@@ -6,6 +6,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceUploadSource, WorkspaceUploadResult, ResidentResult } from '@deepseek-ai/dsh-pe-cloud-files'
 import { FdMutationFailure } from '@deepseek-ai/dsh-pe-cloud-files'
 import { CloudApiError } from './errors.ts'
+import { workspaceStorageRefusal } from './workspace-storage-refusal.ts'
 
 /** Structural subset of Access's borrowed binary response; it grants no independent login or account selection. */
 export interface WorkspaceUploadBorrow {
@@ -154,8 +155,7 @@ export function createWorkspaceUploadConsumer(limits: {
       }
       try {
         if (error instanceof CloudApiError && error.code === 'cloud/forbidden') rejectedStatus = 403
-        const syscallCode = error instanceof FdMutationFailure ? error.syscallCode : undefined
-        const reason = syscallCode === 'EDQUOT' ? 'quota-exceeded' : syscallCode === 'ENOSPC' ? 'disk-full' : undefined
+        const reason = workspaceStorageRefusal(error)
         finished = await send(response, { ok: false, error: { code: 'workspace/upload-rejected', outcome: 'not-published',
           ...(reason === undefined ? {} : { reason }) } }, reason === undefined ? rejectedStatus : 507, current)
         return { cleanup: 'confirmed', outcome: finished ? 'rejected' : 'cancelled' }

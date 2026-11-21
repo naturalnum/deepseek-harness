@@ -8,6 +8,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { AccountFileSelection, CloudAccountFiles } from '@deepseek-ai/dsh-pe-cloud-files'
 import type { WorkspaceTransferLimits } from './types.ts'
 import type {} from '@deepseek-ai/dsh-client-connection'
+import { workspaceStorageRefusal } from './workspace-storage-refusal.ts'
 
 /** Trusted native Session selection and exact files owner, repeated at actual I/O. */
 export type WorkspaceTransferSelection = AccountFileSelection & { readonly files: CloudAccountFiles
@@ -62,8 +63,17 @@ export function registerWorkspaceTransfers(ctx: Context, limits: WorkspaceTransf
       check()
       if (url.pathname === DIRECTORY) {
         const directory = relative(url.searchParams.get('directory') ?? '.', selected.workspace.path, limits.maxPathBytes)
-        const path = await selected.files.createWorkspaceDirectory(selected.workspace, directory,
-          url.searchParams.get('name') ?? '', check, signal)
+        let path: string
+        try {
+          path = await selected.files.createWorkspaceDirectory(selected.workspace, directory,
+            url.searchParams.get('name') ?? '', check, signal)
+        } catch (error) {
+          const reason = workspaceStorageRefusal(error)
+          if (reason === undefined) throw error
+          check()
+          return Response.json({ ok: false, code: 'transfer/failed', outcome: 'not-published', reason },
+            { status: 507, headers: { 'cache-control': 'no-store' } })
+        }
         check()
         return Response.json({ ok: true, path }, { headers: { 'cache-control': 'no-store' } })
       }
