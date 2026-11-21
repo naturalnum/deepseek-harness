@@ -205,6 +205,8 @@ Root 可通过 `native.workspaceTransfers` 显式设置 `maxFileBytes`、`maxFil
 
 可选的[工作区上传 consumer](src/workspace-upload.ts) 要求 Access 持有精确的二进制响应路由，并将原账户／Peer／Use 借用保留到 HTTP finish／close。其选择器捕获原生 Session／项目策略，并提供同一 files owner 的 `stageWorkspaceUploads` 操作。请求提供 `sessionId`、`directory`、`name`、精确 `Content-Length` 及 `x-content-sha256`；声明不授予存储或账户权限。成功结果是 Cloud 工作区文件发布回执，包含实际重名处理路径、已核验 SHA-256 与字节数，不是原生对话附件收据。提前拒绝会保留套接字，直到完整响应 finish。已确认取消会等待源及 worker 清理，未知结算则保留原责任。账户适配器只接入显式选择的 POST `/api/workspace-files/upload`，handler 为 `cloud:workspaceUpload`，guard 为 `account-session`。既有 HEAD 传输预检仅在上传安装和 staging 检查通过后，投影 `workspace-upload-v1`、同一已选工作区根及分块上限。Access 复用原认证响应拥有者。对话上传限制及历史附件保持不变；HTTP 成功不能证明稍后失败的结果释放已完成。
 
+写入在清理后确认未发布时，`EDQUOT` 或 `ENOSPC` 都返回 HTTP 507。原 `workspace/upload-rejected` 回执继续包含 `outcome: not-published`，并分别附上 `reason: quota-exceeded` 或 `reason: disk-full`。发布或清理未确认时，原拥有者继续保留该操作，请求不会收到确认未发布的回执。
+
 ### 可选账户 HTTP MCP 装配
 
 Root 通过 `mcp.allowedEndpoints` 批准确切的 HTTP(S) 端点，按规范化 URL 匹配协议、主机、端口、路径与查询串。列表为空或省略时关闭出站连接。列表外的现有定义仍可查看、停用或移除。账号拥有的传输层按同一列表校验每个请求，将套接字固定到已验证的公网 DNS 结果，并拒绝重定向。代理会自行解析目的地，因此拒绝经过代理的路由。

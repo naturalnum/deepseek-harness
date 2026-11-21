@@ -89,7 +89,9 @@ export class FdEnvironmentLayoutFailure extends FdMutationFailure {
 /** Staging distinguishes proven sink cleanup from uncertain effects; source closure remains separate. */
 export class FdStageFailure extends FdMutationFailure {
   constructor(outcome: 'not-published' | 'unknown', code: FsErrorCode, readonly facts?: StagingFacts, options?: ErrorOptions) {
-    super(outcome, outcome === 'unknown' ? 'FS_IO_ERROR' : code, undefined, options)
+    const capacityCode = outcome === 'not-published' && facts?.kind === 'failed' && facts.publication === 'none'
+      && (facts.code === 'EDQUOT' || facts.code === 'ENOSPC') ? facts.code : undefined
+    super(outcome, outcome === 'unknown' ? 'FS_IO_ERROR' : code, capacityCode, options)
   }
 }
 
@@ -1321,7 +1323,7 @@ export class FdWorkerClient {
       const error = wireError(value)
       if (error === undefined) { this.failProtocol(); return }
       const facts = value.facts
-      const unknown = !facts.closed || !facts.clean || facts.temporaryPresent || facts.kind === 'unknown' || facts.publication === 'unknown'
+      const unknown = !facts.closed || !facts.clean || facts.temporaryPresent || facts.kind === 'unknown' || facts.publication !== 'none'
       const failure = new FdStageFailure(unknown ? 'unknown' : 'not-published', error.code, facts)
       if (unknown) {
         this.failure = failure

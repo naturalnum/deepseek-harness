@@ -154,8 +154,10 @@ export function createWorkspaceUploadConsumer(limits: {
       }
       try {
         if (error instanceof CloudApiError && error.code === 'cloud/forbidden') rejectedStatus = 403
-        finished = await send(response, { ok: false, error: { code: 'workspace/upload-rejected', outcome: 'not-published' } },
-          rejectedStatus, current)
+        const syscallCode = error instanceof FdMutationFailure ? error.syscallCode : undefined
+        const reason = syscallCode === 'EDQUOT' ? 'quota-exceeded' : syscallCode === 'ENOSPC' ? 'disk-full' : undefined
+        finished = await send(response, { ok: false, error: { code: 'workspace/upload-rejected', outcome: 'not-published',
+          ...(reason === undefined ? {} : { reason }) } }, reason === undefined ? rejectedStatus : 507, current)
         return { cleanup: 'confirmed', outcome: finished ? 'rejected' : 'cancelled' }
       } catch (cause) { return { cleanup: 'unknown', cause } }
     } finally {

@@ -116,6 +116,29 @@ it('rejects a wrong declared digest after cleanup and never publishes a successf
   expect(readdirSync(f.project)).toEqual([])
 })
 
+it.each([['quota.bin', 'quota-exceeded'], ['disk-full.bin', 'disk-full']])(
+  'returns the confirmed storage refusal for %s over TCP and releases the write lane', async (name, reason) => {
+    const f = await fixture(), response = await f.call(4096, digest(4096), name).response
+    expect(response.status).toBe(507)
+    expect(JSON.parse(response.body)).toEqual({ ok: false, error: { code: 'workspace/upload-rejected',
+      outcome: 'not-published', reason } })
+    await Promise.all(f.pending)
+    expect(f.results).toEqual([{ cleanup: 'confirmed', outcome: 'rejected' }])
+    expect(readdirSync(f.project)).toEqual([])
+    expect(f.pool.inspect().work.residentBytes).toBe(0)
+    expect((await f.call(4096, digest(4096), 'next.bin').response).status).toBe(200)
+  },
+)
+
+it('retains an EDQUOT failure that reports a publication instead of sending a refusal receipt', async () => {
+  const f = await fixture(), call = f.call(4096, digest(4096), 'quota-after-publish.bin')
+  await expect(call.response).rejects.toBeInstanceOf(Error)
+  await Promise.all(f.pending)
+  expect(f.results[0]?.cleanup).toBe('unknown')
+  expect(f.pool.inspect().work.residentBytes).toBeGreaterThan(0)
+  expect(readFileSync(join(f.project, 'quota-after-publish.bin'))).toEqual(Buffer.alloc(4096, 137))
+})
+
 it('joins actual client disconnect and stage cleanup before confirming cancellation', async () => {
   const f = await fixture(), call = f.call(67108864, 'a'.repeat(64), 'cancel.bin', false)
   const rejected = expect(call.response).rejects.toBeInstanceOf(Error)

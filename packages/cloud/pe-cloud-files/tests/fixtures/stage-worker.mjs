@@ -9,11 +9,11 @@ let active, ended
 const facts = (kind, closed, clean, publication = 'none') => ({ kind, code: kind === 'failed' ? 'EIO' : 'OK', publication,
   closed, clean, temporaryPresent: !closed, writtenBytes: active?.total ?? 0, readBytes: 0,
   sequence: active?.sequence ?? 0, retainedCreatedDirectories: 0 })
-const fail = code => {
+const fail = (code, syscallCode) => {
   const state = active
   closeSync(state.fd)
   unlinkSync(state.temp)
-  const info = facts('aborted', true, true)
+  const info = syscallCode === undefined ? facts('aborted', true, true) : { ...facts('failed', true, true), code: syscallCode }
   parentPort.postMessage({ kind: 'stage-failure', id: state.id, code, facts: info })
   ended = state.id; active = undefined
 }
@@ -59,6 +59,8 @@ parentPort.on('message', request => {
     }
     if (Atomics.load(active.cancel, 0)) { fail('FS_ABORTED'); return }
     if (active.file.name === 'known.bin') { fail('FS_IO_ERROR'); return }
+    if (active.file.name === 'quota.bin') { fail('FS_IO_ERROR', 'EDQUOT'); return }
+    if (active.file.name === 'disk-full.bin') { fail('FS_IO_ERROR', 'ENOSPC'); return }
     if (active.file.name === 'unknown.bin') {
       closeSync(active.fd)
       parentPort.postMessage({ kind: 'stage-failure', id: active.id, code: 'FS_IO_ERROR',
@@ -91,6 +93,11 @@ parentPort.on('message', request => {
       unlinkSync(active.temp)
     } else renameSync(active.temp, active.path)
     Atomics.add(counters, 5, 1)
+    if (active.file.name === 'quota-after-publish.bin') {
+      parentPort.postMessage({ kind: 'stage-failure', id: active.id, code: 'FS_IO_ERROR',
+        facts: { ...facts('failed', true, true, 'published'), code: 'EDQUOT' } })
+      ended = active.id; active = undefined; return
+    }
     parentPort.postMessage({ kind: 'stage-result', id: active.id,
       result: { outcome: 'published', facts: { ...facts('published', true, true, 'published'),
         ...publishedName === undefined || mode === 'omit-published-name' ? {} : { publishedName } } } })

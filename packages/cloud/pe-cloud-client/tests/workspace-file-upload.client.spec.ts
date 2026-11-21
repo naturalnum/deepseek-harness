@@ -236,12 +236,14 @@ it.each([null, {}, { ok: false }, { ok: true }, { ok: true, value: null }, { ok:
     .rejects.toMatchObject({ code: 'upload-unconfirmed', outcome: 'unknown' })
 })
 
-it('distinguishes the exact no-publication refusal from an HTTP status without that receipt', async () => {
+it.each([
+  [413, {}], [507, { reason: 'quota-exceeded' }], [507, { reason: 'disk-full' }],
+] as const)('distinguishes a complete refusal receipt from HTTP %i alone', async (status, storage) => {
   const f = fixture()
   await expect(uploadWorkspaceFile({ ...f.input, fetch: async () => Response.json({ ok: false,
-    error: { code: 'workspace/upload-rejected', outcome: 'not-published' } }, { status: 413 }) }))
+    error: { code: 'workspace/upload-rejected', outcome: 'not-published', ...storage } }, { status }) }))
     .rejects.toMatchObject({ code: 'upload-unconfirmed', outcome: 'not-published' })
-  await expect(uploadWorkspaceFile({ ...f.input, fetch: async () => Response.json({ error: 'private server detail' }, { status: 413 }) }))
+  await expect(uploadWorkspaceFile({ ...f.input, fetch: async () => Response.json({ error: 'private server detail' }, { status }) }))
     .rejects.toMatchObject({ code: 'upload-unconfirmed', outcome: 'unknown', message: 'upload-unconfirmed' })
 })
 
