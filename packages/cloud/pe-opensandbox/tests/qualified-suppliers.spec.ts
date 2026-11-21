@@ -1,4 +1,5 @@
 /** Complete current supplier matrix; these parsers and constructors create no transport or deployment. */
+import assert from 'node:assert/strict'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
@@ -128,7 +129,8 @@ it('pairs only the exact ARM renewal guest and protected receipt policy', async 
   const { deletionReceipts: _receipts, ...withoutReceipts } = enabled.lifecycle
   const input = parseRootDeploymentInput(enabled)
   expect(input).toMatchObject({ renewal, lifecycle: { deletionReceipts: receiptPins } })
-  expect(Object.hasOwn(input.renewal!, 'carrierBudget')).toBe(false)
+  assert.ok(input.schema === 'pe-opensandbox-root-deployment-v2' && input.renewal)
+  expect(Object.hasOwn(input.renewal, 'carrierBudget')).toBe(false)
   expect(parseRootDeploymentInput({ ...enabled, renewal: { ...renewal, carrierBudget: 'rolling-v1' } }))
     .toMatchObject({ renewal: { ...renewal, carrierBudget: 'rolling-v1' } })
   expect(() => parseRootDeploymentInput({ ...enabled, renewal: { ...renewal, carrierBudget: 'unknown' } }))
