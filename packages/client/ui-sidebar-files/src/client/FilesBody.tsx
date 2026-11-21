@@ -266,7 +266,14 @@ export function FilesBody({
     setTransfer({ control, completed: 0, total: files.reduce((sum, item) => sum + item.file.size, 0) })
     void management.upload(sessionId, selectedDirectory ?? state.root, files, lifetime, (completed, total) => {
       setTransfer({ control, completed, total })
-    }).catch(() => { if (!signal.aborted) setFailure(t(control.signal.aborted ? 'cancelledUnknown' : 'transferFailed')) })
+    }).catch((error: unknown) => {
+      if (signal.aborted) return
+      if (error instanceof Error && 'outcome' in error && error.outcome === 'not-published' && 'code' in error) {
+        if (error.code === 'upload-quota-exceeded') { setFailure(t('uploadQuotaExceeded')); return }
+        if (error.code === 'upload-disk-full') { setFailure(t('uploadDiskFull')); return }
+      }
+      setFailure(t(control.signal.aborted ? 'cancelledUnknown' : 'transferFailed'))
+    })
       .finally(() => { setTransfer(undefined); refresh(tab.id) })
   }
   const reload = (): void => {

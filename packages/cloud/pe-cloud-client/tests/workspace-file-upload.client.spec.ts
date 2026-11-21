@@ -237,14 +237,25 @@ it.each([null, {}, { ok: false }, { ok: true }, { ok: true, value: null }, { ok:
 })
 
 it.each([
-  [413, {}], [507, { reason: 'quota-exceeded' }], [507, { reason: 'disk-full' }],
-] as const)('distinguishes a complete refusal receipt from HTTP %i alone', async (status, storage) => {
+  [413, {}, 'upload-unconfirmed'],
+  [507, { reason: 'quota-exceeded' }, 'upload-quota-exceeded'],
+  [507, { reason: 'disk-full' }, 'upload-disk-full'],
+  [400, { reason: 'disk-full' }, 'upload-unconfirmed'],
+] as const)('distinguishes a complete refusal receipt from HTTP %i alone', async (status, storage, code) => {
   const f = fixture()
   await expect(uploadWorkspaceFile({ ...f.input, fetch: async () => Response.json({ ok: false,
     error: { code: 'workspace/upload-rejected', outcome: 'not-published', ...storage } }, { status }) }))
-    .rejects.toMatchObject({ code: 'upload-unconfirmed', outcome: 'not-published' })
+    .rejects.toMatchObject({ code, outcome: 'not-published' })
   await expect(uploadWorkspaceFile({ ...f.input, fetch: async () => Response.json({ error: 'private server detail' }, { status }) }))
     .rejects.toMatchObject({ code: 'upload-unconfirmed', outcome: 'unknown', message: 'upload-unconfirmed' })
+})
+
+it('keeps a storage error with unconfirmed publication unknown and sends only once', async () => {
+  const f = fixture()
+  const fetch = vi.fn(async () => Response.json({ ok: false,
+    error: { code: 'workspace/upload-rejected', outcome: 'unknown', reason: 'quota-exceeded' } }, { status: 507 }))
+  await expect(uploadWorkspaceFile({ ...f.input, fetch })).rejects.toMatchObject({ code: 'upload-unconfirmed', outcome: 'unknown' })
+  expect(fetch).toHaveBeenCalledOnce()
 })
 
 it.each(['invalid json', '\u00ff'])('rejects malformed receipt bytes %j', async (value) => {

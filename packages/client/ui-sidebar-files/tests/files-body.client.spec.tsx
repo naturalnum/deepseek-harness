@@ -28,6 +28,22 @@ function names(root: HTMLElement): string[] {
 }
 
 describe('FilesBody', () => {
+  it.each([
+    ['upload-quota-exceeded', 'not-published', zh.uploadQuotaExceeded],
+    ['upload-disk-full', 'not-published', zh.uploadDiskFull],
+    ['upload-disk-full', 'unknown', zh.transferFailed],
+  ] as const)('reports the localized upload result for %s with %s publication', async (code, outcome, message) => {
+    const upload = vi.fn(async () => { throw Object.assign(new Error('Private response detail'), { code, outcome }) })
+    const f = mountBody(ROOT, undefined, { upload, download: async () => {}, createDirectory: async () => 'folder' })
+    await act(() => f.script.watches.ready(ROOT))
+    await act(() => f.script.settle({ ok: true, value: ROOT_LEVEL }))
+    const input = f.view.container.querySelector('input[type=file]')
+    if (input === null) throw new Error('Missing workspace file picker')
+    await act(async () => { fireEvent.change(input, { target: { files: [new File(['one'], 'one.txt')] } }) })
+    expect(f.view.getByRole('alert').textContent).toBe(message)
+    expect(upload).toHaveBeenCalledOnce()
+  })
+
   it('replaces the page and uses the original preview/download entry only after confirmed closure', async () => {
     const gate = Promise.withResolvers<undefined>(), nextPage = vi.fn(), releaseDirectory = vi.fn(() => gate.promise)
     const download = vi.fn(async () => {})

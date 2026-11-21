@@ -35,7 +35,7 @@ export class WorkspaceFileUploadFailure extends Error {
    * @param cause Original client/transport failure when available.
    */
   constructor(
-    readonly code: 'upload-too-large' | 'invalid-path' | 'upload-unconfirmed',
+    readonly code: 'upload-too-large' | 'invalid-path' | 'upload-unconfirmed' | 'upload-quota-exceeded' | 'upload-disk-full',
     readonly outcome: 'not-published' | 'unknown', cause?: unknown,
   ) {
     super(code, cause === undefined ? undefined : { cause })
@@ -95,11 +95,12 @@ function receipt(value: unknown, path: string, sha256: string, bytes: number): W
   return Object.freeze({ kind: file.kind, path: file.path, sha256, bytes, outcome: file.outcome })
 }
 
-function rejected(value: unknown): boolean {
+function refusal(value: unknown): object | undefined {
   return value !== null && typeof value === 'object' && 'ok' in value && value.ok === false
     && 'error' in value && value.error !== null && typeof value.error === 'object'
     && 'code' in value.error && value.error.code === 'workspace/upload-rejected'
     && 'outcome' in value.error && value.error.outcome === 'not-published'
+    ? value.error : undefined
 }
 
 /**
@@ -135,7 +136,13 @@ export async function uploadWorkspaceFile(input: WorkspaceFileUploadInput): Prom
     const bytes = await readResponse(response, maxMetadataBytes, signal)
     signal.throwIfAborted()
     const value: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
-    if (!response.ok) throw new WorkspaceFileUploadFailure('upload-unconfirmed', rejected(value) ? 'not-published' : 'unknown')
+    if (!response.ok) {
+      const rejected = refusal(value)
+      if (rejected === undefined) throw new WorkspaceFileUploadFailure('upload-unconfirmed', 'unknown')
+      const reason = response.status === 507 && 'reason' in rejected ? rejected.reason : undefined
+      const code = reason === 'quota-exceeded' ? 'upload-quota-exceeded' : reason === 'disk-full' ? 'upload-disk-full' : 'upload-unconfirmed'
+      throw new WorkspaceFileUploadFailure(code, 'not-published')
+    }
     return receipt(value, expected, sha256, file.size)
   } catch (cause) {
     if (cause instanceof WorkspaceFileUploadFailure) throw cause
