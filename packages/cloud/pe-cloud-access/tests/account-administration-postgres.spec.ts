@@ -104,11 +104,22 @@ describe.skipIf(configPath === undefined)('real account administration with Post
       expect((await post('/cloud/admin/accounts', { ...creation, displayName: 'Changed payload' }, a.cookie)).status).toBe(403)
       expect((await pool.query<{ banned: boolean }>('SELECT banned FROM "user" WHERE id=$1', [createdBody.id])).rows[0]?.banned).toBe(true)
       let prepared = 0, stopped = 0, unknownStop = true, expectedSessionsDuringDrain = '0'
+      let verifyProvisioningIdentity = true, refuseResources = true
+      const retryOperation = randomUUID()
       adapter.installAccountResources({
         templates: async () => [{ id: 'standard', available: 1 }], states: async () => [],
-        prepare: async (id) => {
+        requiresPreparationIdentity: () => verifyProvisioningIdentity,
+        prepare: async (id, template, operation, identity) => {
           expect(id).toBe(createdBody.id)
           expect((await pool.query<{ banned: boolean }>('SELECT banned FROM "user" WHERE id=$1', [id])).rows[0]?.banned).toBe(true)
+          if (verifyProvisioningIdentity) {
+            expect(template).toBe('standard')
+            expect(operation).toBe(refuseResources ? creation.requestId : retryOperation)
+            expect(identity).toEqual({ accountId: createdBody.id, role: 'user',
+              creationOperationId: creation.requestId, resourcePending: true })
+            expect(Object.isFrozen(identity)).toBe(true)
+            if (refuseResources) throw new Error('Fixture protected plan has not supplied this birth')
+          }
           prepared++
         },
         disable: async (id) => {
@@ -117,7 +128,17 @@ describe.skipIf(configPath === undefined)('real account administration with Post
           return unknownStop ? 'stop-unknown' : 'disabled'
         },
       })
-      expect((await post('/cloud/admin/accounts', creation, a.cookie)).status).toBe(200)
+      const unavailable = await post('/cloud/admin/accounts', creation, a.cookie)
+      expect(await unavailable.json()).toEqual({ id: createdBody.id, resourceState: 'failed' })
+      expect(prepared).toBe(0)
+      expect((await pool.query<{ banned: boolean }>('SELECT banned FROM "user" WHERE id=$1', [createdBody.id])).rows[0]?.banned).toBe(true)
+      refuseResources = false
+      expect((await post('/cloud/admin/accounts', { op: 'prepare', id: createdBody.id, templateId: 'standard',
+        requestId: retryOperation }, a.cookie)).status).toBe(200)
+      const alreadyReady = await post('/cloud/admin/accounts', { op: 'prepare', id: createdBody.id, templateId: 'standard',
+        requestId: randomUUID() }, a.cookie)
+      expect(alreadyReady.status).toBe(503)
+      verifyProvisioningIdentity = false
       expect(prepared).toBe(1)
       expect((await pool.query<{ banned: boolean }>('SELECT banned FROM "user" WHERE id=$1', [createdBody.id])).rows[0]?.banned).toBe(false)
       expect((await post('/cloud/admin/accounts', creation, a.cookie)).status).toBe(200)

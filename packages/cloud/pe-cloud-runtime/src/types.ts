@@ -354,6 +354,14 @@ export interface AccountAdministrationBudgets {
   readonly authOperationTimeoutMs: number
 }
 
+/** Original authenticated database facts from the administrator's serialized preparation. */
+export interface ManagedAccountPreparationIdentity {
+  readonly accountId: AccountId
+  readonly role: 'admin' | 'user'
+  readonly creationOperationId: string
+  readonly resourcePending: true
+}
+
 /** Root-owned account lifecycle and metadata service; maintenance authority never grants ordinary admission. */
 export interface AccountRuntimeService {
   /** Initialize Root-owned mappings after physical inventory verification and before Files cold-proof parsing.
@@ -378,13 +386,20 @@ export interface AccountRuntimeService {
    * @returns Current assigned resource phases.
    */
   accountResourceStates?(accountIds: readonly AccountId[]): Promise<readonly Readonly<{ accountId: AccountId; phase: string }>[]>
+  /** Check whether managed preparation requires the original Auth-created identity.
+   * @returns True when preparation must verify that identity against a protected quota enrollment.
+   */
+  requiresManagedPreparationIdentity?(): boolean
   /** Prepare original native account resources before authentication enablement.
    * @param accountId Authentic target.
    * @param templateId Real template.
    * @param operationId Original operation.
+   * @param identity Current resource-pending identity from the original Auth database when required by the layout.
    * @returns Actual native Files/execution readiness.
    */
-  prepareManagedAccount?(accountId: AccountId, templateId: string, operationId: string): Promise<void>
+  prepareManagedAccount?(
+    accountId: AccountId, templateId: string, operationId: string, identity?: ManagedAccountPreparationIdentity,
+  ): Promise<void>
   /** Join original account drain after login revocation.
    * @param accountId Authentic target.
    * @param operationId Original management operation.

@@ -308,7 +308,9 @@ export class PeAuthService extends Service {
           authConnectionTimeoutMs: this.config.pool.connectionTimeoutMs,
           authOperationTimeoutMs: this.config.authCheckTimeoutMs,
         })
-        this.auth.installAccountResources({ templates, states, prepare, disable })
+        const requiresPreparationIdentity = runtime.requiresManagedPreparationIdentity?.bind(runtime)
+        this.auth.installAccountResources({ templates, states, prepare, disable,
+          ...(requiresPreparationIdentity === undefined ? {} : { requiresPreparationIdentity }) })
       }
       const application = this.config.applications ?? this.config.ipApplicationPreview
       if (application !== undefined) {

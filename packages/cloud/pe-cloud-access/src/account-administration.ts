@@ -1,8 +1,8 @@
 /** Account administration over the pinned authentication provider and its existing PostgreSQL database. */
 import type { Auth } from 'better-auth'
 import { createHmac } from 'node:crypto'
-import type { AccountId } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
-import type { Pool } from 'pg'
+import type { AccountId, ManagedAccountPreparationIdentity } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+import type { Pool, PoolClient } from 'pg'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import { AuthAccessError } from './auth-error.ts'
 
@@ -111,7 +111,8 @@ export function parseAccountAdministration(
 export interface AccountResourceLifecycle {
   templates(): Promise<readonly Readonly<{ id: string; available: number }>[]>
   states(ids: readonly AccountId[]): Promise<readonly Readonly<{ accountId: AccountId; phase: string }>[]>
-  prepare(accountId: AccountId, templateId: string, operationId: string): Promise<void>
+  requiresPreparationIdentity?(): boolean
+  prepare(accountId: AccountId, templateId: string, operationId: string, identity?: ManagedAccountPreparationIdentity): Promise<void>
   disable(accountId: AccountId, operationId: string): Promise<'disabled' | 'stop-unknown'>
 }
 
@@ -119,6 +120,28 @@ export interface AccountResourceLifecycle {
 export class AccountAdministrator {
   private tail: Promise<void> = Promise.resolve()
   private resources: AccountResourceLifecycle | undefined
+
+  private async prepareResources(resources: AccountResourceLifecycle, client: PoolClient, accountId: AccountId,
+    templateId: string, operationId: string, requestId: RequestId, current: () => void): Promise<void> {
+    if (resources.requiresPreparationIdentity?.() !== true) return resources.prepare(accountId, templateId, operationId)
+    const { rows } = await client.query<{
+      id: string
+      role: string | null
+      banned: boolean | null
+      banReason: string | null
+      cloudCreationId: string | null
+    }>(
+      'SELECT id, role, banned, "banReason", "cloudCreationId" FROM "user" WHERE id = $1', [accountId])
+    current()
+    const row = rows[0], creation = row?.cloudCreationId
+    if (rows.length !== 1 || row?.id !== accountId || row.banned !== true || row.banReason !== 'resources-not-provisioned'
+      || typeof creation !== 'string' || creation.length > 128 || creation.trim() === '' || /[\u0000-\u001f\u007f]/u.test(creation)) {
+      throw new AuthAccessError('cloud/account-unavailable', requestId)
+    }
+    await resources.prepare(accountId, templateId, operationId, Object.freeze({ accountId, creationOperationId: creation,
+      role: accountRole(row), resourcePending: true }))
+  }
+
   constructor(private readonly auth: ManagedAuth, private readonly database: Pool, readonly config: AccountAdministrationConfig,
     private readonly authInvocation: AccountAuthInvocation) {}
 
@@ -241,7 +264,7 @@ export class AccountAdministrator {
         }
         if (this.resources === undefined) return { id, resourceState: 'not-provisioned' }
         try {
-          await this.resources.prepare(id as AccountId, request.templateId, request.requestId)
+          await this.prepareResources(this.resources, client, id as AccountId, request.templateId, request.requestId, requestId, current)
           current()
           await this.invoke(headers, 'unban-user', { userId: id }, requestId)
           current()
@@ -256,7 +279,9 @@ export class AccountAdministrator {
         const target = await this.invoke(headers, 'get-user', { id: request.id }, requestId, 'GET')
         current()
         if (target['id'] !== request.id) throw new AuthAccessError('cloud/forbidden', requestId)
-        await this.resources.prepare(request.id as AccountId, request.templateId, request.requestId)
+        await this.prepareResources(
+          this.resources, client, request.id as AccountId, request.templateId, request.requestId, requestId, current,
+        )
         current()
         await this.invoke(headers, 'unban-user', { userId: request.id }, requestId)
         current()
@@ -280,7 +305,7 @@ export class AccountAdministrator {
           current()
           if (target['id'] !== request.id) throw new AuthAccessError('cloud/forbidden', requestId)
           if (request.enabled) {
-            await resources.prepare(request.id as AccountId, '', requestId)
+            await this.prepareResources(resources, client, request.id as AccountId, '', requestId, requestId, current)
             current()
             await this.invoke(headers, 'unban-user', { userId: request.id }, requestId)
           } else {
