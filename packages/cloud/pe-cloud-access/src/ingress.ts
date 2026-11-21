@@ -1,5 +1,5 @@
 /** Package-private shared-Web ingress; actual recipe and native transport prerequisites remain authoritative. */
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { FiberState, symbols, type Context } from '@deepseek-ai/cordis'
@@ -39,10 +39,15 @@ import { ServiceApplicationQueue } from './application-queue.ts'
 import { serviceApplicationOrigin, type ServiceApplicationConfig } from './application-policy.ts'
 import { SERVICE_APPLICATION_LAUNCH_ROUTE, SERVICE_APPLICATION_COOKIE, readApplicationSelection,
   readServiceApplicationRequest, readServiceApplicationCookie } from './application-request.ts'
-import { readServiceApplicationReply } from './application-response.ts'
+import { readServiceApplicationReply, type ServiceApplicationReply } from './application-response.ts'
+import { IP_APPLICATION_VIEW_PATH, IpApplicationRenderer, readViewAction, RENDER_ORIGIN,
+  type IpApplicationPreviewConfig } from './ip-application-renderer.ts'
+import { ipApplicationViewer } from './ip-application-viewer.ts'
 import type { ApplicationServiceSelection, RegisteredApplicationService } from '@deepseek-ai/dsh-pe-opensandbox/types'
 
 type RequestId = Branded<'pe-request-id'>
+type ConsumeApplicationService = (service: RegisteredApplicationService, current: () => void) => Promise<void>
+type BorrowApplicationService = (consume: ConsumeApplicationService) => Promise<void>
 const ALLOCATION_DIAGNOSTICS_PATH = '/cloud/admin/allocation-diagnostics'
 type GuardStage = 'run.start' | 'request.url' | 'request.transport' | 'ingress.current'
   | 'auth.handler' | 'auth.authenticate' | 'auth.login-current' | 'request.binding' | 'account.bind'
@@ -102,6 +107,7 @@ interface Dependencies {
   readonly ownerRouting?: OwnerRouting
   readonly allocationDiagnostics?: AllocationDiagnosticsPort
   readonly applications?: { readonly config: ServiceApplicationConfig; readonly views: ServiceApplicationViews }
+  readonly ipApplicationPreview?: { readonly config: IpApplicationPreviewConfig; readonly views: ServiceApplicationViews }
 }
 interface Operation {
   readonly id: RequestId
@@ -147,8 +153,11 @@ export class CloudIngress {
   private readonly registrations = new Set<object>()
   private previewRegistration: object | undefined
   private applicationRegistration: object | undefined
+  private ipApplicationRegistration: object | undefined
   private applicationListener: { readonly ctx: Context; readonly web: WebServer } | undefined
   private readonly applicationQueue: ServiceApplicationQueue | undefined
+  private readonly ipApplicationRenderers = new Map<string, IpApplicationRenderer>()
+  private readonly ipApplicationTurns = new Set<string>()
   private state: IngressObservation['state'] = 'prepared'
   private accepting = false
   private closing: Promise<void> | undefined
@@ -239,10 +248,15 @@ export class CloudIngress {
           path: SERVICE_PREVIEW_ROUTE.path, handler: (req, res) => this.handleHttp(req, res) }),
         'pe-cloud-access: fixed isolated service preview')
       }
-      if (this.dependencies.applications !== undefined) {
+      if (this.dependencies.applications !== undefined || this.dependencies.ipApplicationPreview !== undefined) {
         this.applicationRegistration = this.register(() => this.dependencies.web.register({ kind: 'exact',
           path: SERVICE_APPLICATION_LAUNCH_ROUTE.path, handler: (req, res) => this.handleHttp(req, res) }),
         'pe-cloud-access: authenticated service application launch')
+      }
+      if (this.dependencies.ipApplicationPreview !== undefined) {
+        this.ipApplicationRegistration = this.register(() => this.dependencies.web.register({ kind: 'exact',
+          path: IP_APPLICATION_VIEW_PATH, handler: (req, res) => this.handleHttp(req, res) }),
+        'pe-cloud-access: authenticated IP application viewer')
       }
       this.register(() => this.dependencies.web.registerUpgrade({
         path: REMOTE_STREAM_MUX_PATH, handler: (req, socket, head) => this.handleUpgrade(req, socket, head),
@@ -366,7 +380,7 @@ export class CloudIngress {
     const contentWeb = this.applicationListener?.ctx.get('webServer')
     const expectedRegistrations = 5 + (this.limits.servicePreview === undefined ? 0 : 1)
       + (this.auth.accountAdministrationEnabled ? this.dependencies.allocationDiagnostics === undefined ? 1 : 2 : 0)
-      + (this.dependencies.applications === undefined ? 0 : 2)
+      + (this.dependencies.applications === undefined && this.dependencies.ipApplicationPreview === undefined ? 0 : 2)
     const original = (value: object): object => {
       const target: unknown = Reflect.get(value, symbols.original)
       return target !== null && (typeof target === 'object' || typeof target === 'function') ? target : value
@@ -395,7 +409,11 @@ export class CloudIngress {
       throw new AuthAccessError('cloud/account-unavailable', this.requestId())
     }
     if (this.limits.servicePreview !== undefined) rows.push(SERVICE_PREVIEW_ROUTE)
-    if (this.dependencies.applications !== undefined) {
+    if (this.dependencies.ipApplicationPreview !== undefined
+      && (this.ipApplicationRegistration === undefined || !this.registrations.has(this.ipApplicationRegistration))) {
+      throw new AuthAccessError('cloud/account-unavailable', this.requestId())
+    }
+    if (this.dependencies.applications !== undefined || this.dependencies.ipApplicationPreview !== undefined) {
       if (this.applicationRegistration === undefined || !this.registrations.has(this.applicationRegistration)) {
         throw new AuthAccessError('cloud/account-unavailable', this.requestId())
       }
@@ -404,7 +422,7 @@ export class CloudIngress {
     return Object.freeze(rows)
   }
 
-  /** Stop admission synchronously, unregister routes and join all actual ingress/Peer work before auth/pool close. */
+  /** Stop admission synchronously. The retained drain joins view recovery and all actual ingress/Peer work before auth/pool close. */
   closeActual(): Promise<void> {
     if (this.closing !== undefined) return this.closing
     this.accepting = false
@@ -420,6 +438,7 @@ export class CloudIngress {
       const results = await Promise.allSettled([
         ...removals, ...[...this.operations].map(operation => operation.actual), this.peers.closeActual(),
         this.dependencies.applications?.views.closeActual(), this.applicationQueue?.closeActual(),
+        this.dependencies.ipApplicationPreview?.views.closeActual(),
         ...(this.dependencies.ownerRouting === undefined ? [] : [this.dependencies.ownerRouting.closeActual()]),
       ])
       if (this.state === 'unknown' || this.registrations.size !== 0 || results.some(result => result.status === 'rejected')) {
@@ -444,8 +463,12 @@ export class CloudIngress {
       operation.stage = 'ingress.current'
       this.assertOperation(operation)
       if (preview) { await this.handlePreview(operation, url); return }
-      if (url.pathname === SERVICE_APPLICATION_LAUNCH_ROUTE.path && this.dependencies.applications !== undefined) {
+      if (url.pathname === SERVICE_APPLICATION_LAUNCH_ROUTE.path
+        && (this.dependencies.applications !== undefined || this.dependencies.ipApplicationPreview !== undefined)) {
         await this.launchApplication(operation, url); return
+      }
+      if (url.pathname === IP_APPLICATION_VIEW_PATH && this.dependencies.ipApplicationPreview !== undefined) {
+        await this.handleIpApplicationView(operation, url); return
       }
       if (url.pathname === '/cloud/auth' || url.pathname.startsWith('/cloud/auth/')) {
         operation.stage = 'auth.handler'
@@ -626,7 +649,8 @@ export class CloudIngress {
   }
 
   private async launchApplication(operation: Operation, url: URL): Promise<void> {
-    const applications = this.dependencies.applications, response = operation.response
+    const dns = this.dependencies.applications, applications = dns ?? this.dependencies.ipApplicationPreview
+    const response = operation.response
     if (applications === undefined || response === undefined || operation.request.method !== 'POST'
       || url.search !== '' || operation.request.headers.origin !== this.config.publicOrigin) {
       throw new AuthAccessError('cloud/forbidden', operation.id)
@@ -644,7 +668,12 @@ export class CloudIngress {
       current()
       const grant = applications.views.issue(principal, service.scope, expected.connectionGeneration, service.lifetime, operation.id)
       try {
-        const payload = JSON.stringify({ origin: serviceApplicationOrigin(applications.config, grant.id), proof: grant.proof })
+        if (dns === undefined) {
+          // IP views never send either credential to the management browser.
+          await applications.views.authorize(grant.id, grant.proof, operation.id, async () => { current() })
+        }
+        const payload = JSON.stringify(dns === undefined ? { viewId: grant.id }
+          : { origin: serviceApplicationOrigin(dns.config, grant.id), proof: grant.proof })
         if (Buffer.byteLength(payload) > this.limits.maxBootstrapResponseBytes) throw new AuthAccessError('cloud/capacity', operation.id)
         current()
         operation.holdNormalFinish = true
@@ -660,6 +689,120 @@ export class CloudIngress {
         throw error
       }
     })
+  }
+
+  private async handleIpApplicationView(operation: Operation, url: URL): Promise<void> {
+    const preview = this.dependencies.ipApplicationPreview, { request, response, id } = operation
+    const viewId = url.searchParams.get('view')
+    if (preview === undefined || response === undefined || viewId === null || !/^[a-f0-9]{32}$/.test(viewId)
+      || request.url !== IP_APPLICATION_VIEW_PATH + '?view=' + viewId
+      || request.method !== 'GET' && request.method !== 'POST'
+      || request.method === 'GET' && (request.headers['transfer-encoding'] !== undefined
+        || request.headers['content-length'] !== undefined && request.headers['content-length'] !== '0')
+      || request.method === 'POST' && (request.headers.origin !== this.config.publicOrigin
+        || request.headers['content-type'] !== 'application/json')
+      || request.headers['sec-fetch-site'] === 'cross-site') throw new AuthAccessError('cloud/forbidden', id)
+
+    operation.application = true
+    const principal = this.trackPrincipal(operation, await this.auth.authenticate(request, id))
+    this.assertOperation(operation)
+    this.bindAccount(operation, principal.accountId)
+    const action = request.method === 'GET' ? undefined : readViewAction(this.applicationJson(
+      await this.applicationBody(operation, Math.min(128, preview.config.maxRequestBodyBytes)), id))
+    if (request.method === 'POST' && action === undefined) throw new AuthAccessError('cloud/forbidden', id)
+    if (action?.kind === 'close') {
+      const selection = preview.views.activeCloseSelection(viewId, principal, id)
+      if (selection !== undefined) {
+        const expected = { accountId: selection.accountId, connectionGeneration: selection.connectionGeneration }
+        await this.withApplicationService(operation, principal, expected, selection.service, async (_service, current) => {
+          current()
+        }, selection)
+      }
+      const retiring = preview.views.closeForLogin(viewId, principal, id)
+      try { await retiring }
+      catch (cause) { throw new AuthAccessError('cloud/account-stop-unconfirmed', id, { cause }) }
+      this.assertOperation(operation)
+      operation.holdNormalFinish = true
+      response.writeHead(204, { 'cache-control': 'no-store' })
+      response.end()
+      await operation.transferred
+      return
+    }
+    await preview.views.withLogin(viewId, principal, id, async (selection, view) => {
+      view.retainActual(operation.actual)
+      const expected = { accountId: selection.accountId, connectionGeneration: selection.connectionGeneration }
+      const signal = AbortSignal.any([operation.observer.signal, view.signal])
+      const cancel = (): void => { if (!response.writableFinished) response.destroy() }
+      view.signal.addEventListener('abort', cancel, { once: true })
+      try {
+        if (view.signal.aborted) cancel()
+        await this.withApplicationService(operation, principal, expected, selection.service, async (_service, check, borrow) => {
+          const current = (): void => { view.assertCurrent(); check() }
+          current()
+          if (action === undefined) {
+            const nonce = randomBytes(18).toString('base64')
+            const html = ipApplicationViewer(nonce)
+            await this.sendIpApplicationResponse(operation, response, 'text/html; charset=utf-8', Buffer.from(html),
+              `default-src 'none'; script-src 'nonce-${nonce}'; connect-src 'self'; img-src blob:; frame-ancestors 'self'; base-uri 'none'; form-action 'none'`)
+            current()
+            return
+          }
+          if (this.ipApplicationTurns.has(viewId)) throw new AuthAccessError('cloud/capacity', id)
+          this.ipApplicationTurns.add(viewId)
+          const retire = (): void => {
+            void preview.views.close(viewId).catch((_cleanup: unknown) => {
+              this.ctx.logger.error('Cloud private application renderer retirement is unconfirmed.')
+            })
+          }
+          try {
+            let renderer = this.ipApplicationRenderers.get(viewId)
+            if (renderer === undefined) {
+              const opened = new IpApplicationRenderer(preview.config, retire)
+              view.retireWith(async () => {
+                await opened.close()
+                this.ipApplicationRenderers.delete(viewId)
+              })
+              renderer = opened
+              this.ipApplicationRenderers.set(viewId, renderer)
+            }
+            const frame = await renderer.render(action, async (path) => {
+              current()
+              let reply: ServiceApplicationReply | undefined
+              // Every asset consumes a fresh one-response borrow of the same registered service.
+              await borrow(async (resourceService, resourceCurrent) => {
+                await resourceService.withResponse({ method: 'GET', resourcePath: path, headers: [] }, preview.config.response, signal, async (upstream) => {
+                  reply = await readServiceApplicationReply(upstream, preview.config.response, RENDER_ORIGIN, RENDER_ORIGIN, signal, () => {
+                    view.assertCurrent(); resourceCurrent()
+                  })
+                })
+              })
+              if (reply === undefined) throw new AuthAccessError('cloud/account-unavailable', id)
+              return reply
+            }, signal)
+            current()
+            await this.sendIpApplicationResponse(operation, response, 'image/png', frame, "default-src 'none'; frame-ancestors 'none'")
+            current()
+          } catch (error) {
+            retire()
+            if (error instanceof AuthAccessError || error instanceof PreviewResponseError) throw error
+            throw new AuthAccessError('cloud/account-unavailable', id)
+          } finally {
+            this.ipApplicationTurns.delete(viewId)
+          }
+        }, selection)
+      } finally { view.signal.removeEventListener('abort', cancel) }
+    })
+  }
+
+  private async sendIpApplicationResponse(
+    operation: Operation, response: ServerResponse, type: string, bytes: Buffer, csp: string,
+  ): Promise<void> {
+    operation.holdNormalFinish = true
+    response.writeHead(200, { 'content-type': type, 'content-length': bytes.length, 'cache-control': 'no-store',
+      'x-content-type-options': 'nosniff', 'content-security-policy': csp, 'referrer-policy': 'no-referrer',
+      'cross-origin-resource-policy': 'same-origin', 'x-frame-options': 'SAMEORIGIN' })
+    response.end(bytes)
+    await operation.transferred
   }
 
   private handleApplication(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -750,7 +893,8 @@ export class CloudIngress {
   }
 
   private async withApplicationService(operation: Operation, principal: AuthenticatedPrincipal, expected: RequestExpectation,
-    selected: ApplicationServiceSelection, consume: (service: RegisteredApplicationService, current: () => void) => Promise<void>,
+    selected: ApplicationServiceSelection,
+    consume: (service: RegisteredApplicationService, current: () => void, borrow: BorrowApplicationService) => Promise<void>,
     view?: ApplicationViewSelection): Promise<void> {
     const exposure = this.dependencies.exposure
     if (exposure === undefined) throw new AuthAccessError('cloud/account-unavailable', operation.id)
@@ -793,20 +937,24 @@ export class CloudIngress {
               throw new AuthAccessError('cloud/forbidden', operation.id)
             }
           }
-          accountCurrent()
-          operation.stage = 'application.borrow'
-          await withAccountApplicationService(use.context, selected, operation.observer.signal, operation.deadlineAtMs, async (service) => {
-            const current = (): void => {
-              accountCurrent()
-              operation.stage = 'application.service'; service.assertCurrent()
-              if (service.port !== 8000 || view !== undefined && (service.scope.accountId !== view.service.accountId
-                || service.scope.epoch !== view.service.epoch || service.scope.allocationId !== view.service.allocationId
-                || service.scope.sessionId !== view.service.sessionId || service.scope.serviceId !== view.service.serviceId)) {
-                throw new AuthAccessError('cloud/forbidden', operation.id)
+          const borrow: BorrowApplicationService = async (consumeBorrow) => {
+            accountCurrent()
+            operation.stage = 'application.borrow'
+            const { signal } = operation.observer
+            await withAccountApplicationService(use.context, selected, signal, operation.deadlineAtMs, async (service) => {
+              const current = (): void => {
+                accountCurrent()
+                operation.stage = 'application.service'; service.assertCurrent()
+                if (service.port !== 8000 || view !== undefined && (service.scope.accountId !== view.service.accountId
+                  || service.scope.epoch !== view.service.epoch || service.scope.allocationId !== view.service.allocationId
+                  || service.scope.sessionId !== view.service.sessionId || service.scope.serviceId !== view.service.serviceId)) {
+                  throw new AuthAccessError('cloud/forbidden', operation.id)
+                }
               }
-            }
-            current(); await consume(service, current); current()
-          })
+              current(); await consumeBorrow(service, current); current()
+            })
+          }
+          await borrow((service, current) => consume(service, current, borrow))
         },
       })
     })

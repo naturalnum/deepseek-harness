@@ -106,3 +106,100 @@ it('joins late authentication completion before dropping the original retained p
   finally { query.resolve(undefined); await closing }
   expect(f.borrows()).toBe(0)
 })
+
+it('matches the actual management login and account, then retains capacity through renderer retirement', async () => {
+  const f = fixture(), grant = f.issue()
+  const consume = vi.fn(async () => {})
+  await expect(f.views.withLogin(grant.id, principal, requestId, consume)).rejects.toThrow()
+  await f.authorize(grant)
+  const anotherSession = { ...principal, authSessionId: brandString<AuthenticatedPrincipal['authSessionId']>('login-B') }
+  const anotherAccount = { ...principal, accountId: brandString<AuthenticatedPrincipal['accountId']>('account-B') }
+  for (const login of [anotherSession, anotherAccount]) {
+    await expect(f.views.withLogin(grant.id, login, requestId, consume)).rejects.toMatchObject({ code: 'cloud/unauthenticated' })
+  }
+  expect(consume).not.toHaveBeenCalled()
+  const retired = Promise.withResolvers<undefined>()
+  await f.views.withLogin(grant.id, { ...principal }, requestId, async (selected, use) => {
+    expect(selected.service).toEqual(selection)
+    expect(selected.connectionGeneration).toBe('generation-A')
+    use.retireWith(() => retired.promise)
+  })
+  f.lifetime.abort()
+  const closing = f.views.close(grant.id)
+  try {
+    expect(f.borrows()).toBe(1)
+    await expect(f.views.withLogin(grant.id, principal, requestId, consume)).rejects.toThrow()
+  } finally {
+    retired.resolve(undefined)
+    await closing
+  }
+  expect(f.borrows()).toBe(0)
+})
+
+it('keeps revoked capacity and allows only the original login to retry retirement', async () => {
+  const f = fixture(2), grant = f.issue()
+  await f.authorize(grant)
+  const other: AuthenticatedPrincipal = { accountId: brandString<AuthenticatedPrincipal['accountId']>('account-B'),
+    authSessionId: brandString<AuthenticatedPrincipal['authSessionId']>('login-B') }
+  const b = f.views.issue(other, { ...selection, accountId: other.accountId }, 'generation-B', new AbortController().signal, requestId)
+  await f.authorize(b)
+  const proof = Promise.withResolvers<undefined>()
+  const retire = vi.fn(() => proof.promise).mockRejectedValueOnce(new Error('missing original receipt'))
+  await f.views.withLogin(grant.id, principal, requestId, async (_row, use) => use.retireWith(retire))
+  await expect(f.views.closeForLogin(grant.id, principal, requestId)).rejects.toThrow('missing original receipt')
+  expect(f.views.observe().views).toBe(2)
+  expect(f.borrows()).toBe(2)
+  expect(f.issue).toThrow(expect.objectContaining({ code: 'cloud/capacity' }))
+  expect(() => f.views.closeForLogin(grant.id, other, requestId)).toThrow(expect.objectContaining({ code: 'cloud/unauthenticated' }))
+  await expect(f.views.withLogin(grant.id, principal, requestId, async () => {})).rejects.toMatchObject({ code: 'cloud/unauthenticated' })
+  await expect(f.views.withLogin(b.id, other, requestId, async () => {})).resolves.toBeUndefined()
+  const retry = f.views.closeForLogin(grant.id, principal, requestId)
+  expect(f.views.closeForLogin(grant.id, principal, requestId)).toBe(retry)
+  expect(f.borrows()).toBe(2)
+  proof.resolve(undefined)
+  await retry
+  expect(retire).toHaveBeenCalledTimes(2)
+  expect(f.borrows()).toBe(1)
+  expect(f.views.observe().views).toBe(1)
+  expect(f.issue()).toHaveProperty('id')
+})
+
+it.each(['logout', 'expiry'] as const)('retries a revoked view after %s without a logged-in caller', async (trigger) => {
+  vi.useFakeTimers()
+  const f = fixture(), a = f.issue()
+  let confirmed = false
+  try {
+    await f.authorize(a)
+    const retire = vi.fn(async () => { if (!confirmed) throw new Error('retirement proof unavailable') })
+    await f.views.withLogin(a.id, principal, requestId, async (_selected, use) => use.retireWith(retire))
+    const other: AuthenticatedPrincipal = { accountId: brandString<AuthenticatedPrincipal['accountId']>('account-B'),
+      authSessionId: brandString<AuthenticatedPrincipal['authSessionId']>('login-B') }
+    if (trigger === 'expiry') await vi.advanceTimersByTimeAsync(9_500)
+    const b = f.views.issue(other, { ...selection, accountId: other.accountId }, 'generation-B',
+      new AbortController().signal, requestId)
+    await f.authorize(b)
+    if (trigger === 'logout') {
+      f.views.invalidateLogin(principal.authSessionId)
+      await vi.advanceTimersByTimeAsync(0)
+    } else await vi.advanceTimersByTimeAsync(500)
+    expect(retire).toHaveBeenCalledTimes(1)
+    expect(f.borrows()).toBe(2)
+    await expect(f.views.withLogin(a.id, principal, requestId, async () => {})).rejects.toMatchObject({ code: 'cloud/unauthenticated' })
+    await vi.advanceTimersByTimeAsync(999)
+    expect(retire).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(retire).toHaveBeenCalledTimes(2)
+    expect(f.borrows()).toBe(2)
+    await expect(f.views.withLogin(b.id, other, requestId, async () => {})).resolves.toBeUndefined()
+    confirmed = true
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(retire).toHaveBeenCalledTimes(3)
+    expect(f.views.observe().views).toBe(1)
+    expect(f.borrows()).toBe(1)
+    expect(f.auth.releasePrincipal).toHaveBeenCalledExactlyOnceWith(principal)
+  } finally {
+    confirmed = true
+    await f.views.close(a.id)
+    vi.useRealTimers()
+  }
+})

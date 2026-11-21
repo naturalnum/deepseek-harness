@@ -58,6 +58,7 @@ export interface ApplicationReadResponse {
 export interface RegisteredApplicationService {
   readonly scope: ServicePreviewIdentity
   readonly port: number
+  /** Aborts as soon as the registered service closes application admission, including explicit stop. */
   readonly lifetime: AbortSignal
   /** @returns After the original execution owner checks registration, binding, allocation and permanent admission. */
   assertCurrent(): void

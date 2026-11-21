@@ -12,6 +12,7 @@ import { OWNER_HOP_HEADER } from './owner-hop.ts'
 import { posix } from 'node:path'
 import type { DiagnosticGrantConfig } from './diagnostic-ownership.ts'
 import { ServiceApplicationConfigSchema, parseServiceApplicationConfig, type ServiceApplicationConfig } from './application-policy.ts'
+import { IpApplicationPreviewConfigSchema, parseIpApplicationPreviewConfig, type IpApplicationPreviewConfig } from './ip-application-renderer.ts'
 
 /** Fixed deployment entries; PG metadata can select only an exact reviewed HTTPS address. */
 export interface OwnerForwardingConfig {
@@ -67,6 +68,8 @@ export interface AuthIngressConfig {
 export interface AuthRootConfig extends AccessConfig {
   /** Omission preserves inert navigation only; executable service pages require a separate original WebServer listener. */
   readonly applications?: ServiceApplicationConfig
+  /** Optional private rendering for an IPv4-only HTTPS management deployment. */
+  readonly ipApplicationPreview?: IpApplicationPreviewConfig
   /** Omission retains component compatibility; first-trial deployment explicitly disables library sign-up. */
   readonly disableSignUp?: boolean
   /** Explicit Better Auth email sign-in window and attempt budget. */
@@ -122,6 +125,7 @@ export const AuthRootConfigSchema: z<AuthRootConfig> = deploymentConfig<AuthRoot
   AccessConfigSchema,
   z.object({
     applications: ServiceApplicationConfigSchema.default(undefined as never),
+    ipApplicationPreview: IpApplicationPreviewConfigSchema.default(undefined as never),
     disableSignUp: z.boolean(),
     loginRateLimit: z.object({
       windowSeconds: z.natural().min(1).max(2_147_483).required(), maxAttempts: positive(),
@@ -213,6 +217,12 @@ export function parseAuthRootConfig(input: AuthRootConfig): AuthRootConfig {
       || [config.bindingFields.accountQuery, config.bindingFields.generationQuery]
         .some(name => name === 'sessionId' || name === 'serviceHandle'))) throw new DeploymentConfigError('$.ingress.servicePreview: requires servicePreview origins, bounded response chunks and unreserved binding fields')
     if (config.applications !== undefined && config.ingress === undefined) throw new DeploymentConfigError('$.applications: requires ingress')
+    if (config.ipApplicationPreview !== undefined) {
+      if (config.ingress === undefined || config.applications !== undefined || config.servicePreview !== undefined) {
+        throw new DeploymentConfigError('$.ipApplicationPreview: requires IP management ingress without DNS preview configuration')
+      }
+      return { ...config, ipApplicationPreview: parseIpApplicationPreviewConfig(config.ipApplicationPreview, config.publicOrigin) }
+    }
     return config.applications === undefined ? config
       : { ...config, applications: parseServiceApplicationConfig(config.applications, config) }
   } catch (_error) {

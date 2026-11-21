@@ -8,6 +8,8 @@ import type { ServicePreviewIdentity } from '@deepseek-ai/dsh-pe-opensandbox/typ
 type RequestId = AuthAccessError['requestId']
 type Authentication = Pick<BetterAuthAccess,
   'retainPrincipal' | 'releasePrincipal' | 'retainedPrincipalBytes' | 'recheckLogin' | 'assertLoginCurrent'>
+const firstRetirementRetryMs = 1000
+const maximumRetirementRetryMs = 30_000
 
 /** Required Root bounds for the credential owner; these do not enlarge command or HTTP execution capacity. */
 export interface ApplicationViewLimits {
@@ -39,6 +41,8 @@ export interface ApplicationViewUse {
   assertCurrent(): void
   /** @param actual Original ingress authentication/transfer/Use release terminal, never an early observation deadline. */
   retainActual(actual: Promise<void>): void
+  /** Join private renderer retirement after the original view's active requests have settled. */
+  retireWith(retire: () => Promise<void>): void
 }
 
 interface View {
@@ -54,8 +58,12 @@ interface View {
   readonly actual: Set<Promise<unknown>>
   readonly controller: AbortController
   readonly timer: ReturnType<typeof setTimeout>
+  readonly terminal: PromiseWithResolvers<void>
   phase: 'prepared' | 'authorizing' | 'ready' | 'closing' | 'closed'
   closing?: Promise<void>
+  retryTimer?: ReturnType<typeof setTimeout>
+  retryDelayMs: number
+  retire?: () => Promise<void>
 }
 
 function equalSecret(received: string, expected: string): boolean {
@@ -102,8 +110,11 @@ export class ServiceApplicationViews {
       console.error('Cloud application preview retirement unconfirmed.')
     }) }
     const timer = setTimeout(onAbort, this.limits.lifetimeMs)
+    const terminal = Promise.withResolvers<void>()
+    void terminal.promise.catch((_failure: unknown) => { /* Root joins permanent cleanup failures on the original view. */ })
     const view: View = { id, proof, cookie, principal, selection, bytes, lifetime, onAbort, timer,
-      deadlineAtMs: performance.now() + this.limits.lifetimeMs, actual: new Set(), controller: new AbortController(), phase: 'prepared' }
+      deadlineAtMs: performance.now() + this.limits.lifetimeMs, actual: new Set(), controller: new AbortController(),
+      phase: 'prepared', terminal, retryDelayMs: firstRetirementRetryMs }
     this.views.set(id, view)
     this.counts.set(principal.accountId, (this.counts.get(principal.accountId) ?? 0) + 1)
     this.retainedBytes += bytes
@@ -155,6 +166,52 @@ export class ServiceApplicationViews {
     await actual
   }
 
+  /** A same-origin viewer may use its own original management login for this exact retained view. */
+  async withLogin(id: string, login: AuthenticatedPrincipal, requestId: RequestId,
+    consume: (selection: ApplicationViewSelection, use: ApplicationViewUse) => Promise<void>,
+  ): Promise<void> {
+    const view = this.current(id, requestId)
+    if (view.phase !== 'ready' || login.authSessionId !== view.principal.authSessionId || login.accountId !== view.principal.accountId) {
+      throw new AuthAccessError('cloud/unauthenticated', requestId)
+    }
+    this.auth.assertLoginCurrent(login, requestId)
+    const actual = this.authenticated(view, requestId, () => consume(view.selection, this.use(view, requestId)))
+    this.track(view, actual)
+    await actual
+  }
+
+  /**
+   * @param id Exact view being closed.
+   * @param login Current request's authenticated login.
+   * @param requestId Original close request id.
+   * @returns The original service binding for an active view, or undefined for an already revoked view.
+   */
+  activeCloseSelection(id: string, login: AuthenticatedPrincipal, requestId: RequestId): ApplicationViewSelection | undefined {
+    const view = this.ownedForClose(id, login, requestId)
+    if (view.phase === 'ready' && !view.lifetime.aborted && performance.now() < view.deadlineAtMs) return view.selection
+  }
+
+  /**
+   * @param id Exact view being closed.
+   * @param login Current request's authenticated login.
+   * @param requestId Original close request id.
+   * @returns Retirement of the original login's view, including retries while it still holds quota.
+   */
+  closeForLogin(id: string, login: AuthenticatedPrincipal, requestId: RequestId): Promise<void> {
+    this.ownedForClose(id, login, requestId)
+    return this.close(id)
+  }
+
+  private ownedForClose(id: string, login: AuthenticatedPrincipal, requestId: RequestId): View {
+    const view = this.views.get(id)
+    if (!this.open || view === undefined || view.phase !== 'ready' && view.phase !== 'closing'
+      || login.authSessionId !== view.principal.authSessionId || login.accountId !== view.principal.accountId) {
+      throw new AuthAccessError('cloud/unauthenticated', requestId)
+    }
+    this.auth.assertLoginCurrent(login, requestId)
+    return view
+  }
+
   /**
    * Inspect bounded credential ownership without exposing authentication data.
    * @returns Only finite counts; no host id, selector, proof, cookie or underlying error is exposed.
@@ -172,12 +229,22 @@ export class ServiceApplicationViews {
     if (view.closing !== undefined) return view.closing
     view.phase = 'closing'
     clearTimeout(view.timer)
+    clearTimeout(view.retryTimer)
+    delete view.retryTimer
     view.lifetime.removeEventListener('abort', view.onAbort)
     const completion = Promise.withResolvers<void>()
     view.closing = completion.promise
     view.controller.abort(new Error('Application preview credential closed.'))
     void (async () => {
       while (view.actual.size > 0) await Promise.allSettled([...view.actual])
+      try { await view.retire?.() }
+      catch (error) {
+        // Revocation and quota stay in force. Only the original retirement step may be retried.
+        delete view.closing
+        this.scheduleRetirement(view)
+        completion.reject(error)
+        return
+      }
       this.auth.releasePrincipal(view.principal)
       this.views.delete(id)
       const remaining = (this.counts.get(view.principal.accountId) ?? 1) - 1
@@ -185,8 +252,23 @@ export class ServiceApplicationViews {
       else this.counts.set(view.principal.accountId, remaining)
       this.retainedBytes -= view.bytes
       view.phase = 'closed'
-    })().then(completion.resolve, completion.reject)
-    return view.closing
+      view.terminal.resolve()
+      completion.resolve()
+    })().catch((error: unknown) => {
+      // An unknown principal release is different from a missing renderer receipt and is never replayed.
+      view.terminal.reject(error)
+      completion.reject(error)
+    })
+    return completion.promise
+  }
+
+  private scheduleRetirement(view: View): void {
+    view.retryTimer = setTimeout(() => {
+      delete view.retryTimer
+      void this.close(view.id).catch((_failure: unknown) => { /* The same view owns its next retry or terminal fault. */ })
+    }, view.retryDelayMs)
+    if (this.open) view.retryTimer.unref()
+    view.retryDelayMs = Math.min(view.retryDelayMs * 2, maximumRetirementRetryMs)
   }
 
   /**
@@ -201,11 +283,15 @@ export class ServiceApplicationViews {
 
   /**
    * Close view admission and join every original credential user.
-   * @returns After all original view users settle; it does not stop or release execution work.
+   * @returns The original terminal drain, including bounded retries for missing renderer receipts.
    */
   async closeActual(): Promise<void> {
     this.open = false
-    await Promise.all([...this.views.keys()].map(id => this.close(id)))
+    const results = await Promise.allSettled([...this.views.values()].map((view) => {
+      void this.close(view.id).catch((_failure: unknown) => { /* The terminal includes retries and permanent faults. */ })
+      return view.terminal.promise
+    }))
+    for (const result of results) if (result.status === 'rejected') throw result.reason
   }
 
   private current(id: string, requestId: RequestId): View {
@@ -228,7 +314,11 @@ export class ServiceApplicationViews {
   }
 
   private use(view: View, requestId: RequestId): ApplicationViewUse {
-    return { signal: view.controller.signal, retainActual: (actual) => { this.track(view, actual) }, assertCurrent: () => {
+    return { signal: view.controller.signal, retainActual: (actual) => { this.track(view, actual) }, retireWith: (retire) => {
+      this.assertCurrent(view, requestId)
+      if (view.retire !== undefined) throw new AuthAccessError('cloud/forbidden', requestId)
+      view.retire = retire
+    }, assertCurrent: () => {
       this.assertCurrent(view, requestId)
       this.auth.assertLoginCurrent(view.principal, requestId)
     } }

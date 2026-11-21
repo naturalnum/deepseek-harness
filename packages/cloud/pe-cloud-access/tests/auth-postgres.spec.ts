@@ -8,6 +8,8 @@ import type { Auth } from 'better-auth'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import { BetterAuthAccess } from '../src/auth.ts'
 import { AuthAccessError } from '../src/auth-error.ts'
+import { ServiceApplicationViews } from '../src/application-views.ts'
+import type { ServicePreviewIdentity } from '@deepseek-ai/dsh-pe-opensandbox/types'
 import type { AccessConfig } from '../src/types.ts'
 
 const configPath = process.env.PE_ACCESS_POSTGRES_CONFIG
@@ -153,7 +155,9 @@ describe.skipIf(configPath === undefined)('real isolated PostgreSQL17 authentica
       })
       expect(oldTab.status).toBe(409)
       expect(oldTab.headers.getSetCookie()).toHaveLength(0)
-      const closed = await BetterAuthAccess.create({ ...config, disableSignUp: true }, pool, secret, async () => {})
+      let loginViews: ServiceApplicationViews | undefined
+      const closed = await BetterAuthAccess.create({ ...config, disableSignUp: true }, pool, secret,
+        async (id) => { loginViews?.invalidateLogin(id) })
       adapter = closed
       try {
         const refused = await fetch(`${origin}/cloud/auth/sign-up/email`, { method: 'POST',
@@ -165,8 +169,30 @@ describe.skipIf(configPath === undefined)('real isolated PostgreSQL17 authentica
           headers: { origin, 'content-type': 'application/json' },
           body: JSON.stringify({ email: emails.get(cookieB), password: 'Probe-password-12345!' }) })
         expect(login.status).toBe(200)
-        expect(login.headers.getSetCookie().length).toBeGreaterThan(0)
-      } finally { adapter = current; await closed.close() }
+        const loginCookie = login.headers.getSetCookie().map(cookie => cookie.split(';')[0]).join('; ')
+        expect(loginCookie).not.toBe('')
+        const owner = await closed.authenticate(request(loginCookie), requestId)
+        const other = await closed.authenticate(request(cookieA), requestId)
+        const views = new ServiceApplicationViews(closed, { maxViews: 2, maxViewsPerAccount: 1, maxRetainedBytes: 65536,
+          maxFieldBytes: 128, lifetimeMs: 3000 })
+        loginViews = views
+        try {
+          const service: ServicePreviewIdentity = { accountId: owner.accountId, epoch: '1' as ServicePreviewIdentity['epoch'],
+            allocationId: 'fixture-allocation' as ServicePreviewIdentity['allocationId'],
+            sessionId: 'fixture-session' as ServicePreviewIdentity['sessionId'], serviceId: 'fixture-service' as ServicePreviewIdentity['serviceId'] }
+          const grant = views.issue(owner, service, 'fixture-generation', new AbortController().signal, requestId)
+          await views.authorize(grant.id, grant.proof, requestId, async () => {})
+          const canRead = vi.fn(async () => {})
+          await expect(views.withLogin(grant.id, other, requestId, canRead)).rejects.toMatchObject({ code: 'cloud/unauthenticated' })
+          await views.withLogin(grant.id, owner, requestId, canRead)
+          expect(canRead).toHaveBeenCalledTimes(1)
+          expect((await fetch(`${origin}/cloud/auth/sign-out`, {
+            method: 'POST', headers: { origin, cookie: loginCookie },
+          })).status).toBe(200)
+          await expect(views.withLogin(grant.id, owner, requestId, canRead)).rejects.toMatchObject({ code: 'cloud/unauthenticated' })
+          await vi.waitFor(() => { expect(views.observe()).toEqual({ views: 0, retainedBytes: 0 }) }, { timeout: 500 })
+        } finally { closed.releasePrincipal(owner); closed.releasePrincipal(other) }
+      } finally { adapter = current; await loginViews?.closeActual(); await closed.close() }
       const limitedConfig = { ...config, disableSignUp: true, loginRateLimit: { windowSeconds: 60, maxAttempts: 1 } }
       const signIn = (email: string | undefined, clientAddress: string, password: string): Promise<Response> =>
         fetch(`${origin}/cloud/auth/sign-in/email`, {

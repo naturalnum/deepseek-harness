@@ -1,7 +1,7 @@
 /** Preparation limits stay explicit; a real Loader entry requires its pre-Cordis owner. */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
-import { parseCloudClientConfig, parseCloudWebManifest } from '../src/config.ts'
+import { CloudClientConfigSchema, parseCloudClientConfig, parseCloudWebManifest } from '../src/config.ts'
 import { apply, ClientFailure } from '../src/client/index.ts'
 import { ClientFailure as OriginalFailure } from '../src/client/errors.ts'
 
@@ -42,6 +42,21 @@ const web = {
 }
 
 describe('explicit public Web deployment inputs', () => {
+  it('selects the IP viewer only with explicit HTTPS IPv4 configuration', () => {
+    const serviceApplications = { mode: 'ip-render' as const, managementOrigin: 'https://139.198.27.71',
+      requestTimeoutMs: 1000, maxRequestBytes: 2048, maxResponseBytes: 2048, maxFieldBytes: 128 }
+    const client = { ...valid, serviceApplications }
+    expect(CloudClientConfigSchema(client).serviceApplications).toEqual(serviceApplications)
+    expect(parseCloudWebManifest({ ...web, client }).client.serviceApplications).toEqual(serviceApplications)
+    for (const invalid of [
+      { ...serviceApplications, managementOrigin: 'https://management.example.test' },
+      { ...serviceApplications, managementOrigin: 'http://127.0.0.1' },
+      { ...serviceApplications, contentOrigin: 'https://elsewhere.test' },
+    ]) {
+      expect(() => parseCloudClientConfig({ ...valid, serviceApplications: invalid })).toThrow()
+    }
+  })
+
   it('detaches and freezes complete budgets without providing identity', () => {
     const parsed = parseCloudWebManifest(web)
     expect(parsed).toEqual(web)

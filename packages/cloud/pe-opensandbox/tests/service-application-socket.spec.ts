@@ -292,8 +292,13 @@ it('serves a finite GET, releases after actual close and consumer completion, an
   expect(f.releaseProof).toHaveLength(1); expect(f.unknown.mock.calls.length).toBe(0)
   expect(f.events.indexOf('root:release')).toBeGreaterThan(f.events.indexOf('client:socket:close'))
   expect(f.events.indexOf('root:release')).toBeGreaterThan(f.events.indexOf('consumer:finished'))
+  let previewLifetime: AbortSignal | undefined
+  await f.owner.withApplicationService({ sessionId: SessionId('worker6-loopback-session'), serviceId: f.work.handle },
+    f.caller.signal, Date.now() + 4000, async (registered) => { previewLifetime = registered.lifetime })
+  expect(previewLifetime?.aborted).toBe(false)
   const stopped = f.stop(), service = f.entries[0]!.command
   await vi.waitFor(() => { service.advance(); expect(service.stop).toHaveBeenCalledOnce() })
+  expect(previewLifetime?.aborted).toBe(true)
   expect(f.processReservation.active).not.toHaveBeenCalled()
   service.empty()
   await expect(stopped).resolves.toMatchObject({ isError: false, value: {

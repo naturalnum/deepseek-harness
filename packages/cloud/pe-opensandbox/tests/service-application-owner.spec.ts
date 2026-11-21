@@ -190,7 +190,7 @@ it('borrows exactly the five original ids and registered port outside ALS, and r
   }, caller.signal))
   await vi.waitFor(() => { expect(f.attempts[0]?.wire).toBe(true) })
   expect(captured?.scope).toEqual(work.previewIdentity()); expect(Object.isFrozen(captured?.scope)).toBe(true)
-  expect(captured?.port).toBe(8000); expect(captured?.lifetime).toBe(work.lease.scope.lifetime)
+  expect(captured?.port).toBe(8000); expect(captured?.lifetime.aborted).toBe(false)
   expect(f.factories[0]!.registration).toBe(f.entries[0]!.registration)
   expect(f.budgets[0]!.scope).toBe(work.lease.scope); expect(f.budgets[0]!.charge).toBe(charge)
   expect(f.attempts[0]!.retained?.timeoutMs).toBe(2000)
@@ -202,6 +202,8 @@ it('borrows exactly the five original ids and registered port outside ALS, and r
   expect(() => captured?.assertCurrent()).toThrow()
   await expect(captured!.withResponse(request, responseLimits, caller.signal, idle)).rejects.toThrow()
   expect(f.transport).toHaveBeenCalledTimes(1)
+  f.generation.abort(new Error('Original account generation retired'))
+  expect(captured?.lifetime.aborted).toBe(true)
 })
 
 it.each(['missing', 'unbound', 'other-session', 'other-account', 'agent', 'session', 'project', 'epoch'] as const)(

@@ -8,6 +8,13 @@ const MAX_TIMER_MS = 2_147_483_647
 const NATIVE_CONTROLS = ['commands', 'models', 'permissions', 'goals', 'plan', 'feedback', 'export', 'attachments', 'jobs'] as const
 const NATIVE_MANAGEMENT = ['plugins', 'presets', 'automations'] as const
 const COMMAND_CONTROLS: readonly CloudNativeSessionControl[] = ['models', 'permissions', 'plan', 'feedback', 'export']
+const applicationLimits = {
+  managementOrigin: z.string().required(),
+  requestTimeoutMs: z.natural().min(1).max(MAX_TIMER_MS).required(),
+  maxRequestBytes: z.natural().min(1).max(MAX_TIMER_MS).required(),
+  maxResponseBytes: z.natural().min(1).max(MAX_TIMER_MS).required(),
+  maxFieldBytes: z.natural().min(1).max(MAX_TIMER_MS).required(),
+}
 
 /** Limits have no production defaults; the reviewed browser manifest supplies them. */
 export const CloudClientConfigSchema: z<CloudClientConfig> = z.object({
@@ -32,13 +39,10 @@ export const CloudClientConfigSchema: z<CloudClientConfig> = z.object({
     maxFieldBytes: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
     maxUrlBytes: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
   })]),
-  serviceApplications: z.union([z.object({
-    managementOrigin: z.string().required(), contentOrigin: z.string().required(),
-    requestTimeoutMs: z.natural().min(1).max(MAX_TIMER_MS).required(),
-    maxRequestBytes: z.natural().min(1).max(MAX_TIMER_MS).required(),
-    maxResponseBytes: z.natural().min(1).max(MAX_TIMER_MS).required(),
-    maxFieldBytes: z.natural().min(1).max(MAX_TIMER_MS).required(),
-  })]),
+  serviceApplications: z.union([
+    z.object({ ...applicationLimits, contentOrigin: z.string().required() }),
+    z.object({ ...applicationLimits, mode: z.const('ip-render').required() }),
+  ]),
 })
 
 const CLIENT_FIELDS = ['bootstrapPath', 'bootstrapTimeoutMs', 'maxBootstrapResponseBytes',

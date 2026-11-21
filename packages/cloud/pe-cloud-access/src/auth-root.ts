@@ -21,6 +21,7 @@ import type { ConfigurationPeerOperation } from './peers.ts'
 
 import { assertAuthSchemaCurrent } from './auth-schema.ts'
 import { ServiceApplicationViews } from './application-views.ts'
+import { assertIpApplicationRendererSocket } from './ip-application-renderer.ts'
 import type { WebServer } from '@deepseek-ai/dsh-host-webserver'
 import { SandboxCoordinator } from '@deepseek-ai/dsh-pe-opensandbox'
 
@@ -238,7 +239,7 @@ export class PeAuthService extends Service {
 
   /**
    * Stop new secret/authentication work and join actual startup, library queries, secret reads and Pool.end.
-   * Caller abandonment never ends the pool early. Repeated calls join the same cleanup; failure remains unconfirmed.
+   * Calls join one actual drain while revoked views retry retirement. A permanent cleanup fault retains its original result.
    * @returns Actual resource settlement, without a timer that could certify an early release.
    */
   close(): Promise<void> {
@@ -309,8 +310,14 @@ export class PeAuthService extends Service {
         })
         this.auth.installAccountResources({ templates, states, prepare, disable })
       }
-      if (this.config.applications !== undefined) {
-        this.applicationViews = new ServiceApplicationViews(this.auth, this.config.applications.views)
+      const application = this.config.applications ?? this.config.ipApplicationPreview
+      if (application !== undefined) {
+        if (this.config.ipApplicationPreview !== undefined) {
+          try { await assertIpApplicationRendererSocket(this.config.ipApplicationPreview.socketPath) }
+          catch (_error) { throw new AuthAccessError('cloud/account-unavailable', this.requestId) }
+          this.assertStarting()
+        }
+        this.applicationViews = new ServiceApplicationViews(this.auth, application.views)
       }
       if (this.config.allocationDiagnostics !== undefined) {
         const resolve = runtime.diagnosticSessionsRoot
@@ -337,6 +344,9 @@ export class PeAuthService extends Service {
         ...(diagnostics === undefined ? {} : { allocationDiagnostics: diagnostics }),
         ...this.applicationViews === undefined || this.config.applications === undefined ? {} : {
           applications: { config: this.config.applications, views: this.applicationViews },
+        },
+        ...this.applicationViews === undefined || this.config.ipApplicationPreview === undefined ? {} : {
+          ipApplicationPreview: { config: this.config.ipApplicationPreview, views: this.applicationViews },
         },
       })
       await this.ingress.install()
@@ -370,9 +380,11 @@ export class PeAuthService extends Service {
 
   private async finishClose(): Promise<void> {
     await Promise.allSettled([this.starting])
-    await this.ingress?.closeActual()
-    await this.applicationViews?.closeActual()
-    await this.ownerRouting?.closeActual()
+    if (this.ingress !== undefined) await this.ingress.closeActual()
+    else {
+      await this.applicationViews?.closeActual()
+      await this.ownerRouting?.closeActual()
+    }
     this.ingressFinal = this.ingress?.observe()
     await this.auth?.close()
     await Promise.allSettled([...this.secrets])

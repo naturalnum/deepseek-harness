@@ -108,7 +108,7 @@ interface ServiceRow {
   readonly requests: Set<ServiceApplicationRequest>
   recentPreviewStarts?: number[]
   readonly empty: ReturnType<typeof Promise.withResolvers<void>>
-  requestsClosed: boolean
+  readonly applicationStop: AbortController
   retireRequested: boolean
   allocationId?: AllocationId
   submittedConfirmed: boolean
@@ -289,7 +289,7 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
         throw new PreviewHttpError('cloud/account-unavailable')
       }
       this.assertRegistered(record); service.registration.assertCurrent()
-      if (service.requestsClosed || !service.submittedConfirmed || service.allocationId === undefined
+      if (service.applicationStop.signal.aborted || !service.submittedConfirmed || service.allocationId === undefined
         || this.active.get(sessionId)?.service !== record) throw this.failure()
     }
     current()
@@ -348,7 +348,7 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
       } }
     } }
     const capability = Object.freeze<RegisteredApplicationService>({ scope: identity, port: service.profile.port,
-      lifetime: record.scope.lifetime, assertCurrent: assertBorrow,
+      lifetime: AbortSignal.any([record.scope.lifetime, service.applicationStop.signal]), assertCurrent: assertBorrow,
       withResponse: (request, limits, responseSignal, read) => {
         if (used || !open) return Promise.reject(this.failure())
         used = true
@@ -417,8 +417,8 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
       const registration: NativeRegisteredService = Object.freeze({ scope: lease.scope, registrationId: id,
         assertCurrent: () => {
           this.assertRegistered(row)
-          if (row.activeReleased || row.unknownReported || row.service?.requestsClosed || row.service?.startFailure !== undefined
-            || row.operation?.stopReason() !== undefined) throw this.failure()
+          if (row.activeReleased || row.unknownReported || row.service?.applicationStop.signal.aborted
+            || row.service?.startFailure !== undefined || row.operation?.stopReason() !== undefined) throw this.failure()
         },
         bindAllocation: (allocationId: AllocationId): void => {
           registration.assertCurrent()
@@ -442,7 +442,7 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
         this.cancelStart(row, signal.reason)
       }
       row.service = { lease, id, profile, fingerprint: this.fingerprint(spec), registration, submitted, work,
-        requests: new Set(), empty: Promise.withResolvers<void>(), requestsClosed: false, retireRequested: false,
+        requests: new Set(), empty: Promise.withResolvers<void>(), applicationStop: new AbortController(), retireRequested: false,
         submittedConfirmed: false, detachStart: () => { signal.removeEventListener('abort', abort) } }
       this.records.set(lease, row); this.claimSlot(row)
       signal.addEventListener('abort', abort, { once: true })
@@ -792,7 +792,7 @@ export class NativeCommandAccount implements NativeExecutionProviderPort, Origin
   private closeApplicationRequests(record: CommandRecord, cause: unknown): void {
     const service = record.service
     if (service === undefined) return
-    service.requestsClosed = true
+    service.applicationStop.abort(cause)
     for (const request of service.requests) request.controller.abort(cause)
   }
   private async joinApplicationRequests(record: CommandRecord): Promise<void> {

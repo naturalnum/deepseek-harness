@@ -15,12 +15,10 @@ export interface CloudServicePreviewPolicy {
   readonly maxUrlBytes: number
 }
 
-/** Public inputs for a private POST handoff to one dedicated content origin; supplies no service authority. */
-export interface CloudServiceApplicationPolicy {
+/** Common public bounds for the original authenticated application launch. */
+interface CloudServiceApplicationLimits {
   /** Exact public origin for authenticated management requests. */
   readonly managementOrigin: string
-  /** Exact public origin for selected content requests. */
-  readonly contentOrigin: string
   /** Finite deadline of each management request in milliseconds. */
   readonly requestTimeoutMs: number
   /** Maximum encoded management request body bytes. */
@@ -30,6 +28,12 @@ export interface CloudServiceApplicationPolicy {
   /** Maximum encoded bytes of one public field. */
   readonly maxFieldBytes: number
 }
+
+/** A DNS content origin or a trusted same-origin IP viewer. */
+export type CloudServiceApplicationPolicy = CloudServiceApplicationLimits & (
+  { readonly contentOrigin: string; readonly mode?: never }
+  | { readonly mode: 'ip-render'; readonly contentOrigin?: never }
+)
 
 /** Explicit finite UTF-8 budgets; total includes the physical key and serialized envelope. */
 export interface CloudPersistenceLimits {

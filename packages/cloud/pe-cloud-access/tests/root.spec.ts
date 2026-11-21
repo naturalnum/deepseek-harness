@@ -8,7 +8,11 @@ import { setImmediate as nextTurn } from 'node:timers/promises'
 import { boot, StartupError } from '@deepseek-ai/dsh-app-boot'
 import { CredentialProvider, type ResolvedCredential } from '@deepseek-ai/dsh-credentials'
 import type { CredentialInfo, CredentialRef, CredentialKey, CredentialRecord } from '@deepseek-ai/dsh-credentials/types'
-import type { Branded } from '@deepseek-ai/dsh-brand'
+import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
+import { WebServer } from '@deepseek-ai/dsh-host-webserver'
+import { PeAccountRuntime } from '@deepseek-ai/dsh-pe-cloud-runtime/root'
+import type { ServicePreviewIdentity } from '@deepseek-ai/dsh-pe-opensandbox/types'
 import pg from 'pg'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BetterAuthAccess } from '../src/auth.ts'
@@ -17,6 +21,8 @@ import { assertAuthSchemaCurrent } from '../src/auth-schema.ts'
 import { AuthRootConfigSchema, parseAuthRootConfig, type AuthRootConfig } from '../src/root-config.ts'
 import * as root from '../src/root.ts'
 import { CloudIngress } from '../src/ingress.ts'
+import { ServiceApplicationViews } from '../src/application-views.ts'
+import type { AuthenticatedPrincipal } from '../src/types.ts'
 import { ingressConfig } from './ingress-fixture.ts'
 import { AccountRuntimeError } from '@deepseek-ai/dsh-pe-cloud-runtime'
 
@@ -450,6 +456,78 @@ describe('root authentication resources remain closed on incomplete or failed in
     end.mockRestore()
     // Release the test-owned real pool after asserting that the provider retains its failed cleanup observation.
     await create.mock.calls[0]![1].end()
+  })
+
+  it('holds the original ingress and pool drain through missing renderer receipt retries', async () => {
+    const { ctx } = await context()
+    const plan = { toBeCreated: [], toBeAdded: [], toBeAddedIndexes: [], unsafeChanges: [], schemaProblems: [],
+      runMigrations: async () => {}, compileMigrations: async () => '' }
+    vi.spyOn(BetterAuthAccess.prototype, 'planMigrations').mockResolvedValue(plan)
+    const app = await PeAuthService.mountRoot(ctx, config())
+    const auth: unknown = Reflect.get(app, 'auth')
+    if (!(auth instanceof BetterAuthAccess)) throw new Error('Original adapter missing')
+    vi.spyOn(auth, 'assertLoginCurrent').mockImplementation(() => {})
+    vi.spyOn(auth, 'recheckLogin').mockResolvedValue()
+    vi.spyOn(auth, 'retainedPrincipalBytes').mockReturnValue(32)
+    vi.spyOn(auth, 'retainPrincipal').mockImplementation(() => {})
+    const release = vi.spyOn(auth, 'releasePrincipal').mockImplementation(() => {})
+    const end = vi.spyOn(pg.Pool.prototype, 'end')
+    const limits = { maxViews: 2, maxViewsPerAccount: 1, maxRetainedBytes: 65536, maxFieldBytes: 128, lifetimeMs: 30_000 }
+    const views = new ServiceApplicationViews(auth, limits)
+    const web = new WebServer(ctx, { host: '127.0.0.1', port: 0 })
+    const runtime = new PeAccountRuntime(ctx, { maxMountedAccounts: 2, maxConcurrentMounts: 1, maxConcurrentDrains: 1 })
+    const ingress = new CloudIngress(ctx, config(), ingressConfig(), auth, { web, runtime, recipeVersion: 'fixture',
+      assertAuthenticationCurrent() {}, ipApplicationPreview: { views, config: { views: limits,
+        socketPath: '/run/fixture/worker.sock', maxFrameBytes: 4096, maxReadsPerTurn: 4, maxResourcePathBytes: 128,
+        closeTimeoutMs: 100, maxRequestBodyBytes: 512,
+        response: { maxBodyBytes: 512, maxChunkBytes: 256, maxChunks: 4, maxHeaderCount: 16, maxHeaderBytes: 1024 } } } })
+    Reflect.set(app, 'ingress', ingress)
+    await ingress.install()
+    const login: AuthenticatedPrincipal = { accountId: brandString<AuthenticatedPrincipal['accountId']>('one'),
+      authSessionId: brandString<AuthenticatedPrincipal['authSessionId']>('fixture-login') }
+    type Scope = ServicePreviewIdentity
+    const selection: Scope = { accountId: login.accountId, epoch: brandString<Scope['epoch']>('1'),
+      sessionId: SessionId('fixture'), allocationId: brandString<Scope['allocationId']>('a'), serviceId: brandString<Scope['serviceId']>('s') }
+    const grant = views.issue(login, selection, 'original', new AbortController().signal, requestId)
+    const other: AuthenticatedPrincipal = { accountId: brandString<AuthenticatedPrincipal['accountId']>('two'),
+      authSessionId: brandString<AuthenticatedPrincipal['authSessionId']>('fixture-other-login') }
+    const otherGrant = views.issue(other, { ...selection, accountId: other.accountId }, 'other-original', new AbortController().signal, requestId)
+    const actualRead = Promise.withResolvers<undefined>()
+    let verified = false
+    try {
+      await views.authorize(grant.id, grant.proof, requestId, async () => {})
+      await views.authorize(otherGrant.id, otherGrant.proof, requestId, async () => {})
+      const attempt = vi.fn(async () => { if (!verified) throw new Error('renderer receipt pending') })
+      await views.withLogin(grant.id, login, requestId, async (_selection, use) => {
+        use.retainActual(actualRead.promise); use.retireWith(attempt)
+      })
+      const close = app.close()
+      expect(app.close()).toBe(close)
+      await nextTurn()
+      expect(attempt).not.toHaveBeenCalled()
+      expect(release).toHaveBeenCalledExactlyOnceWith(other)
+      actualRead.resolve(undefined)
+      await nextTurn()
+      expect(attempt).toHaveBeenCalledTimes(1)
+      expect(ingress.observe()).toMatchObject({ state: 'closing', current: false, registeredRoutes: 0 })
+      expect(app.observe()).toMatchObject({ phase: 'closing', poolAllocated: true })
+      expect(end).not.toHaveBeenCalled()
+      expect(release).not.toHaveBeenCalledWith(login)
+      verified = true
+      await close
+      expect(attempt).toHaveBeenCalledTimes(2)
+      expect(release.mock.calls).toEqual([[other], [login]])
+      expect(views.observe()).toEqual({ views: 0, retainedBytes: 0 })
+      expect(ingress.observe()).toMatchObject({ state: 'closed', current: false, registeredRoutes: 0 })
+      expect(app.observe()).toMatchObject({ phase: 'closed', poolAllocated: false })
+      await app.close()
+      expect(end).toHaveBeenCalledTimes(1)
+    } finally {
+      verified = true
+      actualRead.resolve(undefined)
+      await views.close(grant.id)
+      await app.close()
+    }
   })
 
   it.each(['toBeCreated', 'toBeAdded', 'toBeAddedIndexes', 'unsafeChanges', 'schemaProblems'] as const)(

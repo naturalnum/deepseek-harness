@@ -52,8 +52,13 @@ export async function launchServiceApplication(fetch: RpcFetch, policy: CloudSer
     body: requestBody({ sessionId: selection.sessionId, serviceHandle: selection.serviceHandle }) }, 200)
   let input: unknown
   try { input = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) } catch (_invalid) { return fail() }
-  if (input === null || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length !== 2) return fail()
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) return fail()
   const row = input as Record<string, unknown>
+  if (policy.mode === 'ip-render') {
+    if (Object.keys(row).length !== 1 || typeof row.viewId !== 'string' || !/^[a-f0-9]{32}$/.test(row.viewId)) return fail()
+    return policy.managementOrigin + '/cloud/service-application-view?view=' + row.viewId
+  }
+  if (Object.keys(row).length !== 2) return fail()
   if (typeof row.origin !== 'string' || typeof row.proof !== 'string' || !/^[a-f0-9]{64}$/.test(row.proof)) return fail()
   let origin: URL
   try { origin = new URL(row.origin) } catch (_invalid) { return fail() }
