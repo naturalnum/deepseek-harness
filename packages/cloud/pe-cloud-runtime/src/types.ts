@@ -362,6 +362,13 @@ export interface ManagedAccountPreparationIdentity {
   readonly resourcePending: true
 }
 
+/** Original banned identity whose assigned resources are confirmed disabled. */
+export interface ManagedAccountRestorationIdentity {
+  readonly accountId: AccountId
+  readonly role: 'admin' | 'user'
+  readonly resourcePending: false
+}
+
 /** Root-owned account lifecycle and metadata service; maintenance authority never grants ordinary admission. */
 export interface AccountRuntimeService {
   /** Initialize Root-owned mappings after physical inventory verification and before Files cold-proof parsing.
@@ -394,11 +401,12 @@ export interface AccountRuntimeService {
    * @param accountId Authentic target.
    * @param templateId Real template.
    * @param operationId Original operation.
-   * @param identity Current resource-pending identity from the original Auth database when required by the layout.
+   * @param identity Verified Auth identity for first preparation or restoration after confirmed disablement, when required by the layout.
    * @returns Actual native Files/execution readiness.
    */
   prepareManagedAccount?(
-    accountId: AccountId, templateId: string, operationId: string, identity?: ManagedAccountPreparationIdentity,
+    accountId: AccountId, templateId: string, operationId: string,
+    identity?: ManagedAccountPreparationIdentity | ManagedAccountRestorationIdentity,
   ): Promise<void>
   /** Join original account drain after login revocation.
    * @param accountId Authentic target.

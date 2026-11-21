@@ -1,7 +1,7 @@
 /** Account administration over the pinned authentication provider and its existing PostgreSQL database. */
 import type { Auth } from 'better-auth'
 import { createHmac } from 'node:crypto'
-import type { AccountId, ManagedAccountPreparationIdentity } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+import type { AccountId, ManagedAccountPreparationIdentity, ManagedAccountRestorationIdentity } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { Pool, PoolClient } from 'pg'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import { AuthAccessError } from './auth-error.ts'
@@ -112,7 +112,10 @@ export interface AccountResourceLifecycle {
   templates(): Promise<readonly Readonly<{ id: string; available: number }>[]>
   states(ids: readonly AccountId[]): Promise<readonly Readonly<{ accountId: AccountId; phase: string }>[]>
   requiresPreparationIdentity?(): boolean
-  prepare(accountId: AccountId, templateId: string, operationId: string, identity?: ManagedAccountPreparationIdentity): Promise<void>
+  prepare(
+    accountId: AccountId, templateId: string, operationId: string,
+    identity?: ManagedAccountPreparationIdentity | ManagedAccountRestorationIdentity,
+  ): Promise<void>
   disable(accountId: AccountId, operationId: string): Promise<'disabled' | 'stop-unknown'>
 }
 
@@ -122,8 +125,8 @@ export class AccountAdministrator {
   private resources: AccountResourceLifecycle | undefined
 
   private async prepareResources(resources: AccountResourceLifecycle, client: PoolClient, accountId: AccountId,
-    templateId: string, operationId: string, requestId: RequestId, current: () => void): Promise<void> {
-    if (resources.requiresPreparationIdentity?.() !== true) return resources.prepare(accountId, templateId, operationId)
+    templateId: string | undefined, operationId: string, requestId: RequestId, current: () => void): Promise<void> {
+    if (resources.requiresPreparationIdentity?.() !== true) return resources.prepare(accountId, templateId ?? '', operationId)
     const { rows } = await client.query<{
       id: string
       role: string | null
@@ -133,8 +136,20 @@ export class AccountAdministrator {
     }>(
       'SELECT id, role, banned, "banReason", "cloudCreationId" FROM "user" WHERE id = $1', [accountId])
     current()
-    const row = rows[0], creation = row?.cloudCreationId
-    if (rows.length !== 1 || row?.id !== accountId || row.banned !== true || row.banReason !== 'resources-not-provisioned'
+    const row = rows[0]
+    if (rows.length !== 1 || row?.id !== accountId || row.banned !== true) throw new AuthAccessError('cloud/account-unavailable', requestId)
+    if (templateId === undefined) {
+      if (row.banReason !== 'No reason') throw new AuthAccessError('cloud/account-unavailable', requestId)
+      const states = await resources.states([accountId])
+      current()
+      const state = states[0]
+      if (states.length !== 1 || state?.accountId !== accountId) throw new AuthAccessError('cloud/account-unavailable', requestId)
+      if (state.phase === 'stop-unknown') throw new AuthAccessError('cloud/account-stop-unconfirmed', requestId)
+      if (state.phase !== 'disabled') throw new AuthAccessError('cloud/account-unavailable', requestId)
+      return resources.prepare(accountId, '', operationId, Object.freeze({ accountId, role: accountRole(row), resourcePending: false }))
+    }
+    const creation = row.cloudCreationId
+    if (row.banReason !== 'resources-not-provisioned'
       || typeof creation !== 'string' || creation.length > 128 || creation.trim() === '' || /[\u0000-\u001f\u007f]/u.test(creation)) {
       throw new AuthAccessError('cloud/account-unavailable', requestId)
     }
@@ -305,14 +320,19 @@ export class AccountAdministrator {
           current()
           if (target['id'] !== request.id) throw new AuthAccessError('cloud/forbidden', requestId)
           if (request.enabled) {
-            await this.prepareResources(resources, client, request.id as AccountId, '', requestId, requestId, current)
+            await this.prepareResources(resources, client, request.id as AccountId, undefined, requestId, requestId, current)
             current()
             await this.invoke(headers, 'unban-user', { userId: request.id }, requestId)
           } else {
+            // A repeated ban must preserve a pending birth so it cannot be restored as an assigned account.
+            const preserveBirth = target['banned'] === true && target['banReason'] === 'resources-not-provisioned'
+              && resources.requiresPreparationIdentity?.() === true
             let banFailure: { readonly cause: unknown } | undefined
             try {
               await this.authInvocation.revoke(request.id as AccountId,
-                () => this.invoke(headers, 'ban-user', { userId: request.id }, requestId))
+                () => this.invoke(headers, 'ban-user', {
+                  userId: request.id, ...(preserveBirth ? { banReason: 'resources-not-provisioned' } : {}),
+                }, requestId))
             } catch (cause) {
               const actual = await client.query<{ banned: boolean }>('SELECT banned FROM "user" WHERE id = $1', [request.id])
               if (actual.rows[0]?.banned !== true) throw cause
