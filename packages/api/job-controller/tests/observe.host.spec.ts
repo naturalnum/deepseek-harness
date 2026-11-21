@@ -7,7 +7,7 @@ import { JobId } from '@deepseek-ai/dsh-jobs'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
-import { JobController } from '../src/index.ts'
+import { JobController, type Config } from '../src/index.ts'
 import { observeJobOutput } from '../src/observe.ts'
 import type { ObserveJobOptions } from '../src/observe.ts'
 import type { JobFollowFrame } from '../src/types.ts'
@@ -212,14 +212,14 @@ describe('observeJobOutput', () => {
 })
 
 describe('JobController', () => {
-  async function controllerHarness() {
+  async function controllerHarness(config: Config = {}) {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(LocalJobRegistry)
     await ctx.plugin(TypertRegistry)
     ctx.jobs.attachController('job-controller-test')
-    await ctx.plugin(JobController, {})
+    await ctx.plugin(JobController, config)
     return ctx
   }
 
@@ -268,6 +268,39 @@ describe('JobController', () => {
       abort,
     )
     expect(frames.map(frame => frame.type)).toEqual(['opened', 'output', 'status'])
+  })
+
+  it('finishes follow with both captured output frames when the owner disappears during delivery', async () => {
+    const ctx = await controllerHarness({ observeMaxFrameBytes: 6 })
+    const abort = new AbortController()
+    try {
+      const owner = await registerAgent(ctx, 'removed-during-delivery')
+      const job = startJob(ctx, { owner: owner.id })
+      job.append('stdout', { channel: 'stdout' })
+      job.append('stderr', { channel: 'stderr' })
+      const stream = ctx.jobController.follow({ sessionId: owner.id, jobId: job.id }, abort.signal)[Symbol.asyncIterator]()
+      try {
+        expect(await next(stream)).toMatchObject({ type: 'opened', from: 0 })
+        expect(await next(stream)).toMatchObject({
+          type: 'output', chunks: [{ text: 'stdout', channel: 'stdout' }], next: 6,
+        })
+        await job.settle({ status: 'completed', detail: 'exit code: 17' })
+        await owner.disposeScope()
+        expect(() => ctx.jobs.get(job.id, owner.id)).toThrow(/unknown job/)
+        expect(await next(stream)).toMatchObject({
+          type: 'output', chunks: [{ text: 'stderr', channel: 'stderr' }], next: 12,
+        })
+        expect(await next(stream)).toMatchObject({
+          type: 'status', job: { id: job.id, status: 'completed', detail: 'exit code: 17', output: { total: 12 } },
+        })
+        expect(await next(stream)).toBeUndefined()
+      } finally {
+        abort.abort()
+        await stream.return?.()
+      }
+    } finally {
+      await ctx.fiber.dispose()
+    }
   })
 
   it('observes an unowned job without a request session', async () => {

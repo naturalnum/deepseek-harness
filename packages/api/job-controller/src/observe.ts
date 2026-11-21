@@ -78,6 +78,8 @@ export async function* observeJobOutput(
         yield* outputFrames(read.chunks, read.next, read.lossy, options.maxFrameBytes)
       }
       cursor = read.next
+      // Delivery can suspend while the owner removes the job. Finish from the removal event.
+      if (removed !== undefined) continue
       job = registry.get(id, request.sessionId)
       if (isTerminal(job.status) && cursor >= job.output.total) {
         yield { type: 'status', job }
